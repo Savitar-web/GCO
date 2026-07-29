@@ -98,7 +98,7 @@ export function Onboarding({ onComplete }: Props) {
         >
           Entrena tu mente.
           <br />
-          Crea tu perfil cognitivo para comenzar.
+          Crea tu perfil para comenzar.
         </p>
 
       </motion.header>

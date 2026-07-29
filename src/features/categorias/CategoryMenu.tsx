@@ -179,6 +179,26 @@ export function CategoryMenu() {
           </motion.div>
         ))}
       </div>
+
+            <footer
+        style={{
+          marginTop: '2.5rem',
+          paddingBottom: '0.5rem',
+          textAlign: 'center',
+        }}
+      >
+        <p
+          style={{
+            fontSize: '0.7rem',
+            color: 'var(--gco-ink-faint, var(--gco-ink-muted))',
+            opacity: 0.55,
+            letterSpacing: '0.02em',
+          }}
+        >
+          Desarrollado por Savitar Xeno
+        </p>
+      </footer>
+      
     </div>
   )
 }
