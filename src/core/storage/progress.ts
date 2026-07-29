@@ -53,3 +53,47 @@ export function saveGameProgress(
 
   localStorage.setItem(PROGRESS_KEY, JSON.stringify(all))
 }
+
+export interface TotalProgressSummary {
+  gamesPlayed: number
+  totalLevels: number
+  totalCompleted: number
+  /** 0–100 estimado según niveles acumulados */
+  percent: number
+  byGame: Array<{
+    key: string
+    categoryId: string
+    gameId: string
+    highestLevel: number
+    totalCompleted: number
+  }>
+}
+
+/** Meta blanda: 50 niveles equivalentes ≈ 100% */
+const TARGET_LEVEL_SUM = 50
+
+export function getTotalProgress(): TotalProgressSummary {
+  const all = getAllProgress()
+  const byGame = Object.entries(all).map(([key, value]) => {
+    const [categoryId, gameId] = key.split(':')
+    return {
+      key,
+      categoryId: categoryId ?? '—',
+      gameId: gameId ?? key,
+      highestLevel: value.highestLevel,
+      totalCompleted: value.totalCompleted,
+    }
+  })
+
+  const totalLevels = byGame.reduce((sum, g) => sum + g.highestLevel, 0)
+  const totalCompleted = byGame.reduce((sum, g) => sum + g.totalCompleted, 0)
+  const percent = Math.min(100, Math.round((totalLevels / TARGET_LEVEL_SUM) * 100))
+
+  return {
+    gamesPlayed: byGame.length,
+    totalLevels,
+    totalCompleted,
+    percent,
+    byGame: byGame.sort((a, b) => b.highestLevel - a.highestLevel),
+  }
+}
