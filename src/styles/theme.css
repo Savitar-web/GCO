@@ -1,0 +1,192 @@
+/* Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+:root {
+  /* Colores base */
+  --gco-bg: #0B1220;
+  --gco-bg-elevated: #121A2B;
+  --gco-primary: #22E6C5;
+  --gco-primary-dim: rgba(34, 230, 197, 0.15);
+  --gco-secondary: #FF6B4A;
+  --gco-secondary-dim: rgba(255, 107, 74, 0.15);
+  --gco-accent: #8B7CF6;
+  --gco-ink: #F3F5FA;
+  --gco-ink-muted: rgba(243, 245, 250, 0.64);
+  --gco-ink-faint: rgba(243, 245, 250, 0.38);
+
+  /* Glassmorphism */
+  --gco-glass-bg: rgba(255, 255, 255, 0.06);
+  --gco-glass-bg-hover: rgba(255, 255, 255, 0.10);
+  --gco-glass-border: rgba(255, 255, 255, 0.14);
+  --gco-glass-blur: 16px;
+  --gco-radius: 20px;
+  --gco-radius-sm: 12px;
+  --gco-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  --gco-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.45);
+
+  /* Tipografía */
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, monospace;
+
+  /* Espaciado y tamaños */
+  --touch-min: 44px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100dvh;
+  background: var(--gco-bg);
+  color: var(--gco-ink);
+  font-family: var(--font-body);
+  font-weight: 400;
+  line-height: 1.5;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Fondo con sutil gradiente + ruido (opcional, se puede mejorar con canvas) */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 20%, rgba(34, 230, 197, 0.08), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(139, 124, 246, 0.07), transparent);
+  pointer-events: none;
+  z-index: -1;
+}
+
+h1, h2, h3, h4, .level-number {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.timer, .score, .mono {
+  font-family: var(--font-mono);
+}
+
+/* ===== Glass components ===== */
+.glass-card {
+  background: var(--gco-glass-bg);
+  border: 1px solid var(--gco-glass-border);
+  backdrop-filter: blur(var(--gco-glass-blur));
+  -webkit-backdrop-filter: blur(var(--gco-glass-blur));
+  border-radius: var(--gco-radius);
+  box-shadow: var(--gco-shadow);
+  transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.glass-card:hover {
+  background: var(--gco-glass-bg-hover);
+}
+
+.glass-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: var(--touch-min);
+  padding: 0.75rem 1.5rem;
+  background: var(--gco-primary);
+  color: #0B1220;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 1rem;
+  border: none;
+  border-radius: var(--gco-radius-sm);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.glass-button:hover {
+  box-shadow: 0 0 24px rgba(34, 230, 197, 0.4);
+}
+
+.glass-button:active {
+  transform: scale(0.97);
+}
+
+.glass-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.glass-button.secondary {
+  background: transparent;
+  color: var(--gco-ink);
+  border: 1px solid var(--gco-glass-border);
+}
+
+.glass-button.secondary:hover {
+  background: var(--gco-glass-bg-hover);
+  box-shadow: none;
+}
+
+.glass-input {
+  width: 100%;
+  min-height: var(--touch-min);
+  padding: 0.75rem 1rem;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--gco-glass-border);
+  border-radius: var(--gco-radius-sm);
+  color: var(--gco-ink);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.glass-input:focus {
+  border-color: var(--gco-primary);
+  box-shadow: 0 0 0 3px var(--gco-primary-dim);
+}
+
+.glass-input::placeholder {
+  color: var(--gco-ink-faint);
+}
+
+/* Layout helpers */
+.app-shell {
+  min-height: 100dvh;
+  padding: calc(1.25rem + var(--safe-top)) 1.25rem calc(1.25rem + var(--safe-bottom));
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+@media (min-width: 768px) {
+  .app-shell {
+    max-width: 720px;
+    padding: 2rem;
+  }
+}
+
+/* Accesibilidad */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
