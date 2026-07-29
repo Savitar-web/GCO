@@ -190,3 +190,45 @@ h1, h2, h3, h4, .level-number {
     transition-duration: 0.01ms !important;
   }
 }
+
+.gco-switch {
+position:relative;
+width:54px;
+height:30px;
+display:block;
+}
+
+.gco-switch input {
+opacity:0;
+width:0;
+height:0;
+}
+
+.gco-switch span {
+position:absolute;
+inset:0;
+background:#334155;
+border-radius:30px;
+transition:.25s;
+cursor:pointer;
+}
+
+.gco-switch span:before {
+content:"";
+position:absolute;
+width:24px;
+height:24px;
+left:3px;
+bottom:3px;
+background:white;
+border-radius:50%;
+transition:.25s;
+}
+
+.gco-switch input:checked + span {
+background:var(--gco-primary);
+}
+
+.gco-switch input:checked + span:before {
+transform:translateX(24px);
+}

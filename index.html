@@ -2,30 +2,126 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 
-    <!-- Título y descripción -->
+    <!-- Viewport avanzado para móviles -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+
+    <!-- Compatibilidad -->
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+    <!-- Identidad -->
     <title>GCO — Entrena tu mente</title>
+
     <meta
       name="description"
-      content="GymCogOrigins (GCO): gimnasio cognitivo original. Entrena memoria, lógica, deducción, lectura, conocimiento y matemáticas con minijuegos progresivos. 100% offline, instalable como app."
+      content="GymCogOrigins (GCO): gimnasio cognitivo original. Entrena memoria, lógica, deducción, lectura, conocimiento y matemáticas mediante minijuegos progresivos. Funciona offline y puede instalarse como aplicación."
     />
+
+    <meta
+      name="keywords"
+      content="GCO, GymCogOrigins, entrenamiento cognitivo, memoria, lógica, matemáticas, cerebro, aprendizaje, minijuegos"
+    />
+
     <meta name="author" content="GymCogOrigins" />
+    <meta name="creator" content="GymCogOrigins" />
+
+    <!-- SEO -->
+    <meta name="robots" content="index, follow" />
+    <meta name="googlebot" content="index, follow" />
+
+    <!-- Tema -->
     <meta name="theme-color" content="#0B1220" />
     <meta name="color-scheme" content="dark" />
 
-    <!-- PWA / App -->
+    <!-- PWA -->
     <meta name="application-name" content="GymCogOrigins" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="GCO" />
     <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- iOS -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="apple-mobile-web-app-title" content="GCO" />
+
+    <!-- Evita detecciones incorrectas -->
     <meta name="format-detection" content="telephone=no" />
+
+    <!-- Manifest PWA -->
+    <link rel="manifest" href="/manifest.webmanifest" />
 
     <!-- Iconos -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-16.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
-    <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png" />
+
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="/icons/icon-16.png"
+    />
+
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="/icons/icon-32.png"
+    />
+
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="/icons/apple-touch-icon.png"
+    />
+
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="192x192"
+      href="/icons/icon-192.png"
+    />
+
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="512x512"
+      href="/icons/icon-512.png"
+    />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="GCO — Entrena tu mente" />
+    <meta
+      property="og:description"
+      content="Un gimnasio cognitivo para entrenar memoria, lógica y conocimiento."
+    />
+    <meta property="og:site_name" content="GymCogOrigins" />
+    <meta property="og:locale" content="es_ES" />
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="GCO — Entrena tu mente" />
+    <meta
+      name="twitter:description"
+      content="Entrenamiento cognitivo progresivo con minijuegos offline."
+    />
+
+    <!-- Rendimiento -->
+    <link rel="dns-prefetch" href="//fonts.googleapis.com" />
+
+  </head>
+
+  <body>
+    <noscript>
+      Necesitas activar JavaScript para ejecutar GymCogOrigins.
+    </noscript>
+
+    <div id="root"></div>
+
+    <!-- Entrada React -->
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

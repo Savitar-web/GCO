@@ -1,6 +1,3 @@
-import { getProfile, saveProfile } from './userProfile'
-import { getAllProgress } from './progress'
-
 export interface BackupPayload {
   version: 1
   profile: string | null

@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Routes, Route, Navigate } from 'react-router'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { getProfile } from './core/storage/userProfile'
 import { Onboarding } from './features/onboarding/Onboarding'
 import { CategoryMenu } from './features/categorias/CategoryMenu'
+import { MemoriaCategory } from './features/memoria/juegos/MemoriaCategory'
 import { ColorSequenceGame } from './features/memoria/juegos/secuencia-colores/ColorSequenceGame'
+import { NumerosAsociadosGame } from './features/memoria/juegos/numeros-asociados/NumerosAsociadosGame'
 
 function App() {
   const [hasProfile, setHasProfile] = useState<boolean | null>(null)
@@ -12,9 +14,7 @@ function App() {
     setHasProfile(!!getProfile())
   }, [])
 
-  if (hasProfile === null) {
-    return null // o un splash mínimo
-  }
+  if (hasProfile === null) return null
 
   return (
     <Routes>
@@ -28,8 +28,19 @@ function App() {
           )
         }
       />
-      <Route path="/categoria/memoria/secuencia-colores" element={<ColorSequenceGame />} />
-      {/* Más rutas de categorías y juegos se añaden aquí */}
+<Route
+  path="/categoria/memoria/numeros-asociados"
+  element={<NumerosAsociadosGame />}
+/>
+
+      {/* Categoría Memoria */}
+      <Route path="/categoria/memoria" element={<MemoriaCategory />} />
+      <Route
+        path="/categoria/memoria/secuencia-colores"
+        element={<ColorSequenceGame />}
+      />
+
+      {/* Aquí irán el resto de categorías y juegos */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
