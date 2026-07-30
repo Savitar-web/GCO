@@ -58,7 +58,6 @@ export interface TotalProgressSummary {
   gamesPlayed: number
   totalLevels: number
   totalCompleted: number
-  /** 0–100 estimado según niveles acumulados */
   percent: number
   byGame: Array<{
     key: string
@@ -69,7 +68,7 @@ export interface TotalProgressSummary {
   }>
 }
 
-/** Meta blanda: 50 niveles equivalentes ≈ 100% */
+
 const TARGET_LEVEL_SUM = 50
 
 export function getTotalProgress(): TotalProgressSummary {

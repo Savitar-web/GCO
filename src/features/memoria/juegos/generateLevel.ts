@@ -1,5 +1,10 @@
 import { mulberry32, levelSeed } from '../../../core/level-engine/rng'
-import { getMemorySequenceDifficulty } from '../../../core/level-engine/difficulty'
+import {
+  getMemorySequenceDifficulty,
+  getMemoryCardsDifficulty,
+} from '../../../core/level-engine/difficulty'
+
+// ─── Números asociados (bloques) ───────────────────────────────────────────
 
 export type CharsetMode = 'digits' | 'alnum' | 'code'
 
@@ -18,11 +23,10 @@ export interface ChunkSequence {
 
 const CHARSETS: Record<CharsetMode, string> = {
   digits: '0123456789',
-  alnum: 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', // sin I,O,0,1 para legibilidad
+  alnum: 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789',
   code: 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789',
 }
 
-/** Genera secuencia con bloques a partir de config (o de un nivel) */
 export function generateChunkSequence(config: ChunkConfig): ChunkSequence {
   const seed = config.seed ?? Date.now() % 1_000_000
   const rng = mulberry32(levelSeed(seed, 9173))
@@ -41,15 +45,10 @@ export function generateChunkSequence(config: ChunkConfig): ChunkSequence {
   return { raw, blocks, config: { ...config, seed } }
 }
 
-/** Config sugerida por nivel (modo progresivo) */
 export function configFromLevel(level: number): ChunkConfig {
-  // Niveles 1-5: 6-10 dígitos, bloques de 2-3
-  // Luego sube chars y tamaño de bloque
   const totalChars = Math.min(6 + level, 32)
   const blockSize =
-    level <= 4 ? 2 :
-    level <= 10 ? 3 :
-    level <= 20 ? 4 : 5
+    level <= 4 ? 2 : level <= 10 ? 3 : level <= 20 ? 4 : 5
 
   return {
     totalChars,
@@ -59,6 +58,8 @@ export function configFromLevel(level: number): ChunkConfig {
   }
 }
 
+// ─── Secuencia de colores (9 colores) ──────────────────────────────────────
+
 export const COLORS = [
   { id: 'cyan', hex: '#22E6C5' },
   { id: 'coral', hex: '#FF6B4A' },
@@ -66,13 +67,17 @@ export const COLORS = [
   { id: 'amber', hex: '#F5A623' },
   { id: 'blue', hex: '#4A9EFF' },
   { id: 'pink', hex: '#FF6BCB' },
+  { id: 'lime', hex: '#A3E635' },
+  { id: 'orange', hex: '#FB923C' },
+  { id: 'indigo', hex: '#818CF8' },
 ] as const
 
 export type ColorId = (typeof COLORS)[number]['id']
 
 export function generateColorSequenceLevel(level: number) {
   const rng = mulberry32(levelSeed(level))
-  const { length, showTimeMs, pauseBetweenMs } = getMemorySequenceDifficulty(level)
+  const { length, showTimeMs, pauseBetweenMs } =
+    getMemorySequenceDifficulty(level)
 
   const sequence: ColorId[] = Array.from({ length }, () => {
     const idx = Math.floor(rng() * COLORS.length)
@@ -85,4 +90,44 @@ export function generateColorSequenceLevel(level: number) {
     showTimeMs,
     pauseBetweenMs,
   }
+}
+
+// ─── Memoria de cartas ─────────────────────────────────────────────────────
+
+const CARD_EMOJIS = [
+  '🍎', '🍋', '🍇', '🍉', '🍓', '🍑',
+  '🦊', '🐸', '🦉', '🐙', '🦋', '🐬',
+  '⭐', '🌙', '⚡', '🔥', '💎', '🎯',
+  '🎵', '🎲', '🧩', '🔑', '🎈', '🍀',
+]
+
+export type CardItem = {
+  id: string
+  pairId: number
+  emoji: string
+}
+
+export function generateCardsLevel(level: number) {
+  const { pairs, gridCols, timeSec } = getMemoryCardsDifficulty(level)
+  const rng = mulberry32(levelSeed(level, 4242))
+
+  const pool = [...CARD_EMOJIS]
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1))
+    ;[pool[i], pool[j]] = [pool[j], pool[i]]
+  }
+  const chosen = pool.slice(0, pairs)
+
+  const cards: CardItem[] = []
+  chosen.forEach((emoji, pairId) => {
+    cards.push({ id: `${pairId}-a`, pairId, emoji })
+    cards.push({ id: `${pairId}-b`, pairId, emoji })
+  })
+
+  for (let i = cards.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1))
+    ;[cards[i], cards[j]] = [cards[j], cards[i]]
+  }
+
+  return { cards, pairs, gridCols, timeSec }
 }

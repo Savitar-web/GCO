@@ -2,7 +2,6 @@ export interface UserProfile {
   name: string
   age: number
   createdAt: string
-  /** data URL o null — avatar comprimido */
   avatarDataUrl: string | null
 }
 

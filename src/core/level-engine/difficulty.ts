@@ -9,8 +9,10 @@ export function getMemorySequenceDifficulty(level: number) {
 export function getMemoryCardsDifficulty(level: number) {
   // pares = 4 → 12
   const pairs = Math.min(4 + Math.floor(level / 3), 12)
+  const timeSec = Math.max(90 - level * 3, 25)
   return {
     pairs,
-    gridCols: pairs <= 6 ? 3 : pairs <= 8 ? 4 : 4,
+    gridCols: pairs <= 6 ? 3 : 4,
+    timeSec,
   }
 }

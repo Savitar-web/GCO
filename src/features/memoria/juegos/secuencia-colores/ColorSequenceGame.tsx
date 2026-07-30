@@ -28,7 +28,6 @@ export function ColorSequenceGame() {
     setPhase('showing')
   }, [level])
 
-  // Reproducir la secuencia
   useEffect(() => {
     if (phase !== 'showing' || sequence.length === 0) return
 
@@ -64,7 +63,6 @@ export function ColorSequenceGame() {
     const nextInput = [...userInput, colorId]
     setUserInput(nextInput)
 
-    // Feedback visual breve
     setActiveColor(colorId)
     setTimeout(() => setActiveColor(null), 180)
 
@@ -75,7 +73,6 @@ export function ColorSequenceGame() {
     }
 
     if (nextInput.length === sequence.length) {
-      // Éxito
       const newHighest = Math.max(progress.highestLevel, level)
       saveGameProgress('memoria', 'secuencia-colores', {
         highestLevel: newHighest,
@@ -96,10 +93,17 @@ export function ColorSequenceGame() {
 
   return (
     <div className="app-shell">
-      <header style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <header
+        style={{
+          marginBottom: '1.5rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
         <button
           className="glass-button secondary"
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/categoria/memoria')}
           style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
         >
           ← Volver
@@ -112,17 +116,22 @@ export function ColorSequenceGame() {
       <GlassCard>
         <div style={{ padding: '1.5rem', textAlign: 'center' }}>
           <h2 style={{ marginBottom: '0.5rem' }}>Secuencia de colores</h2>
-          <p style={{ color: 'var(--gco-ink-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+          <p
+            style={{
+              color: 'var(--gco-ink-muted)',
+              fontSize: '0.9rem',
+              marginBottom: '1.5rem',
+            }}
+          >
             Observa la secuencia y repítela en el mismo orden.
           </p>
 
-          {/* Grid de colores */}
           <div
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(3, 1fr)',
               gap: '0.75rem',
-              maxWidth: 280,
+              maxWidth: 300,
               margin: '0 auto 1.5rem',
             }}
           >
@@ -134,10 +143,15 @@ export function ColorSequenceGame() {
                 style={{
                   aspectRatio: '1',
                   borderRadius: 16,
-                  border: activeColor === c.id ? '3px solid white' : '2px solid transparent',
+                  border:
+                    activeColor === c.id
+                      ? '3px solid white'
+                      : '2px solid transparent',
                   background: c.hex,
-                  opacity: phase === 'showing' && activeColor !== c.id ? 0.35 : 1,
-                  boxShadow: activeColor === c.id ? `0 0 24px ${c.hex}` : 'none',
+                  opacity:
+                    phase === 'showing' && activeColor !== c.id ? 0.35 : 1,
+                  boxShadow:
+                    activeColor === c.id ? `0 0 24px ${c.hex}` : 'none',
                   cursor: phase === 'input' ? 'pointer' : 'default',
                   transition: 'opacity 0.15s, box-shadow 0.15s',
                 }}
@@ -148,31 +162,68 @@ export function ColorSequenceGame() {
 
           <AnimatePresence mode="wait">
             {phase === 'ready' && (
-              <motion.div key="ready" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <GlassButton onClick={startLevel}>Comenzar nivel {level}</GlassButton>
+              <motion.div
+                key="ready"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <GlassButton onClick={startLevel}>
+                  Comenzar nivel {level}
+                </GlassButton>
               </motion.div>
             )}
             {phase === 'showing' && (
-              <motion.p key="showing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ color: 'var(--gco-primary)' }}>
+              <motion.p
+                key="showing"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                style={{ color: 'var(--gco-primary)' }}
+              >
                 Observa…
               </motion.p>
             )}
             {phase === 'input' && (
-              <motion.p key="input" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ color: 'var(--gco-ink-muted)' }}>
+              <motion.p
+                key="input"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                style={{ color: 'var(--gco-ink-muted)' }}
+              >
                 Tu turno · {userInput.length}/{sequence.length}
               </motion.p>
             )}
             {phase === 'success' && (
-              <motion.div key="success" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
-                <p style={{ color: 'var(--gco-primary)', fontWeight: 600, marginBottom: '1rem' }}>
+              <motion.div
+                key="success"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+              >
+                <p
+                  style={{
+                    color: 'var(--gco-primary)',
+                    fontWeight: 600,
+                    marginBottom: '1rem',
+                  }}
+                >
                   ¡Correcto!
                 </p>
                 <GlassButton onClick={nextLevel}>Siguiente nivel</GlassButton>
               </motion.div>
             )}
             {phase === 'fail' && (
-              <motion.div key="fail" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
-                <p style={{ color: 'var(--gco-secondary)', fontWeight: 600, marginBottom: '1rem' }}>
+              <motion.div
+                key="fail"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+              >
+                <p
+                  style={{
+                    color: 'var(--gco-secondary)',
+                    fontWeight: 600,
+                    marginBottom: '1rem',
+                  }}
+                >
                   Fallaste. Inténtalo de nuevo.
                 </p>
                 <GlassButton onClick={retry}>Reintentar</GlassButton>

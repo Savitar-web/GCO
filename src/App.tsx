@@ -16,16 +16,7 @@ import { RecorridoSettings } from './features/ajustes/RecorridoSettings'
 import { SonidoSettings } from './features/ajustes/SonidoSettings'
 import { FondoSettings } from './features/ajustes/FondoSettings'
 import { DatosSettings } from './features/ajustes/DatosSettings'
-
-/**
- * GymCogOrigins — raíz de la aplicación
- *
- * Flujo:
- * 1. Splash estético breve (~0.9s)
- * 2. Si no hay perfil → Onboarding (nombre + edad)
- * 3. Si hay perfil → menú de categorías
- * 4. Rutas por categoría, minijuego y ajustes
- */
+import { CartasGame } from './features/memoria/juegos/cartas/CartasGame'
 function App() {
   const [showSplash, setShowSplash] = useState(true)
   const [hasProfile, setHasProfile] = useState<boolean | null>(null)
@@ -74,6 +65,7 @@ function App() {
             path="/categoria/memoria/secuencia-colores"
             element={<ColorSequenceGame />}
           />
+          <Route path="/categoria/memoria/cartas" element={<CartasGame />} />
           <Route
             path="/categoria/memoria/numeros-asociados"
             element={<NumerosAsociadosGame />}

@@ -363,7 +363,7 @@ textarea.glass-input {
   transform: scale(0.96);
 }
 
-/* ========== Switch legacy (por si lo usas) ========== */
+/* ========== Switch legacy ========== */
 .gco-switch {
   position: relative;
   width: 54px;
