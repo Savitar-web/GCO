@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { getProfile, updateProfile } from '@/core/storage/userProfile'
 import { GlassButton } from '@/components/ui/GlassButton'
 import { downloadCredential } from './downloadCredential'
+import { soundClick, soundSuccess, soundFail } from '@/core/audio/uiSounds'
 
 function compressImage(file: File, maxSize = 320): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -37,10 +38,12 @@ export function PerfilSettings() {
   const save = () => {
     const ageNum = parseInt(age, 10)
     if (name.trim().length < 2) {
+      soundFail()
       setMsg('Nombre demasiado corto')
       return
     }
     if (isNaN(ageNum) || ageNum < 5 || ageNum > 120) {
+      soundFail()
       setMsg('Edad entre 5 y 120')
       return
     }
@@ -49,6 +52,7 @@ export function PerfilSettings() {
       age: ageNum,
       avatarDataUrl: avatar,
     })
+    soundSuccess()
     setMsg('Perfil guardado')
   }
 
@@ -58,18 +62,31 @@ export function PerfilSettings() {
     try {
       const dataUrl = await compressImage(file)
       setAvatar(dataUrl)
+      soundClick()
     } catch {
+      soundFail()
       setMsg('No se pudo cargar la imagen')
     }
     e.target.value = ''
   }
 
   return (
-    <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+    <div
+      className="glass-card"
+      style={{
+        padding: 'clamp(1rem, 3vw, 1.35rem)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '1.15rem',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
         <button
           type="button"
-          onClick={() => fileRef.current?.click()}
+          onClick={() => {
+            soundClick()
+            fileRef.current?.click()
+          }}
           style={{
             width: 80,
             height: 80,
@@ -79,12 +96,19 @@ export function PerfilSettings() {
             padding: 0,
             cursor: 'pointer',
             background: 'var(--gco-glass-bg)',
+            flexShrink: 0,
           }}
         >
           {avatar ? (
-            <img src={avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <img
+              src={avatar}
+              alt=""
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
           ) : (
-            <span style={{ fontSize: '0.75rem', color: 'var(--gco-ink-muted)' }}>Foto</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--gco-ink-muted)' }}>
+              Foto
+            </span>
           )}
         </button>
         <div>
@@ -97,12 +121,20 @@ export function PerfilSettings() {
       </div>
 
       <div>
-        <label style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 500 }}>Nombre</label>
-        <input className="glass-input" value={name} onChange={(e) => setName(e.target.value)} />
+        <label style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 500 }}>
+          Nombre
+        </label>
+        <input
+          className="glass-input"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
       </div>
 
       <div>
-        <label style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 500 }}>Edad</label>
+        <label style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 500 }}>
+          Edad
+        </label>
         <input
           className="glass-input"
           type="number"
@@ -121,16 +153,17 @@ export function PerfilSettings() {
         <GlassButton type="button" onClick={save}>
           Guardar perfil
         </GlassButton>
-<button
-  type="button"
-  className="glass-button secondary"
-  onClick={() => {
-    const hideAge = window.confirm('¿Deseas ocultar tu edad?')
-    downloadCredential({ hideAge })
-  }}
->
-  Descargar credencial
-</button>
+        <button
+          type="button"
+          className="glass-button secondary"
+          onClick={() => {
+            soundClick()
+            const hideAge = window.confirm('¿Deseas ocultar tu edad?')
+            downloadCredential({ hideAge })
+          }}
+        >
+          Descargar credencial
+        </button>
       </div>
     </div>
   )

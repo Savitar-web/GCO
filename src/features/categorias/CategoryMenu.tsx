@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { ThemeToggle } from '../../components/ui/ThemeToggle'
 import { getProfile } from '../../core/storage/userProfile'
+import { soundClick } from '@/core/audio/uiSounds'
 
 const CATEGORIES = [
   {
@@ -92,7 +93,10 @@ export function CategoryMenu() {
             type="button"
             className="theme-cycle-btn"
             aria-label="Abrir ajustes"
-            onClick={() => navigate('/ajustes')}
+            onClick={() => {
+              soundClick()
+              navigate('/ajustes')
+            }}
             style={{ width: 44, height: 44, padding: 0, borderRadius: 12 }}
           >
             <span
@@ -146,7 +150,12 @@ export function CategoryMenu() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.06, duration: 0.35 }}
           >
-            <GlassCard onClick={() => navigate(`/categoria/${cat.id}`)}>
+            <GlassCard
+              onClick={() => {
+                soundClick()
+                navigate(`/categoria/${cat.id}`)
+              }}
+            >
               <div style={{ padding: '1.25rem 1rem', textAlign: 'center' }}>
                 <div
                   style={{
@@ -180,7 +189,7 @@ export function CategoryMenu() {
         ))}
       </div>
 
-            <footer
+      <footer
         style={{
           marginTop: '2.5rem',
           paddingBottom: '0.5rem',
@@ -198,7 +207,6 @@ export function CategoryMenu() {
           Desarrollado por Savitar Xeno
         </p>
       </footer>
-      
     </div>
   )
 }

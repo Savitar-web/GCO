@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { GlassCard } from '@/components/ui/GlassCard'
 import { getGameProgress } from '@/core/storage/progress'
+import { soundClick } from '@/core/audio/uiSounds'
 
 const GAMES = [
   {
@@ -32,8 +33,15 @@ export function MemoriaCategory() {
       <header style={{ marginBottom: '1.5rem' }}>
         <button
           className="glass-button secondary"
-          onClick={() => navigate('/')}
-          style={{ padding: '0.5rem 1rem', fontSize: '0.9rem', marginBottom: '1rem' }}
+          onClick={() => {
+            soundClick()
+            navigate('/')
+          }}
+          style={{
+            padding: '0.5rem 1rem',
+            fontSize: '0.9rem',
+            marginBottom: '1rem',
+          }}
         >
           ← Volver
         </button>
@@ -53,7 +61,12 @@ export function MemoriaCategory() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.06, duration: 0.3 }}
             >
-              <GlassCard onClick={() => navigate(`/categoria/memoria/${game.id}`)}>
+              <GlassCard
+                onClick={() => {
+                  soundClick()
+                  navigate(`/categoria/memoria/${game.id}`)
+                }}
+              >
                 <div
                   style={{
                     padding: '1.15rem 1.25rem',
@@ -89,7 +102,9 @@ export function MemoriaCategory() {
                       </p>
                     )}
                   </div>
-                  <span style={{ color: 'var(--gco-ink-faint)', fontSize: '1.25rem' }}>
+                  <span
+                    style={{ color: 'var(--gco-ink-faint)', fontSize: '1.25rem' }}
+                  >
                     →
                   </span>
                 </div>

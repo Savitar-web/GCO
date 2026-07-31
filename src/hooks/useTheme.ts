@@ -19,13 +19,21 @@ const ICONS: Record<ThemeMode, string> = {
 
 export function useTheme() {
   const [theme, setThemeState] = useState<ThemeMode>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY) as ThemeMode | null
-    return saved && THEMES.includes(saved) ? saved : 'dark'
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY) as ThemeMode | null
+      return saved && THEMES.includes(saved) ? saved : 'dark'
+    } catch {
+      return 'dark'
+    }
   })
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
-    localStorage.setItem(STORAGE_KEY, theme)
+    try {
+      localStorage.setItem(STORAGE_KEY, theme)
+    } catch {
+      /* ignore */
+    }
   }, [theme])
 
   const cycleTheme = useCallback(() => {

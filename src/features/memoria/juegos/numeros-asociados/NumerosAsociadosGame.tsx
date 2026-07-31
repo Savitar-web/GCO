@@ -1,11 +1,21 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { GlassCard } from '@/components/ui/GlassCard'
 import { GlassButton } from '@/components/ui/GlassButton'
 import {
+  soundClick,
+  soundMatch,
+  soundFail,
+  soundSuccess,
+  soundStart,
+  soundToggle,
+  soundTick,
+} from '@/core/audio/uiSounds'
+import {
   generateChunkSequence,
   configFromLevel,
+  emojiSequenceToSpeech,
   type ChunkSequence,
   type CharsetMode,
 } from '../generateLevel'
@@ -17,25 +27,38 @@ export function NumerosAsociadosGame() {
   const navigate = useNavigate()
   const progress = getGameProgress('memoria', 'numeros-asociados')
 
-  // Configuración libre
   const [totalChars, setTotalChars] = useState(12)
   const [blockSize, setBlockSize] = useState(3)
   const [charset, setCharset] = useState<CharsetMode>('digits')
   const [useProgressive, setUseProgressive] = useState(false)
+  const [useTimer, setUseTimer] = useState(false)
   const [level, setLevel] = useState(Math.max(1, progress.highestLevel + 1))
 
-  // Estado del ejercicio
   const [phase, setPhase] = useState<Phase>('setup')
   const [sequence, setSequence] = useState<ChunkSequence | null>(null)
   const [story, setStory] = useState('')
   const [hidden, setHidden] = useState(false)
   const [recallInput, setRecallInput] = useState('')
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null)
+  const [timeLeft, setTimeLeft] = useState(0)
+
+  const timerRef = useRef<number | null>(null)
 
   const clamp = (value: number, min: number, max: number) =>
     Math.min(max, Math.max(min, value))
 
+  const clearTimer = () => {
+    if (timerRef.current != null) {
+      window.clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+  }
+
+  useEffect(() => () => clearTimer(), [])
+
   const generate = useCallback(() => {
+    soundStart()
+    clearTimer()
     const config = useProgressive
       ? configFromLevel(level)
       : {
@@ -46,6 +69,10 @@ export function NumerosAsociadosGame() {
 
     if (config.blockSize > config.totalChars) {
       config.blockSize = config.totalChars
+    }
+
+    if (useProgressive) {
+      config.charset = 'digits'
     }
 
     const seq = generateChunkSequence(config)
@@ -67,40 +94,94 @@ export function NumerosAsociadosGame() {
   }
 
   const speakBlocks = () => {
+    soundClick()
     if (!sequence) return
-    speak(sequence.blocks.join(' · '))
+    if (sequence.config.charset === 'emojis') {
+      speak(emojiSequenceToSpeech(sequence.raw))
+    } else {
+      speak(sequence.blocks.join(' · '))
+    }
   }
 
   const speakStory = () => {
+    soundClick()
     if (!story.trim()) return
     speak(story.trim())
   }
 
   const goToRecall = () => {
+    soundClick()
     setHidden(true)
     setPhase('recall')
     setRecallInput('')
     setIsCorrect(null)
+
+    if (useTimer && sequence) {
+      const sec = Math.min(
+        120,
+        Math.max(20, sequence.config.totalChars * 4)
+      )
+      setTimeLeft(sec)
+      clearTimer()
+      timerRef.current = window.setInterval(() => {
+        setTimeLeft((t) => {
+          if (t <= 1) {
+            clearTimer()
+            soundFail()
+            setIsCorrect(false)
+            return 0
+          }
+          const next = t - 1
+          soundTick(next <= 10)
+          return next
+        })
+      }, 1000)
+    } else {
+      setTimeLeft(0)
+    }
   }
 
   const checkRecall = () => {
     if (!sequence) return
+    if (useTimer && timeLeft <= 0 && isCorrect === false) return
+
+    clearTimer()
 
     const cleaned = recallInput.replace(/[\s\-_/|.]/g, '').toUpperCase()
-    const target = sequence.raw.toUpperCase()
-    const ok = cleaned === target
+    const target =
+      sequence.config.charset === 'emojis'
+        ? sequence.raw
+        : sequence.raw.toUpperCase()
+
+    const compare =
+      sequence.config.charset === 'emojis'
+        ? recallInput.replace(/\s/g, '')
+        : cleaned
+
+    const ok =
+      sequence.config.charset === 'emojis'
+        ? compare === target
+        : cleaned === target
+
     setIsCorrect(ok)
 
-    if (ok && useProgressive) {
-      const newHighest = Math.max(progress.highestLevel, level)
-      saveGameProgress('memoria', 'numeros-asociados', {
-        highestLevel: newHighest,
-        totalCompleted: progress.totalCompleted + 1,
-      })
+    if (ok) {
+      soundSuccess()
+      if (useProgressive) {
+        const newHighest = Math.max(progress.highestLevel, level)
+        saveGameProgress('memoria', 'numeros-asociados', {
+          highestLevel: newHighest,
+          totalCompleted: progress.totalCompleted + 1,
+        })
+      }
+    } else {
+      soundFail()
     }
   }
 
   const nextProgressive = () => {
+    soundClick()
+    clearTimer()
     setLevel((current) => current + 1)
     setSequence(null)
     setPhase('setup')
@@ -121,20 +202,39 @@ export function NumerosAsociadosGame() {
       >
         <button
           className="glass-button secondary"
-          onClick={() => navigate('/categoria/memoria')}
+          onClick={() => {
+            soundClick()
+            navigate('/categoria/memoria')
+          }}
           style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
         >
           ← Volver
         </button>
-        <span className="level-number" style={{ fontSize: '1.05rem' }}>
-          {useProgressive ? `Nivel ${level}` : 'Modo libre'}
-        </span>
+        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          {phase === 'recall' && useTimer && timeLeft > 0 && (
+            <span
+              className="mono"
+              style={{
+                fontSize: '0.95rem',
+                color:
+                  timeLeft <= 10
+                    ? 'var(--gco-secondary)'
+                    : 'var(--gco-ink-muted)',
+              }}
+            >
+              ⏱ {timeLeft}s
+            </span>
+          )}
+          <span className="level-number" style={{ fontSize: '1.05rem' }}>
+            {useProgressive ? `Nivel ${level}` : 'Modo libre'}
+          </span>
+        </div>
       </header>
 
       <GlassCard>
         <div style={{ padding: '1.35rem 1.25rem' }}>
           <h2 style={{ textAlign: 'center', marginBottom: '0.25rem' }}>
-            Bloques numéricos
+            Bloques de memoria
           </h2>
           <p
             style={{
@@ -148,16 +248,18 @@ export function NumerosAsociadosGame() {
           </p>
 
           <AnimatePresence mode="wait">
-            {/* ========== SETUP ========== */}
             {phase === 'setup' && (
               <motion.div
                 key="setup"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                style={{ display: 'flex', flexDirection: 'column', gap: '1.15rem' }}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1.15rem',
+                }}
               >
-                {/* Switch modo progresivo */}
                 <div
                   style={{
                     background: 'rgba(255,255,255,0.04)',
@@ -178,10 +280,15 @@ export function NumerosAsociadosGame() {
                       <p style={{ fontWeight: 600, fontSize: '0.95rem' }}>
                         Modo progresivo
                       </p>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--gco-ink-muted)' }}>
+                      <p
+                        style={{
+                          fontSize: '0.8rem',
+                          color: 'var(--gco-ink-muted)',
+                        }}
+                      >
                         {useProgressive
                           ? `Nivel actual: ${level}`
-                          : 'Sube de nivel'}
+                          : 'Sube de nivel con números'}
                       </p>
                     </div>
 
@@ -190,7 +297,11 @@ export function NumerosAsociadosGame() {
                       role="switch"
                       aria-checked={useProgressive}
                       aria-label="Activar modo progresivo"
-                      onClick={() => setUseProgressive((value) => !value)}
+                      onClick={() => {
+                        const next = !useProgressive
+                        soundToggle(next)
+                        setUseProgressive(next)
+                      }}
                       style={{
                         width: 52,
                         height: 30,
@@ -232,16 +343,76 @@ export function NumerosAsociadosGame() {
                         marginTop: '0.85rem',
                       }}
                     >
-                      Cada nivel aumenta la cantidad de caracteres y el tamaño de
-                      los bloques. Empiezas con secuencias cortas (fáciles de
-                      convertir en historia) y vas subiendo hasta cadenas más
-                      largas. Al acertar se guarda tu progreso y pasas al
-                      siguiente nivel.
+                      Cada nivel aumenta la dificultad
                     </p>
                   )}
                 </div>
 
-                {/* Configuración manual */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '1rem',
+                    background: 'rgba(255,255,255,0.04)',
+                    border: '1px solid var(--gco-glass-border)',
+                    borderRadius: 14,
+                    padding: '0.85rem 1.1rem',
+                  }}
+                >
+                  <div>
+                    <p style={{ fontWeight: 600, fontSize: '0.95rem' }}>
+                      Contrarreloj
+                    </p>
+                    <p
+                      style={{
+                        fontSize: '0.8rem',
+                        color: 'var(--gco-ink-muted)',
+                      }}
+                    >
+                      Límite de tiempo al recordar
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={useTimer}
+                    aria-label="Activar contrarreloj"
+                    onClick={() => {
+                      const next = !useTimer
+                      soundToggle(next)
+                      setUseTimer(next)
+                    }}
+                    style={{
+                      width: 52,
+                      height: 30,
+                      borderRadius: 999,
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: useTimer
+                        ? 'var(--gco-primary)'
+                        : 'rgba(255,255,255,0.12)',
+                      position: 'relative',
+                      transition: 'background 0.2s ease',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: 'absolute',
+                        top: 3,
+                        left: useTimer ? 24 : 3,
+                        width: 24,
+                        height: 24,
+                        borderRadius: '50%',
+                        background: '#fff',
+                        transition: 'left 0.2s ease',
+                        boxShadow: '0 1px 4px rgba(0,0,0,0.35)',
+                      }}
+                    />
+                  </button>
+                </div>
+
                 {!useProgressive && (
                   <>
                     <div>
@@ -253,7 +424,7 @@ export function NumerosAsociadosGame() {
                           fontWeight: 500,
                         }}
                       >
-                        Cantidad de caracteres
+                        Cantidad de elementos
                       </label>
                       <input
                         id="totalChars"
@@ -334,7 +505,7 @@ export function NumerosAsociadosGame() {
                           marginTop: '0.3rem',
                         }}
                       >
-                        Mínimo 1 · Máximo 6 (de 2 en 2, de 3 en 3, de 4 en 4…)
+                        Mínimo 1 · Máximo 6
                       </p>
                     </div>
 
@@ -346,7 +517,7 @@ export function NumerosAsociadosGame() {
                           fontWeight: 500,
                         }}
                       >
-                        Tipo de caracteres
+                        Tipo de contenido
                       </p>
                       <div
                         style={{
@@ -358,8 +529,9 @@ export function NumerosAsociadosGame() {
                         {(
                           [
                             ['digits', 'Solo números'],
-                            ['alnum', 'Letras + números'],
+                            ['letters', 'Solo letras'],
                             ['code', 'Código mixto'],
+                            ['emojis', 'Emojis'],
                           ] as const
                         ).map(([value, label]) => (
                           <button
@@ -372,7 +544,10 @@ export function NumerosAsociadosGame() {
                               fontSize: '0.85rem',
                               padding: '0.5rem 0.9rem',
                             }}
-                            onClick={() => setCharset(value)}
+                            onClick={() => {
+                              soundClick()
+                              setCharset(value)
+                            }}
                           >
                             {label}
                           </button>
@@ -390,8 +565,8 @@ export function NumerosAsociadosGame() {
                       lineHeight: 1.45,
                     }}
                   >
-                    Nivel {level}: ~{progressivePreview.totalChars} caracteres en
-                    bloques de {progressivePreview.blockSize}
+                    Nivel {level}: ~{progressivePreview.totalChars} caracteres
+                    en bloques de {progressivePreview.blockSize}
                   </p>
                 )}
 
@@ -401,7 +576,6 @@ export function NumerosAsociadosGame() {
               </motion.div>
             )}
 
-            {/* ========== STUDY ========== */}
             {phase === 'study' && sequence && (
               <motion.div
                 key="study"
@@ -423,14 +597,24 @@ export function NumerosAsociadosGame() {
                     sequence.blocks.map((block, index) => (
                       <span
                         key={`${block}-${index}`}
-                        className="mono"
+                        className={
+                          sequence.config.charset === 'emojis'
+                            ? undefined
+                            : 'mono'
+                        }
                         style={{
                           background: 'rgba(34, 230, 197, 0.12)',
                           border: '1px solid rgba(34, 230, 197, 0.35)',
                           borderRadius: 10,
                           padding: '0.55rem 0.75rem',
-                          fontSize: '1.25rem',
-                          letterSpacing: '0.06em',
+                          fontSize:
+                            sequence.config.charset === 'emojis'
+                              ? '1.45rem'
+                              : '1.25rem',
+                          letterSpacing:
+                            sequence.config.charset === 'emojis'
+                              ? '0.12em'
+                              : '0.06em',
                           color: 'var(--gco-primary)',
                           fontWeight: 700,
                         }}
@@ -440,7 +624,7 @@ export function NumerosAsociadosGame() {
                     ))
                   ) : (
                     <span style={{ color: 'var(--gco-ink-muted)' }}>
-                      Números ocultos
+                      Contenido oculto
                     </span>
                   )}
                 </div>
@@ -457,9 +641,12 @@ export function NumerosAsociadosGame() {
                   <button
                     className="glass-button secondary"
                     style={{ fontSize: '0.85rem', padding: '0.45rem 0.85rem' }}
-                    onClick={() => setHidden((value) => !value)}
+                    onClick={() => {
+                      soundClick()
+                      setHidden((v) => !v)
+                    }}
                   >
-                    {hidden ? 'Mostrar' : 'Ocultar'} números
+                    {hidden ? 'Mostrar' : 'Ocultar'}
                   </button>
                   <button
                     className="glass-button secondary"
@@ -483,7 +670,11 @@ export function NumerosAsociadosGame() {
                   className="glass-input"
                   value={story}
                   onChange={(e) => setStory(e.target.value)}
-                  placeholder="Ej: El 25 de navidad, 39 esferas iluminan 17 carritos..."
+                  placeholder={
+                    sequence.config.charset === 'emojis'
+                      ? 'Ej: La manzana del zorro brilla bajo la luna...'
+                      : 'Ej: El 25 de navidad, 39 esferas iluminan 17 carritos...'
+                  }
                   rows={4}
                   style={{
                     resize: 'vertical',
@@ -523,7 +714,11 @@ export function NumerosAsociadosGame() {
                   </GlassButton>
                   <button
                     className="glass-button secondary"
-                    onClick={() => setPhase('setup')}
+                    onClick={() => {
+                      soundClick()
+                      clearTimer()
+                      setPhase('setup')
+                    }}
                   >
                     Nueva secuencia
                   </button>
@@ -531,7 +726,6 @@ export function NumerosAsociadosGame() {
               </motion.div>
             )}
 
-            {/* ========== RECALL ========== */}
             {phase === 'recall' && sequence && (
               <motion.div
                 key="recall"
@@ -547,7 +741,9 @@ export function NumerosAsociadosGame() {
                     fontSize: '0.9rem',
                   }}
                 >
-                  Escribe la secuencia completa (puedes usar espacios o guiones)
+                  {sequence.config.charset === 'emojis'
+                    ? 'Escribe los emojis en orden (puedes pegarlos)'
+                    : 'Escribe la secuencia completa (espacios o guiones opcionales)'}
                 </p>
 
                 {story.trim() && (
@@ -567,18 +763,27 @@ export function NumerosAsociadosGame() {
                 )}
 
                 <input
-                  className="glass-input mono"
+                  className={`glass-input ${
+                    sequence.config.charset === 'emojis' ? '' : 'mono'
+                  }`}
                   value={recallInput}
                   onChange={(e) => {
                     setRecallInput(e.target.value)
                     setIsCorrect(null)
                   }}
                   onKeyDown={(e) => e.key === 'Enter' && checkRecall()}
-                  placeholder="Ej: 2539 1747 1748 1374"
+                  placeholder={
+                    sequence.config.charset === 'emojis'
+                      ? '🍎🍋🍇…'
+                      : 'Ej: 2539 1747 1748'
+                  }
                   autoFocus
                   style={{
                     textAlign: 'center',
-                    fontSize: '1.15rem',
+                    fontSize:
+                      sequence.config.charset === 'emojis'
+                        ? '1.35rem'
+                        : '1.15rem',
                     letterSpacing: '0.05em',
                     marginBottom: '1rem',
                   }}
@@ -593,13 +798,18 @@ export function NumerosAsociadosGame() {
                 >
                   <GlassButton
                     onClick={checkRecall}
-                    disabled={!recallInput.trim()}
+                    disabled={
+                      !recallInput.trim() ||
+                      (useTimer && timeLeft <= 0 && isCorrect === false)
+                    }
                   >
                     Comprobar
                   </GlassButton>
                   <button
                     className="glass-button secondary"
                     onClick={() => {
+                      soundClick()
+                      clearTimer()
                       setHidden(false)
                       setPhase('study')
                       setIsCorrect(null)
@@ -629,7 +839,13 @@ export function NumerosAsociadosGame() {
                         Siguiente nivel
                       </GlassButton>
                     ) : (
-                      <GlassButton onClick={() => setPhase('setup')}>
+                      <GlassButton
+                        onClick={() => {
+                          soundClick()
+                          clearTimer()
+                          setPhase('setup')
+                        }}
+                      >
                         Nueva secuencia
                       </GlassButton>
                     )}
@@ -645,7 +861,9 @@ export function NumerosAsociadosGame() {
                       fontSize: '0.95rem',
                     }}
                   >
-                    No coincide. Revisa tu historia e inténtalo de nuevo.
+                    {useTimer && timeLeft <= 0
+                      ? 'Se acabó el tiempo.'
+                      : 'No coincide. Prepárate un poco más e inténtalo de nuevo.'}
                   </p>
                 )}
               </motion.div>

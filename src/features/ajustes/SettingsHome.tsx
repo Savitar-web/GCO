@@ -1,14 +1,30 @@
+import { Link } from 'react-router-dom'
 import { getProfile } from '@/core/storage/userProfile'
 import { getTotalProgress } from '@/core/storage/progress'
-import { Link } from 'react-router-dom'
+import { soundClick } from '@/core/audio/uiSounds'
 
 export function SettingsHome() {
   const profile = getProfile()
   const total = getTotalProgress()
 
   return (
-    <div className="glass-card" style={{ padding: '1.25rem' }}>
-      <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+    <div
+      className="glass-card"
+      style={{
+        padding: 'clamp(1rem, 3vw, 1.35rem)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '1.15rem',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          gap: '1rem',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+        }}
+      >
         <div
           style={{
             width: 64,
@@ -33,7 +49,7 @@ export function SettingsHome() {
             (profile?.name ?? '?').charAt(0).toUpperCase()
           )}
         </div>
-        <div>
+        <div style={{ minWidth: 0, flex: 1 }}>
           <h2 style={{ fontSize: '1.2rem' }}>{profile?.name ?? 'Sin nombre'}</h2>
           <p style={{ color: 'var(--gco-ink-muted)', fontSize: '0.9rem' }}>
             {profile?.age ? `${profile.age} años · ` : ''}
@@ -42,17 +58,29 @@ export function SettingsHome() {
         </div>
       </div>
 
-      <p style={{ marginTop: '1rem', color: 'var(--gco-ink-muted)', fontSize: '0.9rem' }}>
-        Niveles totales: <strong className="mono">{total.totalLevels}</strong>
+      <p style={{ color: 'var(--gco-ink-muted)', fontSize: '0.9rem' }}>
+        Niveles totales:{' '}
+        <strong className="mono">{total.totalLevels}</strong>
         {' · '}
-        Partidas completadas: <strong className="mono">{total.totalCompleted}</strong>
+        Partidas completadas:{' '}
+        <strong className="mono">{total.totalCompleted}</strong>
       </p>
 
-      <div style={{ marginTop: '1.25rem', display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
-        <Link to="/ajustes/perfil" className="glass-button secondary" style={{ textDecoration: 'none', fontSize: '0.9rem' }}>
+      <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+        <Link
+          to="/ajustes/perfil"
+          className="glass-button secondary"
+          style={{ textDecoration: 'none', fontSize: '0.9rem' }}
+          onClick={() => soundClick()}
+        >
           Editar perfil
         </Link>
-        <Link to="/ajustes/recorrido" className="glass-button secondary" style={{ textDecoration: 'none', fontSize: '0.9rem' }}>
+        <Link
+          to="/ajustes/recorrido"
+          className="glass-button secondary"
+          style={{ textDecoration: 'none', fontSize: '0.9rem' }}
+          onClick={() => soundClick()}
+        >
           Ver recorrido
         </Link>
       </div>

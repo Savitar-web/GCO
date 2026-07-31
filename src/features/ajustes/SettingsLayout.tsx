@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { getProfile } from '@/core/storage/userProfile'
 import { getTotalProgress } from '@/core/storage/progress'
+import { soundClick } from '@/core/audio/uiSounds'
 
 const LINKS = [
   { to: '/ajustes', label: 'Resumen', end: true },
@@ -29,7 +30,10 @@ export function SettingsLayout() {
         <button
           type="button"
           className="glass-button secondary"
-          onClick={() => navigate('/')}
+          onClick={() => {
+            soundClick()
+            navigate('/')
+          }}
           style={{ padding: '0.5rem 0.9rem', fontSize: '0.9rem' }}
         >
           ← Atrás
@@ -39,7 +43,10 @@ export function SettingsLayout() {
         </div>
         <button
           type="button"
-          onClick={() => navigate('/ajustes/perfil')}
+          onClick={() => {
+            soundClick()
+            navigate('/ajustes/perfil')
+          }}
           style={{
             width: 44,
             height: 44,
@@ -61,7 +68,8 @@ export function SettingsLayout() {
             />
           ) : (
             <span style={{ fontSize: '1.1rem' }}>
-              {(profile?.name ?? '?').charAt(0).toUpperCase()}
+              {(profile?.name ?? '?').charAt(0).toUpperCase()
+            }
             </span>
           )}
         </button>
@@ -118,6 +126,7 @@ export function SettingsLayout() {
             key={link.to}
             to={link.to}
             end={link.end}
+            onClick={() => soundClick()}
             style={({ isActive }) => ({
               flexShrink: 0,
               padding: '0.45rem 0.85rem',
