@@ -1,11 +1,9 @@
-import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { ThemeToggle } from '../../components/ui/ThemeToggle'
 import { ModeSwitch } from '@/components/ui/ModeSwitch'
 import { getProfile } from '../../core/storage/userProfile'
-import { getAppMode } from '@/core/storage/appMode'
 import { soundClick } from '@/core/audio/uiSounds'
 
 const CATEGORIES = [
@@ -50,112 +48,101 @@ const CATEGORIES = [
 export function CategoryMenu() {
   const navigate = useNavigate()
   const profile = getProfile()
-  const [mode, setMode] = useState(getAppMode)
-
-  useEffect(() => {
-    const sync = () => {
-      const m = getAppMode()
-      setMode(m)
-      if (m === 'nutricion') navigate('/nutricion', { replace: true })
-      if (m === 'musica') navigate('/musica', { replace: true })
-    }
-    sync()
-    window.addEventListener('gco:app-mode', sync)
-    return () => window.removeEventListener('gco:app-mode', sync)
-  }, [navigate])
-
-  // Si el modo no es gym, no pintamos el menú de categorías
-  if (mode !== 'gym') {
-    return null
-  }
 
   return (
     <div className="app-shell">
-      <header
-        style={{
-          marginBottom: '1.75rem',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          gap: '0.75rem',
-        }}
-      >
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <p
-            style={{
-              color: 'var(--gco-ink-muted)',
-              fontSize: '0.95rem',
-              marginBottom: '0.2rem',
-            }}
-          >
-            Hola, {profile?.name ?? 'Atleta mental'}
-          </p>
-          <h1
-            style={{
-              fontSize: 'clamp(1.55rem, 5vw, 2.1rem)',
-              lineHeight: 1.2,
-            }}
-          >
-            ¿Qué quieres entrenar?
-          </h1>
-        </div>
-
+      <header style={{ marginBottom: '1.5rem' }}>
+        {/* Fila 1: saludo + controles (tema / ajustes). Switch solo en desktop. */}
         <div
           style={{
             display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            flexShrink: 0,
-            flexWrap: 'wrap',
-            justifyContent: 'flex-end',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: '0.75rem',
           }}
         >
-          <ModeSwitch />
-          <ThemeToggle />
-          <button
-            type="button"
-            className="theme-cycle-btn"
-            aria-label="Abrir ajustes"
-            onClick={() => {
-              soundClick()
-              navigate('/ajustes')
-            }}
-            style={{ width: 44, height: 44, padding: 0, borderRadius: 12 }}
-          >
-            <span
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <p
               style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 4,
-                alignItems: 'center',
+                color: 'var(--gco-ink-muted)',
+                fontSize: '0.95rem',
+                marginBottom: '0.2rem',
               }}
+            >
+              Hola, {profile?.name ?? 'Atleta mental'}
+            </p>
+            <h1
+              style={{
+                fontSize: 'clamp(1.45rem, 5vw, 2.1rem)',
+                lineHeight: 1.2,
+              }}
+            >
+              ¿Qué quieres entrenar?
+            </h1>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              flexShrink: 0,
+            }}
+          >
+            <div className="mode-switch-desktop">
+              <ModeSwitch />
+            </div>
+            <ThemeToggle />
+            <button
+              type="button"
+              className="theme-cycle-btn"
+              aria-label="Abrir ajustes"
+              onClick={() => {
+                soundClick()
+                navigate('/ajustes')
+              }}
+              style={{ width: 44, height: 44, padding: 0, borderRadius: 12 }}
             >
               <span
                 style={{
-                  width: 18,
-                  height: 2,
-                  background: 'currentColor',
-                  borderRadius: 2,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                  alignItems: 'center',
                 }}
-              />
-              <span
-                style={{
-                  width: 18,
-                  height: 2,
-                  background: 'currentColor',
-                  borderRadius: 2,
-                }}
-              />
-              <span
-                style={{
-                  width: 18,
-                  height: 2,
-                  background: 'currentColor',
-                  borderRadius: 2,
-                }}
-              />
-            </span>
-          </button>
+              >
+                <span
+                  style={{
+                    width: 18,
+                    height: 2,
+                    background: 'currentColor',
+                    borderRadius: 2,
+                  }}
+                />
+                <span
+                  style={{
+                    width: 18,
+                    height: 2,
+                    background: 'currentColor',
+                    borderRadius: 2,
+                  }}
+                />
+                <span
+                  style={{
+                    width: 18,
+                    height: 2,
+                    background: 'currentColor',
+                    borderRadius: 2,
+                  }}
+                />
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Fila 2: solo móvil — switch debajo del título */}
+        <div className="mode-switch-mobile" style={{ marginTop: '0.85rem' }}>
+          <ModeSwitch fullWidth />
         </div>
       </header>
 

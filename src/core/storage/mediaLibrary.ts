@@ -39,6 +39,9 @@ export interface TrackItem {
   mime: string
   coverDataUrl?: string | null
   createdAt: string
+  sizeBytes?: number
+  year?: string
+  album?: string
 }
 
 export interface Playlist {
@@ -324,6 +327,7 @@ export async function importTrackFile(file: File): Promise<TrackItem> {
     mime: file.type || 'audio/mpeg',
     coverDataUrl: null,
     createdAt: new Date().toISOString(),
+    sizeBytes: file.size,
   }
   const db = await openDb()
   const tx = db.transaction([STORE_TRACKS, STORE_BLOBS], 'readwrite')
@@ -336,11 +340,16 @@ export async function importTrackFile(file: File): Promise<TrackItem> {
 
 export async function updateTrack(
   id: string,
-  patch: Partial<Pick<TrackItem, 'title' | 'artist' | 'coverDataUrl'>>
+  patch: Partial<
+    Pick<
+      TrackItem,
+      'title' | 'artist' | 'coverDataUrl' | 'year' | 'album' | 'sizeBytes'
+    >
+  >
 ) {
   const t = await getTrack(id)
   if (!t) return null
-  const next = { ...t, ...patch }
+  const next: TrackItem = { ...t, ...patch }
   const db = await openDb()
   const tx = db.transaction(STORE_TRACKS, 'readwrite')
   tx.objectStore(STORE_TRACKS).put(next)

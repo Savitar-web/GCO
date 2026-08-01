@@ -454,3 +454,43 @@ textarea.glass-input {
     animation: none;
   }
 }
+
+/* Switch: debajo en móvil, en la fila en escritorio */
+.mode-switch-desktop {
+  display: none;
+}
+.mode-switch-mobile {
+  display: block;
+}
+
+@media (min-width: 720px) {
+  .mode-switch-desktop {
+    display: block;
+  }
+  .mode-switch-mobile {
+    display: none;
+  }
+}
+
+.mode-switch-desktop {
+  display: none;
+}
+.mode-switch-mobile {
+  display: block;
+}
+
+@media (min-width: 720px) {
+  .mode-switch-desktop {
+    display: block;
+  }
+  .mode-switch-mobile {
+    display: none;
+  }
+}
+
+.mode-switch-desktop { display: none; }
+.mode-switch-mobile { display: block; }
+@media (min-width: 720px) {
+  .mode-switch-desktop { display: block; }
+  .mode-switch-mobile { display: none; }
+}

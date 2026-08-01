@@ -14,7 +14,7 @@ const MODES: { id: AppMode; label: string; emoji: string }[] = [
   { id: 'musica', label: 'Música', emoji: '🎵' },
 ]
 
-export function ModeSwitch() {
+export function ModeSwitch({ fullWidth = false }: { fullWidth?: boolean }) {
   const navigate = useNavigate()
   const [mode, setModeState] = useState<AppMode>(() => getAppMode())
 
@@ -43,24 +43,26 @@ export function ModeSwitch() {
       style={{
         display: 'grid',
         gridTemplateColumns: '1fr 1fr 1fr',
-        gap: 4,
-        padding: 4,
+        gap: 3,
+        padding: 3,
         borderRadius: 999,
         border: '1px solid var(--gco-glass-border)',
         background: 'rgba(255,255,255,0.04)',
         position: 'relative',
-        minWidth: 198,
-        maxWidth: 280,
+        width: fullWidth ? '100%' : undefined,
+        minWidth: fullWidth ? undefined : 168,
+        maxWidth: fullWidth ? undefined : 240,
+        flexShrink: 0,
       }}
     >
       <span
         aria-hidden
         style={{
           position: 'absolute',
-          top: 4,
-          bottom: 4,
-          left: `calc(${idx} * 100% / 3 + 4px)`,
-          width: 'calc(100% / 3 - 8px)',
+          top: 3,
+          bottom: 3,
+          left: `calc(${idx} * 100% / 3 + 3px)`,
+          width: 'calc(100% / 3 - 6px)',
           borderRadius: 999,
           background: 'rgba(34, 230, 197, 0.22)',
           border: '1px solid rgba(34, 230, 197, 0.35)',
@@ -83,20 +85,20 @@ export function ModeSwitch() {
               border: 'none',
               background: 'transparent',
               cursor: 'pointer',
-              padding: '0.45rem 0.3rem',
+              padding: '0.35rem 0.2rem',
               borderRadius: 999,
               color: active ? 'var(--gco-primary)' : 'var(--gco-ink-muted)',
               font: 'inherit',
-              fontSize: '0.7rem',
+              fontSize: '0.65rem',
               fontWeight: active ? 700 : 500,
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              gap: 2,
-              lineHeight: 1.15,
+              gap: 1,
+              lineHeight: 1.1,
             }}
           >
-            <span style={{ fontSize: '0.95rem' }}>{m.emoji}</span>
+            <span style={{ fontSize: '0.9rem' }}>{m.emoji}</span>
             <span>{m.label}</span>
           </button>
         )

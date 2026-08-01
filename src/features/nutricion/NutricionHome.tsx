@@ -104,34 +104,67 @@ export function NutricionHome() {
 
   return (
     <div className="app-shell">
-      <header
-        style={{
-          marginBottom: '1.25rem',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          gap: '0.75rem',
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <h1 style={{ fontSize: 'clamp(1.4rem, 4vw, 1.85rem)' }}>
-            🍎 Nutrición
-          </h1>
-          <p style={{ color: 'var(--gco-ink-muted)', fontSize: '0.9rem' }}>
-            Biblioteca · TTS · carpetas · TXT/PDF/DOCX/EPUB
-          </p>
-        </div>
+      <header style={{ marginBottom: '1.25rem' }}>
         <div
           style={{
             display: 'flex',
-            gap: 8,
-            alignItems: 'center',
-            flexWrap: 'wrap',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: '0.65rem',
           }}
         >
-          <ModeSwitch />
-          <ThemeToggle />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <h1 style={{ fontSize: 'clamp(1.35rem, 4.5vw, 1.85rem)', lineHeight: 1.2 }}>
+              🍎 Nutrición
+            </h1>
+            <p style={{ color: 'var(--gco-ink-muted)', fontSize: '0.88rem', marginTop: 4 }}>
+              Biblioteca de audiolibros
+            </p>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              flexShrink: 0,
+            }}
+          >
+            {/* Switch solo en PC */}
+            <div className="mode-switch-desktop">
+              <ModeSwitch />
+            </div>
+            <ThemeToggle />
+            {/* Ajustes siempre */}
+            <button
+              type="button"
+              className="theme-cycle-btn"
+              aria-label="Abrir ajustes"
+              onClick={() => {
+                soundClick()
+                navigate('/ajustes')
+              }}
+              style={{ width: 44, height: 44, padding: 0, borderRadius: 12 }}
+            >
+              <span
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                  alignItems: 'center',
+                }}
+              >
+                <span style={{ width: 18, height: 2, background: 'currentColor', borderRadius: 2 }} />
+                <span style={{ width: 18, height: 2, background: 'currentColor', borderRadius: 2 }} />
+                <span style={{ width: 18, height: 2, background: 'currentColor', borderRadius: 2 }} />
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Switch solo en móvil — debajo del título */}
+        <div className="mode-switch-mobile" style={{ marginTop: '0.75rem' }}>
+          <ModeSwitch fullWidth />
         </div>
       </header>
 
