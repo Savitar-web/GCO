@@ -19,6 +19,9 @@ import { DatosSettings } from './features/ajustes/DatosSettings'
 import { RutinasSettings } from './features/ajustes/RutinasSettings'
 import { CartasGame } from './features/memoria/juegos/cartas/CartasGame'
 import { RoutineWidget } from '@/components/ui/RoutineWidget'
+import { NutricionHome } from './features/nutricion/NutricionHome'
+import { BookReader } from './features/nutricion/BookReader'
+import { MusicaHome } from './features/musica/MusicaHome'
 
 function App() {
   const [showSplash, setShowSplash] = useState(true)
@@ -75,6 +78,13 @@ function App() {
               element={<NumerosAsociadosGame />}
             />
 
+            {/* Nutrición */}
+            <Route path="/nutricion" element={<NutricionHome />} />
+            <Route path="/nutricion/libro/:id" element={<BookReader />} />
+
+            {/* Música */}
+            <Route path="/musica" element={<MusicaHome />} />
+
             {/* Ajustes */}
             <Route path="/ajustes" element={<SettingsLayout />}>
               <Route index element={<SettingsHome />} />
@@ -89,7 +99,6 @@ function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
 
-          {/* Campana flotante (solo visible si activas rutinas en Ajustes) */}
           <RoutineWidget />
         </>
       )}

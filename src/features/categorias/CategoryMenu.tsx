@@ -1,8 +1,11 @@
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { GlassCard } from '../../components/ui/GlassCard'
 import { ThemeToggle } from '../../components/ui/ThemeToggle'
+import { ModeSwitch } from '@/components/ui/ModeSwitch'
 import { getProfile } from '../../core/storage/userProfile'
+import { getAppMode } from '@/core/storage/appMode'
 import { soundClick } from '@/core/audio/uiSounds'
 
 const CATEGORIES = [
@@ -47,6 +50,24 @@ const CATEGORIES = [
 export function CategoryMenu() {
   const navigate = useNavigate()
   const profile = getProfile()
+  const [mode, setMode] = useState(getAppMode)
+
+  useEffect(() => {
+    const sync = () => {
+      const m = getAppMode()
+      setMode(m)
+      if (m === 'nutricion') navigate('/nutricion', { replace: true })
+      if (m === 'musica') navigate('/musica', { replace: true })
+    }
+    sync()
+    window.addEventListener('gco:app-mode', sync)
+    return () => window.removeEventListener('gco:app-mode', sync)
+  }, [navigate])
+
+  // Si el modo no es gym, no pintamos el menú de categorías
+  if (mode !== 'gym') {
+    return null
+  }
 
   return (
     <div className="app-shell">
@@ -85,10 +106,12 @@ export function CategoryMenu() {
             alignItems: 'center',
             gap: '0.5rem',
             flexShrink: 0,
+            flexWrap: 'wrap',
+            justifyContent: 'flex-end',
           }}
         >
+          <ModeSwitch />
           <ThemeToggle />
-
           <button
             type="button"
             className="theme-cycle-btn"

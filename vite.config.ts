@@ -12,23 +12,28 @@ export default defineConfig({
       manifest: {
         name: 'GymCogOrigins',
         short_name: 'GCO',
-        description: 'Entrena tu mente: memoria, lógica, deducción, lectura, conocimiento y matemáticas.',
+        description:
+          'Entrena tu mente: memoria, lógica, deducción, lectura, conocimiento y matemáticas. Nutrición cognitiva y música offline.',
         theme_color: '#0B1220',
         background_color: '#0B1220',
         display: 'standalone',
-        orientation: 'portrait',
+        orientation: 'any',
         start_url: '/',
         scope: '/',
+        lang: 'es',
+        categories: ['education', 'games', 'health'],
         icons: [
           {
             src: '/icons/icon-192.png',
             sizes: '192x192',
             type: 'image/png',
+            purpose: 'any',
           },
           {
             src: '/icons/icon-512.png',
             sizes: '512x512',
             type: 'image/png',
+            purpose: 'any',
           },
           {
             src: '/icons/icon-512-maskable.png',
@@ -39,29 +44,41 @@ export default defineConfig({
         ],
       },
       workbox: {
-            maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
-        // Precachear TODO offline
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,woff,ttf}'],
-        // Runtime caching opcional para fuentes de Google
+        maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
+        globPatterns: [
+          '**/*.{js,css,html,ico,png,svg,woff2,woff,ttf,webp,json}',
+        ],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: 'CacheFirst',
             options: {
-              cacheName: 'google-fonts-cache',
+              cacheName: 'google-fonts-stylesheets',
               expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365, // 1 año
+                maxEntries: 12,
+                maxAgeSeconds: 60 * 60 * 24 * 365,
               },
-              cacheableResponse: {
-                statuses: [0, 200],
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'google-fonts-webfonts',
+              expiration: {
+                maxEntries: 20,
+                maxAgeSeconds: 60 * 60 * 24 * 365,
               },
+              cacheableResponse: { statuses: [0, 200] },
             },
           },
         ],
+        navigateFallback: '/index.html',
+        cleanupOutdatedCaches: true,
       },
       devOptions: {
-        enabled: true, // permite probar el SW en desarrollo
+        enabled: true,
       },
     }),
   ],
@@ -69,5 +86,11 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+  },
+  optimizeDeps: {
+    include: ['pdfjs-dist', 'mammoth', 'jszip'],
+  },
+  worker: {
+    format: 'es',
   },
 })
