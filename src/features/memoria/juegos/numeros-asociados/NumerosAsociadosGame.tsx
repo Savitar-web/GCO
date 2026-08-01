@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { GlassCard } from '@/components/ui/GlassCard'
@@ -18,20 +18,31 @@ import {
   type ChunkSequence,
   type CharsetMode,
 } from '../generateLevel'
-import { getGameProgress, saveGameProgress } from '@/core/storage/progress'
+import {
+  getGameProgress,
+  recordLevelResult,
+  getLevelBestTime,
+  getUnlockedLevels,
+  formatDuration,
+} from '@/core/storage/progress'
 
 type Phase = 'setup' | 'study' | 'recall'
 
+const GAME_CAT = 'memoria' as const
+const GAME_ID = 'numeros-asociados'
+
 export function NumerosAsociadosGame() {
   const navigate = useNavigate()
-  const progress = getGameProgress('memoria', 'numeros-asociados')
+  const progress = getGameProgress(GAME_CAT, GAME_ID)
+  const defaultLevel = Math.max(1, progress.highestLevel + 1)
 
   const [totalChars, setTotalChars] = useState(12)
   const [blockSize, setBlockSize] = useState(3)
   const [charset, setCharset] = useState<CharsetMode>('digits')
   const [useProgressive, setUseProgressive] = useState(false)
   const [useTimer, setUseTimer] = useState(false)
-  const [level, setLevel] = useState(Math.max(1, progress.highestLevel + 1))
+  const [level, setLevel] = useState(defaultLevel)
+  const [showLevelPicker, setShowLevelPicker] = useState(false)
 
   const [phase, setPhase] = useState<Phase>('setup')
   const [sequence, setSequence] = useState<ChunkSequence | null>(null)
@@ -41,7 +52,21 @@ export function NumerosAsociadosGame() {
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null)
   const [timeLeft, setTimeLeft] = useState(0)
 
+  const [elapsedMs, setElapsedMs] = useState(0)
+  const [lastTimeMs, setLastTimeMs] = useState<number | null>(null)
+  const [beatBest, setBeatBest] = useState(false)
+
   const timerRef = useRef<number | null>(null)
+  const runTimerRef = useRef<number | null>(null)
+  const startedAtRef = useRef<number | null>(null)
+  const levelRef = useRef(level)
+  levelRef.current = level
+
+  const bestForLevel = getLevelBestTime(GAME_CAT, GAME_ID, level)
+  const unlocked = useMemo(
+    () => getUnlockedLevels(GAME_CAT, GAME_ID),
+    [phase, progress.highestLevel, progress.totalCompleted]
+  )
 
   const clamp = (value: number, min: number, max: number) =>
     Math.min(max, Math.max(min, value))
@@ -53,35 +78,76 @@ export function NumerosAsociadosGame() {
     }
   }
 
-  useEffect(() => () => clearTimer(), [])
-
-  const generate = useCallback(() => {
-    soundStart()
-    clearTimer()
-    const config = useProgressive
-      ? configFromLevel(level)
-      : {
-          totalChars: clamp(totalChars, 1, 32),
-          blockSize: clamp(blockSize, 1, 6),
-          charset,
-        }
-
-    if (config.blockSize > config.totalChars) {
-      config.blockSize = config.totalChars
+  const clearRunTimer = () => {
+    if (runTimerRef.current != null) {
+      window.clearInterval(runTimerRef.current)
+      runTimerRef.current = null
     }
+  }
 
-    if (useProgressive) {
-      config.charset = 'digits'
-    }
+  const startRunTimer = () => {
+    clearRunTimer()
+    startedAtRef.current = performance.now()
+    setElapsedMs(0)
+    runTimerRef.current = window.setInterval(() => {
+      if (startedAtRef.current == null) return
+      setElapsedMs(Math.round(performance.now() - startedAtRef.current))
+    }, 200)
+  }
 
-    const seq = generateChunkSequence(config)
-    setSequence(seq)
-    setStory('')
-    setHidden(false)
-    setRecallInput('')
-    setIsCorrect(null)
-    setPhase('study')
-  }, [useProgressive, level, totalChars, blockSize, charset])
+  const stopRunTimer = (): number => {
+    clearRunTimer()
+    const t =
+      startedAtRef.current != null
+        ? Math.round(performance.now() - startedAtRef.current)
+        : elapsedMs
+    startedAtRef.current = null
+    setElapsedMs(t)
+    return t
+  }
+
+  useEffect(
+    () => () => {
+      clearTimer()
+      clearRunTimer()
+    },
+    []
+  )
+
+  const generate = useCallback(
+    (lv = level) => {
+      soundStart()
+      clearTimer()
+      clearRunTimer()
+      setLastTimeMs(null)
+      setBeatBest(false)
+      setElapsedMs(0)
+
+      const config = useProgressive
+        ? configFromLevel(lv)
+        : {
+            totalChars: clamp(totalChars, 1, 32),
+            blockSize: clamp(blockSize, 1, 6),
+            charset,
+          }
+
+      if (config.blockSize > config.totalChars) {
+        config.blockSize = config.totalChars
+      }
+      if (useProgressive) {
+        config.charset = 'digits'
+      }
+
+      const seq = generateChunkSequence(config)
+      setSequence(seq)
+      setStory('')
+      setHidden(false)
+      setRecallInput('')
+      setIsCorrect(null)
+      setPhase('study')
+    },
+    [useProgressive, level, totalChars, blockSize, charset]
+  )
 
   const speak = (text: string) => {
     if (!('speechSynthesis' in window)) return
@@ -114,20 +180,28 @@ export function NumerosAsociadosGame() {
     setPhase('recall')
     setRecallInput('')
     setIsCorrect(null)
+    startRunTimer()
 
     if (useTimer && sequence) {
-      const sec = Math.min(
-        120,
-        Math.max(20, sequence.config.totalChars * 4)
-      )
+      const sec = Math.min(120, Math.max(20, sequence.config.totalChars * 4))
       setTimeLeft(sec)
       clearTimer()
       timerRef.current = window.setInterval(() => {
         setTimeLeft((t) => {
           if (t <= 1) {
             clearTimer()
+            const ms = stopRunTimer()
             soundFail()
             setIsCorrect(false)
+            if (useProgressive) {
+              recordLevelResult({
+                categoryId: GAME_CAT,
+                gameId: GAME_ID,
+                level: levelRef.current,
+                success: false,
+                timeMs: ms,
+              })
+            }
             return 0
           }
           const next = t - 1
@@ -145,6 +219,7 @@ export function NumerosAsociadosGame() {
     if (useTimer && timeLeft <= 0 && isCorrect === false) return
 
     clearTimer()
+    const timeMs = stopRunTimer()
 
     const cleaned = recallInput.replace(/[\s\-_/|.]/g, '').toUpperCase()
     const target =
@@ -167,26 +242,55 @@ export function NumerosAsociadosGame() {
     if (ok) {
       soundSuccess()
       if (useProgressive) {
-        const newHighest = Math.max(progress.highestLevel, level)
-        saveGameProgress('memoria', 'numeros-asociados', {
-          highestLevel: newHighest,
-          totalCompleted: progress.totalCompleted + 1,
+        const prevBest = getLevelBestTime(GAME_CAT, GAME_ID, level)
+        const isNew =
+          timeMs > 0 && (prevBest == null || timeMs < prevBest)
+        setBeatBest(!!isNew)
+        setLastTimeMs(timeMs)
+        recordLevelResult({
+          categoryId: GAME_CAT,
+          gameId: GAME_ID,
+          level,
+          success: true,
+          timeMs,
         })
+      } else {
+        setLastTimeMs(timeMs)
+        setBeatBest(false)
       }
     } else {
       soundFail()
+      setLastTimeMs(timeMs)
+      setBeatBest(false)
+      if (useProgressive) {
+        recordLevelResult({
+          categoryId: GAME_CAT,
+          gameId: GAME_ID,
+          level,
+          success: false,
+          timeMs,
+        })
+      }
     }
   }
 
+  /** Siguiente nivel: sube y genera al instante */
   const nextProgressive = () => {
     soundClick()
     clearTimer()
-    setLevel((current) => current + 1)
-    setSequence(null)
-    setPhase('setup')
+    clearRunTimer()
+    const next = level + 1
+    setLevel(next)
+    generate(next)
   }
 
   const progressivePreview = configFromLevel(level)
+
+  const slowerThanBest =
+    useProgressive &&
+    bestForLevel != null &&
+    lastTimeMs != null &&
+    lastTimeMs > bestForLevel * 1.15
 
   return (
     <div className="app-shell">
@@ -209,7 +313,15 @@ export function NumerosAsociadosGame() {
         >
           ← Volver
         </button>
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: '0.65rem',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            justifyContent: 'flex-end',
+          }}
+        >
           {phase === 'recall' && useTimer && timeLeft > 0 && (
             <span
               className="mono"
@@ -224,11 +336,113 @@ export function NumerosAsociadosGame() {
               ⏱ {timeLeft}s
             </span>
           )}
-          <span className="level-number" style={{ fontSize: '1.05rem' }}>
-            {useProgressive ? `Nivel ${level}` : 'Modo libre'}
-          </span>
+          {phase === 'recall' && (
+            <span
+              className="mono"
+              style={{ fontSize: '0.85rem', color: 'var(--gco-ink-muted)' }}
+            >
+              {formatDuration(elapsedMs)}
+              {useProgressive &&
+                bestForLevel != null &&
+                bestForLevel > 0 && (
+                  <> · 🏆 {formatDuration(bestForLevel)}</>
+                )}
+            </span>
+          )}
+          {useProgressive && phase === 'setup' && (
+            <button
+              type="button"
+              className="glass-button secondary"
+              onClick={() => {
+                soundClick()
+                setShowLevelPicker((v) => !v)
+              }}
+              style={{ padding: '0.35rem 0.7rem', fontSize: '0.85rem' }}
+            >
+              Nivel {level} ▾
+            </button>
+          )}
+          {useProgressive && phase !== 'setup' && (
+            <span className="level-number" style={{ fontSize: '1.05rem' }}>
+              Nivel {level}
+            </span>
+          )}
+          {!useProgressive && (
+            <span className="level-number" style={{ fontSize: '1.05rem' }}>
+              Modo libre
+            </span>
+          )}
         </div>
       </header>
+
+      <AnimatePresence>
+        {showLevelPicker && useProgressive && phase === 'setup' && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="glass-card"
+            style={{ padding: '0.85rem 1rem', marginBottom: '0.85rem' }}
+          >
+            <p
+              style={{
+                fontSize: '0.82rem',
+                color: 'var(--gco-ink-muted)',
+                marginBottom: '0.5rem',
+              }}
+            >
+              Elige nivel · marca a superar
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <button
+                type="button"
+                className={`glass-button ${
+                  level === defaultLevel ? '' : 'secondary'
+                }`}
+                style={{ fontSize: '0.8rem', padding: '0.4rem 0.65rem' }}
+                onClick={() => {
+                  soundClick()
+                  setLevel(defaultLevel)
+                  setShowLevelPicker(false)
+                }}
+              >
+                Nv. {defaultLevel} (nuevo)
+              </button>
+              {unlocked.map((u) => (
+                <button
+                  key={u.level}
+                  type="button"
+                  className={`glass-button ${
+                    level === u.level ? '' : 'secondary'
+                  }`}
+                  style={{
+                    fontSize: '0.8rem',
+                    padding: '0.4rem 0.65rem',
+                    minWidth: 64,
+                  }}
+                  onClick={() => {
+                    soundClick()
+                    setLevel(u.level)
+                    setShowLevelPicker(false)
+                  }}
+                >
+                  Nv. {u.level}
+                  <span
+                    className="mono"
+                    style={{
+                      display: 'block',
+                      fontSize: '0.65rem',
+                      opacity: 0.85,
+                    }}
+                  >
+                    {u.bestTimeMs != null ? formatDuration(u.bestTimeMs) : '—'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <GlassCard>
         <div style={{ padding: '1.35rem 1.25rem' }}>
@@ -300,6 +514,9 @@ export function NumerosAsociadosGame() {
                         const next = !useProgressive
                         soundToggle(next)
                         setUseProgressive(next)
+                        if (next) {
+                          setLevel(Math.max(1, progress.highestLevel + 1))
+                        }
                       }}
                       style={{
                         width: 52,
@@ -342,7 +559,8 @@ export function NumerosAsociadosGame() {
                         marginTop: '0.85rem',
                       }}
                     >
-                      Cada nivel aumenta la dificultad
+                      Elige niveles pasados arriba · supera tu marca de tiempo
+                      en el recuerdo
                     </p>
                   )}
                 </div>
@@ -557,20 +775,40 @@ export function NumerosAsociadosGame() {
                 )}
 
                 {useProgressive && (
-                  <p
-                    style={{
-                      color: 'var(--gco-ink-muted)',
-                      fontSize: '0.9rem',
-                      lineHeight: 1.45,
-                    }}
-                  >
-                    Nivel {level}: ~{progressivePreview.totalChars} caracteres
-                    en bloques de {progressivePreview.blockSize}
-                  </p>
+                  <div>
+                    <p
+                      style={{
+                        color: 'var(--gco-ink-muted)',
+                        fontSize: '0.9rem',
+                        lineHeight: 1.45,
+                        marginBottom: 8,
+                      }}
+                    >
+                      Nivel {level}: ~{progressivePreview.totalChars} caracteres
+                      en bloques de {progressivePreview.blockSize}
+                    </p>
+                    {bestForLevel != null && bestForLevel > 0 && (
+                      <p
+                        style={{
+                          fontSize: '0.85rem',
+                          color: 'var(--gco-primary)',
+                        }}
+                      >
+                        Marca a superar:{' '}
+                        <span className="mono">
+                          {formatDuration(bestForLevel)}
+                        </span>
+                      </p>
+                    )}
+                  </div>
                 )}
 
-                <GlassButton onClick={generate} style={{ marginTop: '0.15rem' }}>
+                <GlassButton
+                  onClick={() => generate()}
+                  style={{ marginTop: '0.15rem' }}
+                >
                   Generar secuencia
+                  {useProgressive ? ` · Nv. ${level}` : ''}
                 </GlassButton>
               </motion.div>
             )}
@@ -716,6 +954,7 @@ export function NumerosAsociadosGame() {
                     onClick={() => {
                       soundClick()
                       clearTimer()
+                      clearRunTimer()
                       setPhase('setup')
                     }}
                   >
@@ -809,6 +1048,7 @@ export function NumerosAsociadosGame() {
                     onClick={() => {
                       soundClick()
                       clearTimer()
+                      clearRunTimer()
                       setHidden(false)
                       setPhase('study')
                       setIsCorrect(null)
@@ -828,20 +1068,61 @@ export function NumerosAsociadosGame() {
                       style={{
                         color: 'var(--gco-primary)',
                         fontWeight: 600,
-                        marginBottom: '0.85rem',
+                        marginBottom: '0.35rem',
                       }}
                     >
                       ¡Correcto!
                     </p>
+                    {lastTimeMs != null && (
+                      <p
+                        style={{
+                          fontSize: '0.85rem',
+                          color: 'var(--gco-ink-muted)',
+                          marginBottom: '0.5rem',
+                        }}
+                      >
+                        {formatDuration(lastTimeMs)}
+                        {beatBest ? ' · ¡Nueva marca!' : ''}
+                      </p>
+                    )}
+                    {slowerThanBest && bestForLevel != null && (
+                      <p
+                        style={{
+                          fontSize: '0.8rem',
+                          color: 'var(--gco-secondary)',
+                          marginBottom: '0.75rem',
+                        }}
+                      >
+                        Más lento que tu marca (
+                        {formatDuration(bestForLevel)}). ¿La superas?
+                      </p>
+                    )}
                     {useProgressive ? (
-                      <GlassButton onClick={nextProgressive}>
-                        Siguiente nivel
-                      </GlassButton>
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: 8,
+                          justifyContent: 'center',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <GlassButton onClick={nextProgressive}>
+                          Siguiente nivel
+                        </GlassButton>
+                        <button
+                          type="button"
+                          className="glass-button secondary"
+                          onClick={() => generate(level)}
+                        >
+                          Reintentar marca
+                        </button>
+                      </div>
                     ) : (
                       <GlassButton
                         onClick={() => {
                           soundClick()
                           clearTimer()
+                          clearRunTimer()
                           setPhase('setup')
                         }}
                       >

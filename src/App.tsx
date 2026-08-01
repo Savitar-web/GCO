@@ -16,7 +16,10 @@ import { RecorridoSettings } from './features/ajustes/RecorridoSettings'
 import { SonidoSettings } from './features/ajustes/SonidoSettings'
 import { FondoSettings } from './features/ajustes/FondoSettings'
 import { DatosSettings } from './features/ajustes/DatosSettings'
+import { RutinasSettings } from './features/ajustes/RutinasSettings'
 import { CartasGame } from './features/memoria/juegos/cartas/CartasGame'
+import { RoutineWidget } from '@/components/ui/RoutineWidget'
+
 function App() {
   const [showSplash, setShowSplash] = useState(true)
   const [hasProfile, setHasProfile] = useState<boolean | null>(null)
@@ -47,42 +50,48 @@ function App() {
       </AnimatePresence>
 
       {!showSplash && (
-        <Routes>
-          <Route
-            path="/"
-            element={
-              hasProfile ? (
-                <CategoryMenu />
-              ) : (
-                <Onboarding onComplete={() => setHasProfile(true)} />
-              )
-            }
-          />
+        <>
+          <Routes>
+            <Route
+              path="/"
+              element={
+                hasProfile ? (
+                  <CategoryMenu />
+                ) : (
+                  <Onboarding onComplete={() => setHasProfile(true)} />
+                )
+              }
+            />
 
-          {/* Memoria */}
-          <Route path="/categoria/memoria" element={<MemoriaCategory />} />
-          <Route
-            path="/categoria/memoria/secuencia-colores"
-            element={<ColorSequenceGame />}
-          />
-          <Route path="/categoria/memoria/cartas" element={<CartasGame />} />
-          <Route
-            path="/categoria/memoria/numeros-asociados"
-            element={<NumerosAsociadosGame />}
-          />
+            {/* Memoria */}
+            <Route path="/categoria/memoria" element={<MemoriaCategory />} />
+            <Route
+              path="/categoria/memoria/secuencia-colores"
+              element={<ColorSequenceGame />}
+            />
+            <Route path="/categoria/memoria/cartas" element={<CartasGame />} />
+            <Route
+              path="/categoria/memoria/numeros-asociados"
+              element={<NumerosAsociadosGame />}
+            />
 
-          {/* Ajustes */}
-          <Route path="/ajustes" element={<SettingsLayout />}>
-            <Route index element={<SettingsHome />} />
-            <Route path="perfil" element={<PerfilSettings />} />
-            <Route path="recorrido" element={<RecorridoSettings />} />
-            <Route path="sonido" element={<SonidoSettings />} />
-            <Route path="fondo" element={<FondoSettings />} />
-            <Route path="datos" element={<DatosSettings />} />
-          </Route>
+            {/* Ajustes */}
+            <Route path="/ajustes" element={<SettingsLayout />}>
+              <Route index element={<SettingsHome />} />
+              <Route path="perfil" element={<PerfilSettings />} />
+              <Route path="recorrido" element={<RecorridoSettings />} />
+              <Route path="sonido" element={<SonidoSettings />} />
+              <Route path="fondo" element={<FondoSettings />} />
+              <Route path="datos" element={<DatosSettings />} />
+              <Route path="rutinas" element={<RutinasSettings />} />
+            </Route>
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+
+          {/* Campana flotante (solo visible si activas rutinas en Ajustes) */}
+          <RoutineWidget />
+        </>
       )}
     </>
   )

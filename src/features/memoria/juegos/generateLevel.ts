@@ -26,9 +26,8 @@ const EMOJI_POOL = [
   '🦊', '🐸', '🦉', '🐙', '🦋', '🐬', '🐱', '🐼',
   '⭐', '🌙', '⚡', '🔥', '💎', '🎯', '🎵', '🍀',
   '🚀', '🌈', '❄️', '🌻', '🏀', '🎲', '🔑', '🎈',
-]
+] as const
 
-/** Nombres en español para el lector de voz */
 export const EMOJI_NAMES: Record<string, string> = {
   '🍎': 'manzana',
   '🍋': 'limón',
@@ -136,28 +135,98 @@ export const ALL_COLORS = [
 ] as const
 
 export type ColorId = (typeof ALL_COLORS)[number]['id']
+export type ColorDef = {
+  id: ColorId
+  hex: string
+  label: string
+}
 export type ColorCount = 4 | 6 | 9 | 12
 
-/** @deprecated usa ALL_COLORS + colorCount */
-export const COLORS = ALL_COLORS.slice(0, 9)
+/** Lista mutable tipada (evita el `never` de .slice sobre `as const`) */
+export const ALL_COLORS_LIST: ColorDef[] = ALL_COLORS.map((c) => ({
+  id: c.id,
+  hex: c.hex,
+  label: c.label,
+}))
 
-export function getColorsForCount(count: ColorCount) {
-  return ALL_COLORS.slice(0, count)
+/** @deprecated usa ALL_COLORS_LIST + colorCount */
+export const COLORS: ColorDef[] = ALL_COLORS_LIST.slice(0, 9)
+
+/**
+ * Paleta para el grid según cantidad elegida.
+ * Retorno explícito → TypeScript reconoce `id`, `hex`, `label`.
+ */
+export function getColorsForCount(count: ColorCount): ColorDef[] {
+  const n = Math.min(Math.max(count, 4), ALL_COLORS_LIST.length)
+  return ALL_COLORS_LIST.slice(0, n)
+}
+
+export interface ColorSequenceLevelOptions {
+  /** Multiplica tiempos de muestra/pausa (curva suave / dopamina) */
+  softProgression?: boolean
+  /**
+   * Modo cadena: parte de la secuencia anterior y añade colores.
+   * Si no hay anterior, genera una secuencia normal.
+   */
+  chainFrom?: ColorId[]
+  /** Cuántos colores nuevos añadir en modo cadena (default 1) */
+  chainGrowBy?: number
+}
+
+export interface ColorSequenceLevel {
+  level: number
+  sequence: ColorId[]
+  showTimeMs: number
+  pauseBetweenMs: number
+  colorCount: ColorCount
+  palette: ColorDef[]
+  chained: boolean
 }
 
 export function generateColorSequenceLevel(
   level: number,
-  colorCount: ColorCount = 9
-) {
-  const rng = mulberry32(levelSeed(level, 3100 + colorCount))
-  const { length, showTimeMs, pauseBetweenMs } =
-    getMemorySequenceDifficulty(level)
+  colorCount: ColorCount = 9,
+  options: ColorSequenceLevelOptions = {}
+): ColorSequenceLevel {
+  const {
+    softProgression = false,
+    chainFrom,
+    chainGrowBy = 1,
+  } = options
+
+  const rng = mulberry32(levelSeed(level, 3100 + colorCount * 13))
+  const base = getMemorySequenceDifficulty(level)
   const palette = getColorsForCount(colorCount)
 
-  const sequence: ColorId[] = Array.from({ length }, () => {
-    const idx = Math.floor(rng() * palette.length)
-    return palette[idx].id
-  })
+  let sequence: ColorId[]
+  let chained = false
+
+  if (chainFrom && chainFrom.length > 0) {
+    chained = true
+    const grow = Math.max(1, chainGrowBy)
+    const extra: ColorId[] = Array.from({ length: grow }, () => {
+      const idx = Math.floor(rng() * palette.length)
+      return palette[idx].id
+    })
+    sequence = [...chainFrom, ...extra]
+  } else {
+    const length = base.length
+    sequence = Array.from({ length }, () => {
+      const idx = Math.floor(rng() * palette.length)
+      return palette[idx].id
+    })
+  }
+
+  // Curva suave: más tiempo para ver / más pausa → más aciertos seguidos
+  const softMulShow = softProgression ? 1.12 : 1
+  const softMulPause = softProgression ? 1.1 : 1
+
+  // En cadena, un poco más de tiempo de muestra por la longitud
+  const lenFactor =
+    sequence.length > 8 ? 1 + (sequence.length - 8) * 0.02 : 1
+
+  const showTimeMs = Math.round(base.showTimeMs * softMulShow * lenFactor)
+  const pauseBetweenMs = Math.round(base.pauseBetweenMs * softMulPause)
 
   return {
     level,
@@ -166,6 +235,28 @@ export function generateColorSequenceLevel(
     pauseBetweenMs,
     colorCount,
     palette,
+    chained,
+  }
+}
+
+/**
+ * Genera un nivel creativo / manual a partir de una secuencia fija.
+ * Útil para el modo “crear nivel”.
+ */
+export function buildCustomColorLevel(
+  sequence: ColorId[],
+  colorCount: ColorCount = 9,
+  opts?: { showTimeMs?: number; pauseBetweenMs?: number }
+): ColorSequenceLevel {
+  const palette = getColorsForCount(colorCount)
+  return {
+    level: 0,
+    sequence: [...sequence],
+    showTimeMs: opts?.showTimeMs ?? 650,
+    pauseBetweenMs: opts?.pauseBetweenMs ?? 220,
+    colorCount,
+    palette,
+    chained: false,
   }
 }
 
@@ -197,12 +288,10 @@ function fisherYates<T>(arr: T[], rng: () => number): T[] {
   return a
 }
 
-/** Varias pasadas + corte riffle para mezclar mejor */
 function deepShuffle<T>(arr: T[], rng: () => number, passes = 3): T[] {
   let a = [...arr]
   for (let p = 0; p < passes; p++) {
     a = fisherYates(a, rng)
-    // Riffle simple: partir por la mitad e intercalar
     const mid = Math.floor(a.length / 2)
     const left = a.slice(0, mid)
     const right = a.slice(mid)
@@ -228,7 +317,7 @@ export function generateCardsLevel(level: number, mode: CardsMode = 'pairs') {
   const { pairs, gridCols, timeSec } = getMemoryCardsDifficulty(level)
   const rng = mulberry32(levelSeed(level, 4242 + mode.length * 17))
 
-  const pool = deepShuffle(CARD_EMOJIS, rng, 2)
+  const pool = deepShuffle([...CARD_EMOJIS], rng, 2)
 
   if (mode === 'pairs') {
     const chosen = pool.slice(0, pairs)
@@ -238,11 +327,18 @@ export function generateCardsLevel(level: number, mode: CardsMode = 'pairs') {
       cards.push({ id: `${pairId}-b`, pairId, emoji })
     })
     cards = deepShuffle(cards, rng, 4)
-    return { mode, cards, pairs, gridCols, timeSec, targetIndex: -1, orderIds: [] as string[] }
+    return {
+      mode,
+      cards,
+      pairs,
+      gridCols,
+      timeSec,
+      targetIndex: -1,
+      orderIds: [] as string[],
+    }
   }
 
   if (mode === 'track') {
-    // Un set de cartas únicas; una es el objetivo
     const count = Math.min(4 + Math.floor(level / 2), 12)
     const chosen = pool.slice(0, count)
     let cards: CardItem[] = chosen.map((emoji, i) => ({
@@ -263,7 +359,7 @@ export function generateCardsLevel(level: number, mode: CardsMode = 'pairs') {
     }
   }
 
-  // mode === 'order': memorizar orden de aparición
+  // order
   {
     const count = Math.min(3 + Math.floor(level / 2), 10)
     const chosen = pool.slice(0, count)

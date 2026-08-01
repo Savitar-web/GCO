@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { GlassCard } from '@/components/ui/GlassCard'
@@ -9,7 +9,13 @@ import {
   type CardItem,
   type CardsMode,
 } from '../generateLevel'
-import { getGameProgress, saveGameProgress } from '@/core/storage/progress'
+import {
+  getGameProgress,
+  recordLevelResult,
+  getLevelBestTime,
+  getUnlockedLevels,
+  formatDuration,
+} from '@/core/storage/progress'
 import {
   soundClick,
   soundCard,
@@ -23,6 +29,8 @@ import {
 
 type Phase =
   | 'ready'
+  | 'creative-hub'
+  | 'creative-edit'
   | 'playing'
   | 'track-show'
   | 'track-shuffle'
@@ -31,6 +39,14 @@ type Phase =
   | 'order-play'
   | 'success'
   | 'fail'
+
+type CreativeCardsLevel = {
+  id: string
+  name: string
+  mode: CardsMode
+  emojis: string[]
+  updatedAt: string
+}
 
 const MODE_INFO: Record<
   CardsMode,
@@ -53,6 +69,17 @@ const MODE_INFO: Record<
   },
 }
 
+const EMOJI_POOL = [
+  '🍎', '🍋', '🍇', '🍉', '🍓', '🍑', '🦊', '🐸',
+  '🦉', '🐙', '🦋', '🐬', '⭐', '🌙', '⚡', '🔥',
+  '💎', '🎯', '🎵', '🎲', '🧩', '🔑', '🎈', '🍀',
+  '🚀', '🌈', '❄️', '🌻', '🏀', '🐱', '🐼', '🐢',
+]
+
+const CREATIVE_KEY = 'gco:cartas-creative-levels'
+const GAME_CAT = 'memoria' as const
+const GAME_ID = 'cartas'
+
 const EMOJI_STYLE: React.CSSProperties = {
   color: 'initial',
   WebkitTextFillColor: 'initial',
@@ -63,10 +90,229 @@ const EMOJI_STYLE: React.CSSProperties = {
   fontSize: '1.55rem',
 }
 
+function uid() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function loadCreative(): CreativeCardsLevel[] {
+  try {
+    const raw = localStorage.getItem(CREATIVE_KEY)
+    if (!raw) return []
+    const list = JSON.parse(raw) as CreativeCardsLevel[]
+    return Array.isArray(list) ? list : []
+  } catch {
+    return []
+  }
+}
+
+function saveCreative(list: CreativeCardsLevel[]) {
+  localStorage.setItem(CREATIVE_KEY, JSON.stringify(list))
+}
+
+function buildCardsFromEmojis(
+  emojis: string[],
+  mode: CardsMode
+): {
+  cards: CardItem[]
+  orderIds: string[]
+  targetIndex: number
+  gridCols: number
+} {
+  const unique = emojis.filter(Boolean)
+  if (mode === 'pairs') {
+    let cards: CardItem[] = []
+    unique.forEach((emoji, pairId) => {
+      cards.push({ id: `${pairId}-a`, pairId, emoji })
+      cards.push({ id: `${pairId}-b`, pairId, emoji })
+    })
+    for (let i = cards.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[cards[i], cards[j]] = [cards[j], cards[i]]
+    }
+    const n = cards.length
+    return {
+      cards,
+      orderIds: [],
+      targetIndex: -1,
+      gridCols: n <= 12 ? 3 : 4,
+    }
+  }
+
+  const cards: CardItem[] = unique.map((emoji, i) => ({
+    id: `c-${i}`,
+    pairId: i,
+    emoji,
+  }))
+  for (let i = cards.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[cards[i], cards[j]] = [cards[j], cards[i]]
+  }
+
+  if (mode === 'track') {
+    return {
+      cards,
+      orderIds: [],
+      targetIndex: Math.floor(Math.random() * Math.max(1, cards.length)),
+      gridCols: cards.length <= 6 ? 3 : 4,
+    }
+  }
+
+  const orderIds = unique.map((_, i) => `c-${i}`)
+  return {
+    cards,
+    orderIds,
+    targetIndex: -1,
+    gridCols: cards.length <= 6 ? 3 : 4,
+  }
+}
+
+/** Desplegable propio (sin <select> nativo) */
+function ModeDropdown({
+  value,
+  onChange,
+}: {
+  value: CardsMode
+  onChange: (m: CardsMode) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const info = MODE_INFO[value]
+
+  return (
+    <div style={{ textAlign: 'left', position: 'relative' }}>
+      <p style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: 6 }}>
+        Modo de juego
+      </p>
+      <button
+        type="button"
+        onClick={() => {
+          soundClick()
+          setOpen((v) => !v)
+        }}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.65rem',
+          padding: '0.85rem 1rem',
+          borderRadius: 14,
+          border: '1px solid var(--gco-glass-border)',
+          background: 'rgba(255,255,255,0.04)',
+          color: 'inherit',
+          cursor: 'pointer',
+          font: 'inherit',
+          textAlign: 'left',
+        }}
+      >
+        <span style={{ fontSize: '1.2rem', flexShrink: 0 }}>{info.emoji}</span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <strong style={{ display: 'block', fontSize: '0.95rem' }}>
+            {info.title}
+          </strong>
+          <span
+            style={{
+              display: 'block',
+              fontSize: '0.75rem',
+              color: 'var(--gco-ink-muted)',
+              marginTop: 2,
+              lineHeight: 1.3,
+            }}
+          >
+            {info.desc}
+          </span>
+        </span>
+        <span style={{ opacity: 0.7, flexShrink: 0 }}>{open ? '▴' : '▾'}</span>
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            style={{
+              marginTop: 8,
+              borderRadius: 14,
+              border: '1px solid var(--gco-glass-border)',
+              background: 'var(--gco-glass-bg, rgba(18, 22, 36, 0.98))',
+              overflow: 'hidden',
+              boxShadow: '0 12px 32px rgba(0,0,0,0.35)',
+            }}
+          >
+            {(Object.keys(MODE_INFO) as CardsMode[]).map((m, idx, arr) => {
+              const active = value === m
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => {
+                    soundClick()
+                    onChange(m)
+                    setOpen(false)
+                  }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    gap: '0.65rem',
+                    alignItems: 'center',
+                    padding: '0.8rem 1rem',
+                    border: 'none',
+                    borderBottom:
+                      idx < arr.length - 1
+                        ? '1px solid var(--gco-glass-border)'
+                        : 'none',
+                    background: active
+                      ? 'rgba(34, 230, 197, 0.14)'
+                      : 'transparent',
+                    color: 'inherit',
+                    cursor: 'pointer',
+                    font: 'inherit',
+                    textAlign: 'left',
+                  }}
+                >
+                  <span style={{ fontSize: '1.15rem' }}>{MODE_INFO[m].emoji}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <strong style={{ display: 'block', fontSize: '0.92rem' }}>
+                      {MODE_INFO[m].title}
+                    </strong>
+                    <span
+                      style={{
+                        display: 'block',
+                        fontSize: '0.74rem',
+                        color: 'var(--gco-ink-muted)',
+                        marginTop: 2,
+                        lineHeight: 1.3,
+                      }}
+                    >
+                      {MODE_INFO[m].desc}
+                    </span>
+                  </span>
+                  {active && (
+                    <span
+                      style={{
+                        color: 'var(--gco-primary)',
+                        fontWeight: 700,
+                        flexShrink: 0,
+                      }}
+                    >
+                      ✓
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
 export function CartasGame() {
   const navigate = useNavigate()
-  const progress = getGameProgress('memoria', 'cartas')
-  const [level, setLevel] = useState(Math.max(1, progress.highestLevel + 1))
+  const progress = getGameProgress(GAME_CAT, GAME_ID)
+  const defaultLevel = Math.max(1, progress.highestLevel + 1)
+
+  const [level, setLevel] = useState(defaultLevel)
   const [mode, setMode] = useState<CardsMode>('pairs')
   const [phase, setPhase] = useState<Phase>('ready')
   const [cards, setCards] = useState<CardItem[]>([])
@@ -79,18 +325,67 @@ export function CartasGame() {
   const [targetId, setTargetId] = useState<string | null>(null)
   const [orderStep, setOrderStep] = useState(0)
   const [highlightId, setHighlightId] = useState<string | null>(null)
+  const [showLevelPicker, setShowLevelPicker] = useState(false)
+
+  const [elapsedMs, setElapsedMs] = useState(0)
+  const [lastTimeMs, setLastTimeMs] = useState<number | null>(null)
+  const [beatBest, setBeatBest] = useState(false)
+  const [isCreativeRun, setIsCreativeRun] = useState(false)
+
+  const [creativeList, setCreativeList] =
+    useState<CreativeCardsLevel[]>(loadCreative)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editMode, setEditMode] = useState<CardsMode>('pairs')
+  const [editEmojis, setEditEmojis] = useState<string[]>([])
 
   const timerRef = useRef<number | null>(null)
+  const runTimerRef = useRef<number | null>(null)
+  const startedAtRef = useRef<number | null>(null)
   const totalPairsRef = useRef(0)
   const orderIdsRef = useRef<string[]>([])
-  const prevTimeRef = useRef<number | null>(null)
+  const levelRef = useRef(level)
+  levelRef.current = level
+
+  const bestForLevel = getLevelBestTime(GAME_CAT, GAME_ID, level)
+  const unlocked = useMemo(
+    () => getUnlockedLevels(GAME_CAT, GAME_ID),
+    [phase, progress.highestLevel, progress.totalCompleted]
+  )
 
   const clearTimer = () => {
     if (timerRef.current != null) {
       window.clearInterval(timerRef.current)
       timerRef.current = null
     }
-    prevTimeRef.current = null
+  }
+
+  const clearRunTimer = () => {
+    if (runTimerRef.current != null) {
+      window.clearInterval(runTimerRef.current)
+      runTimerRef.current = null
+    }
+  }
+
+  const startRunTimer = () => {
+    clearRunTimer()
+    startedAtRef.current = performance.now()
+    setElapsedMs(0)
+    runTimerRef.current = window.setInterval(() => {
+      if (startedAtRef.current == null) return
+      setElapsedMs(Math.round(performance.now() - startedAtRef.current))
+    }, 200)
+  }
+
+  const stopRunTimer = (): number => {
+    clearRunTimer()
+    const t =
+      startedAtRef.current != null
+        ? Math.round(performance.now() - startedAtRef.current)
+        : elapsedMs
+    startedAtRef.current = null
+    setElapsedMs(t)
+    return t
   }
 
   const startCountdown = (seconds: number) => {
@@ -99,13 +394,22 @@ export function CartasGame() {
       return
     }
     setTimeLeft(seconds)
-    prevTimeRef.current = seconds
     clearTimer()
     timerRef.current = window.setInterval(() => {
       setTimeLeft((t) => {
         if (t <= 1) {
           clearTimer()
+          const ms = stopRunTimer()
           soundFail()
+          if (!isCreativeRun) {
+            recordLevelResult({
+              categoryId: GAME_CAT,
+              gameId: GAME_ID,
+              level: levelRef.current,
+              success: false,
+              timeMs: ms,
+            })
+          }
           setPhase('fail')
           return 0
         }
@@ -116,21 +420,42 @@ export function CartasGame() {
     }, 1000)
   }
 
-  const win = useCallback(() => {
-    clearTimer()
-    soundSuccess()
-    const newHighest = Math.max(progress.highestLevel, level)
-    saveGameProgress('memoria', 'cartas', {
-      highestLevel: newHighest,
-      totalCompleted: progress.totalCompleted + 1,
-    })
-    setPhase('success')
-  }, [level, progress.highestLevel, progress.totalCompleted])
+  const win = useCallback(
+    (timeMs: number) => {
+      clearTimer()
+      const prevBest = getLevelBestTime(GAME_CAT, GAME_ID, levelRef.current)
+      const isNew =
+        timeMs > 0 && (prevBest == null || timeMs < prevBest)
 
-  const startLevel = useCallback(() => {
-    soundStart()
-    clearTimer()
-    const data = generateCardsLevel(level, mode)
+      if (!isCreativeRun) {
+        recordLevelResult({
+          categoryId: GAME_CAT,
+          gameId: GAME_ID,
+          level: levelRef.current,
+          success: true,
+          timeMs,
+        })
+      }
+
+      setLastTimeMs(timeMs)
+      setBeatBest(!!isNew)
+      soundSuccess()
+      setPhase('success')
+    },
+    [isCreativeRun]
+  )
+
+  const applyBoard = (
+    data: {
+      cards: CardItem[]
+      pairs: number
+      gridCols: number
+      timeSec: number
+      targetIndex: number
+      orderIds: string[]
+    },
+    m: CardsMode
+  ) => {
     setCards(data.cards)
     setGridCols(data.gridCols)
     totalPairsRef.current = data.pairs
@@ -140,23 +465,66 @@ export function CartasGame() {
     setOrderStep(0)
     setHighlightId(null)
     orderIdsRef.current = data.orderIds
+    setLastTimeMs(null)
+    setBeatBest(false)
+    setElapsedMs(0)
 
-    if (mode === 'pairs') {
+    if (m === 'pairs') {
       setPhase('playing')
+      startRunTimer()
       startCountdown(data.timeSec)
       return
     }
 
-    if (mode === 'track') {
+    if (m === 'track') {
       const target = data.cards[data.targetIndex]
-      setTargetId(target.id)
+      setTargetId(target?.id ?? null)
       setPhase('track-show')
-      setHighlightId(target.id)
+      setHighlightId(target?.id ?? null)
       return
     }
 
     setPhase('order-show')
-  }, [level, mode, useTimer])
+  }
+
+  const startLevelAt = useCallback(
+    (lv: number, m: CardsMode) => {
+      soundStart()
+      clearTimer()
+      clearRunTimer()
+      setIsCreativeRun(false)
+      setLevel(lv)
+      const data = generateCardsLevel(lv, m)
+      applyBoard(data, m)
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [useTimer, isCreativeRun]
+  )
+
+  const startLevel = useCallback(() => {
+    startLevelAt(level, mode)
+  }, [level, mode, startLevelAt])
+
+  const startCreativeLevel = (lv: CreativeCardsLevel) => {
+    soundStart()
+    clearTimer()
+    clearRunTimer()
+    setIsCreativeRun(true)
+    setMode(lv.mode)
+    const built = buildCardsFromEmojis(lv.emojis, lv.mode)
+    const pairs = lv.emojis.length
+    applyBoard(
+      {
+        cards: built.cards,
+        pairs,
+        gridCols: built.gridCols,
+        timeSec: Math.max(30, 15 + lv.emojis.length * 5),
+        targetIndex: built.targetIndex,
+        orderIds: built.orderIds,
+      },
+      lv.mode
+    )
+  }
 
   useEffect(() => {
     if (phase !== 'track-show' || !targetId) return
@@ -177,12 +545,12 @@ export function CartasGame() {
       if (step >= 5) {
         clearInterval(id)
         setPhase('track-pick')
-        const data = generateCardsLevel(level, 'track')
-        startCountdown(Math.max(20, data.timeSec - 20))
+        startRunTimer()
+        startCountdown(useTimer ? Math.max(20, 40 - Math.min(level, 15)) : 0)
       }
     }, 420)
     return () => clearInterval(id)
-  }, [phase, level])
+  }, [phase, level, useTimer])
 
   useEffect(() => {
     if (phase !== 'order-show') return
@@ -198,24 +566,30 @@ export function CartasGame() {
         setHighlightId(null)
         setCards((prev) => reshuffleCards(prev, level + 99))
         setPhase('order-play')
-        const data = generateCardsLevel(level, 'order')
-        startCountdown(data.timeSec)
+        startRunTimer()
+        startCountdown(useTimer ? Math.max(30, 40 + ids.length * 3) : 0)
         return
       }
       soundCard()
       setHighlightId(ids[i])
     }, 900)
     return () => clearInterval(id)
-  }, [phase, level])
+  }, [phase, level, useTimer])
 
   useEffect(() => {
     if (phase !== 'playing') return
     if (matched.size === totalPairsRef.current && totalPairsRef.current > 0) {
-      win()
+      win(stopRunTimer())
     }
   }, [matched, phase, win])
 
-  useEffect(() => () => clearTimer(), [])
+  useEffect(
+    () => () => {
+      clearTimer()
+      clearRunTimer()
+    },
+    []
+  )
 
   const onPairsClick = (card: CardItem) => {
     if (phase !== 'playing' || lock) return
@@ -247,8 +621,18 @@ export function CartasGame() {
   const onTrackClick = (card: CardItem) => {
     if (phase !== 'track-pick') return
     soundCard()
-    if (card.id === targetId) win()
+    const t = stopRunTimer()
+    if (card.id === targetId) win(t)
     else {
+      if (!isCreativeRun) {
+        recordLevelResult({
+          categoryId: GAME_CAT,
+          gameId: GAME_ID,
+          level,
+          success: false,
+          timeMs: t,
+        })
+      }
       soundFail()
       setPhase('fail')
     }
@@ -262,9 +646,19 @@ export function CartasGame() {
       const next = orderStep + 1
       setOrderStep(next)
       setFlipped((f) => [...f, card.id])
-      if (next >= orderIdsRef.current.length) win()
+      if (next >= orderIdsRef.current.length) win(stopRunTimer())
       else soundMatch()
     } else {
+      const t = stopRunTimer()
+      if (!isCreativeRun) {
+        recordLevelResult({
+          categoryId: GAME_CAT,
+          gameId: GAME_ID,
+          level,
+          success: false,
+          timeMs: t,
+        })
+      }
       soundFail()
       setPhase('fail')
     }
@@ -293,13 +687,20 @@ export function CartasGame() {
 
   const nextLevel = () => {
     soundClick()
-    setLevel((l) => l + 1)
-    setPhase('ready')
+    if (isCreativeRun) {
+      setPhase('creative-hub')
+      return
+    }
+    startLevelAt(level + 1, mode)
   }
 
   const retry = () => {
     soundClick()
-    setPhase('ready')
+    if (isCreativeRun) {
+      setPhase('creative-hub')
+      return
+    }
+    startLevelAt(level, mode)
   }
 
   const statusText = () => {
@@ -314,6 +715,302 @@ export function CartasGame() {
     return ''
   }
 
+  // ─── Hub creativo ────────────────────────────────────────────────────────
+  if (phase === 'creative-hub') {
+    return (
+      <div className="app-shell">
+        <header
+          style={{
+            marginBottom: '1rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+          }}
+        >
+          <button
+            type="button"
+            className="glass-button secondary"
+            onClick={() => {
+              soundClick()
+              setPhase('ready')
+            }}
+            style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
+          >
+            ← Atrás
+          </button>
+          <span style={{ fontSize: '0.95rem' }}>Niveles creativos</span>
+        </header>
+
+        <GlassCard>
+          <div style={{ padding: '1.2rem 1.1rem' }}>
+            <GlassButton
+              style={{ width: '100%', marginBottom: '1rem' }}
+              onClick={() => {
+                soundClick()
+                setEditingId(null)
+                setEditName(`Nivel ${creativeList.length + 1}`)
+                setEditMode('pairs')
+                setEditEmojis([])
+                setPhase('creative-edit')
+              }}
+            >
+              + Nuevo nivel
+            </GlassButton>
+
+            {creativeList.length === 0 && (
+              <p
+                style={{
+                  textAlign: 'center',
+                  color: 'var(--gco-ink-muted)',
+                  fontSize: '0.9rem',
+                }}
+              >
+                Crea niveles con tus emojis y un nombre.
+              </p>
+            )}
+
+            <div
+              style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}
+            >
+              {creativeList.map((lv) => (
+                <div
+                  key={lv.id}
+                  style={{
+                    padding: '0.85rem 1rem',
+                    borderRadius: 14,
+                    border: '1px solid var(--gco-glass-border)',
+                    background: 'rgba(255,255,255,0.04)',
+                    textAlign: 'left',
+                  }}
+                >
+                  <p style={{ fontWeight: 600 }}>{lv.name}</p>
+                  <p
+                    style={{
+                      fontSize: '0.78rem',
+                      color: 'var(--gco-ink-muted)',
+                    }}
+                  >
+                    {MODE_INFO[lv.mode].title} · {lv.emojis.length} emojis
+                  </p>
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 4,
+                      margin: '0.4rem 0',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    {lv.emojis.slice(0, 10).map((e, i) => (
+                      <span key={`${e}-${i}`} style={{ fontSize: '1.1rem' }}>
+                        {e}
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="glass-button"
+                      style={{ fontSize: '0.8rem', padding: '0.35rem 0.7rem' }}
+                      onClick={() => startCreativeLevel(lv)}
+                    >
+                      Jugar
+                    </button>
+                    <button
+                      type="button"
+                      className="glass-button secondary"
+                      style={{ fontSize: '0.8rem', padding: '0.35rem 0.7rem' }}
+                      onClick={() => {
+                        soundClick()
+                        setEditingId(lv.id)
+                        setEditName(lv.name)
+                        setEditMode(lv.mode)
+                        setEditEmojis([...lv.emojis])
+                        setPhase('creative-edit')
+                      }}
+                    >
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      className="glass-button secondary"
+                      style={{ fontSize: '0.8rem', padding: '0.35rem 0.7rem' }}
+                      onClick={() => {
+                        soundClick()
+                        const next = creativeList.filter((x) => x.id !== lv.id)
+                        setCreativeList(next)
+                        saveCreative(next)
+                      }}
+                    >
+                      Borrar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </GlassCard>
+      </div>
+    )
+  }
+
+  // ─── Editor creativo ─────────────────────────────────────────────────────
+  if (phase === 'creative-edit') {
+    const minEmojis = editMode === 'pairs' ? 2 : 3
+    return (
+      <div className="app-shell">
+        <header
+          style={{
+            marginBottom: '1rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+          }}
+        >
+          <button
+            type="button"
+            className="glass-button secondary"
+            onClick={() => {
+              soundClick()
+              setPhase('creative-hub')
+            }}
+            style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
+          >
+            ← Lista
+          </button>
+          <span style={{ fontSize: '0.95rem' }}>
+            {editingId ? 'Editar' : 'Nuevo'}
+          </span>
+        </header>
+
+        <GlassCard>
+          <div style={{ padding: '1.2rem 1.1rem' }}>
+            <label
+              style={{
+                display: 'block',
+                fontWeight: 500,
+                marginBottom: 6,
+              }}
+            >
+              Nombre
+            </label>
+            <input
+              className="glass-input"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              style={{ marginBottom: '0.85rem' }}
+            />
+
+            <div style={{ marginBottom: '0.85rem' }}>
+              <ModeDropdown value={editMode} onChange={setEditMode} />
+            </div>
+
+            <p
+              style={{
+                fontSize: '0.85rem',
+                color: 'var(--gco-ink-muted)',
+                marginBottom: 8,
+              }}
+            >
+              Emojis del nivel (mín. {minEmojis}) · toca para quitar
+            </p>
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 6,
+                minHeight: 40,
+                marginBottom: 12,
+              }}
+            >
+              {editEmojis.length === 0 && (
+                <span
+                  style={{ color: 'var(--gco-ink-muted)', fontSize: '0.85rem' }}
+                >
+                  Ninguno
+                </span>
+              )}
+              {editEmojis.map((e, i) => (
+                <button
+                  key={`${e}-${i}`}
+                  type="button"
+                  onClick={() => {
+                    soundClick()
+                    setEditEmojis((s) => s.filter((_, j) => j !== i))
+                  }}
+                  style={{
+                    fontSize: '1.4rem',
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid var(--gco-glass-border)',
+                    borderRadius: 10,
+                    padding: '0.25rem 0.4rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {e}
+                </button>
+              ))}
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 6,
+                marginBottom: 14,
+              }}
+            >
+              {EMOJI_POOL.map((e) => (
+                <button
+                  key={e}
+                  type="button"
+                  onClick={() => {
+                    if (editEmojis.includes(e)) return
+                    if (editEmojis.length >= 12) return
+                    soundClick()
+                    setEditEmojis((s) => [...s, e])
+                  }}
+                  style={{
+                    fontSize: '1.35rem',
+                    background: 'transparent',
+                    border: '1px solid var(--gco-glass-border)',
+                    borderRadius: 10,
+                    padding: '0.2rem 0.35rem',
+                    cursor: 'pointer',
+                    opacity: editEmojis.includes(e) ? 0.35 : 1,
+                  }}
+                >
+                  {e}
+                </button>
+              ))}
+            </div>
+
+            <GlassButton
+              style={{ width: '100%' }}
+              onClick={() => {
+                if (!editName.trim() || editEmojis.length < minEmojis) return
+                soundSuccess()
+                const entry: CreativeCardsLevel = {
+                  id: editingId ?? uid(),
+                  name: editName.trim(),
+                  mode: editMode,
+                  emojis: [...editEmojis],
+                  updatedAt: new Date().toISOString(),
+                }
+                const next = editingId
+                  ? creativeList.map((x) => (x.id === editingId ? entry : x))
+                  : [entry, ...creativeList]
+                setCreativeList(next)
+                saveCreative(next)
+                setPhase('creative-hub')
+              }}
+            >
+              Guardar nivel
+            </GlassButton>
+          </div>
+        </GlassCard>
+      </div>
+    )
+  }
+
+  // ─── Juego (phase ya no es creative-*) ───────────────────────────────────
   return (
     <div className="app-shell">
       <header
@@ -330,13 +1027,27 @@ export function CartasGame() {
           className="glass-button secondary"
           onClick={() => {
             soundClick()
+            clearTimer()
+            clearRunTimer()
+            if (phase !== 'ready') {
+              setPhase('ready')
+              return
+            }
             navigate('/categoria/memoria')
           }}
           style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
         >
           ← Volver
         </button>
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: '0.65rem',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            justifyContent: 'flex-end',
+          }}
+        >
           {useTimer &&
             timeLeft > 0 &&
             (phase === 'playing' ||
@@ -355,11 +1066,108 @@ export function CartasGame() {
                 ⏱ {timeLeft}s
               </span>
             )}
-          <span className="level-number" style={{ fontSize: '1.15rem' }}>
-            Nivel {level}
-          </span>
+          {(phase === 'playing' ||
+            phase === 'track-pick' ||
+            phase === 'order-play') && (
+            <span
+              className="mono"
+              style={{ fontSize: '0.85rem', color: 'var(--gco-ink-muted)' }}
+            >
+              {formatDuration(elapsedMs)}
+              {bestForLevel != null && bestForLevel > 0 && !isCreativeRun && (
+                <> · 🏆 {formatDuration(bestForLevel)}</>
+              )}
+            </span>
+          )}
+          {!isCreativeRun && phase === 'ready' && (
+            <button
+              type="button"
+              className="glass-button secondary"
+              onClick={() => {
+                soundClick()
+                setShowLevelPicker((v) => !v)
+              }}
+              style={{ padding: '0.35rem 0.7rem', fontSize: '0.85rem' }}
+            >
+              Nivel {level} ▾
+            </button>
+          )}
+          {!isCreativeRun && phase !== 'ready' && (
+            <span className="level-number" style={{ fontSize: '1.05rem' }}>
+              Nivel {level}
+            </span>
+          )}
         </div>
       </header>
+
+      <AnimatePresence>
+        {showLevelPicker && phase === 'ready' && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="glass-card"
+            style={{ padding: '0.85rem 1rem', marginBottom: '0.85rem' }}
+          >
+            <p
+              style={{
+                fontSize: '0.82rem',
+                color: 'var(--gco-ink-muted)',
+                marginBottom: '0.5rem',
+              }}
+            >
+              Elige nivel · marca a superar
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <button
+                type="button"
+                className={`glass-button ${
+                  level === defaultLevel ? '' : 'secondary'
+                }`}
+                style={{ fontSize: '0.8rem', padding: '0.4rem 0.65rem' }}
+                onClick={() => {
+                  soundClick()
+                  setLevel(defaultLevel)
+                  setShowLevelPicker(false)
+                }}
+              >
+                Nv. {defaultLevel} (nuevo)
+              </button>
+              {unlocked.map((u) => (
+                <button
+                  key={u.level}
+                  type="button"
+                  className={`glass-button ${
+                    level === u.level ? '' : 'secondary'
+                  }`}
+                  style={{
+                    fontSize: '0.8rem',
+                    padding: '0.4rem 0.65rem',
+                    minWidth: 64,
+                  }}
+                  onClick={() => {
+                    soundClick()
+                    setLevel(u.level)
+                    setShowLevelPicker(false)
+                  }}
+                >
+                  Nv. {u.level}
+                  <span
+                    className="mono"
+                    style={{
+                      display: 'block',
+                      fontSize: '0.65rem',
+                      opacity: 0.85,
+                    }}
+                  >
+                    {u.bestTimeMs != null ? formatDuration(u.bestTimeMs) : '—'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <GlassCard>
         <div style={{ padding: '1.35rem 1.15rem', textAlign: 'center' }}>
@@ -387,94 +1195,7 @@ export function CartasGame() {
                   gap: '1rem',
                 }}
               >
-                <p
-                  style={{
-                    fontWeight: 600,
-                    fontSize: '0.9rem',
-                    textAlign: 'left',
-                  }}
-                >
-                  Modo de juego
-                </p>
-
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.5rem',
-                  }}
-                >
-                  {(Object.keys(MODE_INFO) as CardsMode[]).map((m) => {
-                    const active = mode === m
-                    return (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => {
-                          soundClick()
-                          setMode(m)
-                        }}
-                        aria-pressed={active}
-                        style={{
-                          textAlign: 'left',
-                          padding: '0.75rem 1rem',
-                          display: 'flex',
-                          gap: '0.75rem',
-                          alignItems: 'center',
-                          width: '100%',
-                          borderRadius: 14,
-                          border: active
-                            ? 'none'
-                            : '1px solid var(--gco-glass-border)',
-                          background: active
-                            ? 'var(--gco-primary)'
-                            : 'var(--gco-glass-bg)',
-                          color: active
-                            ? 'var(--gco-button-text, #0B1220)'
-                            : 'var(--gco-ink)',
-                          cursor: 'pointer',
-                          font: 'inherit',
-                        }}
-                      >
-                        <span
-                          style={{
-                            ...EMOJI_STYLE,
-                            fontSize: '1.25rem',
-                            width: 28,
-                            textAlign: 'center',
-                            flexShrink: 0,
-                            filter: 'none',
-                          }}
-                        >
-                          {MODE_INFO[m].emoji}
-                        </span>
-                        <span style={{ flex: 1, minWidth: 0 }}>
-                          <strong
-                            style={{
-                              display: 'block',
-                              fontSize: '0.95rem',
-                              fontWeight: 600,
-                            }}
-                          >
-                            {MODE_INFO[m].title}
-                          </strong>
-                          <span
-                            style={{
-                              display: 'block',
-                              fontSize: '0.78rem',
-                              opacity: active ? 0.85 : 0.75,
-                              fontWeight: 400,
-                              lineHeight: 1.35,
-                              marginTop: 2,
-                            }}
-                          >
-                            {MODE_INFO[m].desc}
-                          </span>
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
+                <ModeDropdown value={mode} onChange={setMode} />
 
                 <div
                   style={{
@@ -539,9 +1260,32 @@ export function CartasGame() {
                   </button>
                 </div>
 
+                {bestForLevel != null && bestForLevel > 0 && (
+                  <p
+                    style={{
+                      fontSize: '0.85rem',
+                      color: 'var(--gco-primary)',
+                    }}
+                  >
+                    Marca Nv. {level}:{' '}
+                    <span className="mono">{formatDuration(bestForLevel)}</span>
+                  </p>
+                )}
+
                 <GlassButton onClick={startLevel}>
                   Comenzar nivel {level}
                 </GlassButton>
+
+                <button
+                  type="button"
+                  className="glass-button secondary"
+                  onClick={() => {
+                    soundClick()
+                    setPhase('creative-hub')
+                  }}
+                >
+                  ✨ Modo creativo
+                </button>
               </motion.div>
             )}
 
@@ -601,7 +1345,6 @@ export function CartasGame() {
                           color: 'initial',
                           WebkitTextFillColor: 'initial',
                           filter: 'none',
-                          opacity: 1,
                         }}
                       >
                         {showEmoji ? (
@@ -645,14 +1388,42 @@ export function CartasGame() {
                       style={{
                         color: 'var(--gco-primary)',
                         fontWeight: 600,
-                        marginBottom: '0.85rem',
+                        marginBottom: '0.35rem',
                       }}
                     >
                       ¡Correcto!
                     </p>
-                    <GlassButton onClick={nextLevel}>
-                      Siguiente nivel
-                    </GlassButton>
+                    <p
+                      style={{
+                        fontSize: '0.85rem',
+                        color: 'var(--gco-ink-muted)',
+                        marginBottom: '0.85rem',
+                      }}
+                    >
+                      {lastTimeMs != null ? formatDuration(lastTimeMs) : '—'}
+                      {beatBest ? ' · ¡Nueva marca!' : ''}
+                    </p>
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: 8,
+                        justifyContent: 'center',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <GlassButton onClick={nextLevel}>
+                        {isCreativeRun
+                          ? 'Volver a mis niveles'
+                          : 'Siguiente nivel'}
+                      </GlassButton>
+                      <button
+                        type="button"
+                        className="glass-button secondary"
+                        onClick={retry}
+                      >
+                        Reintentar
+                      </button>
+                    </div>
                   </motion.div>
                 )}
 

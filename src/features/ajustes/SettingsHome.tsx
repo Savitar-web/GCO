@@ -83,6 +83,14 @@ export function SettingsHome() {
         >
           Ver recorrido
         </Link>
+        <Link
+          to="/ajustes/rutinas"
+          className="glass-button secondary"
+          style={{ textDecoration: 'none', fontSize: '0.9rem' }}
+          onClick={() => soundClick()}
+        >
+          Rutinas
+        </Link>
       </div>
     </div>
   )

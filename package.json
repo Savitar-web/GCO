@@ -1,26 +1,40 @@
 {
   "name": "gco",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "GymCogOrigins — gimnasio cognitivo (memoria, lógica y más)",
+  "author": "Savitar Xeno",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "electron:dev": "electron .",
+    "electron:build": "electron-builder --win",
+    "electron:build:portable": "electron-builder --win portable",
+    "cap:sync": "npm run build && npx cap sync android",
+    "cap:open": "npx cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/cli": "^8.4.2",
+    "@capacitor/core": "^8.4.2",
     "framer-motion": "^12.43.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.2"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
     "eslint": "^10.6.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.3",
@@ -31,5 +45,45 @@
     "typescript-eslint": "^8.62.0",
     "vite": "^8.1.1",
     "vite-plugin-pwa": "^1.3.0"
+  },
+  "build": {
+    "appId": "com.savitarxeno.gco",
+    "productName": "GymCogOrigins",
+    "copyright": "Copyright © Savitar Xeno",
+    "directories": {
+      "output": "release-electron",
+      "buildResources": "public/icons"
+    },
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.cjs"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/icons/icon-512.png",
+      "artifactName": "GymCogOrigins-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "GymCogOrigins",
+      "uninstallDisplayName": "GymCogOrigins"
+    },
+    "portable": {
+      "artifactName": "GymCogOrigins-Portable-${version}.${ext}"
+    }
   }
 }
