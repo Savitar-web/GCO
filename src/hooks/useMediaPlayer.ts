@@ -6,6 +6,9 @@ export function useMediaPlayer() {
   const urlRef = useRef<string | null>(null)
   const queueRef = useRef<TrackItem[]>([])
   const indexRef = useRef(0)
+  const ctxRef = useRef<AudioContext | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null)
 
   const [track, setTrack] = useState<TrackItem | null>(null)
   const [playing, setPlaying] = useState(false)
@@ -13,6 +16,8 @@ export function useMediaPlayer() {
   const [durationMs, setDurationMs] = useState(0)
   const [shuffle, setShuffle] = useState(false)
   const [repeat, setRepeat] = useState<'off' | 'one' | 'all'>('off')
+  const [volume, setVolumeState] = useState(1)
+  const [rate, setRateState] = useState(1)
 
   const cleanupUrl = () => {
     if (urlRef.current) {
@@ -21,30 +26,54 @@ export function useMediaPlayer() {
     }
   }
 
+  const ensureGraph = (audio: HTMLAudioElement) => {
+    try {
+      if (!ctxRef.current) {
+        ctxRef.current = new AudioContext()
+      }
+      const ctx = ctxRef.current
+      if (ctx.state === 'suspended') void ctx.resume()
+      if (!analyserRef.current) {
+        const an = ctx.createAnalyser()
+        an.fftSize = 256
+        an.smoothingTimeConstant = 0.75
+        analyserRef.current = an
+      }
+      if (!sourceRef.current) {
+        sourceRef.current = ctx.createMediaElementSource(audio)
+        sourceRef.current.connect(analyserRef.current)
+        analyserRef.current.connect(ctx.destination)
+      }
+    } catch {
+      /* ya conectado o no soportado */
+    }
+  }
+
   const ensureAudio = () => {
     if (!audioRef.current) {
       const a = new Audio()
       a.preload = 'auto'
-      a.onended = () => {
-        void onEnded()
-      }
-      a.ontimeupdate = () => {
-        setCurrentMs((a.currentTime || 0) * 1000)
-      }
-      a.onloadedmetadata = () => {
-        setDurationMs((a.duration || 0) * 1000)
-      }
+      a.crossOrigin = 'anonymous'
+      a.ontimeupdate = () => setCurrentMs((a.currentTime || 0) * 1000)
+      a.onloadedmetadata = () => setDurationMs((a.duration || 0) * 1000)
       a.onplay = () => setPlaying(true)
       a.onpause = () => setPlaying(false)
+      a.onended = () => {
+        void onEndedRef.current()
+      }
       audioRef.current = a
+      ensureGraph(a)
     }
     return audioRef.current
   }
+
+  const onEndedRef = useRef<() => Promise<void>>(async () => {})
 
   const loadTrack = useCallback(async (t: TrackItem) => {
     const blob = await getTrackBlob(t.blobKey)
     if (!blob) return
     const audio = ensureAudio()
+    ensureGraph(audio)
     cleanupUrl()
     const url = URL.createObjectURL(blob)
     urlRef.current = url
@@ -66,6 +95,9 @@ export function useMediaPlayer() {
       }
       await loadTrack(t)
       const audio = ensureAudio()
+      if (ctxRef.current?.state === 'suspended') {
+        await ctxRef.current.resume()
+      }
       try {
         await audio.play()
       } catch {
@@ -78,6 +110,9 @@ export function useMediaPlayer() {
   const toggle = useCallback(async () => {
     const audio = ensureAudio()
     if (!audio.src) return
+    if (ctxRef.current?.state === 'suspended') {
+      await ctxRef.current.resume()
+    }
     if (audio.paused) {
       try {
         await audio.play()
@@ -110,8 +145,7 @@ export function useMediaPlayer() {
     const q = queueRef.current
     if (!q.length) return
     if (shuffle) {
-      const i = Math.floor(Math.random() * q.length)
-      await playIndex(i)
+      await playIndex(Math.floor(Math.random() * q.length))
       return
     }
     await playIndex(indexRef.current + 1)
@@ -144,17 +178,36 @@ export function useMediaPlayer() {
     }
   }, [next, repeat])
 
-  useEffect(() => {
-    const a = audioRef.current
-    if (a) a.onended = () => {
-      void onEnded()
-    }
-  }, [onEnded])
+  onEndedRef.current = onEnded
+
+  const setVolume = useCallback((v: number) => {
+    const val = Math.min(1, Math.max(0, v))
+    const audio = ensureAudio()
+    audio.volume = val
+    setVolumeState(val)
+  }, [])
+
+  const setPlaybackRate = useCallback((r: number) => {
+    const val = Math.min(2, Math.max(0.5, r))
+    const audio = ensureAudio()
+    audio.playbackRate = val
+    setRateState(val)
+  }, [])
+
+  /** Datos de frecuencia 0–255 para el espectro */
+  const getFrequencyData = useCallback((): Uint8Array | null => {
+    const an = analyserRef.current
+    if (!an) return null
+    const buf = new Uint8Array(an.frequencyBinCount)
+    an.getByteFrequencyData(buf)
+    return buf
+  }, [])
 
   useEffect(
     () => () => {
       audioRef.current?.pause()
       cleanupUrl()
+      void ctxRef.current?.close()
     },
     []
   )
@@ -168,6 +221,10 @@ export function useMediaPlayer() {
     setShuffle,
     repeat,
     setRepeat,
+    volume,
+    setVolume,
+    rate,
+    setPlaybackRate,
     playTrack,
     toggle,
     seek,
@@ -176,6 +233,7 @@ export function useMediaPlayer() {
     setQueue: (q: TrackItem[]) => {
       queueRef.current = q
     },
+    getFrequencyData,
   }
 }
 
@@ -193,3 +251,5 @@ function updateMediaSession(t: TrackItem) {
     /* */
   }
 }
+
+export type MediaPlayerApi = ReturnType<typeof useMediaPlayer>

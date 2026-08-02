@@ -20,10 +20,10 @@ import {
 } from '@/core/storage/mediaLibrary'
 import { useMediaPlayer } from '@/hooks/useMediaPlayer'
 import { soundClick, soundSuccess, soundFail } from '@/core/audio/uiSounds'
-import { PlayerBar } from './PlayerBar'
+import { PlayerBar, getBarPrefs, saveBarPrefs } from './PlayerBar'
+import { AudioSpectrum, type SpecStyle } from './AudioSpectrum'
 
 type Tab = 'library' | 'playlists' | 'now' | 'import' | 'more'
-type SpecStyle = 'bars' | 'wave' | 'sphere' | 'mirror' | 'pulse'
 
 function formatBytes(n?: number) {
   if (!n || n <= 0) return '—'
@@ -61,8 +61,18 @@ export function MusicaHome() {
   const [editYear, setEditYear] = useState('')
   const [editAlbum, setEditAlbum] = useState('')
   const [editLyrics, setEditLyrics] = useState('')
+
   const [specColor, setSpecColor] = useState('#22E6C5')
+  const [specColorB, setSpecColorB] = useState('#8B5CF6')
+  const [specColorC, setSpecColorC] = useState('#F472B6')
   const [specStyle, setSpecStyle] = useState<SpecStyle>('sphere')
+  const [specMulti, setSpecMulti] = useState<1 | 2 | 3>(2)
+  const [specParticles, setSpecParticles] = useState(true)
+  const [specGlow, setSpecGlow] = useState(true)
+  const [progressColor, setProgressColor] = useState(
+    () => getBarPrefs().progressColor
+  )
+
   const [playerHidden, setPlayerHidden] = useState(false)
   const [showLyrics, setShowLyrics] = useState(true)
   const [search, setSearch] = useState('')
@@ -82,7 +92,7 @@ export function MusicaHome() {
   }, [])
 
   const plDetail = plDetailId
-    ? playlists.find((p) => p.id === plDetailId) ?? null
+    ? (playlists.find((p) => p.id === plDetailId) ?? null)
     : null
 
   const plTracks = useMemo(() => {
@@ -116,9 +126,7 @@ export function MusicaHome() {
   }, [tracks, playlists, activePl, sortAlpha, search, plDetailId])
 
   const editing = editId ? tracks.find((t) => t.id === editId) : null
-  const current =
-    (player as { track?: TrackItem; current?: TrackItem }).track ??
-    (player as { current?: TrackItem }).current
+  const current = player.track
 
   const onImport = async (files: FileList | null) => {
     if (!files?.length) return
@@ -144,7 +152,7 @@ export function MusicaHome() {
 
   const playAll = (list: TrackItem[], start?: TrackItem) => {
     if (!list.length) return
-    player.setQueue?.(list)
+    player.setQueue(list)
     void player.playTrack(start ?? list[0], list)
     setTab('now')
     setPlayerHidden(false)
@@ -352,13 +360,18 @@ export function MusicaHome() {
       }}
     >
       {opts?.inPlaylist && (
-        <span style={{ color: 'var(--gco-ink-muted)', fontSize: '0.9rem' }}>⠿</span>
+        <span style={{ color: 'var(--gco-ink-muted)', fontSize: '0.9rem' }}>
+          ⠿
+        </span>
       )}
       <button
         type="button"
         onClick={() => {
           soundClick()
-          playAll(opts?.inPlaylist ? plTracks : visible.length ? visible : tracks, t)
+          playAll(
+            opts?.inPlaylist ? plTracks : visible.length ? visible : tracks,
+            t
+          )
         }}
         style={{
           width: 48,
@@ -388,7 +401,10 @@ export function MusicaHome() {
         type="button"
         onClick={() => {
           soundClick()
-          playAll(opts?.inPlaylist ? plTracks : visible.length ? visible : tracks, t)
+          playAll(
+            opts?.inPlaylist ? plTracks : visible.length ? visible : tracks,
+            t
+          )
         }}
         style={{
           flex: 1,
@@ -453,7 +469,14 @@ export function MusicaHome() {
 
   const libraryPanel = (
     <div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          flexWrap: 'wrap',
+          marginBottom: 12,
+        }}
+      >
         <input
           className="glass-input"
           placeholder="Buscar título, artista…"
@@ -537,7 +560,9 @@ export function MusicaHome() {
         >
           ← Listas
         </button>
-        <h2 style={{ flex: 1, fontSize: '1.15rem', margin: 0 }}>{plDetail.name}</h2>
+        <h2 style={{ flex: 1, fontSize: '1.15rem', margin: 0 }}>
+          {plDetail.name}
+        </h2>
         <button
           type="button"
           className="glass-button secondary"
@@ -545,7 +570,8 @@ export function MusicaHome() {
           onClick={() => {
             soundClick()
             const name = prompt('Nombre de la lista', plDetail.name)
-            if (name?.trim()) void renamePlaylist(plDetail.id, name).then(refresh)
+            if (name?.trim())
+              void renamePlaylist(plDetail.id, name).then(refresh)
           }}
         >
           Renombrar
@@ -570,14 +596,29 @@ export function MusicaHome() {
           ▶ Reproducir
         </button>
       </div>
-      <p style={{ fontSize: '0.8rem', color: 'var(--gco-ink-muted)', marginBottom: 10 }}>
+      <p
+        style={{
+          fontSize: '0.8rem',
+          color: 'var(--gco-ink-muted)',
+          marginBottom: 10,
+        }}
+      >
         Arrastra ⠿ para reordenar. {plTracks.length} pistas.
       </p>
 
       {addToPlOpen && (
         <GlassCard>
-          <div style={{ padding: '0.75rem 1rem', maxHeight: 280, overflow: 'auto' }}>
-            <p style={{ fontWeight: 600, marginBottom: 8 }}>Todas las importadas</p>
+          <div
+            style={{
+              padding: '0.75rem 1rem',
+              maxHeight: 280,
+              overflow: 'auto',
+              marginBottom: 12,
+            }}
+          >
+            <p style={{ fontWeight: 600, marginBottom: 8 }}>
+              Todas las importadas
+            </p>
             {tracks.map((t) => {
               const inPl = plDetail.trackIds.includes(t.id)
               return (
@@ -593,7 +634,10 @@ export function MusicaHome() {
                 >
                   <span style={{ flex: 1, fontSize: '0.9rem' }}>
                     {t.title}
-                    <span style={{ color: 'var(--gco-ink-muted)' }}> · {t.artist}</span>
+                    <span style={{ color: 'var(--gco-ink-muted)' }}>
+                      {' '}
+                      · {t.artist}
+                    </span>
                   </span>
                   <button
                     type="button"
@@ -608,7 +652,9 @@ export function MusicaHome() {
               )
             })}
             {tracks.length === 0 && (
-              <p style={{ color: 'var(--gco-ink-muted)' }}>No hay pistas importadas.</p>
+              <p style={{ color: 'var(--gco-ink-muted)' }}>
+                No hay pistas importadas.
+              </p>
             )}
           </div>
         </GlassCard>
@@ -624,7 +670,7 @@ export function MusicaHome() {
                 padding: '1.5rem',
               }}
             >
-              Lista vacía. Pulsa “Añadir del todo”.
+              Lista vacía. Pulsa “+ Añadir del todo”.
             </p>
           ) : (
             plTracks.map((t) => trackRow(t, { inPlaylist: true }))
@@ -638,7 +684,14 @@ export function MusicaHome() {
     playlistDetailPanel
   ) : (
     <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          marginBottom: 14,
+          flexWrap: 'wrap',
+        }}
+      >
         <GlassButton
           onClick={() => {
             soundClick()
@@ -678,7 +731,7 @@ export function MusicaHome() {
                 onClick={() => {
                   soundClick()
                   setPlDetailId(pl.id)
-                  setAddToPlOpen(false)
+                  setAddToPlOpen(pl.trackIds.length === 0)
                 }}
                 style={{
                   border: 'none',
@@ -692,7 +745,12 @@ export function MusicaHome() {
                 }}
               >
                 <p style={{ fontWeight: 700 }}>{pl.name}</p>
-                <p style={{ fontSize: '0.8rem', color: 'var(--gco-ink-muted)' }}>
+                <p
+                  style={{
+                    fontSize: '0.8rem',
+                    color: 'var(--gco-ink-muted)',
+                  }}
+                >
                   {pl.trackIds.length} pistas · tocar para abrir
                 </p>
               </button>
@@ -748,61 +806,18 @@ export function MusicaHome() {
   )
 
   const spectrumViz = (
-    <div
-      style={{
-        marginTop: 18,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: 88,
-        opacity: player.playing ? 1 : 0.4,
-      }}
-    >
-      {specStyle === 'sphere' ? (
-        <div
-          style={{
-            width: 120,
-            height: 120,
-            borderRadius: '50%',
-            background: `radial-gradient(circle at 35% 30%, #fff8, transparent 45%),
-              radial-gradient(circle at 50% 50%, ${specColor}, #8b5cf6 70%, transparent)`,
-            boxShadow: player.playing
-              ? `0 0 40px ${specColor}88, 0 0 80px ${specColor}44`
-              : `0 0 20px ${specColor}44`,
-            animation: player.playing ? 'gco-sphere 1.2s ease-in-out infinite alternate' : 'none',
-          }}
-        />
-      ) : (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'flex-end',
-            justifyContent: 'center',
-            gap: 4,
-            height: 64,
-          }}
-        >
-          {Array.from({ length: 20 }).map((_, i) => (
-            <span
-              key={i}
-              style={{
-                width: specStyle === 'pulse' ? 8 : 5,
-                borderRadius: 4,
-                background: specColor,
-                height:
-                  specStyle === 'wave'
-                    ? `${16 + Math.sin(i * 0.55) * 20 + 20}px`
-                    : specStyle === 'mirror'
-                      ? `${12 + ((i % 10) * 5)}px`
-                      : `${18 + ((i * 13) % 40)}px`,
-                animation: player.playing
-                  ? `gco-bar ${0.35 + (i % 6) * 0.07}s ease-in-out infinite alternate`
-                  : 'none',
-              }}
-            />
-          ))}
-        </div>
-      )}
+    <div style={{ marginTop: 16 }}>
+      <AudioSpectrum
+        getFrequencyData={player.getFrequencyData}
+        playing={player.playing}
+        style={specStyle}
+        colorA={specColor}
+        colorB={specColorB}
+        colorC={specColorC}
+        multi={specMulti}
+        particles={specParticles}
+        glow={specGlow}
+      />
     </div>
   )
 
@@ -868,15 +883,6 @@ export function MusicaHome() {
               alignItems: 'center',
             }}
           >
-            <label style={{ fontSize: '0.8rem' }}>
-              Color
-              <input
-                type="color"
-                value={specColor}
-                onChange={(e) => setSpecColor(e.target.value)}
-                style={{ marginLeft: 8, verticalAlign: 'middle' }}
-              />
-            </label>
             {SPEC_STYLES.map((s) => (
               <button
                 key={s}
@@ -993,6 +999,115 @@ export function MusicaHome() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <GlassCard>
         <div style={{ padding: '1.15rem 1.1rem' }}>
+          <h3 style={{ marginBottom: 10 }}>Personalización</h3>
+
+          <label
+            style={{
+              fontSize: '0.85rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              marginBottom: 12,
+            }}
+          >
+            Color barra de progreso
+            <input
+              type="color"
+              value={progressColor}
+              onChange={(e) => {
+                setProgressColor(e.target.value)
+                saveBarPrefs({ progressColor: e.target.value })
+              }}
+            />
+          </label>
+
+          <p style={{ fontSize: '0.85rem', marginBottom: 6 }}>
+            Colores del espectro
+          </p>
+          <div
+            style={{
+              display: 'flex',
+              gap: 12,
+              flexWrap: 'wrap',
+              marginBottom: 10,
+            }}
+          >
+            <label style={{ fontSize: '0.8rem' }}>
+              A{' '}
+              <input
+                type="color"
+                value={specColor}
+                onChange={(e) => setSpecColor(e.target.value)}
+              />
+            </label>
+            <label style={{ fontSize: '0.8rem' }}>
+              B{' '}
+              <input
+                type="color"
+                value={specColorB}
+                onChange={(e) => setSpecColorB(e.target.value)}
+              />
+            </label>
+            <label style={{ fontSize: '0.8rem' }}>
+              C{' '}
+              <input
+                type="color"
+                value={specColorC}
+                onChange={(e) => setSpecColorC(e.target.value)}
+              />
+            </label>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              gap: 6,
+              flexWrap: 'wrap',
+              marginBottom: 8,
+            }}
+          >
+            {([1, 2, 3] as const).map((n) => (
+              <button
+                key={n}
+                type="button"
+                className={`glass-button ${specMulti === n ? '' : 'secondary'}`}
+                style={{ fontSize: '0.75rem' }}
+                onClick={() => {
+                  soundClick()
+                  setSpecMulti(n)
+                }}
+              >
+                {n} color{n > 1 ? 'es' : ''}
+              </button>
+            ))}
+            <button
+              type="button"
+              className={`glass-button ${specParticles ? '' : 'secondary'}`}
+              style={{ fontSize: '0.75rem' }}
+              onClick={() => {
+                soundClick()
+                setSpecParticles((v) => !v)
+              }}
+            >
+              Partículas
+            </button>
+            <button
+              type="button"
+              className={`glass-button ${specGlow ? '' : 'secondary'}`}
+              style={{ fontSize: '0.75rem' }}
+              onClick={() => {
+                soundClick()
+                setSpecGlow((v) => !v)
+              }}
+            >
+              Glow
+            </button>
+          </div>
+        </div>
+      </GlassCard>
+
+      <GlassCard>
+        <div style={{ padding: '1.15rem 1.1rem' }}>
           <h3 style={{ marginBottom: 10 }}>Funciones</h3>
           <p
             style={{
@@ -1001,22 +1116,21 @@ export function MusicaHome() {
               lineHeight: 1.55,
             }}
           >
-            · Playlists con añadir del catálogo completo
+            · Playlists: tocar lista → + Añadir del todo
             <br />
-            · Reordenar por arrastre dentro de la lista
+            · Reordenar por arrastre
             <br />
             · Portada, artista, álbum, año y letra
             <br />
-            · Espectro: barras, onda, esfera, mirror, pulse
+            · Espectro real (AnalyserNode)
             <br />
-            · Ocultar barra del reproductor (botón ▲/▼)
+            · Ocultar barra (▲/▼)
             <br />
-            · Buscar en biblioteca
-            <br />
-            · Offline IndexedDB · Media Session del SO
+            · Offline IndexedDB
           </p>
         </div>
       </GlassCard>
+
       <GlassCard>
         <div style={{ padding: '1.15rem 1.1rem' }}>
           <h3 style={{ marginBottom: 8 }}>Biblioteca</h3>
@@ -1061,14 +1175,6 @@ export function MusicaHome() {
       }}
     >
       <style>{`
-        @keyframes gco-bar {
-          from { transform: scaleY(0.4); }
-          to { transform: scaleY(1); }
-        }
-        @keyframes gco-sphere {
-          from { transform: scale(0.92); filter: brightness(0.95); }
-          to { transform: scale(1.06); filter: brightness(1.12); }
-        }
         .gco-music-layout { display: block; }
         .gco-music-side { display: none; }
         .gco-music-bottom-nav { display: flex; }
@@ -1200,7 +1306,9 @@ export function MusicaHome() {
                 e.target.value = ''
               }}
             />
-            <label style={{ fontSize: '0.8rem', display: 'block', marginBottom: 4 }}>
+            <label
+              style={{ fontSize: '0.8rem', display: 'block', marginBottom: 4 }}
+            >
               Título
             </label>
             <input
@@ -1209,7 +1317,9 @@ export function MusicaHome() {
               onChange={(e) => setEditTitle(e.target.value)}
               style={{ marginBottom: 10 }}
             />
-            <label style={{ fontSize: '0.8rem', display: 'block', marginBottom: 4 }}>
+            <label
+              style={{ fontSize: '0.8rem', display: 'block', marginBottom: 4 }}
+            >
               Artista
             </label>
             <input
@@ -1218,7 +1328,9 @@ export function MusicaHome() {
               onChange={(e) => setEditArtist(e.target.value)}
               style={{ marginBottom: 10 }}
             />
-            <label style={{ fontSize: '0.8rem', display: 'block', marginBottom: 4 }}>
+            <label
+              style={{ fontSize: '0.8rem', display: 'block', marginBottom: 4 }}
+            >
               Álbum
             </label>
             <input
@@ -1227,7 +1339,9 @@ export function MusicaHome() {
               onChange={(e) => setEditAlbum(e.target.value)}
               style={{ marginBottom: 10 }}
             />
-            <label style={{ fontSize: '0.8rem', display: 'block', marginBottom: 4 }}>
+            <label
+              style={{ fontSize: '0.8rem', display: 'block', marginBottom: 4 }}
+            >
               Año
             </label>
             <input
@@ -1236,7 +1350,9 @@ export function MusicaHome() {
               onChange={(e) => setEditYear(e.target.value)}
               style={{ marginBottom: 10 }}
             />
-            <label style={{ fontSize: '0.8rem', display: 'block', marginBottom: 4 }}>
+            <label
+              style={{ fontSize: '0.8rem', display: 'block', marginBottom: 4 }}
+            >
               Letra
             </label>
             <textarea
@@ -1247,9 +1363,15 @@ export function MusicaHome() {
               style={{ marginBottom: 12, resize: 'vertical', lineHeight: 1.45 }}
               placeholder="Pega la letra aquí…"
             />
-            <p style={{ fontSize: '0.78rem', color: 'var(--gco-ink-muted)', marginBottom: 12 }}>
-              {formatBytes(editing.sizeBytes)} · {formatTrackTime(editing.durationMs)} ·{' '}
-              {editing.mime}
+            <p
+              style={{
+                fontSize: '0.78rem',
+                color: 'var(--gco-ink-muted)',
+                marginBottom: 12,
+              }}
+            >
+              {formatBytes(editing.sizeBytes)} ·{' '}
+              {formatTrackTime(editing.durationMs)} · {editing.mime}
             </p>
             <div style={{ display: 'flex', gap: 8 }}>
               <GlassButton onClick={() => void saveEdit()}>Guardar</GlassButton>
