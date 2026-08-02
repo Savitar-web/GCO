@@ -42,6 +42,7 @@ export interface TrackItem {
   sizeBytes?: number
   year?: string
   album?: string
+  lyrics?: string
 }
 
 export interface Playlist {
@@ -343,7 +344,13 @@ export async function updateTrack(
   patch: Partial<
     Pick<
       TrackItem,
-      'title' | 'artist' | 'coverDataUrl' | 'year' | 'album' | 'sizeBytes'
+      | 'title'
+      | 'artist'
+      | 'coverDataUrl'
+      | 'year'
+      | 'album'
+      | 'sizeBytes'
+      | 'lyrics'
     >
   >
 ) {
