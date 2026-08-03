@@ -335,6 +335,13 @@ textarea.glass-input {
     calc(1.25rem + var(--safe-left));
 }
 
+/* Espacio inferior en móvil para que el bottom-nav no tape el contenido */
+@media (max-width: 899px) {
+  .app-shell,
+  .app-shell-pro {
+    padding-bottom: calc(5.5rem + var(--safe-bottom));
+  }
+}
 
 /* ========== Theme toggle button ========== */
 .theme-cycle-btn {
@@ -473,29 +480,6 @@ textarea.glass-input {
   .mode-switch-mobile {
     display: none;
   }
-}
-
-.mode-switch-desktop {
-  display: none;
-}
-.mode-switch-mobile {
-  display: block;
-}
-
-@media (min-width: 720px) {
-  .mode-switch-desktop {
-    display: block;
-  }
-  .mode-switch-mobile {
-    display: none;
-  }
-}
-
-.mode-switch-desktop { display: none; }
-.mode-switch-mobile { display: block; }
-@media (min-width: 720px) {
-  .mode-switch-desktop { display: block; }
-  .mode-switch-mobile { display: none; }
 }
 
 /* =========================================================
@@ -734,32 +718,52 @@ textarea.glass-input {
   color: var(--gco-button-text);
 }
 
-/* ---------- Carrusel "Continuar" ---------- */
+/* ---------- Carrusel "Continuar" + shelves ---------- */
 .hscroll {
   display: flex;
   gap: 0.9rem;
   overflow-x: auto;
   scroll-snap-type: x proximity;
-  padding-bottom: 4px;
+  padding-bottom: 6px;
   -webkit-overflow-scrolling: touch;
+  /* Firefox: fina y oscura */
   scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.38) transparent;
 }
 
+/* WebKit: barra negra, muy delgada, casi imperceptible */
 .hscroll::-webkit-scrollbar {
-  height: 6px;
+  height: 3px;
+}
+.hscroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 .hscroll::-webkit-scrollbar-thumb {
-  background: var(--gco-glass-border);
-  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.38);
+  border-radius: 3px;
+}
+.hscroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+[data-theme='light'] .hscroll {
+  scrollbar-color: rgba(0, 0, 0, 0.28) transparent;
+}
+[data-theme='light'] .hscroll::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.28);
+}
+[data-theme='light'] .hscroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.42);
 }
 
 .continue-card {
   display: flex;
   gap: 0.85rem;
   align-items: center;
-  min-width: 300px;
+  /* Encaja en móvil sin desbordar; en desktop mantiene tamaño cómodo */
+  min-width: min(300px, 82vw);
   max-width: 420px;
-  flex: 1 0 auto;
+  flex: 0 0 auto;
   scroll-snap-align: start;
   padding: 0.85rem;
   cursor: pointer;
@@ -813,6 +817,7 @@ textarea.glass-input {
   line-height: 1.25;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -1000,4 +1005,64 @@ textarea.glass-input {
   font-size: 1.5rem;
   flex-shrink: 0;
   border: 1px dashed var(--gco-glass-border);
+}
+
+/* ---------- Más / Ajustes del home ---------- */
+.mas-option {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border-radius: var(--gco-radius-sm);
+  border: 1px solid var(--gco-glass-border);
+  background: var(--gco-glass-bg);
+  color: var(--gco-ink);
+  cursor: pointer;
+  margin-bottom: 0.55rem;
+  text-align: left;
+  font-family: var(--font-body);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.mas-option:hover {
+  background: var(--gco-glass-bg-hover);
+  border-color: var(--gco-primary);
+}
+.mas-option .mas-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--gco-radius-xs);
+  background: var(--gco-primary-dim);
+  color: var(--gco-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 1.05rem;
+}
+.mas-option .mas-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.mas-option .mas-sub {
+  font-size: 0.72rem;
+  color: var(--gco-ink-muted);
+}
+
+.mas-guide {
+  font-size: 0.85rem;
+  color: var(--gco-ink-muted);
+  line-height: 1.55;
+}
+.mas-guide h4 {
+  color: var(--gco-ink);
+  font-size: 0.92rem;
+  margin: 0.85rem 0 0.3rem;
+}
+.mas-guide ul {
+  padding-left: 1.15rem;
+  margin: 0.25rem 0 0.5rem;
+}
+.mas-guide li {
+  margin-bottom: 0.25rem;
 }

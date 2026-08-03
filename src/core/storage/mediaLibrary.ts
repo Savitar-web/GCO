@@ -8,11 +8,50 @@ const STORE_PLAYLISTS = 'playlists'
 const STORE_BLOBS = 'blobs'
 const STORE_FOLDERS = 'folders'
 
+/* ───────────────────────── Tipos ───────────────────────── */
+
 export interface BookFolder {
   id: string
   name: string
   parentId: string | null
   updatedAt: string
+}
+
+export interface ChapterMark {
+  id: string
+  title: string
+  /** offset de carácter en el texto completo */
+  start: number
+  source: 'auto' | 'manual'
+}
+
+export interface Bookmark {
+  id: string
+  charIndex: number
+  label?: string
+  note?: string
+  createdAt: string
+  chapterId?: string
+}
+
+export interface ParagraphComment {
+  id: string
+  /** índice del párrafo (0-based) */
+  paraIndex: number
+  charStart: number
+  text: string
+  createdAt: string
+}
+
+export interface ReaderAppearance {
+  mode: 'day' | 'night' | 'sepia'
+  font: string
+  fontSize: number
+  lineHeight: number
+  letterSpacing: number
+  brightness: number
+  autoAdvance: boolean
+  pageAnim: boolean
 }
 
 export interface BookItem {
@@ -29,6 +68,14 @@ export interface BookItem {
   highlightColor?: string
   spokenColor?: string
   lang?: string
+  /** Capítulos detectados o creados a mano */
+  chapters?: ChapterMark[]
+  /** Marcadores / separadores ilimitados */
+  bookmarks?: Bookmark[]
+  /** Comentarios por párrafo */
+  comments?: ParagraphComment[]
+  /** Preferencias de apariencia del lector */
+  appearance?: ReaderAppearance
   updatedAt: string
   createdAt: string
 }
@@ -54,6 +101,8 @@ export interface Playlist {
   trackIds: string[]
   updatedAt: string
 }
+
+/* ───────────────────────── Utils ───────────────────────── */
 
 function uid() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -97,7 +146,7 @@ function emit() {
   window.dispatchEvent(new CustomEvent('gco:library'))
 }
 
-// ─── Folders ───────────────────────────────────────────────────────────────
+/* ───────────────────────── Folders ───────────────────────── */
 
 export async function listFolders(): Promise<BookFolder[]> {
   const db = await openDb()
@@ -167,7 +216,7 @@ export async function deleteFolder(id: string) {
   emit()
 }
 
-// ─── Books ─────────────────────────────────────────────────────────────────
+/* ───────────────────────── Books ───────────────────────── */
 
 export async function listBooks(): Promise<BookItem[]> {
   const db = await openDb()
@@ -202,11 +251,12 @@ export async function saveBook(
 ): Promise<BookItem> {
   const now = new Date().toISOString()
   const existing = input.id ? await getBook(input.id) : null
+
   const book: BookItem = {
     id: existing?.id ?? input.id ?? uid(),
     title: input.title.trim() || 'Sin título',
-    author: input.author ?? existing?.author,
-    year: input.year ?? existing?.year,
+    author: input.author !== undefined ? input.author : existing?.author,
+    year: input.year !== undefined ? input.year : existing?.year,
     coverDataUrl:
       input.coverDataUrl !== undefined
         ? input.coverDataUrl
@@ -218,13 +268,34 @@ export async function saveBook(
     text: input.text,
     position: input.position ?? existing?.position ?? 0,
     rate: input.rate ?? existing?.rate ?? 1,
-    voiceURI: input.voiceURI ?? existing?.voiceURI,
-    highlightColor: input.highlightColor ?? existing?.highlightColor,
-    spokenColor: input.spokenColor ?? existing?.spokenColor,
-    lang: input.lang ?? existing?.lang,
+    voiceURI:
+      input.voiceURI !== undefined ? input.voiceURI : existing?.voiceURI,
+    highlightColor:
+      input.highlightColor !== undefined
+        ? input.highlightColor
+        : existing?.highlightColor,
+    spokenColor:
+      input.spokenColor !== undefined
+        ? input.spokenColor
+        : existing?.spokenColor,
+    lang: input.lang !== undefined ? input.lang : existing?.lang,
+
+    // ── extras del lector ──
+    chapters:
+      input.chapters !== undefined ? input.chapters : existing?.chapters,
+    bookmarks:
+      input.bookmarks !== undefined ? input.bookmarks : existing?.bookmarks,
+    comments:
+      input.comments !== undefined ? input.comments : existing?.comments,
+    appearance:
+      input.appearance !== undefined
+        ? input.appearance
+        : existing?.appearance,
+
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   }
+
   const db = await openDb()
   const tx = db.transaction(STORE_BOOKS, 'readwrite')
   tx.objectStore(STORE_BOOKS).put(book)
@@ -247,7 +318,35 @@ export async function moveBookToFolder(id: string, folderId: string | null) {
 
 export async function updateBookMeta(
   id: string,
-  patch: { title?: string; author?: string; year?: string; coverDataUrl?: string | null }
+  patch: {
+    title?: string
+    author?: string
+    year?: string
+    coverDataUrl?: string | null
+  }
+) {
+  const b = await getBook(id)
+  if (!b) return null
+  return saveBook({ ...b, ...patch })
+}
+
+/** Actualiza solo los datos de lectura (capítulos, marcadores, comentarios, apariencia, posición…) */
+export async function updateBookReaderState(
+  id: string,
+  patch: Partial<
+    Pick<
+      BookItem,
+      | 'position'
+      | 'rate'
+      | 'voiceURI'
+      | 'chapters'
+      | 'bookmarks'
+      | 'comments'
+      | 'appearance'
+      | 'highlightColor'
+      | 'spokenColor'
+    >
+  >
 ) {
   const b = await getBook(id)
   if (!b) return null
@@ -262,7 +361,7 @@ export async function deleteBook(id: string) {
   emit()
 }
 
-// ─── Tracks ────────────────────────────────────────────────────────────────
+/* ───────────────────────── Tracks ───────────────────────── */
 
 export async function listTracks(): Promise<TrackItem[]> {
   const db = await openDb()
@@ -401,7 +500,7 @@ export async function deleteTrack(id: string) {
   emit()
 }
 
-// ─── Playlists ─────────────────────────────────────────────────────────────
+/* ───────────────────────── Playlists ───────────────────────── */
 
 export async function listPlaylists(): Promise<Playlist[]> {
   const db = await openDb()

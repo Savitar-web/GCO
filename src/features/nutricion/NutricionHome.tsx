@@ -176,6 +176,7 @@ export function NutricionHome() {
   const [importOpen, setImportOpen] = useState(false)
   const [editingBook, setEditingBook] = useState<BookItem | null>(null)
   const [menuFor, setMenuFor] = useState<string | null>(null)
+  const [masOpen, setMasOpen] = useState(false)
 
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -227,7 +228,7 @@ export function NutricionHome() {
     } else if (id === 'importar') {
       setImportOpen(true)
     } else if (id === 'mas') {
-      navigate('/ajustes')
+      setMasOpen(true)
     }
   }
 
@@ -239,11 +240,12 @@ export function NutricionHome() {
     { id: 'mas', label: 'Más', icon: <IconDots /> },
   ]
 
+  /* Móvil: sin “Nutrición”. Listas · Reproduciendo · Importar · Más */
   const MOBILE_NAV: { id: NavId; label: string; icon: ReactNode }[] = [
-    { id: 'inicio', label: 'Nutrición', icon: <span style={{ fontSize: 18 }}>🍎</span> },
-    { id: 'biblioteca', label: 'Biblioteca', icon: <IconHeadphones /> },
+    { id: 'listas', label: 'Listas', icon: <IconList /> },
+    { id: 'reproduciendo', label: 'Reproduciendo', icon: <IconPlayCircle /> },
     { id: 'importar', label: 'Importar', icon: <IconDownload /> },
-    { id: 'listas', label: 'Buscar', icon: <IconSearch /> },
+    { id: 'mas', label: 'Más', icon: <IconDots /> },
   ]
 
   return (
@@ -531,21 +533,15 @@ export function NutricionHome() {
             key={item.id}
             type="button"
             className={`bottom-nav-item ${
-              (item.id === 'biblioteca' && !searchOpen) ||
-              (item.id === 'listas' && searchOpen)
+              item.id === 'listas' && viewMode === 'listas'
                 ? 'active'
-                : item.id === 'inicio'
+                : item.id === 'reproduciendo' && activeBook
                   ? 'active'
-                  : ''
+                  : item.id === 'mas' && masOpen
+                    ? 'active'
+                    : ''
             }`}
-            onClick={() => {
-              if (item.id === 'listas') {
-                soundClick()
-                setSearchOpen((v) => !v)
-              } else {
-                nav(item.id)
-              }
-            }}
+            onClick={() => nav(item.id)}
           >
             {item.icon}
             {item.label}
@@ -577,6 +573,14 @@ export function NutricionHome() {
             setEditingBook(null)
             await refresh()
           }}
+        />
+      )}
+
+      {masOpen && (
+        <MasModal
+          viewMode={viewMode}
+          onToggleView={() => setViewMode((v) => (v === 'listas' ? 'estanteria' : 'listas'))}
+          onClose={() => setMasOpen(false)}
         />
       )}
 
@@ -742,6 +746,155 @@ function BookRow({
       <button type="button" className="icon-btn" aria-label="Eliminar" onClick={onDelete}>
         <IconTrash />
       </button>
+    </div>
+  )
+}
+
+/* ───────────────────────── Modal: Más (ajustes del home) ───────────────────────── */
+
+function MasModal({
+  viewMode,
+  onToggleView,
+  onClose,
+}: {
+  viewMode: 'estanteria' | 'listas'
+  onToggleView: () => void
+  onClose: () => void
+}) {
+  const [section, setSection] = useState<'menu' | 'guia' | 'info'>('menu')
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-panel glass-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2 style={{ fontSize: '1.1rem' }}>
+            {section === 'menu' ? 'Más' : section === 'guia' ? 'Guía de funciones' : 'Acerca de'}
+          </h2>
+          <button type="button" className="icon-btn" aria-label="Cerrar" onClick={onClose}>
+            <IconClose />
+          </button>
+        </div>
+
+        {section === 'menu' && (
+          <>
+            <button
+              type="button"
+              className="mas-option"
+              onClick={() => {
+                soundClick()
+                onToggleView()
+              }}
+            >
+              <span className="mas-icon">{viewMode === 'estanteria' ? '📚' : '📋'}</span>
+              <span>
+                <span className="mas-label" style={{ display: 'block' }}>
+                  Vista: {viewMode === 'estanteria' ? 'Estantería' : 'Lista'}
+                </span>
+                <span className="mas-sub">Cambia entre rejilla de portadas y lista</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className="mas-option"
+              onClick={() => {
+                soundClick()
+                setSection('guia')
+              }}
+            >
+              <span className="mas-icon">📖</span>
+              <span>
+                <span className="mas-label" style={{ display: 'block' }}>Guía de funciones</span>
+                <span className="mas-sub">Cómo usar la biblioteca de audiolibros</span>
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className="mas-option"
+              onClick={() => {
+                soundClick()
+                setSection('info')
+              }}
+            >
+              <span className="mas-icon">ℹ️</span>
+              <span>
+                <span className="mas-label" style={{ display: 'block' }}>Acerca de Nutrición</span>
+                <span className="mas-sub">Información del módulo y del proyecto</span>
+              </span>
+            </button>
+
+            <p style={{ fontSize: '0.72rem', color: 'var(--gco-ink-faint)', marginTop: '1rem', textAlign: 'center' }}>
+              El volumen de la lectura se controla con el volumen del sistema.
+            </p>
+          </>
+        )}
+
+        {section === 'guia' && (
+          <div className="mas-guide">
+            <h4>Importar libros</h4>
+            <ul>
+              <li>Pulsa «+ Nuevo libro» o el botón Importar.</li>
+              <li>Puedes pegar texto, usar el portapapeles o subir TXT, PDF, DOCX o EPUB.</li>
+              <li>Añade título, autor, año y portada opcional.</li>
+            </ul>
+            <h4>Continuar leyendo</h4>
+            <ul>
+              <li>Los libros con progreso aparecen en «Continuar».</li>
+              <li>Desliza horizontalmente para ver más.</li>
+              <li>La barra de progreso muestra el porcentaje completado.</li>
+            </ul>
+            <h4>Carpetas</h4>
+            <ul>
+              <li>Organiza con «Añadir carpeta».</li>
+              <li>Mueve libros desde el menú ⋮ de cada portada.</li>
+            </ul>
+            <h4>Reproducción</h4>
+            <ul>
+              <li>Al abrir un libro se inicia el lector TTS.</li>
+              <li>El mini-reproductor permanece visible al navegar.</li>
+              <li>Ajusta velocidad y voz dentro del lector.</li>
+            </ul>
+            <button
+              type="button"
+              className="glass-button secondary"
+              style={{ width: '100%', marginTop: 12 }}
+              onClick={() => setSection('menu')}
+            >
+              Volver
+            </button>
+          </div>
+        )}
+
+        {section === 'info' && (
+          <div className="mas-guide">
+            <p>
+              <strong>Nutrición</strong> es el módulo de biblioteca de audiolibros de GymCog.
+              Convierte cualquier texto en lectura hablada con voces del sistema, progreso guardado,
+              carpetas y portadas personalizadas.
+            </p>
+            <h4>Características</h4>
+            <ul>
+              <li>Importación de texto, PDF, DOCX y EPUB</li>
+              <li>Lectura con síntesis de voz (TTS)</li>
+              <li>Progreso automático y sección «Continuar»</li>
+              <li>Carpetas y metadatos (autor, año, portada)</li>
+              <li>Temas claro / oscuro / arcoíris</li>
+            </ul>
+            <p style={{ marginTop: 12, fontSize: '0.78rem' }}>
+              Los datos se guardan localmente en tu dispositivo (IndexedDB). No se suben a ningún servidor.
+            </p>
+            <button
+              type="button"
+              className="glass-button secondary"
+              style={{ width: '100%', marginTop: 12 }}
+              onClick={() => setSection('menu')}
+            >
+              Volver
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
