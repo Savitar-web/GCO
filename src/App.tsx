@@ -22,6 +22,7 @@ import { RoutineWidget } from '@/components/ui/RoutineWidget'
 import { NutricionHome } from './features/nutricion/NutricionHome'
 import { BookReader } from './features/nutricion/BookReader'
 import { MusicaHome } from './features/musica/MusicaHome'
+import { ReaderPlayerProvider, MiniPlayer } from '@/core/reader/ReaderPlayerContext'
 
 function App() {
   const [showSplash, setShowSplash] = useState(true)
@@ -43,7 +44,7 @@ function App() {
   }
 
   return (
-    <>
+    <ReaderPlayerProvider>
       <AmbientBackground />
 
       <AnimatePresence mode="wait">
@@ -100,9 +101,10 @@ function App() {
           </Routes>
 
           <RoutineWidget />
+          <MiniPlayer />
         </>
       )}
-    </>
+    </ReaderPlayerProvider>
   )
 }
 

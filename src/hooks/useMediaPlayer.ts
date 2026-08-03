@@ -6,9 +6,11 @@ export function useMediaPlayer() {
   const urlRef = useRef<string | null>(null)
   const queueRef = useRef<TrackItem[]>([])
   const indexRef = useRef(0)
+
   const ctxRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null)
+  const gainRef = useRef<GainNode | null>(null)
 
   const [track, setTrack] = useState<TrackItem | null>(null)
   const [playing, setPlaying] = useState(false)
@@ -18,6 +20,7 @@ export function useMediaPlayer() {
   const [repeat, setRepeat] = useState<'off' | 'one' | 'all'>('off')
   const [volume, setVolumeState] = useState(1)
   const [rate, setRateState] = useState(1)
+  const [gain, setGainState] = useState(1)
 
   const cleanupUrl = () => {
     if (urlRef.current) {
@@ -33,15 +36,25 @@ export function useMediaPlayer() {
       }
       const ctx = ctxRef.current
       if (ctx.state === 'suspended') void ctx.resume()
+
       if (!analyserRef.current) {
         const an = ctx.createAnalyser()
         an.fftSize = 256
         an.smoothingTimeConstant = 0.75
         analyserRef.current = an
       }
+
+      if (!gainRef.current) {
+        const g = ctx.createGain()
+        g.gain.value = 1
+        gainRef.current = g
+      }
+
+      // source → gain → analyser → destination (solo una vez)
       if (!sourceRef.current) {
         sourceRef.current = ctx.createMediaElementSource(audio)
-        sourceRef.current.connect(analyserRef.current)
+        sourceRef.current.connect(gainRef.current)
+        gainRef.current.connect(analyserRef.current)
         analyserRef.current.connect(ctx.destination)
       }
     } catch {
@@ -155,6 +168,7 @@ export function useMediaPlayer() {
     const audio = ensureAudio()
     if (audio.currentTime > 3) {
       audio.currentTime = 0
+      setCurrentMs(0)
       return
     }
     await playIndex(indexRef.current - 1)
@@ -187,6 +201,15 @@ export function useMediaPlayer() {
     setVolumeState(val)
   }, [])
 
+  /** 0–3 → hasta 300 % de ganancia real */
+  const setGain = useCallback((g: number) => {
+    const val = Math.min(3, Math.max(0, g))
+    if (gainRef.current) {
+      gainRef.current.gain.value = val
+    }
+    setGainState(val)
+  }, [])
+
   const setPlaybackRate = useCallback((r: number) => {
     const val = Math.min(2, Math.max(0.5, r))
     const audio = ensureAudio()
@@ -194,7 +217,6 @@ export function useMediaPlayer() {
     setRateState(val)
   }, [])
 
-  /** Datos de frecuencia 0–255 para el espectro */
   const getFrequencyData = useCallback((): Uint8Array | null => {
     const an = analyserRef.current
     if (!an) return null
@@ -202,6 +224,8 @@ export function useMediaPlayer() {
     an.getByteFrequencyData(buf)
     return buf
   }, [])
+
+  const getQueue = useCallback(() => [...queueRef.current], [])
 
   useEffect(
     () => () => {
@@ -223,6 +247,8 @@ export function useMediaPlayer() {
     setRepeat,
     volume,
     setVolume,
+    gain,
+    setGain,
     rate,
     setPlaybackRate,
     playTrack,
@@ -233,6 +259,7 @@ export function useMediaPlayer() {
     setQueue: (q: TrackItem[]) => {
       queueRef.current = q
     },
+    getQueue,
     getFrequencyData,
   }
 }

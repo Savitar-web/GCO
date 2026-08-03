@@ -18,6 +18,9 @@ export interface BookFolder {
 export interface BookItem {
   id: string
   title: string
+  author?: string
+  year?: string
+  coverDataUrl?: string | null
   folderId: string | null
   text: string
   position: number
@@ -154,18 +157,7 @@ export async function deleteFolder(id: string) {
   const books = await listBooks()
   for (const b of books) {
     if (b.folderId === id) {
-      await saveBook({
-        id: b.id,
-        title: b.title,
-        text: b.text,
-        folderId: null,
-        position: b.position,
-        rate: b.rate,
-        voiceURI: b.voiceURI,
-        highlightColor: b.highlightColor,
-        spokenColor: b.spokenColor,
-        lang: b.lang,
-      })
+      await saveBook({ ...b, folderId: null })
     }
   }
   const db = await openDb()
@@ -213,6 +205,12 @@ export async function saveBook(
   const book: BookItem = {
     id: existing?.id ?? input.id ?? uid(),
     title: input.title.trim() || 'Sin título',
+    author: input.author ?? existing?.author,
+    year: input.year ?? existing?.year,
+    coverDataUrl:
+      input.coverDataUrl !== undefined
+        ? input.coverDataUrl
+        : (existing?.coverDataUrl ?? null),
     folderId:
       input.folderId !== undefined
         ? input.folderId
@@ -245,6 +243,15 @@ export async function moveBookToFolder(id: string, folderId: string | null) {
   const b = await getBook(id)
   if (!b) return null
   return saveBook({ ...b, folderId })
+}
+
+export async function updateBookMeta(
+  id: string,
+  patch: { title?: string; author?: string; year?: string; coverDataUrl?: string | null }
+) {
+  const b = await getBook(id)
+  if (!b) return null
+  return saveBook({ ...b, ...patch })
 }
 
 export async function deleteBook(id: string) {
