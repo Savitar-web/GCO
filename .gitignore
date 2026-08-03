@@ -96,3 +96,8 @@ Desktop.ini
 .npm/
 .pnpm-store/
 .yarn/
+
+# =========================
+# Backend server
+# =========================
+server/
