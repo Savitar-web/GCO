@@ -24,6 +24,10 @@ import { BookReader } from './features/nutricion/BookReader'
 import { MusicaHome } from './features/musica/MusicaHome'
 import { ReaderPlayerProvider, MiniPlayer } from '@/core/reader/ReaderPlayerContext'
 
+/* Lógica */
+import { LogicaCategory } from './features/logica/juegos/LogicaCategory'
+import { Colocador } from './features/logica/juegos/numberpuzzle/colocador'
+
 function App() {
   const [showSplash, setShowSplash] = useState(true)
   const [hasProfile, setHasProfile] = useState<boolean | null>(null)
@@ -77,6 +81,13 @@ function App() {
             <Route
               path="/categoria/memoria/numeros-asociados"
               element={<NumerosAsociadosGame />}
+            />
+
+            {/* Lógica */}
+            <Route path="/categoria/logica" element={<LogicaCategory />} />
+            <Route
+              path="/categoria/logica/numberpuzzle"
+              element={<Colocador />}
             />
 
             {/* Nutrición */}
