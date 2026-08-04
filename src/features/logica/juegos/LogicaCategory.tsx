@@ -11,6 +11,12 @@ const GAMES = [
     emoji: '🔢',
     desc: 'Ordena los números deslizando fichas. Empieza en 2×2 y sube de dificultad sin límite.',
   },
+  {
+    id: 'rompecabezas',
+    title: 'Rompecabezas',
+    emoji: '🧩',
+    desc: 'Arma imágenes por piezas. Modo normal, creativo, galería e importación de tus fotos.',
+  },
 ] as const
 
 export function LogicaCategory() {

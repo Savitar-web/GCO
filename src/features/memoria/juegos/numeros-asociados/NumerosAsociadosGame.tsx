@@ -950,7 +950,7 @@ export function NumerosAsociadosGame() {
                         setShowVerbalLevels((v) => !v)
                       }}
                     >
-                      Niveles pasados (meta) ▾
+                      Niveles ▾
                     </button>
                     {showVerbalLevels && (
                       <div

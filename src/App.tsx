@@ -27,13 +27,18 @@ import { ReaderPlayerProvider, MiniPlayer } from '@/core/reader/ReaderPlayerCont
 /* Lógica */
 import { LogicaCategory } from './features/logica/juegos/LogicaCategory'
 import { Colocador } from './features/logica/juegos/numberpuzzle/colocador'
+import { RompecabezasGame } from '@/features/logica/juegos/rompecabezas/RompecabezasGame'
 
 function App() {
   const [showSplash, setShowSplash] = useState(true)
   const [hasProfile, setHasProfile] = useState<boolean | null>(null)
 
   useEffect(() => {
-    setHasProfile(!!getProfile())
+    try {
+      setHasProfile(!!getProfile())
+    } catch {
+      setHasProfile(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -43,8 +48,13 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [])
 
+  // Mientras carga el perfil, mostrar solo el fondo (evita pantalla negra sin layout)
   if (hasProfile === null) {
-    return null
+    return (
+      <>
+        <AmbientBackground />
+      </>
+    )
   }
 
   return (
@@ -71,7 +81,7 @@ function App() {
               }
             />
 
-            {/* Memoria */}
+            {/* ── Memoria ── */}
             <Route path="/categoria/memoria" element={<MemoriaCategory />} />
             <Route
               path="/categoria/memoria/secuencia-colores"
@@ -83,21 +93,25 @@ function App() {
               element={<NumerosAsociadosGame />}
             />
 
-            {/* Lógica */}
+            {/* ── Lógica ── */}
             <Route path="/categoria/logica" element={<LogicaCategory />} />
             <Route
               path="/categoria/logica/numberpuzzle"
               element={<Colocador />}
             />
+            <Route
+              path="/categoria/logica/rompecabezas"
+              element={<RompecabezasGame />}
+            />
 
-            {/* Nutrición */}
+            {/* ── Nutrición ── */}
             <Route path="/nutricion" element={<NutricionHome />} />
             <Route path="/nutricion/libro/:id" element={<BookReader />} />
 
-            {/* Música */}
+            {/* ── Música ── */}
             <Route path="/musica" element={<MusicaHome />} />
 
-            {/* Ajustes */}
+            {/* ── Ajustes (solo hijos relativos) ── */}
             <Route path="/ajustes" element={<SettingsLayout />}>
               <Route index element={<SettingsHome />} />
               <Route path="perfil" element={<PerfilSettings />} />

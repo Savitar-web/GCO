@@ -1,13 +1,3 @@
-/**
- * Colocador — Puzzle de Números
- * features/logica/juegos/numberpuzzle/colocador.tsx
- *
- * Ruta: /categoria/logica/numberpuzzle
- *
- * GlassCard de este proyecto NO acepta `style`:
- * los estilos van siempre en un <div> hijo.
- */
-
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
@@ -511,7 +501,7 @@ export function Colocador() {
               color: 'transparent',
             }}
           >
-            Puzzle de números
+            Colocador
           </h1>
           <p
             style={{
