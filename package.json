@@ -2,8 +2,12 @@
   "name": "gco",
   "private": true,
   "version": "1.0.0",
-  "description": "GymCogOrigins — gimnasio cognitivo (memoria, lógica y más)",
-  "author": "Savitar Xeno",
+  "description": "GymCogOrigins — gimnasio cognitivo (memoria, lógica, nutrición y música)",
+  "author": {
+    "name": "Savitar Xeno"
+  },
+  "license": "UNLICENSED",
+  "homepage": "https://gco-one.vercel.app",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -13,9 +17,11 @@
     "preview": "vite preview",
     "electron:dev": "electron .",
     "electron:build": "electron-builder --win",
+    "electron:build:nsis": "electron-builder --win nsis",
     "electron:build:portable": "electron-builder --win portable",
     "cap:sync": "npm run build && npx cap sync android",
-    "cap:open": "npx cap open android"
+    "cap:open": "npx cap open android",
+    "cap:assets": "npx capacitor-assets generate --android"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",
@@ -55,7 +61,7 @@
     "copyright": "Copyright © Savitar Xeno",
     "directories": {
       "output": "release-electron",
-      "buildResources": "public/icons"
+      "buildResources": "build"
     },
     "files": [
       "electron/**/*",
@@ -68,13 +74,16 @@
       "target": [
         {
           "target": "nsis",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
         }
       ],
-      "icon": "public/icons/icon-512.png",
-      "artifactName": "GymCogOrigins-Setup-${version}.${ext}"
+      "icon": "public/icons/icon.ico",
+      "artifactName": "GymCogOrigins-Setup-${version}.${ext}",
+      "publisherName": "Savitar Xeno"
     },
     "nsis": {
       "oneClick": false,
@@ -83,10 +92,14 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "GymCogOrigins",
-      "uninstallDisplayName": "GymCogOrigins"
+      "uninstallDisplayName": "GymCogOrigins",
+      "installerIcon": "public/icons/icon.ico",
+      "uninstallerIcon": "public/icons/icon.ico",
+      "installerHeaderIcon": "public/icons/icon.ico"
     },
     "portable": {
       "artifactName": "GymCogOrigins-Portable-${version}.${ext}"
-    }
+    },
+    "publish": null
   }
 }

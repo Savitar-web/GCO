@@ -6,7 +6,6 @@ export type CategoryId =
   | 'conocimiento'
   | 'matematicas'
 
-/** Mejor marca y estadísticas de un nivel concreto */
 export interface LevelRecord {
   bestTimeMs: number
   lastTimeMs?: number
@@ -20,41 +19,29 @@ export interface HistoryEntry {
   success: boolean
   timeMs?: number
   at: string
-  /** false = no contó para racha/ranking (modo invitado) */
   ranked: boolean
 }
 
 export interface GameProgress {
   highestLevel: number
   totalCompleted: number
-  /** Intentos totales (éxitos + fallos) */
   totalAttempts: number
   bestScore?: number
   lastPlayedAt?: string
-  /** key = String(level) */
   levels: Record<string, LevelRecord>
-  /** Últimas partidas (más reciente primero), máx. ~40 */
   history: HistoryEntry[]
 }
 
 export type ProgressMap = Record<string, GameProgress>
 
 export interface ProgressPrefs {
-  /**
-   * Si false: no se actualiza racha ni se marca la partida como "ranked".
-   * Útil al prestar el móvil.
-   */
   rankingEnabled: boolean
-  /**
-   * Curva más suave de dificultad (los juegos pueden leerlo).
-   */
   softProgression: boolean
 }
 
 export interface StreakData {
   current: number
   best: number
-  /** YYYY-MM-DD local */
   lastActiveDate: string | null
 }
 
@@ -63,9 +50,11 @@ export interface TotalProgressSummary {
   totalLevels: number
   totalCompleted: number
   totalAttempts: number
-  /** 0–100 victorias / intentos global */
   winRate: number
+  /** 0–100 medición combinada: niveles + winrate + consistencia de tiempos */
   percent: number
+  /** Alias legible del skill score */
+  skillScore: number
   streak: StreakData
   prefs: ProgressPrefs
   byGame: Array<{
@@ -77,16 +66,14 @@ export interface TotalProgressSummary {
     totalAttempts: number
     winRate: number
     bestTimeMs?: number
+    avgTimeMs?: number
   }>
 }
 
 const PROGRESS_KEY = 'gco:progress'
 const PREFS_KEY = 'gco:progress-prefs'
 const STREAK_KEY = 'gco:streak'
-const HISTORY_LIMIT = 40
-const TARGET_LEVEL_SUM = 50
-
-// ─── Preferencias (ranking / curva suave) ───────────────────────────────────
+const HISTORY_LIMIT = 80
 
 const DEFAULT_PREFS: ProgressPrefs = {
   rankingEnabled: true,
@@ -113,14 +100,9 @@ export function saveProgressPrefs(update: Partial<ProgressPrefs>): ProgressPrefs
   return next
 }
 
-// ─── Rachas ─────────────────────────────────────────────────────────────────
-
 function todayKey(): string {
   const d = new Date()
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function daysBetween(a: string, b: string): number {
@@ -149,18 +131,12 @@ export function getStreak(): StreakData {
 function bumpStreakIfNeeded(): StreakData {
   const today = todayKey()
   const s = getStreak()
-
-  if (s.lastActiveDate === today) {
-    return s
-  }
-
+  if (s.lastActiveDate === today) return s
   let current = 1
   if (s.lastActiveDate) {
     const diff = daysBetween(s.lastActiveDate, today)
     if (diff === 1) current = s.current + 1
-    else current = 1
   }
-
   const next: StreakData = {
     current,
     best: Math.max(s.best, current),
@@ -169,8 +145,6 @@ function bumpStreakIfNeeded(): StreakData {
   localStorage.setItem(STREAK_KEY, JSON.stringify(next))
   return next
 }
-
-// ─── Progress map ───────────────────────────────────────────────────────────
 
 function emptyGame(): GameProgress {
   return {
@@ -215,11 +189,9 @@ export function getGameProgress(
   categoryId: CategoryId,
   gameId: string
 ): GameProgress {
-  const all = getAllProgress()
-  return normalizeGame(all[`${categoryId}:${gameId}`])
+  return normalizeGame(getAllProgress()[`${categoryId}:${gameId}`])
 }
 
-/** Escritura parcial legacy (compatible con código antiguo) */
 export function saveGameProgress(
   categoryId: CategoryId,
   gameId: string,
@@ -228,7 +200,6 @@ export function saveGameProgress(
   const all = getAllProgress()
   const key = `${categoryId}:${gameId}`
   const current = normalizeGame(all[key])
-
   all[key] = normalizeGame({
     ...current,
     ...update,
@@ -236,7 +207,6 @@ export function saveGameProgress(
     history: update.history ?? current.history,
     lastPlayedAt: new Date().toISOString(),
   })
-
   localStorage.setItem(PROGRESS_KEY, JSON.stringify(all))
 }
 
@@ -245,8 +215,7 @@ export function getLevelRecord(
   gameId: string,
   level: number
 ): LevelRecord | null {
-  const g = getGameProgress(categoryId, gameId)
-  return g.levels[String(level)] ?? null
+  return getGameProgress(categoryId, gameId).levels[String(level)] ?? null
 }
 
 export function getLevelBestTime(
@@ -255,7 +224,7 @@ export function getLevelBestTime(
   level: number
 ): number | null {
   const rec = getLevelRecord(categoryId, gameId, level)
-  return rec?.bestTimeMs ?? null
+  return rec?.bestTimeMs && rec.bestTimeMs > 0 ? rec.bestTimeMs : null
 }
 
 export interface RecordResultInput {
@@ -263,16 +232,10 @@ export interface RecordResultInput {
   gameId: string
   level: number
   success: boolean
-  /** ms que tardó esta partida (solo si aplica) */
   timeMs?: number
   score?: number
 }
 
-/**
- * Registra un intento de nivel.
- * Respeta rankingEnabled: si está off, no sube racha ni marca ranked.
- * Siempre actualiza intentos locales y best time si hay timeMs y éxito.
- */
 export function recordLevelResult(input: RecordResultInput): GameProgress {
   const { categoryId, gameId, level, success } = input
   const prefs = getProgressPrefs()
@@ -286,36 +249,17 @@ export function recordLevelResult(input: RecordResultInput): GameProgress {
   const attempts = (prevLevel?.attempts ?? 0) + 1
   const wins = (prevLevel?.wins ?? 0) + (success ? 1 : 0)
 
-  let bestTimeMs = prevLevel?.bestTimeMs
-  let lastTimeMs = input.timeMs
-
+  let bestTimeMs = prevLevel?.bestTimeMs ?? 0
   if (success && typeof input.timeMs === 'number' && input.timeMs > 0) {
-    if (bestTimeMs == null || input.timeMs < bestTimeMs) {
-      bestTimeMs = input.timeMs
-    }
+    if (!bestTimeMs || input.timeMs < bestTimeMs) bestTimeMs = input.timeMs
   }
 
-  const levelRec: LevelRecord = {
-    bestTimeMs: bestTimeMs ?? (success && input.timeMs ? input.timeMs : prevLevel?.bestTimeMs ?? 0),
-    lastTimeMs,
+  current.levels[levelKey] = {
+    bestTimeMs,
+    lastTimeMs: input.timeMs,
     attempts,
     wins,
     lastPlayedAt: new Date().toISOString(),
-  }
-
-  // Si no hay ningún tiempo válido, no dejes bestTimeMs en 0 engañoso
-  if (!levelRec.bestTimeMs && !prevLevel?.bestTimeMs) {
-    if (!(success && input.timeMs)) {
-      const { bestTimeMs: _b, ...rest } = levelRec
-      current.levels[levelKey] = {
-        ...rest,
-        bestTimeMs: prevLevel?.bestTimeMs ?? 0,
-      }
-    } else {
-      current.levels[levelKey] = levelRec
-    }
-  } else {
-    current.levels[levelKey] = levelRec
   }
 
   const entry: HistoryEntry = {
@@ -330,15 +274,11 @@ export function recordLevelResult(input: RecordResultInput): GameProgress {
 
   let highestLevel = current.highestLevel
   let totalCompleted = current.totalCompleted
-
   if (success) {
     highestLevel = Math.max(highestLevel, level)
-    totalCompleted = totalCompleted + 1
+    totalCompleted += 1
   }
-
-  if (ranked && success) {
-    bumpStreakIfNeeded()
-  }
+  if (ranked && success) bumpStreakIfNeeded()
 
   const next: GameProgress = {
     highestLevel,
@@ -349,10 +289,7 @@ export function recordLevelResult(input: RecordResultInput): GameProgress {
         ? Math.max(current.bestScore ?? 0, input.score)
         : current.bestScore,
     lastPlayedAt: entry.at,
-    levels: {
-      ...current.levels,
-      [levelKey]: current.levels[levelKey],
-    },
+    levels: { ...current.levels },
     history,
   }
 
@@ -366,6 +303,27 @@ export function getWinRate(completed: number, attempts: number): number {
   return Math.round((completed / attempts) * 100)
 }
 
+/**
+ * Skill score 0–100:
+ *  - 40% profundidad (niveles alcanzados, log-scaled)
+ *  - 35% win rate
+ *  - 15% volumen de juego (intentos, saturado)
+ *  - 10% racha actual
+ */
+export function computeSkillScore(input: {
+  totalLevels: number
+  winRate: number
+  totalAttempts: number
+  streakCurrent: number
+}): number {
+  const depth = Math.min(1, Math.log2(1 + input.totalLevels) / Math.log2(1 + 80))
+  const wr = Math.min(1, input.winRate / 100)
+  const volume = Math.min(1, Math.log2(1 + input.totalAttempts) / Math.log2(1 + 200))
+  const streak = Math.min(1, input.streakCurrent / 14)
+  const raw = depth * 0.4 + wr * 0.35 + volume * 0.15 + streak * 0.1
+  return Math.round(Math.min(100, Math.max(0, raw * 100)))
+}
+
 export function getTotalProgress(): TotalProgressSummary {
   const all = getAllProgress()
   const prefs = getProgressPrefs()
@@ -377,7 +335,13 @@ export function getTotalProgress(): TotalProgressSummary {
     const times = Object.values(g.levels)
       .map((l) => l.bestTimeMs)
       .filter((t) => t > 0)
-    const bestTimeMs = times.length ? Math.min(...times) : undefined
+    const histTimes = g.history
+      .filter((h) => h.success && h.timeMs && h.timeMs > 0)
+      .map((h) => h.timeMs!)
+    const avgPool = histTimes.length ? histTimes : times
+    const avgTimeMs = avgPool.length
+      ? Math.round(avgPool.reduce((s, t) => s + t, 0) / avgPool.length)
+      : undefined
 
     return {
       key,
@@ -387,44 +351,44 @@ export function getTotalProgress(): TotalProgressSummary {
       totalCompleted: g.totalCompleted,
       totalAttempts: g.totalAttempts,
       winRate: getWinRate(g.totalCompleted, g.totalAttempts),
-      bestTimeMs,
+      bestTimeMs: times.length ? Math.min(...times) : undefined,
+      avgTimeMs,
     }
   })
 
   const totalLevels = byGame.reduce((s, g) => s + g.highestLevel, 0)
   const totalCompleted = byGame.reduce((s, g) => s + g.totalCompleted, 0)
   const totalAttempts = byGame.reduce((s, g) => s + g.totalAttempts, 0)
-  const percent = Math.min(
-    100,
-    Math.round((totalLevels / TARGET_LEVEL_SUM) * 100)
-  )
+  const winRate = getWinRate(totalCompleted, totalAttempts)
+  const skillScore = computeSkillScore({
+    totalLevels,
+    winRate,
+    totalAttempts,
+    streakCurrent: streak.current,
+  })
 
   return {
     gamesPlayed: byGame.length,
     totalLevels,
     totalCompleted,
     totalAttempts,
-    winRate: getWinRate(totalCompleted, totalAttempts),
-    percent,
+    winRate,
+    percent: skillScore,
+    skillScore,
     streak,
     prefs,
     byGame: byGame.sort((a, b) => b.highestLevel - a.highestLevel),
   }
 }
 
-/** Lista de niveles desbloqueados (1..highest) con marcas */
 export function getUnlockedLevels(
   categoryId: CategoryId,
   gameId: string
 ): Array<{ level: number; bestTimeMs: number | null; wins: number }> {
   const g = getGameProgress(categoryId, gameId)
   const max = Math.max(1, g.highestLevel)
-  const list: Array<{
-    level: number
-    bestTimeMs: number | null
-    wins: number
-  }> = []
-
+  const list: Array<{ level: number; bestTimeMs: number | null; wins: number }> =
+    []
   for (let level = 1; level <= max; level++) {
     const rec = g.levels[String(level)]
     list.push({
@@ -443,4 +407,15 @@ export function formatDuration(ms: number): string {
   const s = totalSec % 60
   if (m <= 0) return `${s}s`
   return `${m}:${String(s).padStart(2, '0')}`
+}
+
+export function formatDateTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString('es-ES', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    })
+  } catch {
+    return iso
+  }
 }

@@ -1,19 +1,29 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   getTotalProgress,
   getProgressPrefs,
   saveProgressPrefs,
   getAllProgress,
   formatDuration,
+  formatDateTime,
   type ProgressPrefs,
+  type HistoryEntry,
 } from '@/core/storage/progress'
-import { soundToggle } from '@/core/audio/uiSounds'
+import { soundToggle, soundClick } from '@/core/audio/uiSounds'
+
+type FlatHistory = HistoryEntry & {
+  key: string
+  gameLabel: string
+  categoryId: string
+}
 
 export function RecorridoSettings() {
   const [prefs, setPrefs] = useState<ProgressPrefs>(getProgressPrefs)
   const [tick, setTick] = useState(0)
+  const [detail, setDetail] = useState<FlatHistory | null>(null)
+  const [filter, setFilter] = useState<'all' | 'win' | 'loss'>('all')
 
-  // Releer tras cambiar prefs
+  void tick
   const total = getTotalProgress()
   const all = getAllProgress()
 
@@ -23,22 +33,31 @@ export function RecorridoSettings() {
     setTick((t) => t + 1)
   }
 
-  void tick
+  const history = useMemo(() => {
+    const rows: FlatHistory[] = []
+    for (const [key, g] of Object.entries(all)) {
+      const [categoryId, gameId] = key.split(':')
+      for (const h of g.history ?? []) {
+        rows.push({
+          ...h,
+          key,
+          categoryId: categoryId ?? '—',
+          gameLabel: (gameId ?? key).replace(/-/g, ' '),
+        })
+      }
+    }
+    rows.sort((a, b) => (a.at < b.at ? 1 : -1))
+    return rows
+  }, [all, tick])
 
-  const recent = Object.entries(all)
-    .flatMap(([key, g]) =>
-      (g.history ?? []).map((h) => ({
-        key,
-        gameLabel: key.split(':')[1]?.replace(/-/g, ' ') ?? key,
-        ...h,
-      }))
-    )
-    .sort((a, b) => (a.at < b.at ? 1 : -1))
-    .slice(0, 12)
+  const filtered = history.filter((h) => {
+    if (filter === 'win') return h.success
+    if (filter === 'loss') return !h.success
+    return true
+  })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      {/* Resumen global */}
       <div
         className="glass-card"
         style={{ padding: 'clamp(1rem, 3vw, 1.35rem)' }}
@@ -47,20 +66,31 @@ export function RecorridoSettings() {
           style={{
             color: 'var(--gco-ink-muted)',
             fontSize: '0.85rem',
-            marginBottom: '0.5rem',
+            marginBottom: '0.35rem',
           }}
         >
-          Progreso global
+          Nivel de jugador (skill)
         </p>
         <p
           className="mono"
           style={{
             fontSize: 'clamp(1.75rem, 5vw, 2.15rem)',
             fontWeight: 700,
-            marginBottom: '0.75rem',
+            marginBottom: '0.35rem',
           }}
         >
-          {total.percent}%
+          {total.skillScore}%
+        </p>
+        <p
+          style={{
+            fontSize: '0.78rem',
+            color: 'var(--gco-ink-muted)',
+            marginBottom: '0.75rem',
+            lineHeight: 1.4,
+          }}
+        >
+          Combina profundidad de niveles, índice de victorias, volumen de juego
+          y racha actual.
         </p>
         <div
           style={{
@@ -74,7 +104,7 @@ export function RecorridoSettings() {
             className="gco-progress-rainbow"
             style={{
               height: '100%',
-              width: `${total.percent}%`,
+              width: `${total.skillScore}%`,
               borderRadius: 999,
               transition: 'width 0.7s ease',
             }}
@@ -89,11 +119,10 @@ export function RecorridoSettings() {
           }}
         >
           {total.totalLevels} niveles · {total.totalCompleted} victorias ·{' '}
-          {total.gamesPlayed} juegos
+          {total.totalAttempts} intentos · {total.gamesPlayed} juegos
         </p>
       </div>
 
-      {/* Racha + índice de victoria */}
       <div
         style={{
           display: 'grid',
@@ -167,7 +196,6 @@ export function RecorridoSettings() {
         </div>
       </div>
 
-      {/* Toggle ranking / racha */}
       <div
         className="glass-card"
         style={{
@@ -177,146 +205,33 @@ export function RecorridoSettings() {
           gap: '0.85rem',
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '1rem',
+        <ToggleRow
+          label="Contar en racha y ranking"
+          desc="Desactívalo al prestar el móvil"
+          checked={prefs.rankingEnabled}
+          onChange={(v) => {
+            soundToggle(v)
+            persistPrefs({ ...prefs, rankingEnabled: v })
           }}
-        >
-          <div style={{ minWidth: 0 }}>
-            <p style={{ fontWeight: 600, fontSize: '0.95rem' }}>
-              Contar en racha y ranking
-            </p>
-            <p
-              style={{
-                fontSize: '0.78rem',
-                color: 'var(--gco-ink-muted)',
-                lineHeight: 1.4,
-              }}
-            >
-              Desactívalo al prestar el móvil para no romper tu racha
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={prefs.rankingEnabled}
-            onClick={() => {
-              const next = {
-                ...prefs,
-                rankingEnabled: !prefs.rankingEnabled,
-              }
-              soundToggle(next.rankingEnabled)
-              persistPrefs(next)
-            }}
-            style={{
-              width: 52,
-              height: 30,
-              borderRadius: 999,
-              border: 'none',
-              cursor: 'pointer',
-              background: prefs.rankingEnabled
-                ? 'var(--gco-primary)'
-                : 'rgba(255,255,255,0.12)',
-              position: 'relative',
-              flexShrink: 0,
-            }}
-          >
-            <span
-              style={{
-                position: 'absolute',
-                top: 3,
-                left: prefs.rankingEnabled ? 24 : 3,
-                width: 24,
-                height: 24,
-                borderRadius: '50%',
-                background: '#fff',
-                transition: 'left 0.2s ease',
-                boxShadow: '0 1px 4px rgba(0,0,0,0.35)',
-              }}
-            />
-          </button>
-        </div>
-
+        />
         <div
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '1rem',
             borderTop: '1px solid var(--gco-glass-border)',
             paddingTop: '0.85rem',
           }}
         >
-          <div style={{ minWidth: 0 }}>
-            <p style={{ fontWeight: 600, fontSize: '0.95rem' }}>
-              Subida suave de nivel
-            </p>
-            <p
-              style={{
-                fontSize: '0.78rem',
-                color: 'var(--gco-ink-muted)',
-                lineHeight: 1.4,
-              }}
-            >
-              Dificultad más lenta → más rachas de victorias
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={prefs.softProgression}
-            onClick={() => {
-              const next = {
-                ...prefs,
-                softProgression: !prefs.softProgression,
-              }
-              soundToggle(next.softProgression)
-              persistPrefs(next)
+          <ToggleRow
+            label="Subida suave de nivel"
+            desc="Dificultad más lenta → más rachas"
+            checked={prefs.softProgression}
+            onChange={(v) => {
+              soundToggle(v)
+              persistPrefs({ ...prefs, softProgression: v })
             }}
-            style={{
-              width: 52,
-              height: 30,
-              borderRadius: 999,
-              border: 'none',
-              cursor: 'pointer',
-              background: prefs.softProgression
-                ? 'var(--gco-primary)'
-                : 'rgba(255,255,255,0.12)',
-              position: 'relative',
-              flexShrink: 0,
-            }}
-          >
-            <span
-              style={{
-                position: 'absolute',
-                top: 3,
-                left: prefs.softProgression ? 24 : 3,
-                width: 24,
-                height: 24,
-                borderRadius: '50%',
-                background: '#fff',
-                transition: 'left 0.2s ease',
-                boxShadow: '0 1px 4px rgba(0,0,0,0.35)',
-              }}
-            />
-          </button>
+          />
         </div>
-
-        <p
-          style={{
-            fontSize: '0.75rem',
-            color: 'var(--gco-ink-faint, var(--gco-ink-muted))',
-          }}
-        >
-          Ranking global de cuentas: próximamente. Este interruptor ya prepara
-          tus partidas locales.
-        </p>
       </div>
 
-      {/* Por juego */}
       {total.byGame.map((g) => (
         <div
           key={g.key}
@@ -354,10 +269,10 @@ export function RecorridoSettings() {
               marginTop: '0.25rem',
             }}
           >
-            {g.categoryId} · {g.totalCompleted} victorias · índice {g.winRate}%
-            {g.bestTimeMs != null && g.bestTimeMs > 0
-              ? ` · mejor ${formatDuration(g.bestTimeMs)}`
-              : ''}
+            {g.categoryId} · {g.totalCompleted}V / {g.totalAttempts} intentos ·{' '}
+            {g.winRate}%
+            {g.bestTimeMs != null ? ` · mejor ${formatDuration(g.bestTimeMs)}` : ''}
+            {g.avgTimeMs != null ? ` · media ${formatDuration(g.avgTimeMs)}` : ''}
           </p>
         </div>
       ))}
@@ -374,70 +289,249 @@ export function RecorridoSettings() {
         </p>
       )}
 
-      {/* Historial reciente */}
-      {recent.length > 0 && (
+      {/* Historial completo */}
+      <div className="glass-card" style={{ padding: '1rem 1.15rem' }}>
         <div
-          className="glass-card"
-          style={{ padding: '1rem 1.15rem' }}
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 12,
+            flexWrap: 'wrap',
+          }}
         >
-          <p
-            style={{
-              fontWeight: 600,
-              marginBottom: '0.75rem',
-              fontSize: '0.95rem',
-            }}
-          >
-            Historial reciente
+          <p style={{ fontWeight: 600, margin: 0, fontSize: '0.95rem' }}>
+            Historial de partidas
           </p>
-          <div
-            style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}
-          >
-            {recent.map((h, i) => (
-              <div
-                key={`${h.at}-${i}`}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  gap: '0.5rem',
-                  fontSize: '0.82rem',
-                  alignItems: 'baseline',
+          <div style={{ display: 'flex', gap: 6 }}>
+            {(
+              [
+                { id: 'all' as const, label: 'Todas' },
+                { id: 'win' as const, label: 'Victorias' },
+                { id: 'loss' as const, label: 'Derrotas' },
+              ] as const
+            ).map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                className={`glass-button ${filter === f.id ? '' : 'secondary'}`}
+                style={{ fontSize: '0.72rem', padding: '0.3rem 0.55rem' }}
+                onClick={() => {
+                  soundClick()
+                  setFilter(f.id)
                 }}
               >
-                <span style={{ minWidth: 0 }}>
-                  <span style={{ textTransform: 'capitalize' }}>
-                    {h.gameLabel}
-                  </span>
-                  {' · '}
-                  Nv. {h.level}
-                  {!h.ranked && (
-                    <span
-                      style={{
-                        marginLeft: 6,
-                        fontSize: '0.7rem',
-                        color: 'var(--gco-ink-muted)',
-                      }}
-                    >
-                      (sin racha)
-                    </span>
-                  )}
-                </span>
-                <span
-                  className="mono"
-                  style={{
-                    flexShrink: 0,
-                    color: h.success
-                      ? 'var(--gco-primary)'
-                      : 'var(--gco-secondary)',
-                  }}
-                >
-                  {h.success ? '✓' : '✗'}
-                  {h.timeMs != null ? ` ${formatDuration(h.timeMs)}` : ''}
-                </span>
-              </div>
+                {f.label}
+              </button>
             ))}
           </div>
         </div>
+
+        {filtered.length === 0 && (
+          <p style={{ color: 'var(--gco-ink-muted)', fontSize: '0.85rem' }}>
+            Sin partidas en este filtro.
+          </p>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {filtered.slice(0, 60).map((h, i) => (
+            <button
+              key={`${h.at}-${i}`}
+              type="button"
+              onClick={() => {
+                soundClick()
+                setDetail(h)
+              }}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: 8,
+                alignItems: 'center',
+                padding: '0.55rem 0.65rem',
+                borderRadius: 10,
+                border: '1px solid var(--gco-glass-border)',
+                background: 'rgba(255,255,255,0.03)',
+                color: 'inherit',
+                cursor: 'pointer',
+                textAlign: 'left',
+                font: 'inherit',
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: '0.85rem',
+                    textTransform: 'capitalize',
+                    fontWeight: 500,
+                  }}
+                >
+                  {h.gameLabel} · Nv. {h.level}
+                </p>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: '0.72rem',
+                    color: 'var(--gco-ink-muted)',
+                  }}
+                >
+                  {formatDateTime(h.at)}
+                  {!h.ranked ? ' · sin racha' : ''}
+                </p>
+              </div>
+              <span
+                className="mono"
+                style={{
+                  flexShrink: 0,
+                  fontSize: '0.85rem',
+                  color: h.success
+                    ? 'var(--gco-primary)'
+                    : 'var(--gco-secondary)',
+                }}
+              >
+                {h.success ? '✓' : '✗'}
+                {h.timeMs != null ? ` ${formatDuration(h.timeMs)}` : ''}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {detail && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 120,
+            background: 'rgba(0,0,0,0.55)',
+            backdropFilter: 'blur(6px)',
+            display: 'grid',
+            placeItems: 'center',
+            padding: 16,
+          }}
+          onClick={() => setDetail(null)}
+        >
+          <div
+            className="glass-card"
+            style={{ width: 'min(360px, 100%)', padding: '1.25rem' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p style={{ fontWeight: 700, marginBottom: 8 }}>Detalle de partida</p>
+            <p style={{ textTransform: 'capitalize', marginBottom: 4 }}>
+              {detail.gameLabel}
+            </p>
+            <p style={{ fontSize: '0.85rem', color: 'var(--gco-ink-muted)' }}>
+              Categoría: {detail.categoryId}
+            </p>
+            <p style={{ fontSize: '0.85rem', color: 'var(--gco-ink-muted)' }}>
+              Nivel: {detail.level}
+            </p>
+            <p style={{ fontSize: '0.85rem', color: 'var(--gco-ink-muted)' }}>
+              Resultado:{' '}
+              <span
+                style={{
+                  color: detail.success
+                    ? 'var(--gco-primary)'
+                    : 'var(--gco-secondary)',
+                }}
+              >
+                {detail.success ? 'Victoria' : 'Derrota'}
+              </span>
+            </p>
+            <p style={{ fontSize: '0.85rem', color: 'var(--gco-ink-muted)' }}>
+              Tiempo:{' '}
+              {detail.timeMs != null ? formatDuration(detail.timeMs) : '—'}
+            </p>
+            <p style={{ fontSize: '0.85rem', color: 'var(--gco-ink-muted)' }}>
+              Fecha: {formatDateTime(detail.at)}
+            </p>
+            <p style={{ fontSize: '0.85rem', color: 'var(--gco-ink-muted)' }}>
+              Contó en racha: {detail.ranked ? 'Sí' : 'No'}
+            </p>
+            <button
+              type="button"
+              className="glass-button secondary"
+              style={{ marginTop: 14, width: '100%' }}
+              onClick={() => {
+                soundClick()
+                setDetail(null)
+              }}
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
       )}
+    </div>
+  )
+}
+
+function ToggleRow({
+  label,
+  desc,
+  checked,
+  onChange,
+}: {
+  label: string
+  desc: string
+  checked: boolean
+  onChange: (v: boolean) => void
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '1rem',
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <p style={{ fontWeight: 600, fontSize: '0.95rem', margin: 0 }}>
+          {label}
+        </p>
+        <p
+          style={{
+            fontSize: '0.78rem',
+            color: 'var(--gco-ink-muted)',
+            lineHeight: 1.4,
+            margin: '2px 0 0',
+          }}
+        >
+          {desc}
+        </p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        style={{
+          width: 52,
+          height: 30,
+          borderRadius: 999,
+          border: 'none',
+          cursor: 'pointer',
+          background: checked ? 'var(--gco-primary)' : 'rgba(255,255,255,0.12)',
+          position: 'relative',
+          flexShrink: 0,
+        }}
+      >
+        <span
+          style={{
+            position: 'absolute',
+            top: 3,
+            left: checked ? 24 : 3,
+            width: 24,
+            height: 24,
+            borderRadius: '50%',
+            background: '#fff',
+            transition: 'left 0.2s ease',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.35)',
+          }}
+        />
+      </button>
     </div>
   )
 }

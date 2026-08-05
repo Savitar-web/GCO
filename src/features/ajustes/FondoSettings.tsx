@@ -6,37 +6,92 @@ import {
   clearBackgroundFile,
 } from '@/core/storage/customBackground'
 import { GlassButton } from '@/components/ui/GlassButton'
-import { soundClick, soundToggle, soundStart } from '@/core/audio/uiSounds'
+import { soundClick, soundToggle, soundStart, soundFail } from '@/core/audio/uiSounds'
+
+/**
+ * Re-codifica la imagen a JPEG de alta calidad manteniendo
+ * hasta ~2560px en el lado largo (mejor resolución en PWA/APK).
+ */
+async function prepareBackgroundFile(file: File): Promise<File> {
+  if (!file.type.startsWith('image/')) throw new Error('type')
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const i = new Image()
+      i.onload = () => res(i)
+      i.onerror = () => rej(new Error('img'))
+      i.src = url
+    })
+    const maxSide = 2560
+    const scale = Math.min(1, maxSide / Math.max(img.width, img.height))
+    const w = Math.max(1, Math.round(img.width * scale))
+    const h = Math.max(1, Math.round(img.height * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('canvas')
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(img, 0, 0, w, h)
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error('blob'))),
+        'image/jpeg',
+        0.92
+      )
+    })
+    return new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', {
+      type: 'image/jpeg',
+    })
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
 
 export function FondoSettings() {
   const [prefs, setPrefs] = useState(getBgPrefs)
+  const [busy, setBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const persist = (next: typeof prefs) => {
     saveBgPrefs(next)
     setPrefs(next)
     window.dispatchEvent(new Event('gco:bg-prefs'))
-    window.dispatchEvent(new CustomEvent('gco:bg-prefs-detail', { detail: next }))
+    window.dispatchEvent(
+      new CustomEvent('gco:bg-prefs-detail', { detail: next })
+    )
   }
 
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     if (!file.type.startsWith('image/')) {
+      soundFail()
       alert('Usa un archivo de imagen (jpg, png, webp…).')
       e.target.value = ''
       return
     }
-    if (file.size > 8 * 1024 * 1024) {
-      alert('Máximo ~8 MB')
+    if (file.size > 25 * 1024 * 1024) {
+      soundFail()
+      alert('Máximo ~25 MB')
       e.target.value = ''
       return
     }
-    soundStart()
-    await saveBackgroundFile(file)
-    persist({ ...prefs, enabled: true })
-    window.dispatchEvent(new Event('gco:bg-updated'))
-    e.target.value = ''
+    setBusy(true)
+    try {
+      soundStart()
+      const prepared = await prepareBackgroundFile(file)
+      await saveBackgroundFile(prepared)
+      persist({ ...prefs, enabled: true })
+      window.dispatchEvent(new Event('gco:bg-updated'))
+    } catch {
+      soundFail()
+      alert('No se pudo procesar la imagen.')
+    } finally {
+      setBusy(false)
+      e.target.value = ''
+    }
   }
 
   return (
@@ -53,8 +108,15 @@ export function FondoSettings() {
         <h3 style={{ fontSize: '1.05rem', marginBottom: '0.35rem' }}>
           Fondo personalizado
         </h3>
-        <p style={{ color: 'var(--gco-ink-muted)', fontSize: '0.88rem', lineHeight: 1.45 }}>
-          Imagen guardada en este dispositivo (IndexedDB). No se incluye en la exportación.
+        <p
+          style={{
+            color: 'var(--gco-ink-muted)',
+            fontSize: '0.88rem',
+            lineHeight: 1.45,
+          }}
+        >
+          Se guarda en este dispositivo (IndexedDB) a alta resolución (hasta
+          2560px). Ideal para pantallas grandes y PWA.
         </p>
       </div>
 
@@ -122,7 +184,7 @@ export function FondoSettings() {
             fileRef.current?.click()
           }}
         >
-          Elegir imagen
+          {busy ? 'Procesando…' : 'Elegir imagen'}
         </GlassButton>
         <button
           type="button"
@@ -137,7 +199,13 @@ export function FondoSettings() {
         </button>
       </div>
 
-      <input ref={fileRef} type="file" accept="image/*" hidden onChange={onFile} />
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={onFile}
+      />
     </div>
   )
 }
