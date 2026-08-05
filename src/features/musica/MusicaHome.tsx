@@ -3002,7 +3002,7 @@ export function MusicaHome() {
           left: 10,
           right: 10,
           bottom: 'calc(8px + env(safe-area-inset-bottom, 0px))',
-          zIndex: 50,
+          zIndex: 0.9,
           borderRadius: 24,
           background: 'color-mix(in srgb, var(--gco-bg, #0B1220) 78%, transparent)',
           backdropFilter: 'blur(20px) saturate(1.15)',

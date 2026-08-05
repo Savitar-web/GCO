@@ -4,6 +4,8 @@ import type { MediaPlayerApi } from '@/hooks/useMediaPlayer'
 import { soundClick } from '@/core/audio/uiSounds'
 
 const PREF_KEY = 'gco:player-bar-prefs'
+const HEATMAP_KEY = 'gco:player-heatmap'
+const HEATMAP_BINS = 40
 
 export function getBarPrefs() {
   try {
@@ -17,6 +19,27 @@ export function getBarPrefs() {
 
 export function saveBarPrefs(p: { progressColor: string }) {
   localStorage.setItem(PREF_KEY, JSON.stringify(p))
+}
+
+function loadHeatmapStore(): Record<string, number[]> {
+  try {
+    const raw = localStorage.getItem(HEATMAP_KEY)
+    return raw ? (JSON.parse(raw) as Record<string, number[]>) : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveHeatmapStore(map: Record<string, number[]>) {
+  try {
+    localStorage.setItem(HEATMAP_KEY, JSON.stringify(map))
+  } catch {
+    /* */
+  }
+}
+
+function clamp(v: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, v))
 }
 
 type Props = {
@@ -65,6 +88,43 @@ const SCROLLBAR_CSS = `
 .gco-pb-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.36); }
 .gco-pb-icon:hover { background: rgba(255,255,255,0.16) !important; }
 .gco-pb-icon:active { transform: scale(0.94); }
+
+.gco-fs-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.14);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.85);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.12);
+}
+.gco-fs-pill span {
+  min-width: 54px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.gco-fs-pill button {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+.gco-fs-pill button:hover { background: rgba(255,255,255,0.24); }
+.gco-fs-pill button:active { transform: scale(0.92); }
 `
 
 export function PlayerBar({ player, compact }: Props) {
@@ -77,6 +137,15 @@ export function PlayerBar({ player, compact }: Props) {
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const dragQ = useRef<number | null>(null)
+
+  // ── Controles futuristas de pantalla completa ──
+  const [locked, setLocked] = useState(false)
+  const [brightness, setBrightness] = useState(100)
+  const [volumeUi, setVolumeUi] = useState(100)
+  const [heatmap, setHeatmap] = useState<number[]>(() => new Array(HEATMAP_BINS).fill(0))
+  const heatmapRef = useRef<number[]>(heatmap)
+  const lastBinRef = useRef<number | null>(null)
+  const mediaAreaRef = useRef<HTMLDivElement | null>(null)
 
   const dur = player.durationMs || t?.durationMs || 0
   const hasVideo = t ? isVideoTrack(t) : false
@@ -156,6 +225,51 @@ export function PlayerBar({ player, compact }: Props) {
   useEffect(() => {
     if (!hasVideo) setShowVideo(false)
   }, [hasVideo, t?.id])
+
+  // ── Heatmap por pista: qué tramos se repiten más ──
+  useEffect(() => {
+    if (!t) return
+    const all = loadHeatmapStore()
+    const saved = all[t.id]
+    const arr = saved && saved.length === HEATMAP_BINS ? [...saved] : new Array(HEATMAP_BINS).fill(0)
+    heatmapRef.current = arr
+    setHeatmap(arr)
+    lastBinRef.current = null
+  }, [t?.id])
+
+  useEffect(() => {
+    if (!t || !player.playing || !dur) return
+    const bin = clamp(Math.floor((player.currentMs / dur) * HEATMAP_BINS), 0, HEATMAP_BINS - 1)
+    if (bin !== lastBinRef.current) {
+      lastBinRef.current = bin
+      const next = [...heatmapRef.current]
+      next[bin] += 1
+      heatmapRef.current = next
+      setHeatmap(next)
+      const all = loadHeatmapStore()
+      all[t.id] = next
+      saveHeatmapStore(all)
+    }
+  }, [player.currentMs, player.playing, dur, t?.id])
+
+  // ── Volumen real del reproductor (si el hook lo soporta) ──
+  useEffect(() => {
+    player.setVolume?.(volumeUi / 100)
+  }, [volumeUi, player])
+
+  const toggleNativeFullscreen = async () => {
+    const el = mediaAreaRef.current
+    if (!el) return
+    try {
+      if (!document.fullscreenElement) {
+        await el.requestFullscreen()
+      } else {
+        await document.exitFullscreen()
+      }
+    } catch {
+      /* el navegador puede bloquear el permiso; se ignora silenciosamente */
+    }
+  }
 
   if (!t) return null
 
@@ -371,7 +485,9 @@ export function PlayerBar({ player, compact }: Props) {
     </div>
   )
 
-  /* Fullscreen — zIndex por encima del nav (50) */
+  const heatmapMax = Math.max(1, ...heatmap)
+
+  /* Fullscreen — zIndex muy por encima del nav inferior de MusicaHome (z-index 50) */
   const fullscreenUi = fullscreen && (
     <div
       role="dialog"
@@ -379,7 +495,7 @@ export function PlayerBar({ player, compact }: Props) {
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 10000,
+        zIndex: 100000,
         display: 'flex',
         flexDirection: 'column',
         color: '#F3F5FA',
@@ -507,6 +623,7 @@ export function PlayerBar({ player, compact }: Props) {
               }}
             >
               <div
+                ref={mediaAreaRef}
                 style={{
                   width: 'min(78vw, 340px)',
                   aspectRatio: showVideo && videoUrl ? '16 / 10' : '1',
@@ -517,6 +634,8 @@ export function PlayerBar({ player, compact }: Props) {
                   border: '1px solid rgba(255,255,255,0.1)',
                   display: 'grid',
                   placeItems: 'center',
+                  filter: `brightness(${brightness}%)`,
+                  transition: 'filter 0.15s ease',
                 }}
               >
                 {showVideo && videoUrl ? (
@@ -592,14 +711,57 @@ export function PlayerBar({ player, compact }: Props) {
             </h1>
             <p style={{ margin: '4px 0 0', fontSize: '0.95rem', opacity: 0.65 }}>{t.artist}</p>
 
-            <input
-              type="range"
-              min={0}
-              max={dur || 1}
-              value={Math.min(player.currentMs, dur || 0)}
-              onChange={(e) => player.seek(Number(e.target.value))}
-              style={{ width: '100%', accentColor: progressColor, cursor: 'pointer', margin: '12px 0 4px' }}
-            />
+            {/* Barra de progreso + sombra de "escena más repetida" (solo en pantalla completa) */}
+            <div style={{ position: 'relative', margin: '12px 0 4px' }}>
+              <div
+                aria-hidden
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  bottom: 3,
+                  height: 14,
+                  display: 'flex',
+                  alignItems: 'flex-end',
+                  gap: 1,
+                  pointerEvents: 'none',
+                }}
+              >
+                {heatmap.map((c, i) => {
+                  const h = 3 + (c / heatmapMax) * 11
+                  const intensity = Math.min(100, 25 + (c / heatmapMax) * 75)
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        flex: 1,
+                        height: h,
+                        borderRadius: 2,
+                        background:
+                          c > 0
+                            ? `color-mix(in srgb, ${progressColor} ${intensity}%, transparent)`
+                            : 'rgba(255,255,255,0.06)',
+                      }}
+                    />
+                  )
+                })}
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={dur || 1}
+                value={Math.min(player.currentMs, dur || 0)}
+                onChange={(e) => !locked && player.seek(Number(e.target.value))}
+                disabled={locked}
+                style={{
+                  position: 'relative',
+                  zIndex: 1,
+                  width: '100%',
+                  accentColor: progressColor,
+                  cursor: locked ? 'not-allowed' : 'pointer',
+                }}
+              />
+            </div>
             <div
               style={{
                 display: 'flex',
@@ -619,7 +781,10 @@ export function PlayerBar({ player, compact }: Props) {
                 justifyContent: 'center',
                 alignItems: 'center',
                 gap: 14,
-                marginBottom: 4,
+                marginBottom: 16,
+                opacity: locked ? 0.35 : 1,
+                pointerEvents: locked ? 'none' : 'auto',
+                transition: 'opacity 0.2s ease',
               }}
             >
               <button
@@ -715,6 +880,68 @@ export function PlayerBar({ player, compact }: Props) {
                 </svg>
               </button>
             </div>
+
+            {/* Fila iOS-futurista: brillo, volumen, pantalla completa, candado */}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <div className="gco-fs-pill">
+                <button type="button" aria-label="Bajar brillo" onClick={() => setBrightness((b) => clamp(b - 10, 40, 160))}>
+                  −
+                </button>
+                <span>☀ {brightness}%</span>
+                <button type="button" aria-label="Subir brillo" onClick={() => setBrightness((b) => clamp(b + 10, 40, 160))}>
+                  +
+                </button>
+              </div>
+              <div className="gco-fs-pill">
+                <button type="button" aria-label="Bajar volumen" onClick={() => setVolumeUi((v) => clamp(v - 10, 0, 100))}>
+                  −
+                </button>
+                <span>🔊 {volumeUi}%</span>
+                <button type="button" aria-label="Subir volumen" onClick={() => setVolumeUi((v) => clamp(v + 10, 0, 100))}>
+                  +
+                </button>
+              </div>
+              <button
+                type="button"
+                className="gco-pb-icon"
+                style={glassIcon}
+                aria-label="Pantalla completa"
+                title="Pantalla completa"
+                onClick={() => void toggleNativeFullscreen()}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M8 3H5a2 2 0 00-2 2v3M16 3h3a2 2 0 012 2v3M21 16v3a2 2 0 01-2 2h-3M8 21H5a2 2 0 01-2-2v-3" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="gco-pb-icon"
+                style={{ ...glassIcon, color: locked ? ACCENT : '#F3F5FA' }}
+                aria-label={locked ? 'Desbloquear controles' : 'Bloquear controles'}
+                title={locked ? 'Desbloquear controles' : 'Bloquear controles'}
+                onClick={() => {
+                  soundClick()
+                  setLocked((v) => !v)
+                }}
+              >
+                {locked ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="5" y="11" width="14" height="9" rx="2" />
+                    <path d="M8 11V8a4 4 0 018 0v3" />
+                  </svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="5" y="11" width="14" height="9" rx="2" />
+                    <path d="M8 11V8a4 4 0 017.5-2" />
+                  </svg>
+                )}
+              </button>
+            </div>
+            {locked && (
+              <p style={{ textAlign: 'center', fontSize: '0.72rem', opacity: 0.5, marginTop: 8 }}>
+                Controles bloqueados — toca 🔒 para desbloquear
+              </p>
+            )}
           </>
         )}
 
@@ -860,10 +1087,11 @@ export function PlayerBar({ player, compact }: Props) {
         )}
       </div>
 
+      {/* Nav inferior (Cola / Ahora / Letra) — zIndex explícito por encima del bottom-nav de MusicaHome (50) */}
       <div
         style={{
           position: 'relative',
-          zIndex: 3,
+          zIndex: 21000000001,
           padding: '8px 14px calc(12px + env(safe-area-inset-bottom, 0px))',
         }}
       >
