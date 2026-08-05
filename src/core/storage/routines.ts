@@ -7,7 +7,7 @@ export interface RoutineActivity {
   type: ActivityType
   label: string
   durationMin: number
-  /** Ruta de App.tsx */
+  /** Ruta exacta de App.tsx */
   path?: string
 }
 
@@ -37,6 +37,10 @@ export interface RoutinePrefs {
 
 const ROUTINES_KEY = 'gco:routines'
 const PREFS_KEY = 'gco:routine-prefs'
+const PRESETS_VERSION_KEY = 'gco:routines-presets-v'
+
+/** Sube este número cuando cambien los presets para forzar migración */
+const PRESETS_VERSION = 4
 
 function uid() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
@@ -46,7 +50,12 @@ function nowIso() {
   return new Date().toISOString()
 }
 
-/** Presets conscientes (reemplazan los antiguos). */
+/**
+ * Presets con rutas REALES del router:
+ *   /categoria/memoria/...
+ *   /categoria/logica/...
+ *   /nutricion  /musica
+ */
 export function defaultPresetRoutines(): Routine[] {
   const t = nowIso()
   return [
@@ -58,28 +67,28 @@ export function defaultPresetRoutines(): Routine[] {
       updatedAt: t,
       activities: [
         {
-          id: uid(),
+          id: 'pdm-1',
           type: 'game',
           label: 'Secuencia de colores',
           durationMin: 5,
           path: '/categoria/memoria/secuencia-colores',
         },
         {
-          id: uid(),
+          id: 'pdm-2',
           type: 'rest',
           label: 'Respirar · música suave',
           durationMin: 2,
           path: '/musica',
         },
         {
-          id: uid(),
+          id: 'pdm-3',
           type: 'game',
           label: 'Habilidades · reacción',
           durationMin: 5,
           path: '/categoria/memoria/habilidades',
         },
         {
-          id: uid(),
+          id: 'pdm-4',
           type: 'rest',
           label: 'Cierre · estirar cuello',
           durationMin: 3,
@@ -95,28 +104,28 @@ export function defaultPresetRoutines(): Routine[] {
       updatedAt: t,
       activities: [
         {
-          id: uid(),
+          id: 'pms-1',
           type: 'game',
           label: 'Memoria de cartas',
           durationMin: 7,
           path: '/categoria/memoria/cartas',
         },
         {
-          id: uid(),
+          id: 'pms-2',
           type: 'rest',
           label: 'Descanso visual',
           durationMin: 2,
           path: '/musica',
         },
         {
-          id: uid(),
+          id: 'pms-3',
           type: 'game',
-          label: 'Números / palabras / citas',
+          label: 'Números · palabras · citas',
           durationMin: 8,
           path: '/categoria/memoria/numeros-asociados',
         },
         {
-          id: uid(),
+          id: 'pms-4',
           type: 'rest',
           label: 'Agua + caminar',
           durationMin: 3,
@@ -132,37 +141,37 @@ export function defaultPresetRoutines(): Routine[] {
       updatedAt: t,
       activities: [
         {
-          id: uid(),
+          id: 'plf-1',
           type: 'game',
           label: 'Colocador',
           durationMin: 8,
           path: '/categoria/logica/numberpuzzle',
         },
         {
-          id: uid(),
+          id: 'plf-2',
           type: 'rest',
           label: 'Pausa de 2 min',
           durationMin: 2,
           path: '/musica',
         },
         {
-          id: uid(),
+          id: 'plf-3',
           type: 'game',
           label: 'Despejes',
           durationMin: 8,
           path: '/categoria/logica/despejes',
         },
         {
-          id: uid(),
-          type: 'rest',
+          id: 'plf-4',
+          type: 'game',
           label: 'Lectura breve',
           durationMin: 5,
           path: '/nutricion',
         },
         {
-          id: uid(),
+          id: 'plf-5',
           type: 'game',
-          label: 'Rompecabezas (opcional)',
+          label: 'Rompecabezas',
           durationMin: 2,
           path: '/categoria/logica/rompecabezas',
         },
@@ -176,21 +185,21 @@ export function defaultPresetRoutines(): Routine[] {
       updatedAt: t,
       activities: [
         {
-          id: uid(),
+          id: 'pnc-1',
           type: 'game',
           label: 'Lectura / audiolibro',
           durationMin: 6,
           path: '/nutricion',
         },
         {
-          id: uid(),
+          id: 'pnc-2',
           type: 'rest',
           label: 'Música relajante',
           durationMin: 4,
           path: '/musica',
         },
         {
-          id: uid(),
+          id: 'pnc-3',
           type: 'game',
           label: 'Secuencia suave',
           durationMin: 2,
@@ -206,14 +215,14 @@ export function defaultPresetRoutines(): Routine[] {
       updatedAt: t,
       activities: [
         {
-          id: uid(),
+          id: 'pr5-1',
           type: 'game',
           label: 'Habilidades',
           durationMin: 3,
           path: '/categoria/memoria/habilidades',
         },
         {
-          id: uid(),
+          id: 'pr5-2',
           type: 'rest',
           label: 'Respirar 4-7-8',
           durationMin: 2,
@@ -251,36 +260,66 @@ export function getRoutinePrefs(): RoutinePrefs {
   }
 }
 
-export function saveRoutinePrefs(
-  update: Partial<RoutinePrefs>
-): RoutinePrefs {
+export function saveRoutinePrefs(update: Partial<RoutinePrefs>): RoutinePrefs {
   const next = { ...getRoutinePrefs(), ...update }
   localStorage.setItem(PREFS_KEY, JSON.stringify(next))
   emit()
   return next
 }
 
+function mergePresets(customs: Routine[]): Routine[] {
+  return [...defaultPresetRoutines(), ...customs]
+}
+
 export function getRoutines(): Routine[] {
   try {
+    const ver = Number(localStorage.getItem(PRESETS_VERSION_KEY) || '0')
     const raw = localStorage.getItem(ROUTINES_KEY)
-    if (!raw) {
-      const presets = defaultPresetRoutines()
-      localStorage.setItem(ROUTINES_KEY, JSON.stringify(presets))
-      return presets
-    }
-    const list = JSON.parse(raw) as Routine[]
-    // Migración: si solo hay presets viejos, o lista vacía de presets conocidos
-    const hasNew = list.some((r) => r.id.startsWith('preset-despertar'))
-    if (!hasNew && list.every((r) => r.isPreset)) {
-      const presets = defaultPresetRoutines()
-      const customs = list.filter((r) => !r.isPreset)
-      const next = [...presets, ...customs]
+
+    if (!raw || ver < PRESETS_VERSION) {
+      const customs = raw
+        ? (JSON.parse(raw) as Routine[]).filter((r) => !r.isPreset)
+        : []
+      const next = mergePresets(customs)
       localStorage.setItem(ROUTINES_KEY, JSON.stringify(next))
+      localStorage.setItem(PRESETS_VERSION_KEY, String(PRESETS_VERSION))
       return next
     }
-    return list
+
+    const list = JSON.parse(raw) as Routine[]
+    // Siempre alinear actividades de presets con plantilla (rutas correctas)
+    let dirty = false
+    const templates = defaultPresetRoutines()
+    const fixed = list.map((r) => {
+      if (!r.isPreset) return r
+      const template = templates.find((p) => p.id === r.id)
+      if (!template) return r
+      dirty = true
+      return {
+        ...template,
+        timeHHMM: r.timeHHMM || template.timeHHMM,
+        updatedAt: nowIso(),
+      }
+    })
+    // Añadir presets nuevos que falten
+    for (const p of templates) {
+      if (!fixed.some((r) => r.id === p.id)) {
+        fixed.unshift(p)
+        dirty = true
+      }
+    }
+    if (dirty) {
+      const customs = fixed.filter((r) => !r.isPreset)
+      const merged = [...templates, ...customs]
+      localStorage.setItem(ROUTINES_KEY, JSON.stringify(merged))
+      return merged
+    }
+    return fixed
   } catch {
-    return defaultPresetRoutines()
+    const presets = defaultPresetRoutines()
+    localStorage.setItem(ROUTINES_KEY, JSON.stringify(presets))
+    localStorage.setItem(PRESETS_VERSION_KEY, String(PRESETS_VERSION))
+    return presets
   }
 }
 
@@ -335,12 +374,11 @@ export function startRoutineSession(routineId: string): RoutinePrefs {
   const r = getRoutines().find((x) => x.id === routineId)
   if (!r || r.activities.length === 0) return getRoutinePrefs()
   const first = r.activities[0]
-  const endsAt = Date.now() + first.durationMin * 60_000
   return saveRoutinePrefs({
     session: {
       routineId,
       activityIndex: 0,
-      endsAt,
+      endsAt: Date.now() + first.durationMin * 60_000,
       paused: false,
     },
   })
@@ -376,12 +414,11 @@ export function togglePauseSession(): RoutinePrefs {
   const s = prefs.session
   if (!s) return prefs
   if (!s.paused) {
-    const remaining = Math.max(0, s.endsAt - Date.now())
     return saveRoutinePrefs({
       session: {
         ...s,
         paused: true,
-        remainingMsWhenPaused: remaining,
+        remainingMsWhenPaused: Math.max(0, s.endsAt - Date.now()),
       },
     })
   }
@@ -403,7 +440,6 @@ export function formatMs(ms: number) {
   return `${m}:${String(r).padStart(2, '0')}`
 }
 
-/** Fallback de campana si no hay tono personalizado */
 export function ringBell() {
   try {
     const Ctx =
@@ -428,8 +464,8 @@ export function ringBell() {
   }
 }
 
-/** Fuerza regenerar presets (borra presets viejos, conserva custom). */
 export function resetPresetRoutines() {
   const customs = getRoutines().filter((r) => !r.isPreset)
+  localStorage.setItem(PRESETS_VERSION_KEY, String(PRESETS_VERSION))
   saveRoutines([...defaultPresetRoutines(), ...customs])
 }

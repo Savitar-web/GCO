@@ -340,11 +340,13 @@ export async function downloadCredential(
   ctx.font = '600 30px system-ui, sans-serif'
   ctx.fillText(name, 210, 222)
 
+  const defeats = Math.max(0, total.totalAttempts - total.totalCompleted)
   const meta = [
     age != null ? `${age} años` : null,
     `Skill ${total.skillScore}%`,
+    `Índice ${total.winRate}%`,
+    `${total.totalCompleted}V · ${defeats}D`,
     `${total.totalLevels} niveles`,
-    `${total.totalCompleted} victorias`,
   ]
     .filter(Boolean)
     .join('  ·  ')
@@ -379,7 +381,8 @@ export async function downloadCredential(
   } else {
     for (const g of lines) {
       const label = `${g.categoryId} / ${g.gameId.replace(/-/g, ' ')}`
-      const stats = `Nv. ${g.highestLevel}  ·  ${g.totalCompleted} wins  ·  ${g.winRate}%`
+      const losses = Math.max(0, g.totalAttempts - g.totalCompleted)
+      const stats = `Nv. ${g.highestLevel}  ·  ${g.totalCompleted}V/${losses}D  ·  ${g.winRate}%`
       ctx.fillStyle = c.faint
       ctx.fillText(label, 56, y)
       ctx.fillStyle = c.ink
