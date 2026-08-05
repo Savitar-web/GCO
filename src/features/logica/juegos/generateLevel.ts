@@ -4,7 +4,8 @@
  * Sirve a:
  *   1) Colocador (Number Puzzle)  → generateNumberPuzzleLevel, shuffleBoard, …
  *   2) Rompecabezas (Jigsaw)      → generateJigsawLevel, createPieces, …
- *
+ *   3) Despejes (Puzzle)      → generatepuzzleLevel, …
+ * 
  * Puedes colocarlo en:
  *   src/features/logica/juegos/generateLevel.ts
  * e importar desde ambos juegos,
@@ -891,4 +892,910 @@ export function drawFallbackCover(
     ctx.textAlign = 'center'
     ctx.fillText(label, w / 2, h / 2)
   }
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 3) DESPEJES — Path clearing / sliding / maze puzzles
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Modos:
+ *   - hielo   → deslizamiento tipo hielo Pokémon (slide hasta chocar)
+ *   - empuje  → Sokoban-lite (empujar cajas a metas)
+ *   - trafico → Rush Hour-lite (deslizar bloques H/V para liberar salida)
+ *   - laberinto → laberinto clásico con salida
+ *
+ * Progresión lenta (sensación de racha):
+ *   Nv 1–5   → grids pequeños, pocos obstáculos
+ *   Nv 6–15  → más paredes / 1–2 cajas
+ *   Nv 16–30 → grids medianos, más piezas
+ *   Nv 31+   → densidad y tamaño crecientes
+ *
+ * Pegar esta sección al final de:
+ *   src/features/logica/juegos/generateLevel.ts
+ */
+
+export type DespejeMode = 'hielo' | 'empuje' | 'trafico' | 'laberinto'
+
+export const DESPEJE_MODES: {
+  id: DespejeMode
+  title: string
+  emoji: string
+  desc: string
+}[] = [
+  {
+    id: 'hielo',
+    title: 'Hielo',
+    emoji: '🧊',
+    desc: 'Deslízate hasta chocar. Llega a la meta planificando rebotes.',
+  },
+  {
+    id: 'empuje',
+    title: 'Empuje',
+    emoji: '📦',
+    desc: 'Empuja las cajas a las marcas. No puedes tirar hacia atrás.',
+  },
+  {
+    id: 'trafico',
+    title: 'Salida',
+    emoji: '🚗',
+    desc: 'Despeja el camino hasta la salida.',
+  },
+  {
+    id: 'laberinto',
+    title: 'Laberinto',
+    emoji: '🌀',
+    desc: 'Encuentra la salida. Cada nivel es un laberinto distinto.',
+  },
+]
+
+/** Celda del tablero Despejes */
+export type DespejeCell =
+  | 0 // vacío / suelo
+  | 1 // pared
+  | 2 // jugador
+  | 3 // meta / salida
+  | 4 // caja
+  | 5 // caja sobre meta
+  | 6 // meta vacía (solo empuje)
+  | number // >= 10 → id de vehículo tráfico
+
+export type DespejeGrid = DespejeCell[][]
+
+export type DespejeDir = 'up' | 'down' | 'left' | 'right'
+
+export interface TrafficPiece {
+  id: number
+  /** true = solo horizontal */
+  horizontal: boolean
+  length: 2 | 3
+  /** es el vehículo objetivo (rojo) */
+  isHero: boolean
+  row: number
+  col: number
+}
+
+export interface DespejeLevel {
+  mode: DespejeMode
+  level: number
+  rows: number
+  cols: number
+  grid: DespejeGrid
+  /** posición inicial del jugador (hielo / empuje / laberinto) */
+  start: { r: number; c: number }
+  goal: { r: number; c: number }
+  /** piezas de tráfico (solo modo trafico) */
+  traffic?: TrafficPiece[]
+  /** número de cajas a colocar (empuje) */
+  crateCount: number
+  moveHint: number
+  targetSeconds: number
+  seed: number
+  goalText: string
+}
+
+/* ── tamaño y curva ── */
+
+export function despejeSizeForLevel(level: number, mode: DespejeMode): {
+  rows: number
+  cols: number
+} {
+  const lv = Math.max(1, Math.floor(level))
+  if (mode === 'trafico') {
+    // Rush Hour clásico 6×6, sube despacio
+    if (lv <= 8) return { rows: 5, cols: 5 }
+    if (lv <= 20) return { rows: 6, cols: 6 }
+    if (lv <= 40) return { rows: 7, cols: 7 }
+    return { rows: 8, cols: 8 }
+  }
+  if (mode === 'laberinto') {
+    if (lv <= 4) return { rows: 5, cols: 5 }
+    if (lv <= 10) return { rows: 7, cols: 7 }
+    if (lv <= 20) return { rows: 9, cols: 9 }
+    if (lv <= 35) return { rows: 11, cols: 11 }
+    if (lv <= 55) return { rows: 13, cols: 13 }
+    return { rows: Math.min(21, 13 + Math.floor((lv - 55) / 8) * 2), cols: Math.min(21, 13 + Math.floor((lv - 55) / 8) * 2) }
+  }
+  // hielo / empuje
+  if (lv <= 3) return { rows: 4, cols: 4 }
+  if (lv <= 8) return { rows: 5, cols: 5 }
+  if (lv <= 15) return { rows: 6, cols: 6 }
+  if (lv <= 25) return { rows: 7, cols: 7 }
+  if (lv <= 40) return { rows: 8, cols: 8 }
+  return {
+    rows: Math.min(12, 8 + Math.floor((lv - 40) / 10)),
+    cols: Math.min(12, 8 + Math.floor((lv - 40) / 10)),
+  }
+}
+
+export function getDespejeDifficulty(level: number, mode: DespejeMode) {
+  const lv = Math.max(1, Math.floor(level))
+  const { rows, cols } = despejeSizeForLevel(lv, mode)
+  const area = rows * cols
+
+  let wallDensity = 0.12 + Math.min(0.28, lv * 0.008)
+  let crateCount = 0
+  let trafficCars = 2
+  let moveHint = 8
+  let targetSeconds = 40
+
+  if (mode === 'hielo') {
+    wallDensity = 0.14 + Math.min(0.32, lv * 0.009)
+    moveHint = Math.max(4, Math.round(6 + lv * 0.55))
+    targetSeconds = Math.max(12, Math.round(18 + lv * 2.2))
+  } else if (mode === 'empuje') {
+    crateCount = Math.min(8, 1 + Math.floor(lv / 4))
+    wallDensity = 0.1 + Math.min(0.22, lv * 0.006)
+    moveHint = Math.max(6, crateCount * 6 + lv)
+    targetSeconds = Math.max(20, Math.round(25 + crateCount * 18 + lv * 2))
+  } else if (mode === 'trafico') {
+    trafficCars = Math.min(12, 2 + Math.floor(lv / 3))
+    moveHint = Math.max(5, 4 + trafficCars * 2 + Math.floor(lv / 2))
+    targetSeconds = Math.max(20, Math.round(22 + trafficCars * 8 + lv * 1.5))
+  } else {
+    // laberinto
+    wallDensity = 0.45
+    moveHint = Math.max(8, Math.round(area * 0.35))
+    targetSeconds = Math.max(15, Math.round(12 + area * 0.45 + lv * 0.8))
+  }
+
+  return {
+    rows,
+    cols,
+    wallDensity,
+    crateCount,
+    trafficCars,
+    moveHint,
+    targetSeconds,
+  }
+}
+
+/* ── util grid ── */
+
+function emptyGrid(rows: number, cols: number, fill: DespejeCell = 0): DespejeGrid {
+  return Array.from({ length: rows }, () =>
+    Array.from({ length: cols }, () => fill)
+  )
+}
+
+function cloneGrid(g: DespejeGrid): DespejeGrid {
+  return g.map((row) => row.slice())
+}
+
+function inBounds(r: number, c: number, rows: number, cols: number) {
+  return r >= 0 && c >= 0 && r < rows && c < cols
+}
+
+const DIR_DELTA: Record<DespejeDir, { dr: number; dc: number }> = {
+  up: { dr: -1, dc: 0 },
+  down: { dr: 1, dc: 0 },
+  left: { dr: 0, dc: -1 },
+  right: { dr: 0, dc: 1 },
+}
+
+export const DESPEJE_DIRS: DespejeDir[] = ['up', 'down', 'left', 'right']
+
+/* ── HIELO: slide hasta obstáculo ── */
+
+export function slideUntilStop(
+  grid: DespejeGrid,
+  r: number,
+  c: number,
+  dir: DespejeDir
+): { r: number; c: number } {
+  const rows = grid.length
+  const cols = grid[0].length
+  const { dr, dc } = DIR_DELTA[dir]
+  let nr = r
+  let nc = c
+  while (true) {
+    const tr = nr + dr
+    const tc = nc + dc
+    if (!inBounds(tr, tc, rows, cols)) break
+    const cell = grid[tr][tc]
+    if (cell === 1 || cell === 4 || cell === 5) break // pared o caja
+    if (cell >= 10) break // vehículo
+    nr = tr
+    nc = tc
+  }
+  return { r: nr, c: nc }
+}
+
+function bfsSlideReachable(
+  grid: DespejeGrid,
+  startR: number,
+  startC: number
+): Set<string> {
+  const seen = new Set<string>()
+  const q: { r: number; c: number }[] = [{ r: startR, c: startC }]
+  seen.add(`${startR},${startC}`)
+  while (q.length) {
+    const cur = q.shift()!
+    for (const dir of DESPEJE_DIRS) {
+      const next = slideUntilStop(grid, cur.r, cur.c, dir)
+      const key = `${next.r},${next.c}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        q.push(next)
+      }
+    }
+  }
+  return seen
+}
+
+/**
+ * Genera nivel de hielo garantizando que la meta sea alcanzable
+ * con deslizamientos.
+ */
+export function generateHieloLevel(
+  level: number,
+  opts?: { seedSalt?: number }
+): DespejeLevel {
+  const lv = Math.max(1, Math.floor(level))
+  const seed = levelSeed(lv, 7100 + (opts?.seedSalt ?? 0))
+  const rng = mulberry32(seed)
+  const d = getDespejeDifficulty(lv, 'hielo')
+  const { rows, cols } = d
+
+  let best: DespejeLevel | null = null
+
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const grid = emptyGrid(rows, cols, 0)
+    // borde de paredes suave
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (r === 0 || c === 0 || r === rows - 1 || c === cols - 1) {
+          if (rng() < 0.55) grid[r][c] = 1
+        } else if (rng() < d.wallDensity) {
+          grid[r][c] = 1
+        }
+      }
+    }
+
+    // candidatos libres
+    const free: { r: number; c: number }[] = []
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (grid[r][c] === 0) free.push({ r, c })
+      }
+    }
+    if (free.length < 4) continue
+
+    // start y goal lejanos
+    const start = free[Math.floor(rng() * free.length)]
+    let goal = free[Math.floor(rng() * free.length)]
+    let distBest = -1
+    for (let i = 0; i < Math.min(30, free.length); i++) {
+      const cand = free[Math.floor(rng() * free.length)]
+      const dist = Math.abs(cand.r - start.r) + Math.abs(cand.c - start.c)
+      if (dist > distBest) {
+        distBest = dist
+        goal = cand
+      }
+    }
+    if (start.r === goal.r && start.c === goal.c) continue
+
+    grid[start.r][start.c] = 2
+    grid[goal.r][goal.c] = 3
+
+    const reach = bfsSlideReachable(grid, start.r, start.c)
+    if (!reach.has(`${goal.r},${goal.c}`)) continue
+
+    // preferir caminos que requieran varios deslizamientos
+    const pathLen = reach.size
+    const score = pathLen + distBest
+    const levelObj: DespejeLevel = {
+      mode: 'hielo',
+      level: lv,
+      rows,
+      cols,
+      grid,
+      start,
+      goal,
+      crateCount: 0,
+      moveHint: d.moveHint,
+      targetSeconds: d.targetSeconds,
+      seed: seed + attempt,
+      goalText: 'Deslízate hasta la meta. Cada movimiento sigue hasta chocar.',
+    }
+    if (!best || score > (best.rows * best.cols) / 4) {
+      best = levelObj
+      if (pathLen >= Math.max(4, Math.floor(rows * 0.8))) break
+    }
+  }
+
+  if (best) return best
+
+  // fallback mínimo resoluble
+  const grid = emptyGrid(rows, cols, 0)
+  for (let c = 0; c < cols; c++) {
+    grid[0][c] = 1
+    grid[rows - 1][c] = 1
+  }
+  for (let r = 0; r < rows; r++) {
+    grid[r][0] = 1
+    grid[r][cols - 1] = 1
+  }
+  grid[1][1] = 2
+  grid[rows - 2][cols - 2] = 3
+  return {
+    mode: 'hielo',
+    level: lv,
+    rows,
+    cols,
+    grid,
+    start: { r: 1, c: 1 },
+    goal: { r: rows - 2, c: cols - 2 },
+    crateCount: 0,
+    moveHint: d.moveHint,
+    targetSeconds: d.targetSeconds,
+    seed,
+    goalText: 'Deslízate hasta la meta. Cada movimiento sigue hasta chocar.',
+  }
+}
+
+/* ── EMPUJE: Sokoban-lite ── */
+
+export function canPushStep(
+  grid: DespejeGrid,
+  pr: number,
+  pc: number,
+  dir: DespejeDir
+): { ok: boolean; grid?: DespejeGrid; pr?: number; pc?: number } {
+  const rows = grid.length
+  const cols = grid[0].length
+  const { dr, dc } = DIR_DELTA[dir]
+  const nr = pr + dr
+  const nc = pc + dc
+  if (!inBounds(nr, nc, rows, cols)) return { ok: false }
+  const front = grid[nr][nc]
+  if (front === 1) return { ok: false }
+  if (front === 0 || front === 3 || front === 6) {
+    const next = cloneGrid(grid)
+    next[pr][pc] = next[pr][pc] === 2 ? 0 : 0
+    // restaurar meta bajo el jugador si había
+    next[nr][nc] = 2
+    return { ok: true, grid: next, pr: nr, pc: nc }
+  }
+  if (front === 4 || front === 5) {
+    const br = nr + dr
+    const bc = nc + dc
+    if (!inBounds(br, bc, rows, cols)) return { ok: false }
+    const beyond = grid[br][bc]
+    if (beyond !== 0 && beyond !== 3 && beyond !== 6) return { ok: false }
+    const next = cloneGrid(grid)
+    // quitar jugador
+    next[pr][pc] = 0
+    // mover caja
+    const boxWasOnGoal = front === 5
+    next[nr][nc] = 2
+    next[br][bc] = beyond === 3 || beyond === 6 ? 5 : 4
+    // si la caja salió de una meta, dejar meta
+    if (boxWasOnGoal) {
+      // la celda nr,nc ahora tiene jugador; la meta queda “debajo” conceptualmente
+      // representamos meta vacía solo si no hay jugador — simplificado: al irse el jugador restauramos
+    }
+    return { ok: true, grid: next, pr: nr, pc: nc }
+  }
+  return { ok: false }
+}
+
+/** Movimiento de 1 paso (empuje / laberinto / hielo paso a paso no-slide) */
+export function stepPlayer(
+  grid: DespejeGrid,
+  pr: number,
+  pc: number,
+  dir: DespejeDir,
+  mode: DespejeMode
+): { grid: DespejeGrid; pr: number; pc: number; moved: boolean } {
+  if (mode === 'hielo') {
+    const stop = slideUntilStop(grid, pr, pc, dir)
+    if (stop.r === pr && stop.c === pc) {
+      return { grid, pr, pc, moved: false }
+    }
+    const next = cloneGrid(grid)
+    next[pr][pc] = next[pr][pc] === 2 ? 0 : 0
+    // restaurar meta si el start era goal visual
+    if (grid[pr][pc] === 2 && /* was on goal marker stored separately */ false) {
+      /* handled in UI */
+    }
+    next[stop.r][stop.c] = 2
+    return { grid: next, pr: stop.r, pc: stop.c, moved: true }
+  }
+
+  const rows = grid.length
+  const cols = grid[0].length
+  const { dr, dc } = DIR_DELTA[dir]
+  const nr = pr + dr
+  const nc = pc + dc
+  if (!inBounds(nr, nc, rows, cols)) return { grid, pr, pc, moved: false }
+  const front = grid[nr][nc]
+
+  if (mode === 'laberinto') {
+    if (front === 1) return { grid, pr, pc, moved: false }
+    const next = cloneGrid(grid)
+    next[pr][pc] = 0
+    next[nr][nc] = front === 3 ? 2 : 2
+    return { grid: next, pr: nr, pc: nc, moved: true }
+  }
+
+  // empuje
+  if (front === 1) return { grid, pr, pc, moved: false }
+  if (front === 0 || front === 3 || front === 6) {
+    const next = cloneGrid(grid)
+    // restaurar meta si salimos de una
+    const leftCell = 0
+    next[pr][pc] = leftCell
+    next[nr][nc] = 2
+    return { grid: next, pr: nr, pc: nc, moved: true }
+  }
+  if (front === 4 || front === 5) {
+    const br = nr + dr
+    const bc = nc + dc
+    if (!inBounds(br, bc, rows, cols)) return { grid, pr, pc, moved: false }
+    const beyond = grid[br][bc]
+    if (beyond !== 0 && beyond !== 3 && beyond !== 6) {
+      return { grid, pr, pc, moved: false }
+    }
+    const next = cloneGrid(grid)
+    next[pr][pc] = 0
+    next[nr][nc] = 2
+    next[br][bc] = beyond === 3 || beyond === 6 ? 5 : 4
+    return { grid: next, pr: nr, pc: nc, moved: true }
+  }
+  return { grid, pr, pc, moved: false }
+}
+
+export function isEmpujeSolved(grid: DespejeGrid): boolean {
+  for (const row of grid) {
+    for (const cell of row) {
+      if (cell === 4) return false // caja sin meta
+    }
+  }
+  // al menos una caja en meta
+  let onGoal = 0
+  for (const row of grid) {
+    for (const cell of row) {
+      if (cell === 5) onGoal++
+    }
+  }
+  return onGoal > 0
+}
+
+export function generateEmpujeLevel(
+  level: number,
+  opts?: { seedSalt?: number }
+): DespejeLevel {
+  const lv = Math.max(1, Math.floor(level))
+  const seed = levelSeed(lv, 7200 + (opts?.seedSalt ?? 0))
+  const rng = mulberry32(seed)
+  const d = getDespejeDifficulty(lv, 'empuje')
+  const { rows, cols, crateCount } = d
+
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const grid = emptyGrid(rows, cols, 0)
+    // paredes perimetrales
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (r === 0 || c === 0 || r === rows - 1 || c === cols - 1) {
+          grid[r][c] = 1
+        } else if (rng() < d.wallDensity * 0.7) {
+          grid[r][c] = 1
+        }
+      }
+    }
+
+    const free: { r: number; c: number }[] = []
+    for (let r = 1; r < rows - 1; r++) {
+      for (let c = 1; c < cols - 1; c++) {
+        if (grid[r][c] === 0) free.push({ r, c })
+      }
+    }
+    if (free.length < crateCount * 2 + 3) continue
+
+    // metas
+    const goals: { r: number; c: number }[] = []
+    for (let i = 0; i < crateCount; i++) {
+      if (!free.length) break
+      const idx = Math.floor(rng() * free.length)
+      const g = free.splice(idx, 1)[0]
+      goals.push(g)
+      grid[g.r][g.c] = 6
+    }
+
+    // cajas cerca del centro
+    const crates: { r: number; c: number }[] = []
+    for (let i = 0; i < crateCount; i++) {
+      if (!free.length) break
+      const idx = Math.floor(rng() * free.length)
+      const b = free.splice(idx, 1)[0]
+      crates.push(b)
+      grid[b.r][b.c] = 4
+    }
+
+    // jugador
+    if (!free.length) continue
+    const start = free[Math.floor(rng() * free.length)]
+    grid[start.r][start.c] = 2
+
+    // meta de referencia (primera)
+    const goal = goals[0] ?? { r: rows - 2, c: cols - 2 }
+
+    return {
+      mode: 'empuje',
+      level: lv,
+      rows,
+      cols,
+      grid,
+      start,
+      goal,
+      crateCount,
+      moveHint: d.moveHint,
+      targetSeconds: d.targetSeconds,
+      seed: seed + attempt,
+      goalText: `Empuja ${crateCount} caja${crateCount > 1 ? 's' : ''} a las marcas.`,
+    }
+  }
+
+  // fallback 1 caja
+  const grid = emptyGrid(rows, cols, 0)
+  for (let r = 0; r < rows; r++) {
+    grid[r][0] = 1
+    grid[r][cols - 1] = 1
+  }
+  for (let c = 0; c < cols; c++) {
+    grid[0][c] = 1
+    grid[rows - 1][c] = 1
+  }
+  grid[1][1] = 2
+  grid[2][2] = 4
+  grid[rows - 2][cols - 2] = 6
+  return {
+    mode: 'empuje',
+    level: lv,
+    rows,
+    cols,
+    grid,
+    start: { r: 1, c: 1 },
+    goal: { r: rows - 2, c: cols - 2 },
+    crateCount: 1,
+    moveHint: d.moveHint,
+    targetSeconds: d.targetSeconds,
+    seed,
+    goalText: 'Empuja la caja a la marca.',
+  }
+}
+
+/* ── TRÁFICO: Rush Hour-lite ── */
+
+export function generateTraficoLevel(
+  level: number,
+  opts?: { seedSalt?: number }
+): DespejeLevel {
+  const lv = Math.max(1, Math.floor(level))
+  const seed = levelSeed(lv, 7300 + (opts?.seedSalt ?? 0))
+  const rng = mulberry32(seed)
+  const d = getDespejeDifficulty(lv, 'trafico')
+  const { rows, cols, trafficCars } = d
+
+  const grid = emptyGrid(rows, cols, 0)
+  // bordes
+  for (let r = 0; r < rows; r++) {
+    grid[r][0] = 1
+    grid[r][cols - 1] = 1
+  }
+  for (let c = 0; c < cols; c++) {
+    grid[0][c] = 1
+    grid[rows - 1][c] = 1
+  }
+
+  const exitRow = Math.floor(rows / 2)
+  // salida a la derecha
+  grid[exitRow][cols - 1] = 0
+
+  const pieces: TrafficPiece[] = []
+  let nextId = 10
+
+  // héroe horizontal en la fila de salida
+  const heroLen: 2 | 3 = 2
+  const heroCol = Math.max(1, Math.min(cols - 3, 1 + Math.floor(rng() * (cols - 4))))
+  const hero: TrafficPiece = {
+    id: nextId++,
+    horizontal: true,
+    length: heroLen,
+    isHero: true,
+    row: exitRow,
+    col: heroCol,
+  }
+  pieces.push(hero)
+  for (let i = 0; i < hero.length; i++) {
+    grid[hero.row][hero.col + i] = hero.id
+  }
+
+  let placed = 0
+  let guard = 0
+  while (placed < trafficCars - 1 && guard < 200) {
+    guard++
+    const horizontal = rng() < 0.55
+    const len: 2 | 3 = rng() < 0.65 ? 2 : 3
+    const r = 1 + Math.floor(rng() * (rows - 2))
+    const c = 1 + Math.floor(rng() * (cols - 2))
+    let fits = true
+    if (horizontal) {
+      if (c + len > cols - 1) fits = false
+      else {
+        for (let i = 0; i < len; i++) {
+          if (grid[r][c + i] !== 0) fits = false
+        }
+      }
+    } else {
+      if (r + len > rows - 1) fits = false
+      else {
+        for (let i = 0; i < len; i++) {
+          if (grid[r + i][c] !== 0) fits = false
+        }
+      }
+    }
+    if (!fits) continue
+    const p: TrafficPiece = {
+      id: nextId++,
+      horizontal,
+      length: len,
+      isHero: false,
+      row: r,
+      col: c,
+    }
+    pieces.push(p)
+    if (horizontal) {
+      for (let i = 0; i < len; i++) grid[r][c + i] = p.id
+    } else {
+      for (let i = 0; i < len; i++) grid[r + i][c] = p.id
+    }
+    placed++
+  }
+
+  return {
+    mode: 'trafico',
+    level: lv,
+    rows,
+    cols,
+    grid,
+    start: { r: exitRow, c: heroCol },
+    goal: { r: exitRow, c: cols - 1 },
+    traffic: pieces,
+    crateCount: 0,
+    moveHint: d.moveHint,
+    targetSeconds: d.targetSeconds,
+    seed,
+    goalText: 'Despeja el camino →',
+  }
+}
+
+/** Mueve una pieza de tráfico un paso si cabe */
+export function moveTrafficPiece(
+  grid: DespejeGrid,
+  pieces: TrafficPiece[],
+  pieceId: number,
+  dir: DespejeDir
+): { grid: DespejeGrid; pieces: TrafficPiece[]; moved: boolean } {
+  const p = pieces.find((x) => x.id === pieceId)
+  if (!p) return { grid, pieces, moved: false }
+
+  if (p.horizontal && (dir === 'up' || dir === 'down')) {
+    return { grid, pieces, moved: false }
+  }
+  if (!p.horizontal && (dir === 'left' || dir === 'right')) {
+    return { grid, pieces, moved: false }
+  }
+
+  const rows = grid.length
+  const cols = grid[0].length
+  const { dr, dc } = DIR_DELTA[dir]
+
+  // celdas que ocupará
+  const cells: { r: number; c: number }[] = []
+  for (let i = 0; i < p.length; i++) {
+    cells.push(
+      p.horizontal
+        ? { r: p.row, c: p.col + i }
+        : { r: p.row + i, c: p.col }
+    )
+  }
+  const nextCells = cells.map((x) => ({ r: x.r + dr, c: x.c + dc }))
+  for (const n of nextCells) {
+    if (!inBounds(n.r, n.c, rows, cols)) return { grid, pieces, moved: false }
+    const occ = grid[n.r][n.c]
+    // permitir si es parte de la misma pieza
+    if (occ !== 0 && occ !== p.id) return { grid, pieces, moved: false }
+  }
+
+  const nextGrid = cloneGrid(grid)
+  for (const x of cells) nextGrid[x.r][x.c] = 0
+  for (const n of nextCells) nextGrid[n.r][n.c] = p.id
+
+  const nextPieces = pieces.map((x) =>
+    x.id === p.id ? { ...x, row: x.row + dr, col: x.col + dc } : x
+  )
+  return { grid: nextGrid, pieces: nextPieces, moved: true }
+}
+
+export function isTraficoSolved(
+  pieces: TrafficPiece[],
+  cols: number
+): boolean {
+  const hero = pieces.find((p) => p.isHero)
+  if (!hero) return false
+  // el héroe toca la columna de salida (última)
+  return hero.col + hero.length - 1 >= cols - 2 && hero.horizontal
+}
+
+/* ── LABERINTO ── */
+
+function carveMaze(
+  rows: number,
+  cols: number,
+  rng: () => number
+): DespejeGrid {
+  // odd sizes work better for recursive backtracker
+  const R = rows % 2 === 0 ? rows - 1 : rows
+  const C = cols % 2 === 0 ? cols - 1 : cols
+  const grid = emptyGrid(R, C, 1)
+
+  function carve(r: number, c: number) {
+    grid[r][c] = 0
+    const dirs = DESPEJE_DIRS.slice()
+    for (let i = dirs.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1))
+      ;[dirs[i], dirs[j]] = [dirs[j], dirs[i]]
+    }
+    for (const dir of dirs) {
+      const { dr, dc } = DIR_DELTA[dir]
+      const nr = r + dr * 2
+      const nc = c + dc * 2
+      if (nr > 0 && nc > 0 && nr < R - 1 && nc < C - 1 && grid[nr][nc] === 1) {
+        grid[r + dr][c + dc] = 0
+        carve(nr, nc)
+      }
+    }
+  }
+
+  carve(1, 1)
+
+  // expand to requested size if even
+  if (R !== rows || C !== cols) {
+    const full = emptyGrid(rows, cols, 1)
+    for (let r = 0; r < R; r++) {
+      for (let c = 0; c < C; c++) full[r][c] = grid[r][c]
+    }
+    return full
+  }
+  return grid
+}
+
+export function generateLaberintoLevel(
+  level: number,
+  opts?: { seedSalt?: number }
+): DespejeLevel {
+  const lv = Math.max(1, Math.floor(level))
+  const seed = levelSeed(lv, 7400 + (opts?.seedSalt ?? 0))
+  const rng = mulberry32(seed)
+  const d = getDespejeDifficulty(lv, 'laberinto')
+  let { rows, cols } = d
+  // prefer odd
+  if (rows % 2 === 0) rows++
+  if (cols % 2 === 0) cols++
+  rows = Math.min(21, rows)
+  cols = Math.min(21, cols)
+
+  const grid = carveMaze(rows, cols, rng)
+  const start = { r: 1, c: 1 }
+  const goal = { r: rows - 2, c: cols - 2 }
+  grid[start.r][start.c] = 2
+  grid[goal.r][goal.c] = 3
+
+  // abrir un poco más en niveles bajos
+  if (lv <= 6) {
+    for (let i = 0; i < Math.floor(rows * cols * 0.04); i++) {
+      const r = 1 + Math.floor(rng() * (rows - 2))
+      const c = 1 + Math.floor(rng() * (cols - 2))
+      if (grid[r][c] === 1) grid[r][c] = 0
+    }
+  }
+
+  return {
+    mode: 'laberinto',
+    level: lv,
+    rows,
+    cols,
+    grid,
+    start,
+    goal,
+    crateCount: 0,
+    moveHint: d.moveHint,
+    targetSeconds: d.targetSeconds,
+    seed,
+    goalText: 'Encuentra la salida del laberinto.',
+  }
+}
+
+/* ── API unificada ── */
+
+export function generateDespejeLevel(
+  mode: DespejeMode,
+  level: number,
+  opts?: { seedSalt?: number }
+): DespejeLevel {
+  switch (mode) {
+    case 'hielo':
+      return generateHieloLevel(level, opts)
+    case 'empuje':
+      return generateEmpujeLevel(level, opts)
+    case 'trafico':
+      return generateTraficoLevel(level, opts)
+    case 'laberinto':
+      return generateLaberintoLevel(level, opts)
+    default:
+      return generateHieloLevel(level, opts)
+  }
+}
+
+export function isDespejeWon(
+  mode: DespejeMode,
+  grid: DespejeGrid,
+  pr: number,
+  pc: number,
+  goal: { r: number; c: number },
+  traffic?: TrafficPiece[]
+): boolean {
+  if (mode === 'empuje') return isEmpujeSolved(grid)
+  if (mode === 'trafico' && traffic) {
+    return isTraficoSolved(traffic, grid[0].length)
+  }
+  // hielo / laberinto: jugador en meta
+  return pr === goal.r && pc === goal.c
+}
+
+export function calcDespejeStars(
+  moves: number,
+  timeMs: number,
+  moveHint: number,
+  targetSeconds: number
+): 0 | 1 | 2 | 3 {
+  if (moves <= 0) return 0
+  let stars: 0 | 1 | 2 | 3 = 1
+  if (targetSeconds > 0 && timeMs <= targetSeconds * 1000) stars = 2
+  if (moves <= moveHint && stars >= 2) stars = 3
+  else if (moves <= moveHint * 1.4 && stars === 1) stars = 2
+  return stars
+}
+
+/** Tamaño de celda responsive */
+export function despejeCellPx(
+  rows: number,
+  cols: number,
+  isMobile: boolean
+): number {
+  const maxBoard = isMobile ? Math.min(360, typeof window !== 'undefined' ? window.innerWidth - 32 : 360) : 480
+  const cell = Math.floor(maxBoard / Math.max(rows, cols))
+  return Math.max(22, Math.min(isMobile ? 48 : 56, cell))
 }

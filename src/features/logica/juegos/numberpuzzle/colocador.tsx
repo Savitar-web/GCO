@@ -633,7 +633,10 @@ export function Colocador() {
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '1fr 1fr',
-                  gap: 6,
+gap: '0.85rem 1.25rem',
+    marginBottom: '1.2rem',
+    textAlign: 'left',
+    width: '100%',
                 }}
               >
                 {sideLevels.map((id) => {
@@ -749,15 +752,6 @@ export function Colocador() {
                       textAlign: 'left',
                     }}
                   >
-                    <Switch
-                      checked={softMode}
-                      onChange={(v) => {
-                        soundToggle(v)
-                        setSoftMode(v)
-                      }}
-                      label="Progresión suave"
-                      desc="Menos mezcla y más margen de movimientos"
-                    />
                   </div>
 
                   <GlassButton onClick={() => startLevel()}>

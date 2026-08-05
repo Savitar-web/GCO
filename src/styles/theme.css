@@ -1,4 +1,10 @@
-/* Google Fonts */
+/* =============================================================================
+   GymCogOrigins — theme.css
+   Liquid glass · iOS-inspired · multi-device
+   Colores de marca intactos (dark / light / rainbow).
+   ============================================================================= */
+
+/* ---------- Fuentes (latín + mono + fallbacks nativos) ---------- */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap');
 
 /* ========== MODO OSCURO (default) ========== */
@@ -30,39 +36,49 @@
   --gco-orb-1: rgba(34, 230, 197, 0.12);
   --gco-orb-2: rgba(139, 124, 246, 0.10);
   --gco-orb-3: rgba(255, 107, 74, 0.06);
+
+  --gco-hairline: rgba(255, 255, 255, 0.08);
+  --gco-separator: rgba(255, 255, 255, 0.12);
+  --gco-fill-quaternary: rgba(255, 255, 255, 0.04);
+  --gco-overlay: rgba(0, 0, 0, 0.55);
 }
 
-/* ========== MODO CLARO ========== */
+/* ========== MODO CLARO (iOS systemGroupedBackground) ========== */
 [data-theme='light'] {
-  --gco-bg: #F0F3F9;
+  --gco-bg: #F2F2F7;
   --gco-bg-elevated: #FFFFFF;
-  --gco-primary: #0D9B86;
-  --gco-primary-dim: rgba(13, 155, 134, 0.14);
-  --gco-secondary: #E85A3C;
-  --gco-secondary-dim: rgba(232, 90, 60, 0.12);
-  --gco-accent: #6B5CE0;
-  --gco-ink: #121826;
-  --gco-ink-muted: rgba(18, 24, 38, 0.62);
-  --gco-ink-faint: rgba(18, 24, 38, 0.38);
+  --gco-primary: #0C9C86;
+  --gco-primary-dim: rgba(12, 156, 134, 0.12);
+  --gco-secondary: #E5502E;
+  --gco-secondary-dim: rgba(229, 80, 46, 0.12);
+  --gco-accent: #6656E0;
+  --gco-ink: #1C1C1E;
+  --gco-ink-muted: rgba(60, 60, 67, 0.6);
+  --gco-ink-faint: rgba(60, 60, 67, 0.32);
   --gco-button-text: #FFFFFF;
 
-  --gco-glass-bg: rgba(255, 255, 255, 0.55);
-  --gco-glass-bg-hover: rgba(255, 255, 255, 0.72);
-  --gco-glass-border: rgba(255, 255, 255, 0.7);
+  --gco-glass-bg: rgba(255, 255, 255, 0.78);
+  --gco-glass-bg-hover: rgba(255, 255, 255, 0.95);
+  --gco-glass-border: rgba(60, 60, 67, 0.12);
   --gco-glass-highlight: rgba(255, 255, 255, 0.9);
-  --gco-glass-blur: 22px;
-  --gco-glass-saturate: 1.4;
+  --gco-glass-blur: 20px;
+  --gco-glass-saturate: 1.2;
 
-  --gco-input-bg: rgba(255, 255, 255, 0.75);
-  --gco-shadow: 0 8px 28px rgba(18, 24, 38, 0.08);
-  --gco-shadow-lg: 0 16px 40px rgba(18, 24, 38, 0.12);
+  --gco-input-bg: rgba(118, 118, 128, 0.09);
+  --gco-shadow: 0 2px 14px rgba(60, 60, 67, 0.07);
+  --gco-shadow-lg: 0 12px 32px rgba(60, 60, 67, 0.12);
 
-  --gco-orb-1: rgba(13, 155, 134, 0.14);
-  --gco-orb-2: rgba(107, 92, 224, 0.10);
-  --gco-orb-3: rgba(232, 90, 60, 0.08);
+  --gco-orb-1: rgba(12, 156, 134, 0.08);
+  --gco-orb-2: rgba(102, 86, 224, 0.06);
+  --gco-orb-3: rgba(229, 80, 46, 0.05);
+
+  --gco-hairline: rgba(60, 60, 67, 0.08);
+  --gco-separator: rgba(60, 60, 67, 0.16);
+  --gco-fill-quaternary: rgba(118, 118, 128, 0.06);
+  --gco-overlay: rgba(0, 0, 0, 0.4);
 }
 
-/* ========== MODO ARCOÍRIS (rosa · blanco · azul) ========== */
+/* ========== MODO ARCOÍRIS ========== */
 [data-theme='rainbow'] {
   --gco-bg: #1A1028;
   --gco-bg-elevated: #241536;
@@ -90,6 +106,11 @@
   --gco-orb-1: rgba(255, 142, 200, 0.22);
   --gco-orb-2: rgba(126, 200, 255, 0.18);
   --gco-orb-3: rgba(201, 182, 255, 0.14);
+
+  --gco-hairline: rgba(255, 255, 255, 0.1);
+  --gco-separator: rgba(255, 255, 255, 0.16);
+  --gco-fill-quaternary: rgba(255, 255, 255, 0.05);
+  --gco-overlay: rgba(20, 8, 36, 0.6);
 }
 
 /* ========== Tokens compartidos ========== */
@@ -97,25 +118,87 @@
   --gco-radius: 22px;
   --gco-radius-sm: 14px;
   --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
 
-  --font-display: 'Space Grotesk', system-ui, sans-serif;
-  --font-body: 'Inter', system-ui, sans-serif;
-  --font-mono: 'Space Mono', ui-monospace, monospace;
+  /* Tipografías con stack completo (iOS / Android / Windows / emoji / CJK) */
+  --font-emoji:
+    'Apple Color Emoji',
+    'Segoe UI Emoji',
+    'Segoe UI Symbol',
+    'Noto Color Emoji',
+    'Twemoji Mozilla',
+    'Android Emoji',
+    emoji;
+
+  --font-display:
+    'Space Grotesk',
+    -apple-system,
+    BlinkMacSystemFont,
+    'SF Pro Display',
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    sans-serif,
+    var(--font-emoji);
+
+  --font-body:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'SF Pro Text',
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    'Noto Sans',
+    'Noto Sans SC',
+    'Noto Sans JP',
+    'Hiragino Sans',
+    'PingFang SC',
+    sans-serif,
+    var(--font-emoji);
+
+  --font-mono:
+    'Space Mono',
+    ui-monospace,
+    'SF Mono',
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    'Liberation Mono',
+    'Courier New',
+    monospace;
 
   --touch-min: 44px;
+  --touch-comfy: 48px;
+
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
 
+  /* Duraciones tipo iOS */
+  --ease-spring: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 0.15s;
+  --duration-normal: 0.25s;
+  --duration-slow: 0.4s;
+
   color-scheme: dark;
+  -webkit-tap-highlight-color: transparent;
 }
 
 [data-theme='light'] {
   color-scheme: light;
 }
 
-/* ========== Reset ========== */
+[data-theme='rainbow'] {
+  color-scheme: dark;
+}
+
+/* ========== Reset moderno ========== */
 *,
 *::before,
 *::after {
@@ -127,23 +210,39 @@
 html {
   font-size: 16px;
   -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   scroll-behavior: smooth;
+  hanging-punctuation: first last;
+}
+
+@supports (font-size: 100dvh) {
+  html {
+    /* evita saltos de barra de URL en móvil */
+  }
 }
 
 body {
   min-height: 100dvh;
+  min-height: 100svh;
   background: var(--gco-bg);
   color: var(--gco-ink);
   font-family: var(--font-body);
   font-weight: 400;
   line-height: 1.5;
+  letter-spacing: -0.011em;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  transition: background 0.45s ease, color 0.35s ease;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'kern' 1, 'liga' 1, 'calt' 1;
+  font-variant-ligatures: common-ligatures;
+  transition: background var(--duration-slow) var(--ease-spring),
+    color var(--duration-normal) var(--ease-spring);
+  /* iOS: evitar overscroll elástico en body cuando no se desea */
+  overscroll-behavior-y: none;
 }
 
-/* Fondo liquid glass: orbes suaves */
+/* Orbes liquid glass */
 body::before {
   content: '';
   position: fixed;
@@ -154,10 +253,10 @@ body::before {
     radial-gradient(ellipse 40% 30% at 50% 100%, var(--gco-orb-3), transparent 45%);
   pointer-events: none;
   z-index: -1;
-  transition: background 0.5s ease;
+  transition: background 0.5s var(--ease-spring);
 }
 
-/* Capa de ruido muy sutil (comodidad visual) */
+/* Ruido sutil */
 body::after {
   content: '';
   position: fixed;
@@ -168,15 +267,105 @@ body::after {
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-h1, h2, h3, h4, .level-number {
-  font-family: var(--font-display);
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
+/* Selección de texto */
+::selection {
+  background: var(--gco-primary-dim);
+  color: var(--gco-ink);
 }
 
-.timer, .score, .mono {
+/* Scrollbar discreta (desktop) */
+@media (hover: hover) and (pointer: fine) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--gco-glass-border) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--gco-glass-border);
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--gco-ink-faint);
+    background-clip: content-box;
+  }
+}
+
+/* ========== Tipografía ========== */
+h1, h2, h3, h4, h5, h6, .level-number {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  line-height: 1.2;
+  color: var(--gco-ink);
+}
+
+h1 { font-size: clamp(1.55rem, 4.5vw, 2.1rem); }
+h2 { font-size: clamp(1.25rem, 3.5vw, 1.6rem); }
+h3 { font-size: 1.05rem; }
+
+.timer, .score, .mono, code, kbd, samp, pre {
   font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+code, kbd {
+  font-size: 0.9em;
+  padding: 0.12em 0.4em;
+  border-radius: 6px;
+  background: var(--gco-fill-quaternary);
+  border: 1px solid var(--gco-hairline);
+}
+
+pre {
+  overflow-x: auto;
+  padding: 0.85rem 1rem;
+  border-radius: var(--gco-radius-sm);
+  background: var(--gco-input-bg);
+  border: 1px solid var(--gco-glass-border);
+  line-height: 1.45;
+}
+
+/* Emojis legibles y a color en todos los SO */
+.emoji,
+[data-emoji] {
+  font-family: var(--font-emoji);
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1;
+  font-feature-settings: 'liga' off;
+  /* evita que filtros CSS desaturen emojis */
+  color: initial;
+  -webkit-text-fill-color: initial;
+  filter: none;
+  speak: never;
+}
+
+img, video, canvas, svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: var(--gco-primary);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
 }
 
 /* ========== Liquid Glass Card ========== */
@@ -191,19 +380,19 @@ h1, h2, h3, h4, .level-number {
     var(--gco-shadow),
     inset 0 1px 0 var(--gco-glass-highlight);
   transition:
-    background 0.25s ease,
-    transform 0.2s ease,
-    box-shadow 0.25s ease,
-    border-color 0.25s ease;
+    background var(--duration-normal) var(--ease-spring),
+    transform var(--duration-fast) var(--ease-spring),
+    box-shadow var(--duration-normal) var(--ease-spring),
+    border-color var(--duration-normal) var(--ease-spring);
   overflow: hidden;
+  isolation: isolate;
 }
 
-/* Brillo superior tipo liquid glass */
 .glass-card::before {
   content: '';
   position: absolute;
   inset: 0 0 auto 0;
-  height: 40%;
+  height: 42%;
   background: linear-gradient(
     180deg,
     var(--gco-glass-highlight) 0%,
@@ -212,10 +401,22 @@ h1, h2, h3, h4, .level-number {
   opacity: 0.35;
   pointer-events: none;
   border-radius: inherit;
+  z-index: 0;
+}
+
+.glass-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .glass-card:hover {
   background: var(--gco-glass-bg-hover);
+}
+
+@media (hover: none) {
+  .glass-card:hover {
+    background: var(--gco-glass-bg);
+  }
 }
 
 /* ========== Botones ========== */
@@ -225,6 +426,7 @@ h1, h2, h3, h4, .level-number {
   justify-content: center;
   gap: 0.5rem;
   min-height: var(--touch-min);
+  min-width: var(--touch-min);
   padding: 0.75rem 1.5rem;
   background: var(--gco-primary);
   color: var(--gco-button-text);
@@ -235,12 +437,15 @@ h1, h2, h3, h4, .level-number {
   border-radius: var(--gco-radius-sm);
   cursor: pointer;
   transition:
-    transform 0.15s ease,
-    box-shadow 0.2s ease,
-    opacity 0.15s ease,
-    background 0.25s ease;
+    transform var(--duration-fast) var(--ease-spring),
+    box-shadow var(--duration-normal) var(--ease-spring),
+    opacity var(--duration-fast) ease,
+    background var(--duration-normal) var(--ease-spring),
+    filter var(--duration-fast) ease;
   user-select: none;
+  -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
   box-shadow: 0 4px 16px var(--gco-primary-dim);
 }
 
@@ -258,6 +463,12 @@ h1, h2, h3, h4, .level-number {
   cursor: not-allowed;
   box-shadow: none;
   filter: none;
+  pointer-events: none;
+}
+
+.glass-button:focus-visible {
+  outline: 2px solid var(--gco-primary);
+  outline-offset: 3px;
 }
 
 .glass-button.secondary {
@@ -275,6 +486,18 @@ h1, h2, h3, h4, .level-number {
   box-shadow: none;
 }
 
+.glass-button.ghost {
+  background: transparent;
+  color: var(--gco-ink-muted);
+  box-shadow: none;
+  border: none;
+}
+.glass-button.ghost:hover {
+  color: var(--gco-ink);
+  background: var(--gco-glass-bg);
+  filter: none;
+}
+
 /* ========== Inputs ========== */
 .glass-input {
   width: 100%;
@@ -285,11 +508,16 @@ h1, h2, h3, h4, .level-number {
   border-radius: var(--gco-radius-sm);
   color: var(--gco-ink);
   font-family: var(--font-body);
-  font-size: 1rem;
+  font-size: 1rem; /* evita zoom en iOS al enfocar */
   outline: none;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.25s ease;
+  transition:
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease,
+    background var(--duration-normal) ease;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .glass-input:focus {
@@ -304,10 +532,26 @@ h1, h2, h3, h4, .level-number {
 textarea.glass-input {
   min-height: 100px;
   line-height: 1.45;
+  resize: vertical;
+}
+
+select.glass-input {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23999' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  padding-right: 2.4rem;
+}
+
+input[type='number'].glass-input {
+  -moz-appearance: textfield;
+}
+input[type='number'].glass-input::-webkit-outer-spin-button,
+input[type='number'].glass-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 /* ========== Layout ========== */
-/* Tamaño estándar para la mayoría de páginas */
 .app-shell {
   min-height: 100dvh;
   min-height: 100svh;
@@ -321,7 +565,6 @@ textarea.glass-input {
     calc(1.25rem + var(--safe-left));
 }
 
-/* Más ancho, ideal para Music */
 .app-shell-pro {
   min-height: 100dvh;
   min-height: 100svh;
@@ -335,34 +578,28 @@ textarea.glass-input {
     calc(1.25rem + var(--safe-left));
 }
 
-/* Espacio inferior en móvil para que el bottom-nav no tape el contenido */
-@media (max-width: 899px) {
-  .app-shell,
-  .app-shell-pro {
-    padding-bottom: calc(5.5rem + var(--safe-bottom));
-  }
-}
-
-/* ========== Theme toggle button ========== */
+/* ========== Theme toggle ========== */
 .theme-cycle-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
   min-height: 40px;
+  min-width: 40px;
   padding: 0.45rem 0.9rem;
   font-size: 0.85rem;
   font-weight: 500;
-  border-radius: 999px;
+  border-radius: var(--gco-radius-pill);
   border: 1px solid var(--gco-glass-border);
   background: var(--gco-glass-bg);
   color: var(--gco-ink);
   backdrop-filter: blur(12px) saturate(1.3);
   -webkit-backdrop-filter: blur(12px) saturate(1.3);
   cursor: pointer;
-  transition: background 0.2s ease, transform 0.15s ease;
+  transition: background var(--duration-fast) ease, transform var(--duration-fast) ease;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
+  touch-action: manipulation;
 }
 
 .theme-cycle-btn:hover {
@@ -373,18 +610,25 @@ textarea.glass-input {
   transform: scale(0.96);
 }
 
-/* ========== Switch legacy ========== */
+.theme-cycle-btn:focus-visible {
+  outline: 2px solid var(--gco-primary);
+  outline-offset: 2px;
+}
+
+/* ========== Switch iOS-like ========== */
 .gco-switch {
   position: relative;
   width: 54px;
   height: 30px;
-  display: block;
+  display: inline-block;
+  flex-shrink: 0;
 }
 
 .gco-switch input {
   opacity: 0;
   width: 0;
   height: 0;
+  position: absolute;
 }
 
 .gco-switch span {
@@ -392,7 +636,7 @@ textarea.glass-input {
   inset: 0;
   background: rgba(128, 128, 128, 0.35);
   border-radius: 30px;
-  transition: 0.25s;
+  transition: background 0.25s var(--ease-spring);
   cursor: pointer;
 }
 
@@ -403,9 +647,9 @@ textarea.glass-input {
   height: 24px;
   left: 3px;
   bottom: 3px;
-  background: white;
+  background: #fff;
   border-radius: 50%;
-  transition: 0.25s;
+  transition: transform 0.25s var(--ease-spring);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
@@ -417,6 +661,10 @@ textarea.glass-input {
   transform: translateX(24px);
 }
 
+.gco-switch input:focus-visible + span {
+  box-shadow: 0 0 0 3px var(--gco-primary-dim);
+}
+
 /* ========== Accesibilidad ========== */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -425,21 +673,38 @@ textarea.glass-input {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
-/* Mejor legibilidad en pantallas muy pequeñas */
+@media (prefers-contrast: more) {
+  .glass-card {
+    border-width: 1.5px;
+  }
+  .glass-button {
+    font-weight: 700;
+  }
+}
+
 @media (max-width: 360px) {
   html {
     font-size: 15px;
   }
-
-  .app-shell {
-    padding-left: 1rem;
-    padding-right: 1rem;
+  .app-shell,
+  .app-shell-pro {
+    padding-left: max(1rem, var(--safe-left));
+    padding-right: max(1rem, var(--safe-right));
   }
 }
 
+/* Pantallas grandes */
+@media (min-width: 1280px) {
+  .app-shell {
+    max-width: 920px;
+  }
+}
+
+/* ========== Rainbow progress ========== */
 .gco-progress-rainbow {
   background: linear-gradient(
     90deg,
@@ -465,33 +730,74 @@ textarea.glass-input {
   }
 }
 
-/* Switch: debajo en móvil, en la fila en escritorio */
-.mode-switch-desktop {
-  display: none;
-}
-.mode-switch-mobile {
-  display: block;
-}
+/* ========== Mode switch (desktop / mobile slots) ========== */
+.mode-switch-desktop { display: none; }
+.mode-switch-mobile { display: block; }
 
 @media (min-width: 720px) {
-  .mode-switch-desktop {
-    display: block;
-  }
-  .mode-switch-mobile {
-    display: none;
-  }
+  .mode-switch-desktop { display: block; }
+  .mode-switch-mobile { display: none; }
 }
 
-/* =========================================================
-   AÑADIDOS — Layout de app (sidebar / bottom nav / mini player)
-   Todo construido sobre los tokens --gco-* ya existentes arriba.
-   ========================================================= */
+.appswitch-slot.desktop { display: none; }
+.appswitch-slot.mobile { display: block; }
+@media (min-width: 900px) {
+  .appswitch-slot.desktop { display: block; }
+  .appswitch-slot.mobile { display: none; }
+}
 
-/* ---------- Shell con sidebar (desktop) ---------- */
+.app-switcher {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: var(--gco-radius-pill);
+  background: var(--gco-glass-bg);
+  border: 1px solid var(--gco-glass-border);
+  backdrop-filter: blur(var(--gco-glass-blur)) saturate(var(--gco-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--gco-glass-blur)) saturate(var(--gco-glass-saturate));
+}
+.appswitch-slot.mobile .app-switcher {
+  width: 100%;
+}
+
+.app-switcher-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0.55rem 0.9rem;
+  min-height: 40px;
+  border-radius: var(--gco-radius-pill);
+  border: none;
+  background: transparent;
+  color: var(--gco-ink-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+.appswitch-slot.mobile .app-switcher-item {
+  flex: 1;
+}
+.app-switcher-item.active {
+  background: var(--gco-primary-dim);
+  color: var(--gco-primary);
+}
+
+/* ========== App layout (sidebar / bottom nav) ========== */
 .app-layout {
   display: flex;
   min-height: 100dvh;
   min-height: 100svh;
+}
+
+.app-main {
+  min-width: 0;
+  width: 100%;
 }
 
 .app-sidebar {
@@ -509,6 +815,7 @@ textarea.glass-input {
     width: 220px;
     flex-shrink: 0;
     padding: 1.5rem 0.9rem;
+    padding-top: calc(1.5rem + var(--safe-top));
     background: var(--gco-glass-bg);
     border-right: 1px solid var(--gco-glass-border);
     backdrop-filter: blur(var(--gco-glass-blur)) saturate(var(--gco-glass-saturate));
@@ -516,6 +823,7 @@ textarea.glass-input {
     position: sticky;
     top: 0;
     height: 100dvh;
+    overflow-y: auto;
   }
   .app-main {
     flex: 1;
@@ -538,6 +846,7 @@ textarea.glass-input {
   align-items: center;
   gap: 0.7rem;
   padding: 0.65rem 0.75rem;
+  min-height: var(--touch-min);
   border-radius: var(--gco-radius-sm);
   border: none;
   background: transparent;
@@ -547,7 +856,7 @@ textarea.glass-input {
   font-size: 0.92rem;
   cursor: pointer;
   text-align: left;
-  transition: background 0.18s ease, color 0.18s ease;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -565,7 +874,7 @@ textarea.glass-input {
   flex-shrink: 0;
 }
 
-/* ---------- Bottom nav (móvil) ---------- */
+/* Bottom nav — respeta home indicator iPhone */
 .bottom-nav {
   position: fixed;
   left: 50%;
@@ -575,13 +884,14 @@ textarea.glass-input {
   align-items: center;
   gap: 4px;
   padding: 0.45rem;
-  border-radius: 999px;
+  border-radius: var(--gco-radius-pill);
   background: var(--gco-glass-bg);
   border: 1px solid var(--gco-glass-border);
   backdrop-filter: blur(var(--gco-glass-blur)) saturate(var(--gco-glass-saturate));
   -webkit-backdrop-filter: blur(var(--gco-glass-blur)) saturate(var(--gco-glass-saturate));
   box-shadow: var(--gco-shadow-lg);
   z-index: 40;
+  max-width: calc(100vw - 1.5rem);
 }
 
 @media (min-width: 900px) {
@@ -601,12 +911,13 @@ textarea.glass-input {
   border: none;
   background: transparent;
   color: var(--gco-ink-faint);
-  border-radius: 999px;
+  border-radius: var(--gco-radius-pill);
   font-size: 0.62rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.18s ease, color 0.18s ease;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .bottom-nav-item.active {
@@ -614,7 +925,7 @@ textarea.glass-input {
   color: var(--gco-primary);
 }
 
-/* ---------- Mini player flotante (global) ---------- */
+/* ========== Mini player ========== */
 .mini-player {
   position: fixed;
   z-index: 50;
@@ -622,15 +933,15 @@ textarea.glass-input {
   align-items: center;
   gap: 0.7rem;
   padding: 0.55rem 0.7rem;
-  right: 1rem;
+  right: max(1rem, var(--safe-right));
   bottom: calc(5.5rem + var(--safe-bottom));
-  width: min(360px, calc(100vw - 2rem));
+  width: min(360px, calc(100vw - 2rem - var(--safe-left) - var(--safe-right)));
 }
 
 @media (min-width: 900px) {
   .mini-player {
-    bottom: 1.25rem;
-    right: 1.25rem;
+    bottom: max(1.25rem, var(--safe-bottom));
+    right: max(1.25rem, var(--safe-right));
     width: 340px;
   }
 }
@@ -648,6 +959,7 @@ textarea.glass-input {
   flex-shrink: 0;
   cursor: pointer;
   font-size: 1.1rem;
+  font-family: var(--font-emoji);
 }
 
 .mini-player-info {
@@ -718,55 +1030,115 @@ textarea.glass-input {
   color: var(--gco-button-text);
 }
 
-/* ---------- Carrusel "Continuar" + shelves ---------- */
+/* ========== Carrusel ========== */
 .hscroll {
   display: flex;
   gap: 0.9rem;
   overflow-x: auto;
+  overflow-y: hidden;
   scroll-snap-type: x proximity;
-  padding-bottom: 6px;
+  padding-bottom: 4px;
   -webkit-overflow-scrolling: touch;
-  /* Firefox: fina y oscura */
   scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.38) transparent;
+  max-width: 100%;
+  overscroll-behavior-x: contain;
 }
 
-/* WebKit: barra negra, muy delgada, casi imperceptible */
 .hscroll::-webkit-scrollbar {
-  height: 3px;
-}
-.hscroll::-webkit-scrollbar-track {
-  background: transparent;
+  height: 6px;
 }
 .hscroll::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.38);
-  border-radius: 3px;
-}
-.hscroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--gco-glass-border);
+  border-radius: 6px;
 }
 
-[data-theme='light'] .hscroll {
-  scrollbar-color: rgba(0, 0, 0, 0.28) transparent;
-}
-[data-theme='light'] .hscroll::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.28);
-}
-[data-theme='light'] .hscroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.42);
+@media (min-width: 900px) {
+  .hscroll {
+    scrollbar-color: rgba(0, 0, 0, 0.28) transparent;
+  }
+  .hscroll::-webkit-scrollbar {
+    height: 4px;
+  }
+  .hscroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .hscroll::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.28);
+    border-radius: 4px;
+  }
+  .hscroll:hover::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.5);
+  }
 }
 
 .continue-card {
   display: flex;
   gap: 0.85rem;
   align-items: center;
-  /* Encaja en móvil sin desbordar; en desktop mantiene tamaño cómodo */
-  min-width: min(300px, 82vw);
+  min-width: min(82vw, 320px);
   max-width: 420px;
-  flex: 0 0 auto;
+  flex: 1 0 auto;
   scroll-snap-align: start;
   padding: 0.85rem;
   cursor: pointer;
+}
+
+@media (min-width: 640px) {
+  .continue-card {
+    min-width: 300px;
+  }
+}
+
+.hscroll-nav {
+  display: none;
+  gap: 6px;
+}
+@media (min-width: 900px) {
+  .hscroll-nav {
+    display: flex;
+  }
+}
+.hscroll-nav-btn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--gco-glass-border);
+  background: var(--gco-glass-bg);
+  color: var(--gco-ink-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.hscroll-nav-btn:hover {
+  background: var(--gco-glass-bg-hover);
+  color: var(--gco-ink);
+}
+
+.hscroll-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+@media (min-width: 900px) {
+  .hscroll-dots {
+    display: none;
+  }
+}
+.hscroll-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gco-glass-border);
+  transition: background 0.2s ease, transform 0.2s ease, width 0.2s ease;
+}
+.hscroll-dot.active {
+  background: var(--gco-primary);
+  width: 16px;
+  border-radius: 3px;
 }
 
 .book-cover {
@@ -800,7 +1172,7 @@ textarea.glass-input {
 
 .book-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--grid-min, 120px), 1fr));
   gap: 1rem 0.85rem;
 }
 
@@ -834,13 +1206,15 @@ textarea.glass-input {
   margin: 1.4rem 0 0.7rem;
 }
 
-/* ---------- Botón icono (kebab menu, etc.) ---------- */
+/* ========== Icon / context / modal ========== */
 .icon-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 32px;
   height: 32px;
+  min-width: 32px;
+  min-height: 32px;
   border-radius: 50%;
   border: none;
   background: transparent;
@@ -848,13 +1222,17 @@ textarea.glass-input {
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: background 0.15s ease, color 0.15s ease;
+  touch-action: manipulation;
 }
 .icon-btn:hover {
   background: var(--gco-glass-bg-hover);
   color: var(--gco-ink);
 }
+.icon-btn:focus-visible {
+  outline: 2px solid var(--gco-primary);
+  outline-offset: 2px;
+}
 
-/* ---------- Menú contextual ---------- */
 .context-menu {
   position: absolute;
   z-index: 60;
@@ -864,6 +1242,8 @@ textarea.glass-input {
   background: var(--gco-bg-elevated);
   border: 1px solid var(--gco-glass-border);
   box-shadow: var(--gco-shadow-lg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 
 .context-menu button {
@@ -872,6 +1252,7 @@ textarea.glass-input {
   gap: 8px;
   width: 100%;
   padding: 0.5rem 0.6rem;
+  min-height: 40px;
   border: none;
   background: transparent;
   color: var(--gco-ink);
@@ -887,7 +1268,6 @@ textarea.glass-input {
   color: var(--gco-secondary);
 }
 
-/* ---------- Modal ---------- */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -895,8 +1275,9 @@ textarea.glass-input {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--gco-overlay);
   backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   padding: 0;
 }
 
@@ -911,14 +1292,17 @@ textarea.glass-input {
   width: 100%;
   max-width: 480px;
   max-height: 92dvh;
+  max-height: 92svh;
   overflow-y: auto;
   border-radius: var(--gco-radius) var(--gco-radius) 0 0;
   padding: 1.4rem 1.3rem calc(1.4rem + var(--safe-bottom));
+  -webkit-overflow-scrolling: touch;
 }
 
 @media (min-width: 640px) {
   .modal-panel {
     border-radius: var(--gco-radius);
+    padding-bottom: 1.4rem;
   }
 }
 
@@ -933,6 +1317,129 @@ textarea.glass-input {
   display: flex;
   gap: 6px;
   margin-bottom: 1.1rem;
+}
+
+.more-section-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gco-ink-muted);
+  margin-bottom: 0.6rem;
+}
+
+.more-field-label {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--gco-ink-muted);
+  margin-bottom: 6px;
+}
+
+.guide-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.guide-item {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.guide-icon {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gco-primary-dim);
+  color: var(--gco-primary);
+  font-family: var(--font-emoji);
+}
+
+.guide-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.guide-text {
+  font-size: 0.78rem;
+  color: var(--gco-ink-muted);
+  line-height: 1.4;
+}
+
+.segmented {
+  display: flex;
+  padding: 3px;
+  border-radius: var(--gco-radius-pill);
+  background: var(--gco-glass-bg);
+  border: 1px solid var(--gco-glass-border);
+  gap: 3px;
+}
+
+.segmented button {
+  flex: 1;
+  padding: 0.5rem 0.6rem;
+  min-height: 36px;
+  border: none;
+  border-radius: var(--gco-radius-pill);
+  background: transparent;
+  color: var(--gco-ink-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.segmented button.active {
+  background: var(--gco-primary);
+  color: var(--gco-button-text);
+}
+
+.pref-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin: 0;
+  background: linear-gradient(
+    to right,
+    var(--gco-primary) 0%, var(--gco-primary) var(--fill, 50%),
+    var(--gco-glass-border) var(--fill, 50%), var(--gco-glass-border) 100%
+  );
+  outline: none;
+}
+.pref-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--gco-primary);
+  border: 2px solid var(--gco-bg);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+.pref-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--gco-primary);
+  border: 2px solid var(--gco-bg);
+  cursor: pointer;
+}
+.pref-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 4px;
+  background: transparent;
 }
 
 .modal-step-dot {
@@ -951,6 +1458,7 @@ textarea.glass-input {
   gap: 0.75rem;
   width: 100%;
   padding: 0.9rem 1rem;
+  min-height: var(--touch-min);
   border-radius: var(--gco-radius-sm);
   border: 1px solid var(--gco-glass-border);
   background: var(--gco-glass-bg);
@@ -960,6 +1468,7 @@ textarea.glass-input {
   text-align: left;
   font-family: var(--font-body);
   transition: background 0.15s ease, border-color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
 }
 .source-option:hover {
   background: var(--gco-glass-bg-hover);
@@ -975,6 +1484,7 @@ textarea.glass-input {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  font-family: var(--font-emoji);
 }
 .source-option .source-label {
   font-weight: 600;
@@ -1005,64 +1515,77 @@ textarea.glass-input {
   font-size: 1.5rem;
   flex-shrink: 0;
   border: 1px dashed var(--gco-glass-border);
+  font-family: var(--font-emoji);
 }
 
-/* ---------- Más / Ajustes del home ---------- */
-.mas-option {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  width: 100%;
-  padding: 0.85rem 1rem;
-  border-radius: var(--gco-radius-sm);
-  border: 1px solid var(--gco-glass-border);
-  background: var(--gco-glass-bg);
-  color: var(--gco-ink);
-  cursor: pointer;
-  margin-bottom: 0.55rem;
-  text-align: left;
-  font-family: var(--font-body);
-  transition: background 0.15s ease, border-color 0.15s ease;
-}
-.mas-option:hover {
-  background: var(--gco-glass-bg-hover);
-  border-color: var(--gco-primary);
-}
-.mas-option .mas-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--gco-radius-xs);
-  background: var(--gco-primary-dim);
-  color: var(--gco-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  font-size: 1.05rem;
-}
-.mas-option .mas-label {
-  font-weight: 600;
-  font-size: 0.9rem;
-}
-.mas-option .mas-sub {
-  font-size: 0.72rem;
-  color: var(--gco-ink-muted);
+/* ========== Utilidades extra (iOS / PWA) ========== */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-.mas-guide {
-  font-size: 0.85rem;
-  color: var(--gco-ink-muted);
-  line-height: 1.55;
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.mas-guide h4 {
-  color: var(--gco-ink);
-  font-size: 0.92rem;
-  margin: 0.85rem 0 0.3rem;
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
-.mas-guide ul {
-  padding-left: 1.15rem;
-  margin: 0.25rem 0 0.5rem;
+
+.hairline {
+  height: 1px;
+  background: var(--gco-hairline);
+  border: none;
+  margin: 0.75rem 0;
 }
-.mas-guide li {
-  margin-bottom: 0.25rem;
+
+/* Evita que el teclado virtual tape inputs en iOS al hacer scroll */
+@supports (-webkit-touch-callout: none) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+/* PWA standalone: un poco más de aire bajo la status bar */
+@media all and (display-mode: standalone) {
+  body {
+    /* ya usamos safe-area; refuerzo visual */
+  }
+  .app-shell,
+  .app-shell-pro {
+    padding-top: max(1.25rem, calc(0.75rem + var(--safe-top)));
+  }
+}
+
+/* Impresión */
+@media print {
+  body::before,
+  body::after {
+    display: none;
+  }
+  .bottom-nav,
+  .mini-player,
+  .theme-cycle-btn {
+    display: none !important;
+  }
+  .glass-card {
+    box-shadow: none;
+    backdrop-filter: none;
+    border: 1px solid #ccc;
+  }
 }

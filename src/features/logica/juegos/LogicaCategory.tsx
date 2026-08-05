@@ -9,13 +9,19 @@ const GAMES = [
     id: 'numberpuzzle',
     title: 'Colocador',
     emoji: '🔢',
-    desc: 'Ordena los números deslizando fichas. Empieza en 2×2 y sube de dificultad sin límite.',
+    desc: 'Ordena los números deslizando fichas.',
   },
   {
     id: 'rompecabezas',
     title: 'Rompecabezas',
     emoji: '🧩',
-    desc: 'Arma imágenes por piezas. Modo normal, creativo, galería e importación de tus fotos.',
+    desc: 'Arma imágenes por piezas.',
+  },
+  {
+    id: 'despejes',
+    title: 'Despejes',
+    emoji: '🧹',
+    desc: 'Hielo, empuje, y laberintos. Despeja el camino.',
   },
 ] as const
 
@@ -26,6 +32,7 @@ export function LogicaCategory() {
     <div className="app-shell">
       <header style={{ marginBottom: '1.5rem' }}>
         <button
+          type="button"
           className="glass-button secondary"
           onClick={() => {
             soundClick()
@@ -67,10 +74,11 @@ export function LogicaCategory() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '1rem',
+                    cursor: 'pointer',
                   }}
                 >
                   <span style={{ fontSize: '1.75rem' }}>{game.emoji}</span>
-                  <div style={{ flex: 1 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <h3 style={{ fontSize: '1.05rem', marginBottom: '0.2rem' }}>
                       {game.title}
                     </h3>
@@ -108,3 +116,5 @@ export function LogicaCategory() {
     </div>
   )
 }
+
+export default LogicaCategory

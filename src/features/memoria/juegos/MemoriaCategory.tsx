@@ -23,6 +23,12 @@ const GAMES = [
     emoji: '🔢',
     desc: 'Asocia números aleatorios con objetos o conceptos y memorízalos.',
   },
+  {
+    id: 'habilidades',
+    title: 'Habilidades',
+    emoji: '⚡',
+    desc: 'Reacción, puntería y Simón dice. Entrena reflejos y precisión.',
+  },
 ] as const
 
 export function MemoriaCategory() {
@@ -53,7 +59,13 @@ export function MemoriaCategory() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
         {GAMES.map((game, i) => {
-          const progress = getGameProgress('memoria', game.id)
+          const progressIds =
+            game.id === 'habilidades'
+              ? (['habilidad-reaccion', 'habilidad-punteria', 'habilidad-simon'] as const)
+              : ([game.id] as const)
+          const levels = progressIds.map((id) => getGameProgress('memoria', id).highestLevel)
+          const best = Math.max(0, ...levels)
+
           return (
             <motion.div
               key={game.id}
@@ -89,7 +101,7 @@ export function MemoriaCategory() {
                     >
                       {game.desc}
                     </p>
-                    {progress.highestLevel > 0 && (
+                    {best > 0 && (
                       <p
                         style={{
                           fontSize: '0.75rem',
@@ -98,7 +110,7 @@ export function MemoriaCategory() {
                           fontFamily: 'var(--font-mono)',
                         }}
                       >
-                        Nivel {progress.highestLevel}
+                        Nivel {best}
                       </p>
                     )}
                   </div>

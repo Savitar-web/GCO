@@ -23,6 +23,9 @@ import { NutricionHome } from './features/nutricion/NutricionHome'
 import { BookReader } from './features/nutricion/BookReader'
 import { MusicaHome } from './features/musica/MusicaHome'
 import { ReaderPlayerProvider, MiniPlayer } from '@/core/reader/ReaderPlayerContext'
+import { HabilidadesGame } from './features/memoria/juegos/habilidades/Habilidades'
+import { DespejesGame } from './features/logica/juegos/despejes/DespejesGame'
+
 
 /* Lógica */
 import { LogicaCategory } from './features/logica/juegos/LogicaCategory'
@@ -92,6 +95,7 @@ function App() {
               path="/categoria/memoria/numeros-asociados"
               element={<NumerosAsociadosGame />}
             />
+            <Route path="/categoria/memoria/habilidades" element={<HabilidadesGame />} />
 
             {/* ── Lógica ── */}
             <Route path="/categoria/logica" element={<LogicaCategory />} />
@@ -103,6 +107,9 @@ function App() {
               path="/categoria/logica/rompecabezas"
               element={<RompecabezasGame />}
             />
+
+            <Route path="/categoria/logica/despejes" element={<DespejesGame />} />
+
 
             {/* ── Nutrición ── */}
             <Route path="/nutricion" element={<NutricionHome />} />

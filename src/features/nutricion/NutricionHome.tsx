@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { GlassButton } from '@/components/ui/GlassButton'
-import { ModeSwitch } from '@/components/ui/ModeSwitch'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import {
   listBooks,
@@ -146,10 +145,37 @@ function IconImage() {
     </svg>
   )
 }
+function IconChevronLeft() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  )
+}
+function IconChevronRight() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 18l6-6-6-6" />
+    </svg>
+  )
+}
 
 /* ───────────────────────── Navegación ───────────────────────── */
 
-type NavId = 'inicio' | 'biblioteca' | 'listas' | 'reproduciendo' | 'importar' | 'mas'
+type NavId = 'inicio' | 'biblioteca' | 'listas' | 'reproduciendo' | 'importar' | 'mas' | 'buscar'
+type SortOrder = 'recientes' | 'titulo' | 'autor'
+type GridDensity = 'comoda' | 'compacta'
+type AppId = 'nutricion' | 'gymcog' | 'musica'
+
+const APPS: { id: AppId; label: string; emoji: string; path: string }[] = [
+  { id: 'nutricion', label: 'Nutrición', emoji: '🍎', path: '/nutricion' },
+  { id: 'gymcog', label: 'GymCog', emoji: '🧠', path: '/gymcog' },
+  { id: 'musica', label: 'Música', emoji: '🎵', path: '/musica' },
+]
+
+const LS_SORT = 'gco:nutricion:sort'
+const LS_DENSITY = 'gco:nutricion:density'
+const LS_VOLUME = 'gco:nutricion:volumeBoost'
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -158,6 +184,27 @@ function fileToDataUrl(file: File): Promise<string> {
     r.onerror = reject
     r.readAsDataURL(file)
   })
+}
+
+function AppSwitcher({ current }: { current: AppId }) {
+  const navigate = useNavigate()
+  return (
+    <div className="app-switcher">
+      {APPS.map((a) => (
+        <button
+          key={a.id}
+          type="button"
+          className={`app-switcher-item ${a.id === current ? 'active' : ''}`}
+          onClick={() => {
+            soundClick()
+            if (a.id !== current) navigate(a.path)
+          }}
+        >
+          <span aria-hidden>{a.emoji}</span> {a.label}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 /* ───────────────────────── Componente principal ───────────────────────── */
@@ -176,9 +223,23 @@ export function NutricionHome() {
   const [importOpen, setImportOpen] = useState(false)
   const [editingBook, setEditingBook] = useState<BookItem | null>(null)
   const [menuFor, setMenuFor] = useState<string | null>(null)
-  const [masOpen, setMasOpen] = useState(false)
 
-  const fileRef = useRef<HTMLInputElement>(null)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const [folderMenuFor, setFolderMenuFor] = useState<string | null>(null)
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({})
+  const [sortOrder, setSortOrder] = useState<SortOrder>(
+    () => (localStorage.getItem(LS_SORT) as SortOrder) || 'recientes'
+  )
+  const [gridDensity, setGridDensity] = useState<GridDensity>(
+    () => (localStorage.getItem(LS_DENSITY) as GridDensity) || 'comoda'
+  )
+  const [volumeBoost, setVolumeBoost] = useState<number>(
+    () => Number(localStorage.getItem(LS_VOLUME)) || 100
+  )
+
+  useEffect(() => localStorage.setItem(LS_SORT, sortOrder), [sortOrder])
+  useEffect(() => localStorage.setItem(LS_DENSITY, gridDensity), [gridDensity])
+  useEffect(() => localStorage.setItem(LS_VOLUME, String(volumeBoost)), [volumeBoost])
 
   const refresh = async () => {
     setBooks(await listBooks())
@@ -207,7 +268,14 @@ export function NutricionHome() {
     )
   }, [books, query])
 
-  const byFolder = (id: string | null) => filtered.filter((b) => b.folderId === id)
+  const sorted = useMemo(() => {
+    const arr = [...filtered]
+    if (sortOrder === 'titulo') arr.sort((a, b) => a.title.localeCompare(b.title, 'es'))
+    else if (sortOrder === 'autor') arr.sort((a, b) => (a.author || '').localeCompare(b.author || '', 'es'))
+    return arr // 'recientes' respeta el orden que ya entrega listBooks()
+  }, [filtered, sortOrder])
+
+  const byFolder = (id: string | null) => sorted.filter((b) => b.folderId === id)
   const noFolderBooks = byFolder(null)
 
   const openBook = (b: BookItem) => {
@@ -228,8 +296,42 @@ export function NutricionHome() {
     } else if (id === 'importar') {
       setImportOpen(true)
     } else if (id === 'mas') {
-      setMasOpen(true)
+      setMoreOpen(true)
+    } else if (id === 'buscar') {
+      setSearchOpen((v) => !v)
     }
+  }
+
+  // Atajo de teclado para buscar en escritorio (el header ya no tiene botón de lupa)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setSearchOpen((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // Carrusel "Continuar": paginación con flechas (escritorio) y puntos (móvil)
+  const continueScrollRef = useRef<HTMLDivElement>(null)
+  const [continueIndex, setContinueIndex] = useState(0)
+
+  const scrollContinueBy = (dir: 1 | -1) => {
+    const el = continueScrollRef.current
+    if (!el) return
+    const card = el.querySelector<HTMLElement>('.continue-card')
+    const step = card ? card.offsetWidth + 14 : el.clientWidth * 0.8
+    el.scrollBy({ left: dir * step, behavior: 'smooth' })
+  }
+
+  const onContinueScroll = () => {
+    const el = continueScrollRef.current
+    if (!el) return
+    const card = el.querySelector<HTMLElement>('.continue-card')
+    const step = card ? card.offsetWidth + 14 : 1
+    setContinueIndex(Math.round(el.scrollLeft / step))
   }
 
   const NAV_ITEMS: { id: NavId; label: string; icon: ReactNode }[] = [
@@ -240,19 +342,17 @@ export function NutricionHome() {
     { id: 'mas', label: 'Más', icon: <IconDots /> },
   ]
 
-  /* Móvil: sin “Nutrición”. Listas · Reproduciendo · Importar · Más */
   const MOBILE_NAV: { id: NavId; label: string; icon: ReactNode }[] = [
-    { id: 'listas', label: 'Listas', icon: <IconList /> },
-    { id: 'reproduciendo', label: 'Reproduciendo', icon: <IconPlayCircle /> },
+    { id: 'inicio', label: 'Nutrición', icon: <span aria-hidden style={{ fontSize: 18 }}>🍎</span> },
+    { id: 'biblioteca', label: 'Biblioteca', icon: <IconHeadphones /> },
     { id: 'importar', label: 'Importar', icon: <IconDownload /> },
-    { id: 'mas', label: 'Más', icon: <IconDots /> },
+    { id: 'buscar', label: 'Buscar', icon: <IconSearch /> },
   ]
 
   return (
     <div className="app-layout">
       {/* ───── Sidebar (desktop) ───── */}
       <aside className="app-sidebar">
-        <div className="sidebar-brand">🍎 Nutrición</div>
         {NAV_ITEMS.map((item) => (
           <button
             key={item.id}
@@ -282,30 +382,18 @@ export function NutricionHome() {
                 </p>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
-                <div className="mode-switch-desktop">
-                  <ModeSwitch />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                <div className="appswitch-slot desktop">
+                  <AppSwitcher current="nutricion" />
                 </div>
-                <button
-                  type="button"
-                  className="theme-cycle-btn"
-                  aria-label="Buscar"
-                  onClick={() => {
-                    soundClick()
-                    setSearchOpen((v) => !v)
-                  }}
-                  style={{ width: 40, height: 40, padding: 0, borderRadius: 12 }}
-                >
-                  <IconSearch />
-                </button>
                 <ThemeToggle />
                 <button
                   type="button"
                   className="theme-cycle-btn"
-                  aria-label="Abrir ajustes"
+                  aria-label="Más opciones"
                   onClick={() => {
                     soundClick()
-                    navigate('/ajustes')
+                    setMoreOpen(true)
                   }}
                   style={{ width: 44, height: 44, padding: 0, borderRadius: 12 }}
                 >
@@ -318,8 +406,8 @@ export function NutricionHome() {
               </div>
             </div>
 
-            <div className="mode-switch-mobile" style={{ marginTop: '0.75rem' }}>
-              <ModeSwitch fullWidth />
+            <div className="appswitch-slot mobile" style={{ marginTop: '0.85rem' }}>
+              <AppSwitcher current="nutricion" />
             </div>
 
             {searchOpen && (
@@ -339,8 +427,28 @@ export function NutricionHome() {
             <section style={{ marginBottom: '1.6rem' }}>
               <div className="folder-row-header" style={{ marginTop: 0 }}>
                 <h2 style={{ fontSize: '1rem' }}>Continuar</h2>
+                {continuing.length > 1 && (
+                  <div className="hscroll-nav">
+                    <button
+                      type="button"
+                      className="hscroll-nav-btn"
+                      aria-label="Anterior"
+                      onClick={() => scrollContinueBy(-1)}
+                    >
+                      <IconChevronLeft />
+                    </button>
+                    <button
+                      type="button"
+                      className="hscroll-nav-btn"
+                      aria-label="Siguiente"
+                      onClick={() => scrollContinueBy(1)}
+                    >
+                      <IconChevronRight />
+                    </button>
+                  </div>
+                )}
               </div>
-              <div className="hscroll">
+              <div className="hscroll" ref={continueScrollRef} onScroll={onContinueScroll}>
                 {continuing.map((b) => {
                   const pct = b.text.length ? Math.round((b.position / b.text.length) * 100) : 0
                   return (
@@ -348,6 +456,7 @@ export function NutricionHome() {
                       key={b.id}
                       className="glass-card continue-card"
                       onClick={() => openBook(b)}
+                      style={{ position: 'relative' }}
                     >
                       <div
                         className="book-cover book-cover-lg"
@@ -369,23 +478,53 @@ export function NutricionHome() {
                           <div className="mini-player-progress-fill" style={{ width: `${pct}%` }} />
                         </div>
                       </div>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        aria-label="Opciones"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setMenuFor(menuFor === b.id ? null : b.id)
+                        }}
+                        style={{ position: 'absolute', top: 10, right: 10 }}
+                      >
+                        <IconKebab />
+                      </button>
+                      {menuFor === b.id && (
+                        <BookMenu
+                          folders={folders}
+                          onEdit={() => {
+                            setMenuFor(null)
+                            setEditingBook(b)
+                          }}
+                          onDelete={() => {
+                            setMenuFor(null)
+                            soundClick()
+                            void deleteBook(b.id).then(refresh)
+                          }}
+                          onMove={(fid) => {
+                            setMenuFor(null)
+                            void moveBookToFolder(b.id, fid).then(refresh)
+                          }}
+                          onClose={() => setMenuFor(null)}
+                        />
+                      )}
                     </div>
                   )
                 })}
               </div>
+              {continuing.length > 1 && (
+                <div className="hscroll-dots">
+                  {continuing.map((b, i) => (
+                    <span key={b.id} className={`hscroll-dot ${i === continueIndex ? 'active' : ''}`} />
+                  ))}
+                </div>
+              )}
             </section>
           )}
 
-          {/* ───── Nuevo / Añadir carpeta ───── */}
+          {/* ───── Añadir carpeta ───── */}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: '1.4rem' }}>
-            <GlassButton
-              onClick={() => {
-                soundClick()
-                setImportOpen(true)
-              }}
-            >
-              + Nuevo libro
-            </GlassButton>
             <button
               type="button"
               className="glass-button secondary"
@@ -409,21 +548,82 @@ export function NutricionHome() {
               <section key={f.id} style={{ marginBottom: '1.2rem' }}>
                 <div className="folder-row-header">
                   <h3 style={{ fontSize: '1rem' }}>📁 {f.name}</h3>
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    aria-label={`Borrar carpeta ${f.name}`}
-                    onClick={() => {
-                      soundClick()
-                      if (confirm(`¿Borrar la carpeta "${f.name}"? Los libros pasarán a "Sin carpeta".`)) {
-                        void deleteFolder(f.id).then(refresh)
-                      }
-                    }}
-                  >
-                    <IconTrash />
-                  </button>
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      aria-label={`Opciones de ${f.name}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        soundClick()
+                        setFolderMenuFor(folderMenuFor === f.id ? null : f.id)
+                      }}
+                    >
+                      <IconChevronRight />
+                    </button>
+                    {folderMenuFor === f.id && (
+                      <div className="context-menu" style={{ top: 36, right: 0 }} onMouseLeave={() => setFolderMenuFor(null)}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setExpandedFolders((s) => ({ ...s, [f.id]: !s[f.id] }))
+                            setFolderMenuFor(null)
+                          }}
+                        >
+                          <IconChevronRight /> {expandedFolders[f.id] ? 'Ver menos' : 'Ver todo'}
+                        </button>
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={() => {
+                            soundClick()
+                            setFolderMenuFor(null)
+                            if (confirm(`¿Borrar la carpeta "${f.name}"? Los libros pasarán a "Sin carpeta".`)) {
+                              void deleteFolder(f.id).then(refresh)
+                            }
+                          }}
+                        >
+                          <IconTrash /> Eliminar carpeta
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 {viewMode === 'estanteria' ? (
+                  expandedFolders[f.id] ? (
+                    <div
+                      className="book-grid"
+                      style={{ ['--grid-min' as string]: gridDensity === 'compacta' ? '96px' : '120px' }}
+                    >
+                      {items.map((b) => (
+                        <BookCard
+                          key={b.id}
+                          book={b}
+                          variant="grid"
+                          menuOpen={menuFor === b.id}
+                          onOpen={() => openBook(b)}
+                          onMenuToggle={() => setMenuFor(menuFor === b.id ? null : b.id)}
+                          onEdit={() => {
+                            setMenuFor(null)
+                            setEditingBook(b)
+                          }}
+                          onDelete={() => {
+                            setMenuFor(null)
+                            soundClick()
+                            void deleteBook(b.id).then(refresh)
+                          }}
+                          folders={folders}
+                          onMove={(fid) => {
+                            setMenuFor(null)
+                            void moveBookToFolder(b.id, fid).then(refresh)
+                          }}
+                        />
+                      ))}
+                      {items.length === 0 && (
+                        <p style={{ color: 'var(--gco-ink-faint)', fontSize: '0.85rem' }}>Carpeta vacía.</p>
+                      )}
+                    </div>
+                  ) : (
                   <div className="hscroll">
                     {items.map((b) => (
                       <BookCard
@@ -453,6 +653,7 @@ export function NutricionHome() {
                       <p style={{ color: 'var(--gco-ink-faint)', fontSize: '0.85rem' }}>Carpeta vacía.</p>
                     )}
                   </div>
+                  )
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {items.map((b) => (
@@ -483,7 +684,10 @@ export function NutricionHome() {
               </p>
             )}
             {viewMode === 'estanteria' ? (
-              <div className="book-grid">
+              <div
+                className="book-grid"
+                style={{ ['--grid-min' as string]: gridDensity === 'compacta' ? '96px' : '120px' }}
+              >
                 {noFolderBooks.map((b) => (
                   <BookCard
                     key={b.id}
@@ -533,13 +737,11 @@ export function NutricionHome() {
             key={item.id}
             type="button"
             className={`bottom-nav-item ${
-              item.id === 'listas' && viewMode === 'listas'
+              (item.id === 'inicio' && !searchOpen && !importOpen) ||
+              (item.id === 'importar' && importOpen) ||
+              (item.id === 'buscar' && searchOpen)
                 ? 'active'
-                : item.id === 'reproduciendo' && activeBook
-                  ? 'active'
-                  : item.id === 'mas' && masOpen
-                    ? 'active'
-                    : ''
+                : ''
             }`}
             onClick={() => nav(item.id)}
           >
@@ -576,15 +778,21 @@ export function NutricionHome() {
         />
       )}
 
-      {masOpen && (
-        <MasModal
-          viewMode={viewMode}
-          onToggleView={() => setViewMode((v) => (v === 'listas' ? 'estanteria' : 'listas'))}
-          onClose={() => setMasOpen(false)}
+      {moreOpen && (
+        <MoreSheet
+          sortOrder={sortOrder}
+          setSortOrder={setSortOrder}
+          gridDensity={gridDensity}
+          setGridDensity={setGridDensity}
+          volumeBoost={volumeBoost}
+          setVolumeBoost={setVolumeBoost}
+          onClose={() => setMoreOpen(false)}
+          onOpenSettings={() => {
+            setMoreOpen(false)
+            navigate('/ajustes')
+          }}
         />
       )}
-
-      <input ref={fileRef} type="file" hidden />
     </div>
   )
 }
@@ -616,7 +824,7 @@ function BookCard({
   return (
     <div
       className={variant === 'shelf' ? '' : 'book-grid-card'}
-      style={variant === 'shelf' ? { position: 'relative', width: 130, flexShrink: 0 } : { position: 'relative' }}
+      style={variant === 'shelf' ? { width: 130, flexShrink: 0 } : undefined}
     >
       <div
         className={coverClass}
@@ -624,39 +832,35 @@ function BookCard({
         onClick={onOpen}
       >
         {!book.coverDataUrl && book.title.charAt(0).toUpperCase()}
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label="Opciones"
-          onClick={(e) => {
-            e.stopPropagation()
-            onMenuToggle()
-          }}
-          style={{
-            position: 'absolute',
-            top: 6,
-            right: 6,
-            background: 'rgba(0,0,0,0.35)',
-            color: '#fff',
-          }}
-        >
-          <IconKebab />
-        </button>
       </div>
-      <div style={{ marginTop: 6 }}>
-        <p
-          className="book-title"
-          style={variant === 'shelf' ? { fontSize: '0.85rem', fontWeight: 600 } : undefined}
-          onClick={onOpen}
-        >
-          {book.title}
-        </p>
+      <div style={{ marginTop: 6, position: 'relative' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 4 }}>
+          <p
+            className="book-title"
+            style={{ flex: 1, minWidth: 0, ...(variant === 'shelf' ? { fontSize: '0.85rem', fontWeight: 600 } : {}) }}
+            onClick={onOpen}
+          >
+            {book.title}
+          </p>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Opciones"
+            onClick={(e) => {
+              e.stopPropagation()
+              onMenuToggle()
+            }}
+            style={{ width: 24, height: 24, flexShrink: 0 }}
+          >
+            <IconKebab />
+          </button>
+        </div>
         {book.author && <p className="book-author">{book.author}</p>}
-      </div>
 
-      {menuOpen && (
-        <BookMenu folders={folders} onEdit={onEdit} onDelete={onDelete} onMove={onMove} onClose={onMenuToggle} />
-      )}
+        {menuOpen && (
+          <BookMenu folders={folders} onEdit={onEdit} onDelete={onDelete} onMove={onMove} onClose={onMenuToggle} />
+        )}
+      </div>
     </div>
   )
 }
@@ -676,7 +880,7 @@ function BookMenu({
 }) {
   const [showMove, setShowMove] = useState(false)
   return (
-    <div className="context-menu" style={{ top: 40, right: 6 }} onMouseLeave={onClose}>
+    <div className="context-menu" style={{ top: 28, right: 0 }} onMouseLeave={onClose}>
       {!showMove ? (
         <>
           <button type="button" onClick={onEdit}>
@@ -746,155 +950,6 @@ function BookRow({
       <button type="button" className="icon-btn" aria-label="Eliminar" onClick={onDelete}>
         <IconTrash />
       </button>
-    </div>
-  )
-}
-
-/* ───────────────────────── Modal: Más (ajustes del home) ───────────────────────── */
-
-function MasModal({
-  viewMode,
-  onToggleView,
-  onClose,
-}: {
-  viewMode: 'estanteria' | 'listas'
-  onToggleView: () => void
-  onClose: () => void
-}) {
-  const [section, setSection] = useState<'menu' | 'guia' | 'info'>('menu')
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-panel glass-card" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2 style={{ fontSize: '1.1rem' }}>
-            {section === 'menu' ? 'Más' : section === 'guia' ? 'Guía de funciones' : 'Acerca de'}
-          </h2>
-          <button type="button" className="icon-btn" aria-label="Cerrar" onClick={onClose}>
-            <IconClose />
-          </button>
-        </div>
-
-        {section === 'menu' && (
-          <>
-            <button
-              type="button"
-              className="mas-option"
-              onClick={() => {
-                soundClick()
-                onToggleView()
-              }}
-            >
-              <span className="mas-icon">{viewMode === 'estanteria' ? '📚' : '📋'}</span>
-              <span>
-                <span className="mas-label" style={{ display: 'block' }}>
-                  Vista: {viewMode === 'estanteria' ? 'Estantería' : 'Lista'}
-                </span>
-                <span className="mas-sub">Cambia entre rejilla de portadas y lista</span>
-              </span>
-            </button>
-
-            <button
-              type="button"
-              className="mas-option"
-              onClick={() => {
-                soundClick()
-                setSection('guia')
-              }}
-            >
-              <span className="mas-icon">📖</span>
-              <span>
-                <span className="mas-label" style={{ display: 'block' }}>Guía de funciones</span>
-                <span className="mas-sub">Cómo usar la biblioteca de audiolibros</span>
-              </span>
-            </button>
-
-            <button
-              type="button"
-              className="mas-option"
-              onClick={() => {
-                soundClick()
-                setSection('info')
-              }}
-            >
-              <span className="mas-icon">ℹ️</span>
-              <span>
-                <span className="mas-label" style={{ display: 'block' }}>Acerca de Nutrición</span>
-                <span className="mas-sub">Información del módulo y del proyecto</span>
-              </span>
-            </button>
-
-            <p style={{ fontSize: '0.72rem', color: 'var(--gco-ink-faint)', marginTop: '1rem', textAlign: 'center' }}>
-              El volumen de la lectura se controla con el volumen del sistema.
-            </p>
-          </>
-        )}
-
-        {section === 'guia' && (
-          <div className="mas-guide">
-            <h4>Importar libros</h4>
-            <ul>
-              <li>Pulsa «+ Nuevo libro» o el botón Importar.</li>
-              <li>Puedes pegar texto, usar el portapapeles o subir TXT, PDF, DOCX o EPUB.</li>
-              <li>Añade título, autor, año y portada opcional.</li>
-            </ul>
-            <h4>Continuar leyendo</h4>
-            <ul>
-              <li>Los libros con progreso aparecen en «Continuar».</li>
-              <li>Desliza horizontalmente para ver más.</li>
-              <li>La barra de progreso muestra el porcentaje completado.</li>
-            </ul>
-            <h4>Carpetas</h4>
-            <ul>
-              <li>Organiza con «Añadir carpeta».</li>
-              <li>Mueve libros desde el menú ⋮ de cada portada.</li>
-            </ul>
-            <h4>Reproducción</h4>
-            <ul>
-              <li>Al abrir un libro se inicia el lector TTS.</li>
-              <li>El mini-reproductor permanece visible al navegar.</li>
-              <li>Ajusta velocidad y voz dentro del lector.</li>
-            </ul>
-            <button
-              type="button"
-              className="glass-button secondary"
-              style={{ width: '100%', marginTop: 12 }}
-              onClick={() => setSection('menu')}
-            >
-              Volver
-            </button>
-          </div>
-        )}
-
-        {section === 'info' && (
-          <div className="mas-guide">
-            <p>
-              <strong>Nutrición</strong> es el módulo de biblioteca de audiolibros de GymCog.
-              Convierte cualquier texto en lectura hablada con voces del sistema, progreso guardado,
-              carpetas y portadas personalizadas.
-            </p>
-            <h4>Características</h4>
-            <ul>
-              <li>Importación de texto, PDF, DOCX y EPUB</li>
-              <li>Lectura con síntesis de voz (TTS)</li>
-              <li>Progreso automático y sección «Continuar»</li>
-              <li>Carpetas y metadatos (autor, año, portada)</li>
-              <li>Temas claro / oscuro / arcoíris</li>
-            </ul>
-            <p style={{ marginTop: 12, fontSize: '0.78rem' }}>
-              Los datos se guardan localmente en tu dispositivo (IndexedDB). No se suben a ningún servidor.
-            </p>
-            <button
-              type="button"
-              className="glass-button secondary"
-              style={{ width: '100%', marginTop: 12 }}
-              onClick={() => setSection('menu')}
-            >
-              Volver
-            </button>
-          </div>
-        )}
-      </div>
     </div>
   )
 }
@@ -1295,6 +1350,122 @@ function EditBookModal({
         <GlassButton onClick={() => void save()} style={{ width: '100%' }}>
           Guardar cambios
         </GlassButton>
+      </div>
+    </div>
+  )
+}
+/* ───────────────────────── Panel: Más ───────────────────────── */
+
+function MoreSheet({
+  sortOrder,
+  setSortOrder,
+  gridDensity,
+  setGridDensity,
+  volumeBoost,
+  setVolumeBoost,
+  onClose,
+  onOpenSettings,
+}: {
+  sortOrder: SortOrder
+  setSortOrder: (v: SortOrder) => void
+  gridDensity: GridDensity
+  setGridDensity: (v: GridDensity) => void
+  volumeBoost: number
+  setVolumeBoost: (v: number) => void
+  onClose: () => void
+  onOpenSettings: () => void
+}) {
+  const GUIDE: { icon: ReactNode; title: string; text: string }[] = [
+    { icon: <IconList />, title: 'Listas', text: 'Cambia entre estantería con portadas y una lista compacta con más detalle por libro.' },
+    { icon: <IconPlayCircle />, title: 'Reproduciendo', text: 'Vuelve de un toque al audiolibro que tienes activo en este momento.' },
+    { icon: <IconDownload />, title: 'Importar', text: 'Sube un TXT o PDF, o pega texto directamente para crear un nuevo audiolibro.' },
+    { icon: <IconDots />, title: 'Más', text: 'Esta pantalla: orden de la biblioteca, densidad de portadas y volumen de lectura.' },
+  ]
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-panel glass-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2 style={{ fontSize: '1.1rem' }}>Más</h2>
+          <button type="button" className="icon-btn" aria-label="Cerrar" onClick={onClose}>
+            <IconClose />
+          </button>
+        </div>
+
+        <section style={{ marginBottom: '1.3rem' }}>
+          <h3 className="more-section-title">Guía rápida</h3>
+          <div className="guide-list">
+            {GUIDE.map((g) => (
+              <div className="guide-item" key={g.title}>
+                <span className="guide-icon">{g.icon}</span>
+                <div>
+                  <p className="guide-title">{g.title}</p>
+                  <p className="guide-text">{g.text}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section style={{ marginBottom: '1.3rem' }}>
+          <h3 className="more-section-title">Biblioteca</h3>
+          <label className="more-field-label" htmlFor="more-sort">
+            Orden
+          </label>
+          <select
+            id="more-sort"
+            className="glass-input"
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value as SortOrder)}
+            style={{ marginBottom: 12 }}
+          >
+            <option value="recientes">Más recientes</option>
+            <option value="titulo">Título (A–Z)</option>
+            <option value="autor">Autor (A–Z)</option>
+          </select>
+
+          <label className="more-field-label">Densidad de portadas</label>
+          <div className="segmented">
+            <button
+              type="button"
+              className={gridDensity === 'comoda' ? 'active' : ''}
+              onClick={() => setGridDensity('comoda')}
+            >
+              Cómoda
+            </button>
+            <button
+              type="button"
+              className={gridDensity === 'compacta' ? 'active' : ''}
+              onClick={() => setGridDensity('compacta')}
+            >
+              Compacta
+            </button>
+          </div>
+        </section>
+
+        <section style={{ marginBottom: '1.4rem' }}>
+          <h3 className="more-section-title">Audio</h3>
+          <label className="more-field-label">Refuerzo de volumen · {volumeBoost}%</label>
+          <input
+            type="range"
+            className="pref-slider"
+            min={50}
+            max={150}
+            step={5}
+            value={volumeBoost}
+            onChange={(e) => setVolumeBoost(Number(e.target.value))}
+            style={{ ['--fill' as string]: `${((volumeBoost - 50) / 100) * 100}%` }}
+            aria-label="Refuerzo de volumen de lectura"
+          />
+          <p className="guide-text" style={{ marginTop: 8 }}>
+            Se aplica al reproducir tus audiolibros. Por encima del 100% algunos dispositivos pueden distorsionar
+            el sonido.
+          </p>
+        </section>
+
+        <button type="button" className="glass-button secondary" style={{ width: '100%' }} onClick={onOpenSettings}>
+          Ajustes generales de la app →
+        </button>
       </div>
     </div>
   )

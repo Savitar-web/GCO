@@ -1168,7 +1168,7 @@ export function RompecabezasGame() {
       <div>
         <h2 style={{ fontSize: '1.25rem', marginBottom: 4 }}>Modo Normal</h2>
         <p style={{ color: 'var(--gco-ink-muted)', fontSize: '0.88rem' }}>
-          Sube de nivel · las piezas aumentan por tramos (4 → 8 → 12 → … → 2200)
+          Sube de nivel · las piezas aumentan por tramos
         </p>
       </div>
 
