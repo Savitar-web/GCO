@@ -1087,7 +1087,6 @@ function ImportPanelComponent({
 
 export function MusicaHome() {
   const navigate = useNavigate()
-  const fileRef = useRef<HTMLInputElement>(null)
   const coverRef = useRef<HTMLInputElement>(null)
   const dragId = useRef<string | null>(null)
 
@@ -1108,7 +1107,6 @@ export function MusicaHome() {
   const [playerHidden, setPlayerHidden] = useState(false)
   const [showLyrics, setShowLyrics] = useState(true)
   const [volumeBoost, setVolumeBoost] = useState(100)
-  const [dropActive, setDropActive] = useState(false)
 
   const [menu, setMenu] = useState<TrackMenuState | null>(null)
   const [assignTrack, setAssignTrack] = useState<TrackItem | null>(null)
