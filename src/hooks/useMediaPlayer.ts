@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getTrackBlob, type TrackItem } from '@/core/storage/mediaLibrary'
 
+/**
+ * Reproductor offline.
+ * Base: tu API (volume, gain, rate, queue, spectrum).
+ * Añadidos para MusicaHome / calidad:
+ *  - insertNext, error
+ *  - soft limiter (DynamicsCompressor) al subir gain > 1
+ *  - audio.volume estable con grafo activo
+ *  - preservesPitch, resume agresivo, ramp de gain
+ *  - getTrackBlob admite Blob directo o { blob }
+ */
 export function useMediaPlayer() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const urlRef = useRef<string | null>(null)
@@ -11,6 +21,8 @@ export function useMediaPlayer() {
   const analyserRef = useRef<AnalyserNode | null>(null)
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null)
   const gainRef = useRef<GainNode | null>(null)
+  const compRef = useRef<DynamicsCompressorNode | null>(null)
+  const graphReady = useRef(false)
 
   const [track, setTrack] = useState<TrackItem | null>(null)
   const [playing, setPlaying] = useState(false)
@@ -21,6 +33,7 @@ export function useMediaPlayer() {
   const [volume, setVolumeState] = useState(1)
   const [rate, setRateState] = useState(1)
   const [gain, setGainState] = useState(1)
+  const [error, setError] = useState<string | null>(null)
 
   const cleanupUrl = () => {
     if (urlRef.current) {
@@ -32,33 +45,60 @@ export function useMediaPlayer() {
   const ensureGraph = (audio: HTMLAudioElement) => {
     try {
       if (!ctxRef.current) {
-        ctxRef.current = new AudioContext()
+        const AC =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext })
+            .webkitAudioContext
+        ctxRef.current = new AC({ latencyHint: 'playback' })
       }
       const ctx = ctxRef.current
       if (ctx.state === 'suspended') void ctx.resume()
 
-      if (!analyserRef.current) {
-        const an = ctx.createAnalyser()
-        an.fftSize = 256
-        an.smoothingTimeConstant = 0.75
-        analyserRef.current = an
+      if (!graphReady.current) {
+        if (!gainRef.current) {
+          const g = ctx.createGain()
+          g.gain.value = 1
+          gainRef.current = g
+        }
+
+        // Soft limiter: evita distorsión con boost > 100 %
+        if (!compRef.current) {
+          const c = ctx.createDynamicsCompressor()
+          c.threshold.value = -6
+          c.knee.value = 12
+          c.ratio.value = 4
+          c.attack.value = 0.003
+          c.release.value = 0.18
+          compRef.current = c
+        }
+
+        if (!analyserRef.current) {
+          const an = ctx.createAnalyser()
+          an.fftSize = 512
+          an.smoothingTimeConstant = 0.75
+          an.minDecibels = -90
+          an.maxDecibels = -10
+          analyserRef.current = an
+        }
+
+        // source → gain → compressor → analyser → destination (solo una vez)
+        if (!sourceRef.current) {
+          sourceRef.current = ctx.createMediaElementSource(audio)
+          sourceRef.current.connect(gainRef.current)
+          gainRef.current.connect(compRef.current)
+          compRef.current.connect(analyserRef.current)
+          analyserRef.current.connect(ctx.destination)
+        }
+
+        graphReady.current = true
       }
 
-      if (!gainRef.current) {
-        const g = ctx.createGain()
-        g.gain.value = 1
-        gainRef.current = g
-      }
-
-      // source → gain → analyser → destination (solo una vez)
-      if (!sourceRef.current) {
-        sourceRef.current = ctx.createMediaElementSource(audio)
-        sourceRef.current.connect(gainRef.current)
-        gainRef.current.connect(analyserRef.current)
-        analyserRef.current.connect(ctx.destination)
-      }
+      // Con grafo activo el elemento sigue respetando volume (0–1);
+      // el boost extra (0–3) va solo por GainNode.
+      audio.volume = volume
     } catch {
-      /* ya conectado o no soportado */
+      /* ya conectado o no soportado — el elemento sigue sonando solo */
+      graphReady.current = false
     }
   }
 
@@ -67,12 +107,22 @@ export function useMediaPlayer() {
       const a = new Audio()
       a.preload = 'auto'
       a.crossOrigin = 'anonymous'
+      try {
+        a.preservesPitch = true
+      } catch {
+        /* Safari antiguo */
+      }
+      a.volume = volume
       a.ontimeupdate = () => setCurrentMs((a.currentTime || 0) * 1000)
       a.onloadedmetadata = () => setDurationMs((a.duration || 0) * 1000)
       a.onplay = () => setPlaying(true)
       a.onpause = () => setPlaying(false)
       a.onended = () => {
         void onEndedRef.current()
+      }
+      a.onerror = () => {
+        setError('No se pudo decodificar el archivo de audio.')
+        setPlaying(false)
       }
       audioRef.current = a
       ensureGraph(a)
@@ -82,39 +132,86 @@ export function useMediaPlayer() {
 
   const onEndedRef = useRef<() => Promise<void>>(async () => {})
 
-  const loadTrack = useCallback(async (t: TrackItem) => {
-    const blob = await getTrackBlob(t.blobKey)
-    if (!blob) return
-    const audio = ensureAudio()
-    ensureGraph(audio)
-    cleanupUrl()
-    const url = URL.createObjectURL(blob)
-    urlRef.current = url
-    audio.src = url
-    setTrack(t)
-    setCurrentMs(0)
-    setDurationMs(t.durationMs || 0)
-    updateMediaSession(t)
-  }, [])
+  /** Admite Blob directo o { blob } según implementación de getTrackBlob */
+  const resolveBlob = async (blobKey: string): Promise<Blob | null> => {
+    const raw = await getTrackBlob(blobKey)
+    if (!raw) return null
+    if (raw instanceof Blob) return raw
+    if (typeof raw === 'object' && raw !== null && 'blob' in raw) {
+      return (raw as { blob: Blob }).blob
+    }
+    return null
+  }
+
+  const loadTrack = useCallback(
+    async (t: TrackItem) => {
+      setError(null)
+      const media = await resolveBlob(t.blobKey)
+      if (!media) {
+        setError('Archivo no encontrado en la biblioteca offline.')
+        return
+      }
+      const audio = ensureAudio()
+      ensureGraph(audio)
+      cleanupUrl()
+      const url = URL.createObjectURL(media)
+      urlRef.current = url
+      audio.src = url
+      audio.playbackRate = rate
+      audio.volume = volume
+      if (gainRef.current) {
+        gainRef.current.gain.value = gain
+      }
+      setTrack(t)
+      setCurrentMs(0)
+      setDurationMs(t.durationMs || 0)
+      updateMediaSession(t)
+
+      await new Promise<void>((resolve) => {
+        const onMeta = () => {
+          setDurationMs((audio.duration || 0) * 1000)
+          audio.removeEventListener('loadedmetadata', onMeta)
+          resolve()
+        }
+        if (audio.readyState >= 1) onMeta()
+        else audio.addEventListener('loadedmetadata', onMeta)
+      })
+    },
+    [volume, rate, gain]
+  )
 
   const playTrack = useCallback(
     async (t: TrackItem, queue?: TrackItem[]) => {
       if (queue) {
         queueRef.current = queue
-        indexRef.current = Math.max(
-          0,
-          queue.findIndex((x) => x.id === t.id)
-        )
+        const found = queue.findIndex((x) => x.id === t.id)
+        indexRef.current = found >= 0 ? found : 0
+      } else if (!queueRef.current.some((x) => x.id === t.id)) {
+        queueRef.current = [t]
+        indexRef.current = 0
+      } else {
+        indexRef.current = queueRef.current.findIndex((x) => x.id === t.id)
       }
       await loadTrack(t)
       const audio = ensureAudio()
+      ensureGraph(audio)
       if (ctxRef.current?.state === 'suspended') {
-        await ctxRef.current.resume()
+        try {
+          await ctxRef.current.resume()
+        } catch {
+          /* */
+        }
       }
       try {
         await audio.play()
-      } catch {
-        /* autoplay */
+        setPlaying(true)
+        setError(null)
+      } catch (e) {
+        setPlaying(false)
+        const msg = e instanceof Error ? e.message : String(e)
+        if (/NotAllowedError|interact/i.test(msg)) {
+          setError('Pulsa ▶ para iniciar la reproducción (política del navegador).')
+        }
       }
     },
     [loadTrack]
@@ -122,25 +219,40 @@ export function useMediaPlayer() {
 
   const toggle = useCallback(async () => {
     const audio = ensureAudio()
-    if (!audio.src) return
+    ensureGraph(audio)
     if (ctxRef.current?.state === 'suspended') {
-      await ctxRef.current.resume()
+      try {
+        await ctxRef.current.resume()
+      } catch {
+        /* */
+      }
+    }
+    if (!audio.src) {
+      if (queueRef.current.length) {
+        await playTrack(queueRef.current[indexRef.current] ?? queueRef.current[0])
+      }
+      return
     }
     if (audio.paused) {
       try {
         await audio.play()
+        setPlaying(true)
+        setError(null)
       } catch {
-        /* */
+        setPlaying(false)
       }
     } else {
       audio.pause()
+      setPlaying(false)
     }
-  }, [])
+  }, [playTrack])
 
   const seek = useCallback((ms: number) => {
     const audio = ensureAudio()
-    audio.currentTime = Math.max(0, ms / 1000)
-    setCurrentMs(ms)
+    const d = audio.duration || 0
+    const t = Math.max(0, d ? Math.min(d, ms / 1000) : ms / 1000)
+    audio.currentTime = t
+    setCurrentMs(t * 1000)
   }, [])
 
   const playIndex = useCallback(
@@ -157,8 +269,10 @@ export function useMediaPlayer() {
   const next = useCallback(async () => {
     const q = queueRef.current
     if (!q.length) return
-    if (shuffle) {
-      await playIndex(Math.floor(Math.random() * q.length))
+    if (shuffle && q.length > 1) {
+      let n = Math.floor(Math.random() * q.length)
+      if (n === indexRef.current) n = (n + 1) % q.length
+      await playIndex(n)
       return
     }
     await playIndex(indexRef.current + 1)
@@ -196,25 +310,50 @@ export function useMediaPlayer() {
 
   const setVolume = useCallback((v: number) => {
     const val = Math.min(1, Math.max(0, v))
-    const audio = ensureAudio()
-    audio.volume = val
     setVolumeState(val)
+    const audio = audioRef.current
+    if (audio) audio.volume = val
   }, [])
 
-  /** 0–3 → hasta 300 % de ganancia real */
+  /** 0–3 → hasta 300 % de ganancia real (GainNode + soft limiter) */
   const setGain = useCallback((g: number) => {
     const val = Math.min(3, Math.max(0, g))
-    if (gainRef.current) {
-      gainRef.current.gain.value = val
-    }
     setGainState(val)
+    const node = gainRef.current
+    const ctx = ctxRef.current
+    if (node && ctx) {
+      const t = ctx.currentTime
+      node.gain.cancelScheduledValues(t)
+      node.gain.setValueAtTime(node.gain.value, t)
+      node.gain.linearRampToValueAtTime(val, t + 0.05)
+    } else if (node) {
+      node.gain.value = val
+    }
   }, [])
 
   const setPlaybackRate = useCallback((r: number) => {
     const val = Math.min(2, Math.max(0.5, r))
-    const audio = ensureAudio()
-    audio.playbackRate = val
     setRateState(val)
+    const audio = audioRef.current
+    if (audio) {
+      audio.playbackRate = val
+      try {
+        audio.preservesPitch = true
+      } catch {
+        /* */
+      }
+    }
+  }, [])
+
+  /** Inserta pista justo después de la actual (MusicaHome → “Reproducir a continuación”) */
+  const insertNext = useCallback((t: TrackItem) => {
+    const q = [...queueRef.current]
+    const i = indexRef.current
+    const without = q.filter((x) => x.id !== t.id)
+    const at = without.findIndex((x) => x.id === queueRef.current[i]?.id)
+    const pos = at >= 0 ? at + 1 : without.length
+    without.splice(pos, 0, t)
+    queueRef.current = without
   }, [])
 
   const getFrequencyData = useCallback((): Uint8Array | null => {
@@ -231,7 +370,21 @@ export function useMediaPlayer() {
     () => () => {
       audioRef.current?.pause()
       cleanupUrl()
+      try {
+        sourceRef.current?.disconnect()
+        gainRef.current?.disconnect()
+        compRef.current?.disconnect()
+        analyserRef.current?.disconnect()
+      } catch {
+        /* */
+      }
       void ctxRef.current?.close()
+      ctxRef.current = null
+      graphReady.current = false
+      sourceRef.current = null
+      gainRef.current = null
+      compRef.current = null
+      analyserRef.current = null
     },
     []
   )
@@ -256,11 +409,13 @@ export function useMediaPlayer() {
     seek,
     next,
     prev,
+    insertNext,
     setQueue: (q: TrackItem[]) => {
       queueRef.current = q
     },
     getQueue,
     getFrequencyData,
+    error,
   }
 }
 

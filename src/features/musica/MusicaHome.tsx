@@ -198,6 +198,9 @@ const LAYOUT_CSS = `
 }
 `
 
+/* --- Tipos YouTube / import --- */
+type YtSearchResult = { id: string; title: string; url: string }
+
 /* --- COMPONENTE IMPORT PANEL EXTRAIDO Y REPARADO --- */
 function ImportPanelComponent({
   onImport,
@@ -207,22 +210,18 @@ function ImportPanelComponent({
   tracks: TrackItem[]
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
+  const searchAbortRef = useRef<AbortController | null>(null)
+  const downloadAbortRef = useRef<AbortController | null>(null)
   const [dropActive, setDropActive] = useState(false)
 
   // Búsqueda / URL de YouTube
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearching, setIsSearching] = useState(false)
-  const [searchResults, setSearchResults] = useState<
-    { id: string; title: string; url: string }[]
-  >([])
+  const [searchResults, setSearchResults] = useState<YtSearchResult[]>([])
   const [searchError, setSearchError] = useState<string | null>(null)
 
   // Modal de descarga
-  const [selectedYt, setSelectedYt] = useState<{
-    id: string
-    title: string
-    url: string
-  } | null>(null)
+  const [selectedYt, setSelectedYt] = useState<YtSearchResult | null>(null)
   const [ytName, setYtName] = useState('')
   /** true = MP3 (audio) · false = MP4 (vídeo) */
   const [isAudioOnly, setIsAudioOnly] = useState(true)
@@ -247,12 +246,22 @@ function ImportPanelComponent({
     (import.meta as { env?: { VITE_YT_API?: string } }).env?.VITE_YT_API ||
     'http://localhost:3001'
 
+  useEffect(() => {
+    return () => {
+      searchAbortRef.current?.abort()
+      downloadAbortRef.current?.abort()
+    }
+  }, [])
+
   const isYoutubeUrl = (q: string) =>
     /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//i.test(q.trim())
 
   const handleSearch = async () => {
     const q = searchQuery.trim()
     if (!q) return
+    searchAbortRef.current?.abort()
+    const ac = new AbortController()
+    searchAbortRef.current = ac
     setIsSearching(true)
     setSearchError(null)
     setSearchResults([])
@@ -263,7 +272,7 @@ function ImportPanelComponent({
       const title = q
         .replace(/^https?:\/\//, '')
         .slice(0, 80)
-      const item = { id: `url-${Date.now()}`, title, url: q }
+      const item: YtSearchResult = { id: `url-${Date.now()}`, title, url: q }
       setSearchResults([item])
       setIsSearching(false)
       openDownloadModal(item)
@@ -274,21 +283,26 @@ function ImportPanelComponent({
     try {
       const res = await fetch(
         `${API_BASE}/buscar?q=${encodeURIComponent(q)}`,
-        { method: 'GET' }
+        { method: 'GET', signal: ac.signal }
       )
       if (res.ok) {
         const data = (await res.json()) as {
-          results?: { id: string; title: string; url: string }[]
+          results?: YtSearchResult[]
         }
         if (data.results && data.results.length > 0) {
-          setSearchResults(data.results)
-          setIsSearching(false)
+          if (!ac.signal.aborted) {
+            setSearchResults(data.results)
+            setIsSearching(false)
+          }
           return
         }
       }
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
       /* backend de búsqueda opcional */
     }
+
+    if (ac.signal.aborted) return
 
     // Fallback local: trata el texto como consulta + sugerencia de pegar URL
     setSearchResults([
@@ -300,17 +314,15 @@ function ImportPanelComponent({
       {
         id: '2',
         title: `Usar como URL directa: ${q}`,
-        url: q.startsWith('http') ? q : `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`,
+        url: q.startsWith('http')
+          ? q
+          : `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`,
       },
     ])
     setIsSearching(false)
   }
 
-  const openDownloadModal = (song: {
-    id: string
-    title: string
-    url: string
-  }) => {
+  const openDownloadModal = (song: YtSearchResult) => {
     soundClick()
     setYtName(song.title)
     setSelectedYt(song)
@@ -349,6 +361,10 @@ function ImportPanelComponent({
     setDlStatus('Conectando con el servidor…')
     setProgress({ metadata: 10, download: 0, import: 0 })
 
+    downloadAbortRef.current?.abort()
+    const ac = new AbortController()
+    downloadAbortRef.current = ac
+
     try {
       setDlStatus('Solicitando metadatos y descarga…')
       setProgress((p) => ({ ...p, metadata: 40 }))
@@ -361,6 +377,7 @@ function ImportPanelComponent({
           formato,
           title: name,
         }),
+        signal: ac.signal,
       })
 
       setProgress((p) => ({ ...p, metadata: 100, download: 30 }))
@@ -368,22 +385,21 @@ function ImportPanelComponent({
       if (!response.ok) {
         const msg = await response.text().catch(() => '')
         throw new Error(
-          msg || `Error del servidor (${response.status}). ¿Está en marcha el backend en ${API_BASE}?`
+          msg ||
+            `Error del servidor (${response.status}). ¿Está en marcha el backend en ${API_BASE}?`
         )
       }
 
       setDlStatus('Recibiendo archivo…')
       const blob = await response.blob()
+      if (ac.signal.aborted) return
       setProgress((p) => ({ ...p, download: 100 }))
 
       const mime =
-        formato === 'mp3'
-          ? 'audio/mpeg'
-          : blob.type || 'video/mp4'
+        formato === 'mp3' ? 'audio/mpeg' : blob.type || 'video/mp4'
       const ext = formato === 'mp3' ? 'mp3' : 'mp4'
       const fileName = `${name}.${ext}`
 
-      // Descomprimir ZIP si el servidor envía archiver
       let mediaBlob = blob
       let mediaName = fileName
       if (
@@ -391,8 +407,6 @@ function ImportPanelComponent({
         (response.headers.get('content-disposition') || '').includes('.zip')
       ) {
         setDlStatus('Extrayendo del ZIP…')
-        // Sin dependencia de JSZip: si es ZIP pequeño de un solo archivo,
-        // el servidor idealmente envía el binario directo. Fallback: guardar ZIP.
         mediaName = `${name}.zip`
       }
 
@@ -411,9 +425,11 @@ function ImportPanelComponent({
       if (dlCache) {
         setDlStatus('Importando al reproductor…')
         setProgress((p) => ({ ...p, import: 40 }))
-        const file = new File([mediaBlob], mediaName.endsWith('.zip') ? fileName : mediaName, {
-          type: mime,
-        })
+        const file = new File(
+          [mediaBlob],
+          mediaName.endsWith('.zip') ? fileName : mediaName,
+          { type: mime }
+        )
         await onImport([file])
         setProgress((p) => ({ ...p, import: 100 }))
       }
@@ -421,6 +437,7 @@ function ImportPanelComponent({
       soundSuccess()
       setDlStatus('Listo.')
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
       soundFail()
       const message =
         err instanceof Error
@@ -709,7 +726,10 @@ function ImportPanelComponent({
           lineHeight: 1.45,
         }}
       >
-        Descarga de Youtube con enlaces URL.
+        YouTube requiere el backend (`server/index.js` con yt-dlp) en{' '}
+        <span className="mono">{API_BASE}</span>. Puedes cambiar la URL con{' '}
+        <span className="mono">localStorage.setItem(&apos;gco:yt-api&apos;, &apos;https://tu-api&apos;)</span>{' '}
+        o la variable <span className="mono">VITE_YT_API</span>.
       </p>
 
       {/* Modal descarga */}
@@ -1067,6 +1087,7 @@ function ImportPanelComponent({
 
 export function MusicaHome() {
   const navigate = useNavigate()
+  const fileRef = useRef<HTMLInputElement>(null)
   const coverRef = useRef<HTMLInputElement>(null)
   const dragId = useRef<string | null>(null)
 
@@ -1087,6 +1108,7 @@ export function MusicaHome() {
   const [playerHidden, setPlayerHidden] = useState(false)
   const [showLyrics, setShowLyrics] = useState(true)
   const [volumeBoost, setVolumeBoost] = useState(100)
+  const [dropActive, setDropActive] = useState(false)
 
   const [menu, setMenu] = useState<TrackMenuState | null>(null)
   const [assignTrack, setAssignTrack] = useState<TrackItem | null>(null)
@@ -1118,9 +1140,9 @@ export function MusicaHome() {
   }, [])
 
   useEffect(() => {
-    const gain = Math.min(3, Math.max(0, volumeBoost / 100))
-    if (typeof player.setGain === 'function') player.setGain(gain)
-    else player.setVolume?.(Math.min(1, gain))
+    // Boost 0–300 % vía GainNode (calidad intacta + soft limiter en useMediaPlayer)
+    const g = Math.min(3, Math.max(0, volumeBoost / 100))
+    player.setGain(g)
   }, [volumeBoost, player])
 
   useEffect(() => {
@@ -1210,34 +1232,37 @@ export function MusicaHome() {
 
   const playAll = (list: TrackItem[], start?: TrackItem) => {
     if (!list.length) return
+    soundClick()
     player.setQueue(list)
-    void player.playTrack(start ?? list[0], list)
+    // playTrack reanuda AudioContext y conecta GainNode (calidad nativa del blob)
+    void Promise.resolve(player.playTrack(start ?? list[0], list)).catch(() => {
+      soundFail()
+    })
     setPlayerHidden(false)
   }
 
   const playNext = (t: TrackItem) => {
-    const anyP = player as {
-      track: TrackItem | null
-      setQueue: (q: TrackItem[]) => void
-      getQueue?: () => TrackItem[]
-      playTrack: (t: TrackItem, list?: TrackItem[]) => void | Promise<void>
+    soundClick()
+    if (!player.track) {
+      player.setQueue([t])
+      void player.playTrack(t, [t])
+      return
     }
-    const q = typeof anyP.getQueue === 'function' ? [...anyP.getQueue()] : []
-    const cur = anyP.track
-    if (!cur) {
-      anyP.setQueue([t])
-      void anyP.playTrack(t, [t])
-    } else {
-      const i = q.findIndex((x) => x.id === cur.id)
-      const base = i >= 0 ? q : [cur]
-      const at = i >= 0 ? i : 0
-      const next = [
-        ...base.slice(0, at + 1),
-        t,
-        ...base.slice(at + 1).filter((x) => x.id !== t.id),
-      ]
-      anyP.setQueue(next)
+    if (typeof player.insertNext === 'function') {
+      player.insertNext(t)
+      return
     }
+    const q = player.getQueue()
+    const cur = player.track
+    const i = q.findIndex((x) => x.id === cur.id)
+    const base = i >= 0 ? q : [cur]
+    const at = i >= 0 ? i : 0
+    const next = [
+      ...base.slice(0, at + 1),
+      t,
+      ...base.slice(at + 1).filter((x) => x.id !== t.id),
+    ]
+    player.setQueue(next)
     soundSuccess()
   }
 
@@ -2989,6 +3014,23 @@ export function MusicaHome() {
             zIndex: 45,
           }}
         >
+          {player.error && (
+            <div
+              role="status"
+              aria-live="polite"
+              style={{
+                margin: '0 10px 6px',
+                padding: '8px 12px',
+                borderRadius: 12,
+                background: 'color-mix(in srgb, var(--gco-secondary, #ff6b6b) 18%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--gco-secondary, #ff6b6b) 40%, transparent)',
+                fontSize: '0.82rem',
+                color: 'var(--gco-ink)',
+              }}
+            >
+              {player.error}
+            </div>
+          )}
           <PlayerBar player={player} compact />
         </div>
       )}
@@ -3002,7 +3044,7 @@ export function MusicaHome() {
           left: 10,
           right: 10,
           bottom: 'calc(8px + env(safe-area-inset-bottom, 0px))',
-          zIndex: 0.9,
+          zIndex: 50,
           borderRadius: 24,
           background: 'color-mix(in srgb, var(--gco-bg, #0B1220) 78%, transparent)',
           backdropFilter: 'blur(20px) saturate(1.15)',

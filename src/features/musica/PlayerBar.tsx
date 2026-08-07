@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { formatTrackTime, getTrackBlob, type TrackItem } from '@/core/storage/mediaLibrary'
 import type { MediaPlayerApi } from '@/hooks/useMediaPlayer'
 import { soundClick } from '@/core/audio/uiSounds'
@@ -6,6 +7,8 @@ import { soundClick } from '@/core/audio/uiSounds'
 const PREF_KEY = 'gco:player-bar-prefs'
 const HEATMAP_KEY = 'gco:player-heatmap'
 const HEATMAP_BINS = 40
+/** Milisegundos de inactividad antes de ocultar sombra + brillo/volumen/candado en pantalla completa. */
+const CONTROLS_IDLE_MS = 3200
 
 export function getBarPrefs() {
   try {
@@ -125,6 +128,10 @@ const SCROLLBAR_CSS = `
 }
 .gco-fs-pill button:hover { background: rgba(255,255,255,0.24); }
 .gco-fs-pill button:active { transform: scale(0.92); }
+
+.gco-fs-fade {
+  transition: opacity 0.45s ease;
+}
 `
 
 export function PlayerBar({ player, compact }: Props) {
@@ -137,15 +144,18 @@ export function PlayerBar({ player, compact }: Props) {
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const dragQ = useRef<number | null>(null)
+  const fsRootRef = useRef<HTMLDivElement | null>(null)
 
-  // ── Controles futuristas de pantalla completa ──
+  // ── Controles futuristas de pantalla completa (solo pestaña "Ahora") ──
   const [locked, setLocked] = useState(false)
   const [brightness, setBrightness] = useState(100)
   const [volumeUi, setVolumeUi] = useState(100)
   const [heatmap, setHeatmap] = useState<number[]>(() => new Array(HEATMAP_BINS).fill(0))
+  const [overlayVisible, setOverlayVisible] = useState(true)
   const heatmapRef = useRef<number[]>(heatmap)
   const lastBinRef = useRef<number | null>(null)
   const mediaAreaRef = useRef<HTMLDivElement | null>(null)
+  const idleTimerRef = useRef<number | null>(null)
 
   const dur = player.durationMs || t?.durationMs || 0
   const hasVideo = t ? isVideoTrack(t) : false
@@ -226,7 +236,7 @@ export function PlayerBar({ player, compact }: Props) {
     if (!hasVideo) setShowVideo(false)
   }, [hasVideo, t?.id])
 
-  // ── Heatmap por pista: qué tramos se repiten más ──
+  // ── Heatmap por pista: qué tramos se repiten más (solo se usa en pantalla completa) ──
   useEffect(() => {
     if (!t) return
     const all = loadHeatmapStore()
@@ -256,6 +266,132 @@ export function PlayerBar({ player, compact }: Props) {
   useEffect(() => {
     player.setVolume?.(volumeUi / 100)
   }, [volumeUi, player])
+
+  // ── Auto-ocultar la sombra + brillo/volumen/candado tras inactividad (solo pestaña "Ahora") ──
+  useEffect(() => {
+    if (!fullscreen || fsTab !== 'now') return
+    setOverlayVisible(true)
+    const bump = () => {
+      setOverlayVisible(true)
+      if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = window.setTimeout(() => setOverlayVisible(false), CONTROLS_IDLE_MS)
+    }
+    bump()
+    const root = fsRootRef.current
+    root?.addEventListener('mousemove', bump)
+    root?.addEventListener('pointerdown', bump)
+    root?.addEventListener('touchstart', bump)
+    root?.addEventListener('click', bump)
+    return () => {
+      if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current)
+      root?.removeEventListener('mousemove', bump)
+      root?.removeEventListener('pointerdown', bump)
+      root?.removeEventListener('touchstart', bump)
+      root?.removeEventListener('click', bump)
+    }
+  }, [fullscreen, fsTab])
+
+  // ── Media Session API: metadata + controles del sistema/lock-screen para reproducción en 2º plano ──
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator) || !t) return
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: t.title,
+        artist: t.artist,
+        album: t.album || '',
+        artwork: t.coverDataUrl
+          ? [
+              { src: t.coverDataUrl, sizes: '256x256', type: 'image/png' },
+              { src: t.coverDataUrl, sizes: '512x512', type: 'image/png' },
+            ]
+          : [],
+      })
+    } catch {
+      /* */
+    }
+
+    navigator.mediaSession.setActionHandler('play', () => {
+      if (!player.playing) void player.toggle()
+    })
+    navigator.mediaSession.setActionHandler('pause', () => {
+      if (player.playing) void player.toggle()
+    })
+    navigator.mediaSession.setActionHandler('previoustrack', () => void player.prev())
+    navigator.mediaSession.setActionHandler('nexttrack', () => void player.next())
+    navigator.mediaSession.setActionHandler('stop', () => {
+      if (player.playing) void player.toggle()
+    })
+    try {
+      navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+        const skip = (details.seekOffset ?? 10) * 1000
+        player.seek(clamp(player.currentMs - skip, 0, dur || player.currentMs))
+      })
+      navigator.mediaSession.setActionHandler('seekforward', (details) => {
+        const skip = (details.seekOffset ?? 10) * 1000
+        player.seek(clamp(player.currentMs + skip, 0, dur || player.currentMs))
+      })
+      navigator.mediaSession.setActionHandler('seekto', (details) => {
+        if (details.seekTime != null) player.seek(details.seekTime * 1000)
+      })
+    } catch {
+      /* algunos navegadores no soportan seekto/seekbackward/seekforward */
+    }
+
+    return () => {
+      try {
+        navigator.mediaSession.setActionHandler('play', null)
+        navigator.mediaSession.setActionHandler('pause', null)
+        navigator.mediaSession.setActionHandler('previoustrack', null)
+        navigator.mediaSession.setActionHandler('nexttrack', null)
+        navigator.mediaSession.setActionHandler('stop', null)
+        navigator.mediaSession.setActionHandler('seekbackward', null)
+        navigator.mediaSession.setActionHandler('seekforward', null)
+        navigator.mediaSession.setActionHandler('seekto', null)
+      } catch {
+        /* */
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t?.id, t?.title, t?.artist, t?.album, t?.coverDataUrl])
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return
+    navigator.mediaSession.playbackState = player.playing ? 'playing' : 'paused'
+  }, [player.playing])
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return
+    const ms = navigator.mediaSession as MediaSession & {
+      setPositionState?: (state: { duration: number; playbackRate: number; position: number }) => void
+    }
+    if (!ms.setPositionState || !dur) return
+    try {
+      ms.setPositionState({
+        duration: dur / 1000,
+        playbackRate: 1,
+        position: Math.min(player.currentMs, dur) / 1000,
+      })
+    } catch {
+      /* */
+    }
+  }, [player.currentMs, dur])
+
+  // ── Intento de reanudar audio si el navegador lo suspendió al volver de segundo plano ──
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      const anyPlayer = player as unknown as { resumeAudioContext?: () => void }
+      anyPlayer.resumeAudioContext?.()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    window.addEventListener('pageshow', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+      window.removeEventListener('pageshow', onVisible)
+    }
+  }, [player])
 
   const toggleNativeFullscreen = async () => {
     const el = mediaAreaRef.current
@@ -330,7 +466,7 @@ export function PlayerBar({ player, compact }: Props) {
     </button>
   )
 
-  /* Mini barra pastilla */
+  /* Mini barra pastilla — permanece montada mientras exista una pista, independiente de la pestaña interna */
   const miniBar = (
     <div
       className={`gco-player-bar-wrap${compact ? ' is-compact' : ''}`}
@@ -487,9 +623,12 @@ export function PlayerBar({ player, compact }: Props) {
 
   const heatmapMax = Math.max(1, ...heatmap)
 
-  /* Fullscreen — zIndex muy por encima del nav inferior de MusicaHome (z-index 50) */
-  const fullscreenUi = fullscreen && (
+  /* Fullscreen — montado vía portal en document.body para escapar de cualquier
+     contexto de apilamiento heredado (p. ej. el dock del mini-player con su propio
+     z-index) y así quedar SIEMPRE por encima del nav inferior de MusicaHome. */
+  const fullscreenContent = fullscreen && (
     <div
+      ref={fsRootRef}
       role="dialog"
       aria-modal="true"
       style={{
@@ -711,25 +850,28 @@ export function PlayerBar({ player, compact }: Props) {
             </h1>
             <p style={{ margin: '4px 0 0', fontSize: '0.95rem', opacity: 0.65 }}>{t.artist}</p>
 
-            {/* Barra de progreso + sombra de "escena más repetida" (solo en pantalla completa) */}
+            {/* Barra de progreso siempre visible. La sombra de "más repetido" solo se dibuja
+                en esta pestaña ("Ahora") y se desvanece sola tras inactividad. */}
             <div style={{ position: 'relative', margin: '12px 0 4px' }}>
               <div
                 aria-hidden
+                className="gco-fs-fade"
                 style={{
                   position: 'absolute',
                   left: 0,
                   right: 0,
                   bottom: 3,
-                  height: 14,
+                  height: 8,
                   display: 'flex',
                   alignItems: 'flex-end',
                   gap: 1,
                   pointerEvents: 'none',
+                  opacity: overlayVisible ? 0.4 : 0,
                 }}
               >
                 {heatmap.map((c, i) => {
-                  const h = 3 + (c / heatmapMax) * 11
-                  const intensity = Math.min(100, 25 + (c / heatmapMax) * 75)
+                  const h = 2 + (c / heatmapMax) * 6
+                  const intensity = Math.min(55, 15 + (c / heatmapMax) * 40)
                   return (
                     <div
                       key={i}
@@ -740,7 +882,7 @@ export function PlayerBar({ player, compact }: Props) {
                         background:
                           c > 0
                             ? `color-mix(in srgb, ${progressColor} ${intensity}%, transparent)`
-                            : 'rgba(255,255,255,0.06)',
+                            : 'transparent',
                       }}
                     />
                   )
@@ -881,8 +1023,19 @@ export function PlayerBar({ player, compact }: Props) {
               </button>
             </div>
 
-            {/* Fila iOS-futurista: brillo, volumen, pantalla completa, candado */}
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {/* Fila iOS-futurista: brillo, volumen, pantalla completa, candado.
+                Solo existe en esta pestaña y se desvanece con la misma inactividad que la sombra. */}
+            <div
+              className="gco-fs-fade"
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
+                opacity: overlayVisible ? 1 : 0,
+                pointerEvents: overlayVisible ? 'auto' : 'none',
+              }}
+            >
               <div className="gco-fs-pill">
                 <button type="button" aria-label="Bajar brillo" onClick={() => setBrightness((b) => clamp(b - 10, 40, 160))}>
                   −
@@ -1087,11 +1240,12 @@ export function PlayerBar({ player, compact }: Props) {
         )}
       </div>
 
-      {/* Nav inferior (Cola / Ahora / Letra) — zIndex explícito por encima del bottom-nav de MusicaHome (50) */}
+      {/* Nav inferior (Cola / Ahora / Letra) — al vivir dentro del portal montado en
+          document.body, este bloque queda siempre por encima del nav de MusicaHome. */}
       <div
         style={{
           position: 'relative',
-          zIndex: 21000000001,
+          zIndex: 3,
           padding: '8px 14px calc(12px + env(safe-area-inset-bottom, 0px))',
         }}
       >
@@ -1153,7 +1307,7 @@ export function PlayerBar({ player, compact }: Props) {
   return (
     <>
       {miniBar}
-      {fullscreenUi}
+      {fullscreen && typeof document !== 'undefined' ? createPortal(fullscreenContent, document.body) : null}
     </>
   )
 }
