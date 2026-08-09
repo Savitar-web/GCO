@@ -3,13 +3,21 @@
  *
  * Sirve a:
  *   1) Colocador (Number Puzzle)  → generateNumberPuzzleLevel, shuffleBoard, …
- *   2) Rompecabezas (Jigsaw)      → generateJigsawLevel, createPieces, …
- *   3) Despejes (Puzzle)      → generatepuzzleLevel, …
- * 
+ *   2) Rompecabezas (Jigsaw)      → generateJigsawLevel, generateCreativeJigsaw,
+ *                                    buildPiecePath, createPieces, …
+ *   3) Despejes (Puzzle)          → generateLaberintoLevel, generateCromaLevel,
+ *                                    generatePintarLevel, …
+ *
  * Puedes colocarlo en:
  *   src/features/logica/juegos/generateLevel.ts
- * e importar desde ambos juegos,
+ * e importar desde los tres juegos,
  * o copiar/reexportar desde cada carpeta.
+ *
+ * v2 — sección 2) ROMPECABEZAS reescrita: piezas con geometría SVG real
+ * (pestaña/hueco), 3 estilos de corte, banco de imágenes por categoría +
+ * imágenes importadas, progresión de piezas por nivel y persistencia en
+ * localStorage. Secciones 1) Colocador y 3) Despejes se conservan del motor
+ * original de este archivo.
  */
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -28,6 +36,14 @@ export function mulberry32(seed: number) {
 
 export function levelSeed(level: number, salt = 0) {
   return ((level * 7919 + salt * 104729) >>> 0) || 1
+}
+
+/** mm:ss — formateo de tiempo compartido por los tres juegos. */
+export function formatTime(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -286,8 +302,6 @@ export function tileColor(
   return `hsl(${hue} 85% 58%)`
 }
 
-
-
 export function tileSizePx(size: GridSize, isMobile: boolean): number {
   if (isMobile) {
     if (size <= 2) return 72
@@ -301,51 +315,71 @@ export function tileSizePx(size: GridSize, isMobile: boolean): number {
   return 54
 }
 
+/* ── Estrellas del colocador ── */
+
+export function calcStars(
+  moves: number,
+  timeMs: number,
+  targetSeconds: number,
+  moveLimit: number,
+  size: number
+): 0 | 1 | 2 | 3 {
+  if (moves <= 0) return 0
+  let stars: 0 | 1 | 2 | 3 = 1
+  if (targetSeconds > 0 && timeMs <= targetSeconds * 1000) stars = 2
+  const soft = moveLimit > 0 ? moveLimit : size * size * 8
+  if (moves <= soft * 0.55 && stars >= 2) stars = 3
+  else if (moveLimit > 0 && moves <= moveLimit && stars === 1) stars = 2
+  return stars
+}
+
+/** Alias explícito del colocador (misma implementación) — se conserva por compatibilidad. */
+export function calcNumberPuzzleStars(
+  moves: number,
+  timeMs: number,
+  targetSeconds: number,
+  moveLimit: number,
+  size: number
+): 0 | 1 | 2 | 3 {
+  return calcStars(moves, timeMs, targetSeconds, moveLimit, size)
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    2) ROMPECABEZAS — Jigsaw
    ═══════════════════════════════════════════════════════════════════════════
  *
- * Progresión de piezas (modo normal):
- *   Nv 1–4   → 4
- *   Nv 5–7   → 8
- *   Nv 8–13  → 12
- *   Nv 14–19 → 20
- *   Nv 20–28 → 30
- *   Nv 29–38 → 60
- *   Nv 39–48 → 100
- *   … hasta 2200
+ * Piezas con geometría real: cada una tiene un contorno SVG propio (pestaña
+ * saliente o hueco entrante) que coincide exactamente con el de su vecina,
+ * así que no quedan huecos ni solapes en la unión. La fotografía en sí
+ * jamás se recorta ni se deforma — todas las piezas dibujan el MISMO fondo
+ * continuo (del tamaño completo del tablero); lo único que cambia entre
+ * piezas es el recorte (clip-path) con su forma. Lo que se "corta" siempre
+ * es el borde de la pieza, nunca la imagen.
  *
- * Formas: classic | round | pointed
- * Imágenes: imgrom1.webp … imgrom12.webp
+ * Incluye 3 estilos de corte, banco de imágenes por categoría + imágenes
+ * importadas por el usuario, progresión de piezas por nivel para el Modo
+ * Normal (que se alarga a medida que sube la dificultad) y una selección
+ * totalmente libre para el Modo Creativo (4 a 2200 piezas).
  */
+
+/* ── Formas de pieza ── */
 
 export type PieceShape = 'classic' | 'round' | 'pointed'
 
-export const PIECE_SHAPES: {
+export interface PieceShapeMeta {
   id: PieceShape
   label: string
   emoji: string
   desc: string
-}[] = [
-  {
-    id: 'classic',
-    label: 'Clásica',
-    emoji: '🧩',
-    desc: 'Pestañas y huecos tradicionales',
-  },
-  {
-    id: 'round',
-    label: 'Redonda',
-    emoji: '⭘',
-    desc: 'Bordes suaves y curvas',
-  },
-  {
-    id: 'pointed',
-    label: 'Puntiaguda',
-    emoji: '✦',
-    desc: 'Puntas geométricas',
-  },
+}
+
+export const PIECE_SHAPES: PieceShapeMeta[] = [
+  { id: 'classic', label: 'Clásica', emoji: '🧩', desc: 'Pestañas y huecos tradicionales' },
+  { id: 'round', label: 'Redonda', emoji: '⭘', desc: 'Bordes suaves y ondulados' },
+  { id: 'pointed', label: 'Puntiaguda', emoji: '✦', desc: 'Puntas geométricas' },
 ]
+
+/* ── Imágenes ── */
 
 export type ImageCategory =
   | 'naturaleza'
@@ -359,103 +393,13 @@ export interface PuzzleImage {
   id: string
   name: string
   category: ImageCategory
-  /** Ruta pública o data-URL */
+  /** Ruta pública o data-URL (imágenes importadas por el usuario) */
   src: string
   isCustom?: boolean
-  fallbackHue?: number
+  /** Tonos para el degradado de respaldo mientras no exista el archivo real */
+  fallbackHue: number
+  fallbackHue2: number
 }
-
-/**
- * Catálogo por defecto. Coloca los archivos en:
- *   public/puzzles/imgrom1.webp … imgrom12.webp
- * Si faltan, el juego dibuja un fondo procedural.
- */
-export const DEFAULT_IMAGES: PuzzleImage[] = [
-  {
-    id: 'imgrom1',
-    name: 'Bosque en primavera',
-    category: 'naturaleza',
-    src: '/puzzles/imgrom1.webp',
-    fallbackHue: 140,
-  },
-  {
-    id: 'imgrom2',
-    name: 'Montañas al atardecer',
-    category: 'naturaleza',
-    src: '/puzzles/imgrom2.webp',
-    fallbackHue: 25,
-  },
-  {
-    id: 'imgrom3',
-    name: 'Lago de cristal',
-    category: 'naturaleza',
-    src: '/puzzles/imgrom3.webp',
-    fallbackHue: 200,
-  },
-  {
-    id: 'imgrom4',
-    name: 'Zorro del bosque',
-    category: 'animales',
-    src: '/puzzles/imgrom4.webp',
-    fallbackHue: 20,
-  },
-  {
-    id: 'imgrom5',
-    name: 'Gato curioso',
-    category: 'animales',
-    src: '/puzzles/imgrom5.webp',
-    fallbackHue: 35,
-  },
-  {
-    id: 'imgrom6',
-    name: 'Dragón antiguo',
-    category: 'ilustraciones',
-    src: '/puzzles/imgrom6.webp',
-    fallbackHue: 280,
-  },
-  {
-    id: 'imgrom7',
-    name: 'Barco en la niebla',
-    category: 'ilustraciones',
-    src: '/puzzles/imgrom7.webp',
-    fallbackHue: 210,
-  },
-  {
-    id: 'imgrom8',
-    name: 'Grabado renacentista',
-    category: 'libros',
-    src: '/puzzles/imgrom8.webp',
-    fallbackHue: 40,
-  },
-  {
-    id: 'imgrom9',
-    name: 'Mapa del tesoro',
-    category: 'libros',
-    src: '/puzzles/imgrom9.webp',
-    fallbackHue: 50,
-  },
-  {
-    id: 'imgrom10',
-    name: 'Flor abstracta',
-    category: 'abstracto',
-    src: '/puzzles/imgrom10.webp',
-    fallbackHue: 320,
-  },
-  {
-    id: 'imgrom11',
-    name: 'Aurora boreal',
-    category: 'naturaleza',
-    src: '/puzzles/imgrom11.webp',
-    fallbackHue: 170,
-  },
-  {
-    id: 'imgrom12',
-    name: 'Ciudad nocturna',
-    category: 'ilustraciones',
-    src: '/puzzles/imgrom12.webp',
-    fallbackHue: 250,
-  },
-]
 
 export const CATEGORY_LABELS: Record<ImageCategory, string> = {
   naturaleza: 'Naturaleza',
@@ -466,87 +410,194 @@ export const CATEGORY_LABELS: Record<ImageCategory, string> = {
   custom: 'Mis imágenes',
 }
 
-/** Chips sugeridos en modo creativo (4 → 2200) */
-export const PIECE_SUGGESTIONS = [
-  4, 8, 12, 20, 30, 60, 100, 120, 150, 180, 220, 300, 500, 800, 1000, 1500,
-  2200,
-] as const
-
-const PIECE_TIERS: { untilLevel: number; pieces: number }[] = [
-  { untilLevel: 4, pieces: 4 },
-  { untilLevel: 7, pieces: 8 },
-  { untilLevel: 13, pieces: 12 },
-  { untilLevel: 19, pieces: 20 },
-  { untilLevel: 28, pieces: 30 },
-  { untilLevel: 38, pieces: 60 },
-  { untilLevel: 48, pieces: 100 },
-  { untilLevel: 58, pieces: 120 },
-  { untilLevel: 68, pieces: 150 },
-  { untilLevel: 78, pieces: 180 },
-  { untilLevel: 88, pieces: 220 },
-  { untilLevel: 98, pieces: 300 },
-  { untilLevel: 110, pieces: 500 },
-  { untilLevel: 125, pieces: 800 },
-  { untilLevel: 140, pieces: 1000 },
-  { untilLevel: 160, pieces: 1500 },
-  { untilLevel: 9999, pieces: 2200 },
-]
-
-export function piecesForLevel(level: number): number {
-  const lv = Math.max(1, Math.floor(level))
-  for (const t of PIECE_TIERS) {
-    if (lv <= t.untilLevel) return t.pieces
-  }
-  return 2200
+export const CATEGORY_EMOJI: Record<ImageCategory, string> = {
+  naturaleza: '🌿',
+  animales: '🦊',
+  libros: '📖',
+  ilustraciones: '🎨',
+  abstracto: '🌀',
+  custom: '🖼️',
 }
 
-/** Grid cols/rows más cercano a N piezas (casi cuadrado) */
+/** Orden de exhibición de las categorías por defecto (sin "custom", que vive en su propia pestaña). */
+export const CATEGORY_ORDER: ImageCategory[] = [
+  'naturaleza',
+  'animales',
+  'ilustraciones',
+  'libros',
+  'abstracto',
+]
+
+/**
+ * Catálogo por defecto. Coloca los archivos reales en:
+ *   public/puzzles/imgrom1.webp … imgrom20.webp
+ * Si un archivo todavía no existe, la pieza muestra un degradado de marca
+ * (fallbackHue → fallbackHue2) en su lugar — nunca un ícono de imagen rota.
+ */
+export const DEFAULT_IMAGES: PuzzleImage[] = [
+  // Naturaleza
+  { id: 'imgrom1', name: 'Bosque en primavera', category: 'naturaleza', src: '/puzzles/imgrom1.webp', fallbackHue: 140, fallbackHue2: 165 },
+  { id: 'imgrom2', name: 'Montañas al atardecer', category: 'naturaleza', src: '/puzzles/imgrom2.webp', fallbackHue: 25, fallbackHue2: 340 },
+  { id: 'imgrom3', name: 'Lago de cristal', category: 'naturaleza', src: '/puzzles/imgrom3.webp', fallbackHue: 195, fallbackHue2: 175 },
+  { id: 'imgrom4', name: 'Aurora boreal', category: 'naturaleza', src: '/puzzles/imgrom4.webp', fallbackHue: 170, fallbackHue2: 260 },
+  // Animales
+  { id: 'imgrom5', name: 'Zorro del bosque', category: 'animales', src: '/puzzles/imgrom5.webp', fallbackHue: 20, fallbackHue2: 35 },
+  { id: 'imgrom6', name: 'Gato curioso', category: 'animales', src: '/puzzles/imgrom6.webp', fallbackHue: 35, fallbackHue2: 45 },
+  { id: 'imgrom7', name: 'Búho nocturno', category: 'animales', src: '/puzzles/imgrom7.webp', fallbackHue: 250, fallbackHue2: 220 },
+  { id: 'imgrom8', name: 'Ciervo en el claro', category: 'animales', src: '/puzzles/imgrom8.webp', fallbackHue: 30, fallbackHue2: 100 },
+  // Ilustraciones
+  { id: 'imgrom9', name: 'Dragón antiguo', category: 'ilustraciones', src: '/puzzles/imgrom9.webp', fallbackHue: 280, fallbackHue2: 320 },
+  { id: 'imgrom10', name: 'Barco en la niebla', category: 'ilustraciones', src: '/puzzles/imgrom10.webp', fallbackHue: 210, fallbackHue2: 195 },
+  { id: 'imgrom11', name: 'Fénix de fuego', category: 'ilustraciones', src: '/puzzles/imgrom11.webp', fallbackHue: 15, fallbackHue2: 45 },
+  { id: 'imgrom12', name: 'Castillo encantado', category: 'ilustraciones', src: '/puzzles/imgrom12.webp', fallbackHue: 260, fallbackHue2: 290 },
+  // Libros antiguos
+  { id: 'imgrom13', name: 'Grabado renacentista', category: 'libros', src: '/puzzles/imgrom13.webp', fallbackHue: 40, fallbackHue2: 30 },
+  { id: 'imgrom14', name: 'Mapa del tesoro', category: 'libros', src: '/puzzles/imgrom14.webp', fallbackHue: 45, fallbackHue2: 35 },
+  { id: 'imgrom15', name: 'Manuscrito iluminado', category: 'libros', src: '/puzzles/imgrom15.webp', fallbackHue: 50, fallbackHue2: 15 },
+  { id: 'imgrom16', name: 'Biblioteca olvidada', category: 'libros', src: '/puzzles/imgrom16.webp', fallbackHue: 35, fallbackHue2: 20 },
+  // Abstracto
+  { id: 'imgrom17', name: 'Flor abstracta', category: 'abstracto', src: '/puzzles/imgrom17.webp', fallbackHue: 320, fallbackHue2: 280 },
+  { id: 'imgrom18', name: 'Ondas de color', category: 'abstracto', src: '/puzzles/imgrom18.webp', fallbackHue: 200, fallbackHue2: 320 },
+  { id: 'imgrom19', name: 'Geometría fluida', category: 'abstracto', src: '/puzzles/imgrom19.webp', fallbackHue: 265, fallbackHue2: 190 },
+  { id: 'imgrom20', name: 'Textura orgánica', category: 'abstracto', src: '/puzzles/imgrom20.webp', fallbackHue: 150, fallbackHue2: 90 },
+]
+
+/** Agrupa un banco de imágenes por categoría, en el orden en que aparecen. */
+export function imagesByCategory(pool: PuzzleImage[]): Partial<Record<ImageCategory, PuzzleImage[]>> {
+  const out: Partial<Record<ImageCategory, PuzzleImage[]>> = {}
+  for (const img of pool) {
+    if (!out[img.category]) out[img.category] = []
+    out[img.category]!.push(img)
+  }
+  return out
+}
+
+/* ── Progresión de piezas por nivel (Modo Normal) ── */
+
+/** Cada escalón de piezas por el que pasa el Modo Normal, en orden. */
+export const PIECE_TIER_SIZES = [4, 8, 12, 20, 30, 60, 100, 200, 500, 1000, 2200] as const
+
+/**
+ * Cuántos niveles dura cada escalón antes de subir al siguiente
+ * (el último escalón —2200— ya no sube: se queda ahí para siempre).
+ * Los primeros 5 valores son los pedidos explícitamente (4, 3, 6, 9, 10);
+ * de ahí en adelante la duración del escalón sigue creciendo, para que la
+ * curva de dificultad no se detenga.
+ */
+const PIECE_TIER_SPAN = [4, 3, 6, 9, 10, 12, 15, 18, 22, 26] as const
+
+/** Chips de piezas sugeridas en el Modo Creativo (2200 se alcanza con el control deslizante). */
+export const PIECE_SUGGESTIONS = [4, 8, 12, 20, 30, 60, 100, 200, 500, 1000] as const
+
+export const PIECES_MIN = 4
+export const PIECES_MAX = 2200
+
+export function clampPieceCount(n: number): number {
+  if (!Number.isFinite(n)) return PIECES_MIN
+  return Math.max(PIECES_MIN, Math.min(PIECES_MAX, Math.round(n)))
+}
+
+export interface PieceTierInfo {
+  tierIndex: number
+  pieces: number
+  /** Nivel dentro del escalón actual, empezando en 1 */
+  levelInTier: number
+  /** Cuántos niveles dura este escalón (Infinity en el último) */
+  spanForTier: number
+  isMaxTier: boolean
+  /** Niveles que faltan, después del actual, para subir de escalón (null en el último) */
+  levelsUntilNextTier: number | null
+}
+
+export function pieceTierInfoForLevel(level: number): PieceTierInfo {
+  const lv = Math.max(1, Math.floor(level))
+  let remaining = lv
+  for (let i = 0; i < PIECE_TIER_SPAN.length; i++) {
+    const span = PIECE_TIER_SPAN[i]
+    if (remaining <= span) {
+      return {
+        tierIndex: i,
+        pieces: PIECE_TIER_SIZES[i],
+        levelInTier: remaining,
+        spanForTier: span,
+        isMaxTier: false,
+        levelsUntilNextTier: span - remaining,
+      }
+    }
+    remaining -= span
+  }
+  const lastIdx = PIECE_TIER_SIZES.length - 1
+  return {
+    tierIndex: lastIdx,
+    pieces: PIECE_TIER_SIZES[lastIdx],
+    levelInTier: remaining,
+    spanForTier: Infinity,
+    isMaxTier: true,
+    levelsUntilNextTier: null,
+  }
+}
+
+export function piecesForLevel(level: number): number {
+  return pieceTierInfoForLevel(level).pieces
+}
+
+/* ── Cuadrícula ── */
+
+/** cols × rows lo más parecido posible a un cuadrado para el número de piezas pedido. */
 export function gridForPieces(pieces: number): { cols: number; rows: number } {
-  const n = Math.max(4, Math.min(2200, Math.floor(pieces)))
+  const n = clampPieceCount(pieces)
   let bestCols = 2
   let bestRows = 2
-  let bestDiff = Infinity
-  const max = Math.ceil(Math.sqrt(n)) + 8
-  for (let cols = 2; cols <= max; cols++) {
+  let bestScore = Infinity
+  const maxCols = Math.ceil(Math.sqrt(n)) + 8
+  for (let cols = 2; cols <= maxCols; cols++) {
     const rows = Math.ceil(n / cols)
     const total = cols * rows
-    if (total < n) continue
-    const aspect = Math.abs(cols / rows - 1)
     const waste = total - n
-    const score = waste * 10 + aspect * 5
-    if (score < bestDiff) {
-      bestDiff = score
+    const aspect = Math.abs(cols / rows - 1)
+    const score = waste * 10 + aspect * 6
+    if (score < bestScore) {
+      bestScore = score
       bestCols = cols
       bestRows = rows
     }
   }
-  while (bestCols * bestRows - n >= bestCols && bestRows > 2) {
-    bestRows--
-  }
-  while (bestCols * bestRows < n) bestRows++
   return { cols: bestCols, rows: bestRows }
 }
 
+/* ── Forma e imagen automáticas (Modo Normal) ── */
+
+/** En Modo Normal la forma de las piezas la decide el motor, según el nivel. */
 export function shapeForLevel(level: number): PieceShape {
   const lv = Math.max(1, Math.floor(level))
-  if (lv <= 10) return 'classic'
-  if (lv <= 25) return lv % 3 === 0 ? 'round' : 'classic'
-  if (lv <= 50) {
-    const r = lv % 5
-    if (r === 0) return 'pointed'
-    if (r === 2) return 'round'
-    return 'classic'
-  }
-  const pool: PieceShape[] = ['classic', 'round', 'pointed']
-  return pool[lv % 3]
+  const cycle: PieceShape[] = ['classic', 'classic', 'round', 'classic', 'pointed']
+  return cycle[lv % cycle.length]
 }
 
-export function imageForLevel(level: number): PuzzleImage {
-  const idx = (Math.max(1, level) - 1) % DEFAULT_IMAGES.length
-  return DEFAULT_IMAGES[idx]
+/**
+ * En Modo Normal la imagen "aparece de repente" — la elige el motor, no el
+ * jugador. La mayoría de las veces sale del catálogo por defecto; si el
+ * jugador ya importó imágenes propias, de vez en cuando también puede tocar
+ * una de las suyas (así las imágenes importadas también aparecen al subir
+ * de nivel, no solo en el Modo Creativo). La elección es determinista por
+ * nivel: el mismo nivel siempre vuelve a mostrar la misma imagen.
+ */
+export function imageForLevel(level: number, pool: PuzzleImage[]): PuzzleImage {
+  const lv = Math.max(1, Math.floor(level))
+  const defaults = pool.filter((p) => !p.isCustom)
+  const custom = pool.filter((p) => p.isCustom)
+  const rng = mulberry32(levelSeed(lv, 6600))
+  const useCustom = custom.length > 0 && rng() < 0.18
+  const from = useCustom ? custom : defaults.length ? defaults : pool
+  if (!from.length) return DEFAULT_IMAGES[0]
+  const idx = Math.floor(rng() * from.length)
+  return from[idx]
 }
+
+/* ── Nivel completo ── */
 
 export interface JigsawLevel {
+  /** 0 = nivel "libre" generado desde el Modo Creativo (no forma parte de la progresión) */
   level: number
   pieces: number
   cols: number
@@ -554,8 +605,17 @@ export interface JigsawLevel {
   shape: PieceShape
   image: PuzzleImage
   targetSeconds: number
+  hints: number
   seed: number
   goal: string
+}
+
+export function hintsForPieces(pieces: number): number {
+  return Math.max(3, Math.round(Math.sqrt(pieces) * 0.5))
+}
+
+export function targetSecondsForPieces(pieces: number): number {
+  return Math.round(20 + pieces * 0.9)
 }
 
 export function getJigsawDifficulty(level: number) {
@@ -563,242 +623,353 @@ export function getJigsawDifficulty(level: number) {
   const pieces = piecesForLevel(lv)
   const { cols, rows } = gridForPieces(pieces)
   const shape = shapeForLevel(lv)
-  const targetSeconds = Math.max(20, Math.round(pieces * 1.15 + lv * 0.5))
-  return { pieces, cols, rows, shape, targetSeconds }
+  const total = cols * rows
+  return {
+    pieces: total,
+    cols,
+    rows,
+    shape,
+    targetSeconds: targetSecondsForPieces(total),
+    hints: hintsForPieces(total),
+  }
 }
 
+/** Nivel de Modo Normal — pieza, forma e imagen las decide el motor según el nivel. */
 export function generateJigsawLevel(
   level: number,
-  opts?: {
-    image?: PuzzleImage
-    pieces?: number
-    shape?: PieceShape
-    seedSalt?: number
-  }
+  pool: PuzzleImage[],
+  opts?: { seedSalt?: number }
 ): JigsawLevel {
   const lv = Math.max(1, Math.floor(level))
   const seed = levelSeed(lv, 6200 + (opts?.seedSalt ?? 0))
   const d = getJigsawDifficulty(lv)
-
-  const pieces = opts?.pieces ?? d.pieces
-  const shape = opts?.shape ?? d.shape
-  const image = opts?.image ?? imageForLevel(lv)
-  const { cols, rows } = gridForPieces(pieces)
-
-  const targetSeconds = Math.max(
-    15,
-    Math.round(pieces * 1.1 + (shape === 'pointed' ? pieces * 0.15 : 0))
-  )
-
+  const image = imageForLevel(lv, pool)
   return {
     level: lv,
-    pieces: cols * rows,
-    cols,
-    rows,
-    shape,
+    pieces: d.pieces,
+    cols: d.cols,
+    rows: d.rows,
+    shape: d.shape,
     image,
-    targetSeconds,
+    targetSeconds: d.targetSeconds,
+    hints: d.hints,
     seed,
-    goal: `Arma el rompecabezas de ${cols * rows} piezas (${cols}×${rows}).`,
+    goal: `Arma el rompecabezas de ${d.pieces} piezas (${d.cols}×${d.rows}).`,
   }
 }
 
-/* ── Geometría de pestañas ── */
+/** Nivel de Modo Creativo — imagen, cantidad de piezas y forma las elige el jugador. */
+export function generateCreativeJigsaw(opts: {
+  image: PuzzleImage
+  pieces: number
+  shape: PieceShape
+  seedSalt?: number
+}): JigsawLevel {
+  const pieces = clampPieceCount(opts.pieces)
+  const { cols, rows } = gridForPieces(pieces)
+  const total = cols * rows
+  const salt = opts.seedSalt ?? Math.floor(Math.random() * 99999)
+  const seed = levelSeed(total, 6900 + salt)
+  return {
+    level: 0,
+    pieces: total,
+    cols,
+    rows,
+    shape: opts.shape,
+    image: opts.image,
+    targetSeconds: targetSecondsForPieces(total),
+    hints: hintsForPieces(total),
+    seed,
+    goal: `Arma el rompecabezas de ${total} piezas (${cols}×${rows}).`,
+  }
+}
 
-/** -1 = hueco, 0 = plano, 1 = pestaña */
+/* ── Geometría de piezas: pestaña / hueco reales, sin deformar la imagen ── */
+
+/** -1 = hueco, 0 = borde recto (perímetro del tablero), 1 = pestaña */
 export type EdgeTab = -1 | 0 | 1
 
 export interface PieceEdges {
   top: EdgeTab
+  topJitter: number
   right: EdgeTab
+  rightJitter: number
   bottom: EdgeTab
+  bottomJitter: number
   left: EdgeTab
+  leftJitter: number
 }
 
-export function buildEdgeMap(
-  cols: number,
-  rows: number,
-  seed: number
-): PieceEdges[][] {
+/**
+ * Genera el mapa de bordes de toda la cuadrícula. Cada borde INTERNO se
+ * decide una única vez (cuando la pieza de arriba/izquierda lo "declara"
+ * como su right/bottom, junto con su jitter) y la pieza vecina simplemente
+ * hereda el mismo valor invertido — así dos piezas contiguas comparten
+ * exactamente la misma curva en su unión, sin huecos ni solapes.
+ */
+export function buildEdgeMap(cols: number, rows: number, seed: number): PieceEdges[][] {
   const rng = mulberry32(seed)
   const map: PieceEdges[][] = []
   for (let r = 0; r < rows; r++) {
     map[r] = []
     for (let c = 0; c < cols; c++) {
-      const top: EdgeTab = r === 0 ? 0 : ((-map[r - 1][c].bottom) as EdgeTab)
-      const left: EdgeTab = c === 0 ? 0 : ((-map[r][c - 1].right) as EdgeTab)
-      const right: EdgeTab = c === cols - 1 ? 0 : rng() > 0.5 ? 1 : -1
-      const bottom: EdgeTab = r === rows - 1 ? 0 : rng() > 0.5 ? 1 : -1
-      map[r][c] = { top, right, bottom, left }
+      const top = r === 0 ? 0 : ((-map[r - 1][c].bottom) as EdgeTab)
+      const topJitter = r === 0 ? 0 : map[r - 1][c].bottomJitter
+      const left = c === 0 ? 0 : ((-map[r][c - 1].right) as EdgeTab)
+      const leftJitter = c === 0 ? 0 : map[r][c - 1].rightJitter
+      const right = c === cols - 1 ? 0 : ((rng() > 0.5 ? 1 : -1) as EdgeTab)
+      const rightJitter = c === cols - 1 ? 0 : rng()
+      const bottom = r === rows - 1 ? 0 : ((rng() > 0.5 ? 1 : -1) as EdgeTab)
+      const bottomJitter = r === rows - 1 ? 0 : rng()
+      map[r][c] = { top, topJitter, right, rightJitter, bottom, bottomJitter, left, leftJitter }
     }
   }
   return map
 }
 
+export function isBorderPiece(edges: PieceEdges): boolean {
+  return edges.top === 0 || edges.right === 0 || edges.bottom === 0 || edges.left === 0
+}
+
+function tabSizeFor(cellW: number, cellH: number, shape: PieceShape): number {
+  const factor = shape === 'round' ? 0.28 : shape === 'pointed' ? 0.27 : 0.26
+  return Math.min(cellW, cellH) * factor
+}
+
+/** Cuánto hay que reservar alrededor de la celda base para que quepa la pestaña más ancha, sin recortarla. */
+export function pieceTabPad(cellW: number, cellH: number, shape: PieceShape): number {
+  return Math.ceil(tabSizeFor(cellW, cellH, shape) * 1.9)
+}
+
+/**
+ * Comandos SVG (L/C/A) de un borde individual, desde (x0,y0) hasta (x1,y1).
+ * `dir` decide si ese borde tiene pestaña (1), hueco (-1) o va recto (0);
+ * `jitter` (0..1, compartido con la pieza vecina) varía un poco el ancho y
+ * la altura de la pestaña para que la cuadrícula no se vea perfectamente
+ * uniforme. Las 3 formas usan la MISMA construcción simétrica alrededor del
+ * punto medio del borde, así que sin importar en qué sentido la recorra
+ * cada pieza (una la ve como pestaña, la vecina como hueco), el resultado
+ * es exactamente la misma curva física — de ahí que nunca queden huecos.
+ */
+function edgeCommand(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  dir: EdgeTab,
+  jitter: number,
+  shape: PieceShape,
+  size: number
+): string {
+  const f = (n: number) => n.toFixed(2)
+  if (dir === 0) return `L ${f(x1)} ${f(y1)}`
+
+  const dx = x1 - x0
+  const dy = y1 - y0
+  const len = Math.hypot(dx, dy) || 1
+  const ux = dx / len
+  const uy = dy / len
+  // normal "hacia afuera" para un recorrido en sentido horario del contorno
+  const px = uy
+  const py = -ux
+  const pt = (t: number, o: number): [number, number] => {
+    const bx = x0 + dx * t
+    const by = y0 + dy * t
+    return [bx + px * o * dir, by + py * o * dir]
+  }
+  const jr = (jitter - 0.5) * 2 // -1..1
+  const s = size
+
+  if (shape === 'classic') {
+    const neckW = 0.22 + 0.05 * jr
+    const n1t = 0.5 - neckW / 2
+    const n2t = 0.5 + neckW / 2
+    const peakO = s * (1.38 + 0.15 * jr)
+    const [n1x, n1y] = pt(n1t, 0)
+    const [n2x, n2y] = pt(n2t, 0)
+    const [peakX, peakY] = pt(0.5, peakO)
+    const [c1x, c1y] = pt(n1t - 0.025, s * 0.95)
+    const [c2x, c2y] = pt(0.5 - 0.155, peakO * 1.02)
+    const [c3x, c3y] = pt(0.5 + 0.155, peakO * 1.02)
+    const [c4x, c4y] = pt(n2t + 0.025, s * 0.95)
+    return (
+      `L ${f(n1x)} ${f(n1y)} ` +
+      `C ${f(c1x)} ${f(c1y)} ${f(c2x)} ${f(c2y)} ${f(peakX)} ${f(peakY)} ` +
+      `C ${f(c3x)} ${f(c3y)} ${f(c4x)} ${f(c4y)} ${f(n2x)} ${f(n2y)} ` +
+      `L ${f(x1)} ${f(y1)}`
+    )
+  }
+
+  if (shape === 'round') {
+    const neckW = 0.46 + 0.04 * jr
+    const n1t = 0.5 - neckW / 2
+    const n2t = 0.5 + neckW / 2
+    const [n1x, n1y] = pt(n1t, 0)
+    const [n2x, n2y] = pt(n2t, 0)
+    const rx = ((n2t - n1t) * len) / 2
+    const ry = s * (1.05 + 0.1 * jr)
+    const sweep = dir > 0 ? 1 : 0
+    return (
+      `L ${f(n1x)} ${f(n1y)} ` +
+      `A ${f(rx)} ${f(ry)} 0 0 ${sweep} ${f(n2x)} ${f(n2y)} ` +
+      `L ${f(x1)} ${f(y1)}`
+    )
+  }
+
+  // pointed — pico geométrico en forma de rombo
+  const neckW = 0.32
+  const n1t = 0.5 - neckW / 2
+  const n2t = 0.5 + neckW / 2
+  const peakO = s * (1.2 + 0.1 * jr)
+  const [n1x, n1y] = pt(n1t, 0)
+  const [n2x, n2y] = pt(n2t, 0)
+  const [m1x, m1y] = pt(0.5 - 0.08, peakO * 0.5)
+  const [peakX, peakY] = pt(0.5, peakO)
+  const [m2x, m2y] = pt(0.5 + 0.08, peakO * 0.5)
+  return (
+    `L ${f(n1x)} ${f(n1y)} L ${f(m1x)} ${f(m1y)} L ${f(peakX)} ${f(peakY)} ` +
+    `L ${f(m2x)} ${f(m2y)} L ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
+  )
+}
+
+/**
+ * Contorno SVG completo (atributo `d`) de una pieza, en coordenadas locales
+ * de su propia "caja" (celda base + el margen `pad` reservado para la
+ * pestaña). El mismo `d` sirve tanto para el `clip-path` que recorta la
+ * imagen como para el `<path>` de borde visible — por eso el corte y el
+ * dibujo del borde siempre coinciden exactamente.
+ */
+export function buildPiecePath(
+  cellW: number,
+  cellH: number,
+  pad: number,
+  edges: PieceEdges,
+  shape: PieceShape
+): string {
+  const size = tabSizeFor(cellW, cellH, shape)
+  const TL = { x: pad, y: pad }
+  const TR = { x: pad + cellW, y: pad }
+  const BR = { x: pad + cellW, y: pad + cellH }
+  const BL = { x: pad, y: pad + cellH }
+  let d = `M ${TL.x} ${TL.y} `
+  d += edgeCommand(TL.x, TL.y, TR.x, TR.y, edges.top, edges.topJitter, shape, size) + ' '
+  d += edgeCommand(TR.x, TR.y, BR.x, BR.y, edges.right, edges.rightJitter, shape, size) + ' '
+  d += edgeCommand(BR.x, BR.y, BL.x, BL.y, edges.bottom, edges.bottomJitter, shape, size) + ' '
+  d += edgeCommand(BL.x, BL.y, TL.x, TL.y, edges.left, edges.leftJitter, shape, size) + ' '
+  d += 'Z'
+  return d
+}
+
+/* ── Piezas interactivas ── */
+
 export interface JigsawPiece {
   id: string
   row: number
   col: number
-  x: number
-  y: number
+  /** Posición correcta, en unidades de celda (col, row) — nunca cambia. */
   correctX: number
   correctY: number
-  edges: PieceEdges
+  /** Posición actual, en unidades de celda — independiente del zoom y del tamaño de pantalla. */
+  x: number
+  y: number
   locked: boolean
   z: number
-}
-
-export function createPieces(
-  level: JigsawLevel,
-  boardW: number,
-  boardH: number,
-  traySpread = 1
-): JigsawPiece[] {
-  const { cols, rows, seed } = level
-  const edgeMap = buildEdgeMap(cols, rows, seed)
-  const pw = boardW / cols
-  const ph = boardH / rows
-  const rng = mulberry32(seed + 99)
-
-  const pieces: JigsawPiece[] = []
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      pieces.push({
-        id: `p-${r}-${c}`,
-        row: r,
-        col: c,
-        x: 0,
-        y: 0,
-        correctX: c * pw,
-        correctY: r * ph,
-        edges: edgeMap[r][c],
-        locked: false,
-        z: 1,
-      })
-    }
-  }
-
-  const shuffled = pieces.slice()
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1))
-    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
-  }
-
-  const margin = Math.max(8, pw * 0.15)
-  const side = Math.max(3, Math.ceil(Math.sqrt(shuffled.length)))
-  shuffled.forEach((p, i) => {
-    const col = i % side
-    const row = Math.floor(i / side)
-    p.x = margin + col * (pw * 0.55 * traySpread) + (rng() - 0.5) * 12
-    p.y =
-      boardH + margin + row * (ph * 0.55 * traySpread) + (rng() - 0.5) * 12
-    p.z = i + 1
-  })
-
-  return shuffled
-}
-
-export function snapThreshold(pieceW: number, pieceH: number) {
-  return Math.min(pieceW, pieceH) * 0.28
-}
-
-export function trySnap(piece: JigsawPiece, pieceW: number, pieceH: number) {
-  const th = snapThreshold(pieceW, pieceH)
-  const dx = piece.x - piece.correctX
-  const dy = piece.y - piece.correctY
-  if (Math.hypot(dx, dy) <= th) {
-    return {
-      ...piece,
-      x: piece.correctX,
-      y: piece.correctY,
-      locked: true,
-      z: 0,
-    }
-  }
-  return piece
-}
-
-export function countLocked(pieces: JigsawPiece[]) {
-  return pieces.filter((p) => p.locked).length
-}
-
-export function isPuzzleComplete(pieces: JigsawPiece[]) {
-  return pieces.length > 0 && pieces.every((p) => p.locked)
-}
-
-/* ── Tiempo / estrellas (compartido + jigsaw) ── */
-
-export function formatTime(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000))
-  const m = Math.floor(total / 60)
-  const s = total % 60
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  edges: PieceEdges
 }
 
 /**
- * Estrellas — sobrecarga para ambos juegos:
- *   Rompecabezas: calcStars(timeMs, targetSeconds, pieces)
- *   Colocador:    calcStars(moves, timeMs, targetSeconds, moveLimit, size)
+ * Crea las piezas de un nivel, ya "desordenadas" en una bandeja debajo del
+ * tablero. Tanto la posición correcta como la posición inicial están en
+ * UNIDADES DE CELDA (no en píxeles): para dibujarlas solo hay que
+ * multiplicar por el tamaño de celda actual, así que cambiar de pantalla,
+ * rotar el dispositivo o hacer zoom jamás obliga a reordenar ni a "perder"
+ * el progreso de piezas sueltas.
  */
-export function calcStars(
-  timeMs: number,
-  targetSeconds: number,
-  pieces: number
-): 0 | 1 | 2 | 3
-export function calcStars(
-  moves: number,
-  timeMs: number,
-  targetSeconds: number,
-  moveLimit: number,
-  size: number
-): 0 | 1 | 2 | 3
-export function calcStars(
-  a: number,
-  b: number,
-  c: number,
-  d?: number,
-  e?: number
-): 0 | 1 | 2 | 3 {
-  // Colocador: 5 argumentos
-  if (d !== undefined && e !== undefined) {
-    const moves = a
-    const timeMs = b
-    const targetSeconds = c
-    const moveLimit = d
-    const size = e
-    if (moves <= 0) return 0
-    let stars: 0 | 1 | 2 | 3 = 1
-    if (targetSeconds > 0 && timeMs <= targetSeconds * 1000) stars = 2
-    const soft = moveLimit > 0 ? moveLimit : size * size * 8
-    if (moves <= soft * 0.55 && stars >= 2) stars = 3
-    else if (moveLimit > 0 && moves <= moveLimit && stars === 1) stars = 2
-    return stars
+export function createPieces(level: JigsawLevel, shuffleSeed: number): JigsawPiece[] {
+  const { cols, rows } = level
+  const edgeMap = buildEdgeMap(cols, rows, level.seed)
+  const rng = mulberry32(shuffleSeed)
+
+  const order: { row: number; col: number }[] = []
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) order.push({ row: r, col: c })
   }
-  // Rompecabezas: 3 argumentos (timeMs, targetSeconds, pieces)
-  const timeMs = a
-  const targetSeconds = b
-  const pieces = c
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1))
+    ;[order[i], order[j]] = [order[j], order[i]]
+  }
+
+  const trayCols = Math.max(4, Math.min(cols + 4, Math.ceil(Math.sqrt(order.length * 1.6))))
+  const trayGap = 1.18
+
+  return order.map((pos, i) => {
+    const trayRow = Math.floor(i / trayCols)
+    const trayCol = i % trayCols
+    const jitterX = (rng() - 0.5) * 0.22
+    const jitterY = (rng() - 0.5) * 0.22
+    return {
+      id: `p-${pos.row}-${pos.col}`,
+      row: pos.row,
+      col: pos.col,
+      correctX: pos.col,
+      correctY: pos.row,
+      x: trayCol * trayGap + jitterX,
+      y: rows + 1.2 + trayRow * trayGap + jitterY,
+      locked: false,
+      z: i + 1,
+      edges: edgeMap[pos.row][pos.col],
+    }
+  })
+}
+
+/** Distancia (en celdas) entre la posición actual de una pieza y su lugar correcto. */
+export function distanceToCorrect(piece: JigsawPiece): number {
+  return Math.hypot(piece.x - piece.correctX, piece.y - piece.correctY)
+}
+
+/** Umbral (en celdas) para que una pieza "encaje" al soltarla — el jugador siempre debe soltarla cerca; nunca se coloca sola. */
+export const SNAP_THRESHOLD_CELLS = 0.34
+
+export function countLocked(pieces: JigsawPiece[]): number {
+  return pieces.reduce((n, p) => n + (p.locked ? 1 : 0), 0)
+}
+
+export function isPuzzleComplete(pieces: JigsawPiece[]): boolean {
+  return pieces.length > 0 && pieces.every((p) => p.locked)
+}
+
+export function calcJigsawStars(
+  timeMs: number,
+  targetSeconds: number,
+  hintsUsed: number,
+  maxHints: number
+): 0 | 1 | 2 | 3 {
   if (timeMs <= 0) return 0
   let stars: 0 | 1 | 2 | 3 = 1
-  if (targetSeconds > 0 && timeMs <= targetSeconds * 1000) stars = 2
-  if (targetSeconds > 0 && timeMs <= targetSeconds * 1000 * 0.65) stars = 3
-  const ideal = pieces * 800
-  if (timeMs <= ideal) stars = 3
+  const withinTarget = targetSeconds > 0 && timeMs <= targetSeconds * 1000
+  if (withinTarget) stars = 2
+  const fewHints = maxHints <= 0 || hintsUsed <= Math.ceil(maxHints * 0.3)
+  if (withinTarget && fewHints && timeMs <= targetSeconds * 1000 * 0.65) stars = 3
+  else if (withinTarget && hintsUsed === 0) stars = 3
   return stars
 }
 
-/** Alias explícito del colocador (misma implementación) */
-export function calcNumberPuzzleStars(
-  moves: number,
-  timeMs: number,
-  targetSeconds: number,
-  moveLimit: number,
-  size: number
-): 0 | 1 | 2 | 3 {
-  return calcStars(moves, timeMs, targetSeconds, moveLimit, size)
+/** Tamaño de celda responsive (px), pensado para tableros de 4 a 2200 piezas. */
+export function jigsawCellPx(
+  cols: number,
+  rows: number,
+  containerW: number,
+  isMobile: boolean
+): number {
+  const maxW = isMobile ? Math.max(240, containerW) : Math.min(containerW, 860)
+  const raw = Math.floor(maxW / Math.max(cols, 1))
+  const totalPieces = cols * rows
+  const min = totalPieces > 600 ? 16 : totalPieces > 150 ? 22 : 30
+  const max = isMobile ? 74 : 96
+  return Math.max(min, Math.min(max, raw))
 }
 
-/* ── Imágenes custom (localStorage) ── */
+/* ── Imágenes personalizadas (localStorage) ── */
 
 const CUSTOM_KEY = 'gco:puzzle-custom-images'
 
@@ -813,42 +984,45 @@ export function loadCustomImages(): PuzzleImage[] {
   }
 }
 
-export function saveCustomImages(list: PuzzleImage[]) {
-  localStorage.setItem(CUSTOM_KEY, JSON.stringify(list))
+export function saveCustomImages(list: PuzzleImage[]): void {
+  try {
+    localStorage.setItem(CUSTOM_KEY, JSON.stringify(list))
+  } catch {
+    // almacenamiento lleno o no disponible: se ignora, la sesión sigue funcionando igual
+  }
 }
 
-export function addCustomImage(img: PuzzleImage) {
+/** Agrega (o reemplaza) una imagen propia y devuelve la lista actualizada. */
+export function addCustomImage(img: PuzzleImage): PuzzleImage[] {
   const list = loadCustomImages().filter((x) => x.id !== img.id)
   list.unshift(img)
-  saveCustomImages(list.slice(0, 40))
-  return list
+  saveCustomImages(list.slice(0, 60))
+  return loadCustomImages()
 }
 
-export function removeCustomImage(id: string) {
+/** Elimina una imagen propia por id — las del catálogo por defecto no pasan por aquí. */
+export function removeCustomImage(id: string): PuzzleImage[] {
   const list = loadCustomImages().filter((x) => x.id !== id)
   saveCustomImages(list)
   return list
 }
 
-export function compressImageFile(
-  file: File,
-  maxSide = 1280,
-  quality = 0.82
-): Promise<string> {
+/** Redimensiona y comprime una imagen del dispositivo a un data-URL liviano, listo para guardar. */
+export function compressImageFile(file: File, maxSide = 1400, quality = 0.85): Promise<string> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file)
     const img = new Image()
     img.onload = () => {
       const scale = Math.min(1, maxSide / Math.max(img.width, img.height))
-      const w = Math.round(img.width * scale)
-      const h = Math.round(img.height * scale)
+      const w = Math.max(1, Math.round(img.width * scale))
+      const h = Math.max(1, Math.round(img.height * scale))
       const canvas = document.createElement('canvas')
       canvas.width = w
       canvas.height = h
       const ctx = canvas.getContext('2d')
       if (!ctx) {
         URL.revokeObjectURL(url)
-        reject(new Error('canvas'))
+        reject(new Error('canvas no disponible'))
         return
       }
       ctx.drawImage(img, 0, 0, w, h)
@@ -857,945 +1031,938 @@ export function compressImageFile(
     }
     img.onerror = () => {
       URL.revokeObjectURL(url)
-      reject(new Error('image'))
+      reject(new Error('no se pudo leer la imagen'))
     }
     img.src = url
   })
 }
 
-export function drawFallbackCover(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  hue = 180,
-  label = ''
-) {
-  const g = ctx.createLinearGradient(0, 0, w, h)
-  g.addColorStop(0, `hsl(${hue} 55% 28%)`)
-  g.addColorStop(0.5, `hsl(${(hue + 40) % 360} 50% 22%)`)
-  g.addColorStop(1, `hsl(${(hue + 80) % 360} 45% 18%)`)
-  ctx.fillStyle = g
-  ctx.fillRect(0, 0, w, h)
-  ctx.globalAlpha = 0.25
-  ctx.fillStyle = `hsl(${hue} 80% 60%)`
-  ctx.beginPath()
-  ctx.arc(w * 0.3, h * 0.35, w * 0.25, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.fillStyle = `hsl(${(hue + 60) % 360} 70% 55%)`
-  ctx.beginPath()
-  ctx.arc(w * 0.75, h * 0.7, w * 0.2, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.globalAlpha = 1
-  if (label) {
-    ctx.fillStyle = 'rgba(255,255,255,0.85)'
-    ctx.font = `600 ${Math.max(12, Math.floor(w / 18))}px system-ui`
-    ctx.textAlign = 'center'
-    ctx.fillText(label, w / 2, h / 2)
+/* ── Progreso persistente del Modo Normal ── */
+
+export interface PuzzleProgress {
+  normalLevel: number
+  starsByLevel: Record<number, 0 | 1 | 2 | 3>
+  totalStars: number
+  hintsUsedByLevel: Record<number, number>
+}
+
+const PROGRESS_KEY = 'gco:puzzle-progress'
+
+export function defaultPuzzleProgress(): PuzzleProgress {
+  return { normalLevel: 1, starsByLevel: {}, totalStars: 0, hintsUsedByLevel: {} }
+}
+
+export function loadPuzzleProgress(): PuzzleProgress {
+  try {
+    const raw = localStorage.getItem(PROGRESS_KEY)
+    if (!raw) return defaultPuzzleProgress()
+    const parsed = JSON.parse(raw) as Partial<PuzzleProgress>
+    return {
+      normalLevel: parsed.normalLevel && parsed.normalLevel > 0 ? parsed.normalLevel : 1,
+      starsByLevel: parsed.starsByLevel ?? {},
+      totalStars: parsed.totalStars ?? 0,
+      hintsUsedByLevel: parsed.hintsUsedByLevel ?? {},
+    }
+  } catch {
+    return defaultPuzzleProgress()
   }
 }
 
-/**
- * ═══════════════════════════════════════════════════════════════════════════
- * 3) DESPEJES — Path clearing / sliding / maze puzzles
- * ═══════════════════════════════════════════════════════════════════════════
+export function savePuzzleProgress(p: PuzzleProgress): void {
+  try {
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify(p))
+  } catch {
+    // se ignora: el progreso queda solo en memoria para esta sesión
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   3) DESPEJES — Laberinto (empuja rocas) + Croma (gemas) + Pintar
+   ═══════════════════════════════════════════════════════════════════════════
  *
- * Modos:
- *   - hielo   → deslizamiento tipo hielo Pokémon (slide hasta chocar)
- *   - empuje  → Sokoban-lite (empujar cajas a metas)
- *   - trafico → Rush Hour-lite (deslizar bloques H/V para liberar salida)
- *   - laberinto → laberinto clásico con salida
- *
- * Progresión lenta (sensación de racha):
- *   Nv 1–5   → grids pequeños, pocos obstáculos
- *   Nv 6–15  → más paredes / 1–2 cajas
- *   Nv 16–30 → grids medianos, más piezas
- *   Nv 31+   → densidad y tamaño crecientes
- *
- * Pegar esta sección al final de:
- *   src/features/logica/juegos/generateLevel.ts
+ * Filosofía compartida con el resto del motor: todo nivel se genera desde
+ * un estado "resuelto" y se desordena con movimientos legales y reversibles
+ * (mismo principio que shuffleBoard). Esto garantiza matemáticamente que
+ * cada nivel generado SIEMPRE tiene solución, sin necesidad de un solver
+ * por fuerza bruta en tiempo de ejecución.
  */
 
-export type DespejeMode = 'hielo' | 'empuje' | 'trafico' | 'laberinto'
+/* Helpers propios de Despejes (no tocan nada de las secciones 1 y 2) */
 
-export const DESPEJE_MODES: {
-  id: DespejeMode
-  title: string
-  emoji: string
-  desc: string
-}[] = [
-  {
-    id: 'hielo',
-    title: 'Hielo',
-    emoji: '🧊',
-    desc: 'Deslízate hasta chocar. Llega a la meta planificando rebotes.',
-  },
-  {
-    id: 'empuje',
-    title: 'Empuje',
-    emoji: '📦',
-    desc: 'Empuja las cajas a las marcas. No puedes tirar hacia atrás.',
-  },
-  {
-    id: 'trafico',
-    title: 'Salida',
-    emoji: '🚗',
-    desc: 'Despeja el camino hasta la salida.',
-  },
-  {
-    id: 'laberinto',
-    title: 'Laberinto',
-    emoji: '🌀',
-    desc: 'Encuentra la salida. Cada nivel es un laberinto distinto.',
-  },
-]
-
-/** Celda del tablero Despejes */
-export type DespejeCell =
-  | 0 // vacío / suelo
-  | 1 // pared
-  | 2 // jugador
-  | 3 // meta / salida
-  | 4 // caja
-  | 5 // caja sobre meta
-  | 6 // meta vacía (solo empuje)
-  | number // >= 10 → id de vehículo tráfico
-
-export type DespejeGrid = DespejeCell[][]
-
-export type DespejeDir = 'up' | 'down' | 'left' | 'right'
-
-export interface TrafficPiece {
-  id: number
-  /** true = solo horizontal */
-  horizontal: boolean
-  length: 2 | 3
-  /** es el vehículo objetivo (rojo) */
-  isHero: boolean
-  row: number
-  col: number
-}
-
-export interface DespejeLevel {
-  mode: DespejeMode
-  level: number
-  rows: number
-  cols: number
-  grid: DespejeGrid
-  /** posición inicial del jugador (hielo / empuje / laberinto) */
-  start: { r: number; c: number }
-  goal: { r: number; c: number }
-  /** piezas de tráfico (solo modo trafico) */
-  traffic?: TrafficPiece[]
-  /** número de cajas a colocar (empuje) */
-  crateCount: number
-  moveHint: number
-  targetSeconds: number
-  seed: number
-  goalText: string
-}
-
-/* ── tamaño y curva ── */
-
-export function despejeSizeForLevel(level: number, mode: DespejeMode): {
-  rows: number
-  cols: number
-} {
-  const lv = Math.max(1, Math.floor(level))
-  if (mode === 'trafico') {
-    // Rush Hour clásico 6×6, sube despacio
-    if (lv <= 8) return { rows: 5, cols: 5 }
-    if (lv <= 20) return { rows: 6, cols: 6 }
-    if (lv <= 40) return { rows: 7, cols: 7 }
-    return { rows: 8, cols: 8 }
+/** Baraja un arreglo con un rng dado (Fisher–Yates), sin mutar el original */
+function shuffledArray<T>(arr: T[], rng: () => number): T[] {
+  const a = arr.slice()
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
   }
-  if (mode === 'laberinto') {
-    if (lv <= 4) return { rows: 5, cols: 5 }
-    if (lv <= 10) return { rows: 7, cols: 7 }
-    if (lv <= 20) return { rows: 9, cols: 9 }
-    if (lv <= 35) return { rows: 11, cols: 11 }
-    if (lv <= 55) return { rows: 13, cols: 13 }
-    return { rows: Math.min(21, 13 + Math.floor((lv - 55) / 8) * 2), cols: Math.min(21, 13 + Math.floor((lv - 55) / 8) * 2) }
-  }
-  // hielo / empuje
-  if (lv <= 3) return { rows: 4, cols: 4 }
-  if (lv <= 8) return { rows: 5, cols: 5 }
-  if (lv <= 15) return { rows: 6, cols: 6 }
-  if (lv <= 25) return { rows: 7, cols: 7 }
-  if (lv <= 40) return { rows: 8, cols: 8 }
-  return {
-    rows: Math.min(12, 8 + Math.floor((lv - 40) / 10)),
-    cols: Math.min(12, 8 + Math.floor((lv - 40) / 10)),
-  }
+  return a
 }
 
-export function getDespejeDifficulty(level: number, mode: DespejeMode) {
-  const lv = Math.max(1, Math.floor(level))
-  const { rows, cols } = despejeSizeForLevel(lv, mode)
-  const area = rows * cols
-
-  let wallDensity = 0.12 + Math.min(0.28, lv * 0.008)
-  let crateCount = 0
-  let trafficCars = 2
-  let moveHint = 8
-  let targetSeconds = 40
-
-  if (mode === 'hielo') {
-    wallDensity = 0.14 + Math.min(0.32, lv * 0.009)
-    moveHint = Math.max(4, Math.round(6 + lv * 0.55))
-    targetSeconds = Math.max(12, Math.round(18 + lv * 2.2))
-  } else if (mode === 'empuje') {
-    crateCount = Math.min(8, 1 + Math.floor(lv / 4))
-    wallDensity = 0.1 + Math.min(0.22, lv * 0.006)
-    moveHint = Math.max(6, crateCount * 6 + lv)
-    targetSeconds = Math.max(20, Math.round(25 + crateCount * 18 + lv * 2))
-  } else if (mode === 'trafico') {
-    trafficCars = Math.min(12, 2 + Math.floor(lv / 3))
-    moveHint = Math.max(5, 4 + trafficCars * 2 + Math.floor(lv / 2))
-    targetSeconds = Math.max(20, Math.round(22 + trafficCars * 8 + lv * 1.5))
-  } else {
-    // laberinto
-    wallDensity = 0.45
-    moveHint = Math.max(8, Math.round(area * 0.35))
-    targetSeconds = Math.max(15, Math.round(12 + area * 0.45 + lv * 0.8))
-  }
-
-  return {
-    rows,
-    cols,
-    wallDensity,
-    crateCount,
-    trafficCars,
-    moveHint,
-    targetSeconds,
-  }
-}
-
-/* ── util grid ── */
-
-function emptyGrid(rows: number, cols: number, fill: DespejeCell = 0): DespejeGrid {
-  return Array.from({ length: rows }, () =>
-    Array.from({ length: cols }, () => fill)
-  )
-}
-
-function cloneGrid(g: DespejeGrid): DespejeGrid {
-  return g.map((row) => row.slice())
-}
-
-function inBounds(r: number, c: number, rows: number, cols: number) {
-  return r >= 0 && c >= 0 && r < rows && c < cols
-}
-
-const DIR_DELTA: Record<DespejeDir, { dr: number; dc: number }> = {
+export const DIRECTION_DELTA: Record<Direction, { dr: number; dc: number }> = {
   up: { dr: -1, dc: 0 },
   down: { dr: 1, dc: 0 },
   left: { dr: 0, dc: -1 },
   right: { dr: 0, dc: 1 },
 }
 
-export const DESPEJE_DIRS: DespejeDir[] = ['up', 'down', 'left', 'right']
 
-/* ── HIELO: slide hasta obstáculo ── */
-
-export function slideUntilStop(
-  grid: DespejeGrid,
-  r: number,
-  c: number,
-  dir: DespejeDir
-): { r: number; c: number } {
-  const rows = grid.length
-  const cols = grid[0].length
-  const { dr, dc } = DIR_DELTA[dir]
-  let nr = r
-  let nc = c
-  while (true) {
-    const tr = nr + dr
-    const tc = nc + dc
-    if (!inBounds(tr, tc, rows, cols)) break
-    const cell = grid[tr][tc]
-    if (cell === 1 || cell === 4 || cell === 5) break // pared o caja
-    if (cell >= 10) break // vehículo
-    nr = tr
-    nc = tc
-  }
-  return { r: nr, c: nc }
-}
-
-function bfsSlideReachable(
-  grid: DespejeGrid,
-  startR: number,
-  startC: number
-): Set<string> {
-  const seen = new Set<string>()
-  const q: { r: number; c: number }[] = [{ r: startR, c: startC }]
-  seen.add(`${startR},${startC}`)
-  while (q.length) {
-    const cur = q.shift()!
-    for (const dir of DESPEJE_DIRS) {
-      const next = slideUntilStop(grid, cur.r, cur.c, dir)
-      const key = `${next.r},${next.c}`
-      if (!seen.has(key)) {
-        seen.add(key)
-        q.push(next)
-      }
-    }
-  }
-  return seen
-}
-
-/**
- * Genera nivel de hielo garantizando que la meta sea alcanzable
- * con deslizamientos.
+/* ── 3.1 Laberinto: laberinto perfecto + rocas que caen en huecos ──
+ *
+ * Inspirado en los puzzles de rocas de Pokémon (despejar el camino a un
+ * objetivo empujando piedras), pero con generador de niveles infinito:
+ * cada nivel es un laberinto perfecto (siempre tiene un único camino base,
+ * más atajos añadidos por "trenzado" en niveles altos para subir la
+ * dificultad de forma progresiva y lenta) sembrado con rocas que bloquean
+ * ese camino y solo pueden despejarse empujándolas a un hueco cercano.
  */
-export function generateHieloLevel(
-  level: number,
-  opts?: { seedSalt?: number }
-): DespejeLevel {
-  const lv = Math.max(1, Math.floor(level))
-  const seed = levelSeed(lv, 7100 + (opts?.seedSalt ?? 0))
-  const rng = mulberry32(seed)
-  const d = getDespejeDifficulty(lv, 'hielo')
-  const { rows, cols } = d
 
-  let best: DespejeLevel | null = null
-
-  for (let attempt = 0; attempt < 40; attempt++) {
-    const grid = emptyGrid(rows, cols, 0)
-    // borde de paredes suave
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (r === 0 || c === 0 || r === rows - 1 || c === cols - 1) {
-          if (rng() < 0.55) grid[r][c] = 1
-        } else if (rng() < d.wallDensity) {
-          grid[r][c] = 1
-        }
-      }
-    }
-
-    // candidatos libres
-    const free: { r: number; c: number }[] = []
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (grid[r][c] === 0) free.push({ r, c })
-      }
-    }
-    if (free.length < 4) continue
-
-    // start y goal lejanos
-    const start = free[Math.floor(rng() * free.length)]
-    let goal = free[Math.floor(rng() * free.length)]
-    let distBest = -1
-    for (let i = 0; i < Math.min(30, free.length); i++) {
-      const cand = free[Math.floor(rng() * free.length)]
-      const dist = Math.abs(cand.r - start.r) + Math.abs(cand.c - start.c)
-      if (dist > distBest) {
-        distBest = dist
-        goal = cand
-      }
-    }
-    if (start.r === goal.r && start.c === goal.c) continue
-
-    grid[start.r][start.c] = 2
-    grid[goal.r][goal.c] = 3
-
-    const reach = bfsSlideReachable(grid, start.r, start.c)
-    if (!reach.has(`${goal.r},${goal.c}`)) continue
-
-    // preferir caminos que requieran varios deslizamientos
-    const pathLen = reach.size
-    const score = pathLen + distBest
-    const levelObj: DespejeLevel = {
-      mode: 'hielo',
-      level: lv,
-      rows,
-      cols,
-      grid,
-      start,
-      goal,
-      crateCount: 0,
-      moveHint: d.moveHint,
-      targetSeconds: d.targetSeconds,
-      seed: seed + attempt,
-      goalText: 'Deslízate hasta la meta. Cada movimiento sigue hasta chocar.',
-    }
-    if (!best || score > (best.rows * best.cols) / 4) {
-      best = levelObj
-      if (pathLen >= Math.max(4, Math.floor(rows * 0.8))) break
-    }
-  }
-
-  if (best) return best
-
-  // fallback mínimo resoluble
-  const grid = emptyGrid(rows, cols, 0)
-  for (let c = 0; c < cols; c++) {
-    grid[0][c] = 1
-    grid[rows - 1][c] = 1
-  }
-  for (let r = 0; r < rows; r++) {
-    grid[r][0] = 1
-    grid[r][cols - 1] = 1
-  }
-  grid[1][1] = 2
-  grid[rows - 2][cols - 2] = 3
-  return {
-    mode: 'hielo',
-    level: lv,
-    rows,
-    cols,
-    grid,
-    start: { r: 1, c: 1 },
-    goal: { r: rows - 2, c: cols - 2 },
-    crateCount: 0,
-    moveHint: d.moveHint,
-    targetSeconds: d.targetSeconds,
-    seed,
-    goalText: 'Deslízate hasta la meta. Cada movimiento sigue hasta chocar.',
-  }
+export type MazeCellType = 'wall' | 'floor' | 'hole'
+export interface MazeCoord {
+  row: number
+  col: number
 }
 
-/* ── EMPUJE: Sokoban-lite ── */
-
-export function canPushStep(
-  grid: DespejeGrid,
-  pr: number,
-  pc: number,
-  dir: DespejeDir
-): { ok: boolean; grid?: DespejeGrid; pr?: number; pc?: number } {
-  const rows = grid.length
-  const cols = grid[0].length
-  const { dr, dc } = DIR_DELTA[dir]
-  const nr = pr + dr
-  const nc = pc + dc
-  if (!inBounds(nr, nc, rows, cols)) return { ok: false }
-  const front = grid[nr][nc]
-  if (front === 1) return { ok: false }
-  if (front === 0 || front === 3 || front === 6) {
-    const next = cloneGrid(grid)
-    next[pr][pc] = next[pr][pc] === 2 ? 0 : 0
-    // restaurar meta bajo el jugador si había
-    next[nr][nc] = 2
-    return { ok: true, grid: next, pr: nr, pc: nc }
-  }
-  if (front === 4 || front === 5) {
-    const br = nr + dr
-    const bc = nc + dc
-    if (!inBounds(br, bc, rows, cols)) return { ok: false }
-    const beyond = grid[br][bc]
-    if (beyond !== 0 && beyond !== 3 && beyond !== 6) return { ok: false }
-    const next = cloneGrid(grid)
-    // quitar jugador
-    next[pr][pc] = 0
-    // mover caja
-    const boxWasOnGoal = front === 5
-    next[nr][nc] = 2
-    next[br][bc] = beyond === 3 || beyond === 6 ? 5 : 4
-    // si la caja salió de una meta, dejar meta
-    if (boxWasOnGoal) {
-      // la celda nr,nc ahora tiene jugador; la meta queda “debajo” conceptualmente
-      // representamos meta vacía solo si no hay jugador — simplificado: al irse el jugador restauramos
-    }
-    return { ok: true, grid: next, pr: nr, pc: nc }
-  }
-  return { ok: false }
+export interface MazeBoulder {
+  id: string
+  /** Posición actual de la roca */
+  row: number
+  col: number
+  /** Hueco donde debe caer para despejarse */
+  holeRow: number
+  holeCol: number
+  cleared: boolean
 }
 
-/** Movimiento de 1 paso (empuje / laberinto / hielo paso a paso no-slide) */
-export function stepPlayer(
-  grid: DespejeGrid,
-  pr: number,
-  pc: number,
-  dir: DespejeDir,
-  mode: DespejeMode
-): { grid: DespejeGrid; pr: number; pc: number; moved: boolean } {
-  if (mode === 'hielo') {
-    const stop = slideUntilStop(grid, pr, pc, dir)
-    if (stop.r === pr && stop.c === pc) {
-      return { grid, pr, pc, moved: false }
-    }
-    const next = cloneGrid(grid)
-    next[pr][pc] = next[pr][pc] === 2 ? 0 : 0
-    // restaurar meta si el start era goal visual
-    if (grid[pr][pc] === 2 && /* was on goal marker stored separately */ false) {
-      /* handled in UI */
-    }
-    next[stop.r][stop.c] = 2
-    return { grid: next, pr: stop.r, pc: stop.c, moved: true }
-  }
-
-  const rows = grid.length
-  const cols = grid[0].length
-  const { dr, dc } = DIR_DELTA[dir]
-  const nr = pr + dr
-  const nc = pc + dc
-  if (!inBounds(nr, nc, rows, cols)) return { grid, pr, pc, moved: false }
-  const front = grid[nr][nc]
-
-  if (mode === 'laberinto') {
-    if (front === 1) return { grid, pr, pc, moved: false }
-    const next = cloneGrid(grid)
-    next[pr][pc] = 0
-    next[nr][nc] = front === 3 ? 2 : 2
-    return { grid: next, pr: nr, pc: nc, moved: true }
-  }
-
-  // empuje
-  if (front === 1) return { grid, pr, pc, moved: false }
-  if (front === 0 || front === 3 || front === 6) {
-    const next = cloneGrid(grid)
-    // restaurar meta si salimos de una
-    const leftCell = 0
-    next[pr][pc] = leftCell
-    next[nr][nc] = 2
-    return { grid: next, pr: nr, pc: nc, moved: true }
-  }
-  if (front === 4 || front === 5) {
-    const br = nr + dr
-    const bc = nc + dc
-    if (!inBounds(br, bc, rows, cols)) return { grid, pr, pc, moved: false }
-    const beyond = grid[br][bc]
-    if (beyond !== 0 && beyond !== 3 && beyond !== 6) {
-      return { grid, pr, pc, moved: false }
-    }
-    const next = cloneGrid(grid)
-    next[pr][pc] = 0
-    next[nr][nc] = 2
-    next[br][bc] = beyond === 3 || beyond === 6 ? 5 : 4
-    return { grid: next, pr: nr, pc: nc, moved: true }
-  }
-  return { grid, pr, pc, moved: false }
-}
-
-export function isEmpujeSolved(grid: DespejeGrid): boolean {
-  for (const row of grid) {
-    for (const cell of row) {
-      if (cell === 4) return false // caja sin meta
-    }
-  }
-  // al menos una caja en meta
-  let onGoal = 0
-  for (const row of grid) {
-    for (const cell of row) {
-      if (cell === 5) onGoal++
-    }
-  }
-  return onGoal > 0
-}
-
-export function generateEmpujeLevel(
-  level: number,
-  opts?: { seedSalt?: number }
-): DespejeLevel {
-  const lv = Math.max(1, Math.floor(level))
-  const seed = levelSeed(lv, 7200 + (opts?.seedSalt ?? 0))
-  const rng = mulberry32(seed)
-  const d = getDespejeDifficulty(lv, 'empuje')
-  const { rows, cols, crateCount } = d
-
-  for (let attempt = 0; attempt < 50; attempt++) {
-    const grid = emptyGrid(rows, cols, 0)
-    // paredes perimetrales
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (r === 0 || c === 0 || r === rows - 1 || c === cols - 1) {
-          grid[r][c] = 1
-        } else if (rng() < d.wallDensity * 0.7) {
-          grid[r][c] = 1
-        }
-      }
-    }
-
-    const free: { r: number; c: number }[] = []
-    for (let r = 1; r < rows - 1; r++) {
-      for (let c = 1; c < cols - 1; c++) {
-        if (grid[r][c] === 0) free.push({ r, c })
-      }
-    }
-    if (free.length < crateCount * 2 + 3) continue
-
-    // metas
-    const goals: { r: number; c: number }[] = []
-    for (let i = 0; i < crateCount; i++) {
-      if (!free.length) break
-      const idx = Math.floor(rng() * free.length)
-      const g = free.splice(idx, 1)[0]
-      goals.push(g)
-      grid[g.r][g.c] = 6
-    }
-
-    // cajas cerca del centro
-    const crates: { r: number; c: number }[] = []
-    for (let i = 0; i < crateCount; i++) {
-      if (!free.length) break
-      const idx = Math.floor(rng() * free.length)
-      const b = free.splice(idx, 1)[0]
-      crates.push(b)
-      grid[b.r][b.c] = 4
-    }
-
-    // jugador
-    if (!free.length) continue
-    const start = free[Math.floor(rng() * free.length)]
-    grid[start.r][start.c] = 2
-
-    // meta de referencia (primera)
-    const goal = goals[0] ?? { r: rows - 2, c: cols - 2 }
-
-    return {
-      mode: 'empuje',
-      level: lv,
-      rows,
-      cols,
-      grid,
-      start,
-      goal,
-      crateCount,
-      moveHint: d.moveHint,
-      targetSeconds: d.targetSeconds,
-      seed: seed + attempt,
-      goalText: `Empuja ${crateCount} caja${crateCount > 1 ? 's' : ''} a las marcas.`,
-    }
-  }
-
-  // fallback 1 caja
-  const grid = emptyGrid(rows, cols, 0)
-  for (let r = 0; r < rows; r++) {
-    grid[r][0] = 1
-    grid[r][cols - 1] = 1
-  }
-  for (let c = 0; c < cols; c++) {
-    grid[0][c] = 1
-    grid[rows - 1][c] = 1
-  }
-  grid[1][1] = 2
-  grid[2][2] = 4
-  grid[rows - 2][cols - 2] = 6
-  return {
-    mode: 'empuje',
-    level: lv,
-    rows,
-    cols,
-    grid,
-    start: { r: 1, c: 1 },
-    goal: { r: rows - 2, c: cols - 2 },
-    crateCount: 1,
-    moveHint: d.moveHint,
-    targetSeconds: d.targetSeconds,
-    seed,
-    goalText: 'Empuja la caja a la marca.',
-  }
-}
-
-/* ── TRÁFICO: Rush Hour-lite ── */
-
-export function generateTraficoLevel(
-  level: number,
-  opts?: { seedSalt?: number }
-): DespejeLevel {
-  const lv = Math.max(1, Math.floor(level))
-  const seed = levelSeed(lv, 7300 + (opts?.seedSalt ?? 0))
-  const rng = mulberry32(seed)
-  const d = getDespejeDifficulty(lv, 'trafico')
-  const { rows, cols, trafficCars } = d
-
-  const grid = emptyGrid(rows, cols, 0)
-  // bordes
-  for (let r = 0; r < rows; r++) {
-    grid[r][0] = 1
-    grid[r][cols - 1] = 1
-  }
-  for (let c = 0; c < cols; c++) {
-    grid[0][c] = 1
-    grid[rows - 1][c] = 1
-  }
-
-  const exitRow = Math.floor(rows / 2)
-  // salida a la derecha
-  grid[exitRow][cols - 1] = 0
-
-  const pieces: TrafficPiece[] = []
-  let nextId = 10
-
-  // héroe horizontal en la fila de salida
-  const heroLen: 2 | 3 = 2
-  const heroCol = Math.max(1, Math.min(cols - 3, 1 + Math.floor(rng() * (cols - 4))))
-  const hero: TrafficPiece = {
-    id: nextId++,
-    horizontal: true,
-    length: heroLen,
-    isHero: true,
-    row: exitRow,
-    col: heroCol,
-  }
-  pieces.push(hero)
-  for (let i = 0; i < hero.length; i++) {
-    grid[hero.row][hero.col + i] = hero.id
-  }
-
-  let placed = 0
-  let guard = 0
-  while (placed < trafficCars - 1 && guard < 200) {
-    guard++
-    const horizontal = rng() < 0.55
-    const len: 2 | 3 = rng() < 0.65 ? 2 : 3
-    const r = 1 + Math.floor(rng() * (rows - 2))
-    const c = 1 + Math.floor(rng() * (cols - 2))
-    let fits = true
-    if (horizontal) {
-      if (c + len > cols - 1) fits = false
-      else {
-        for (let i = 0; i < len; i++) {
-          if (grid[r][c + i] !== 0) fits = false
-        }
-      }
-    } else {
-      if (r + len > rows - 1) fits = false
-      else {
-        for (let i = 0; i < len; i++) {
-          if (grid[r + i][c] !== 0) fits = false
-        }
-      }
-    }
-    if (!fits) continue
-    const p: TrafficPiece = {
-      id: nextId++,
-      horizontal,
-      length: len,
-      isHero: false,
-      row: r,
-      col: c,
-    }
-    pieces.push(p)
-    if (horizontal) {
-      for (let i = 0; i < len; i++) grid[r][c + i] = p.id
-    } else {
-      for (let i = 0; i < len; i++) grid[r + i][c] = p.id
-    }
-    placed++
-  }
-
-  return {
-    mode: 'trafico',
-    level: lv,
-    rows,
-    cols,
-    grid,
-    start: { r: exitRow, c: heroCol },
-    goal: { r: exitRow, c: cols - 1 },
-    traffic: pieces,
-    crateCount: 0,
-    moveHint: d.moveHint,
-    targetSeconds: d.targetSeconds,
-    seed,
-    goalText: 'Despeja el camino →',
-  }
-}
-
-/** Mueve una pieza de tráfico un paso si cabe */
-export function moveTrafficPiece(
-  grid: DespejeGrid,
-  pieces: TrafficPiece[],
-  pieceId: number,
-  dir: DespejeDir
-): { grid: DespejeGrid; pieces: TrafficPiece[]; moved: boolean } {
-  const p = pieces.find((x) => x.id === pieceId)
-  if (!p) return { grid, pieces, moved: false }
-
-  if (p.horizontal && (dir === 'up' || dir === 'down')) {
-    return { grid, pieces, moved: false }
-  }
-  if (!p.horizontal && (dir === 'left' || dir === 'right')) {
-    return { grid, pieces, moved: false }
-  }
-
-  const rows = grid.length
-  const cols = grid[0].length
-  const { dr, dc } = DIR_DELTA[dir]
-
-  // celdas que ocupará
-  const cells: { r: number; c: number }[] = []
-  for (let i = 0; i < p.length; i++) {
-    cells.push(
-      p.horizontal
-        ? { r: p.row, c: p.col + i }
-        : { r: p.row + i, c: p.col }
-    )
-  }
-  const nextCells = cells.map((x) => ({ r: x.r + dr, c: x.c + dc }))
-  for (const n of nextCells) {
-    if (!inBounds(n.r, n.c, rows, cols)) return { grid, pieces, moved: false }
-    const occ = grid[n.r][n.c]
-    // permitir si es parte de la misma pieza
-    if (occ !== 0 && occ !== p.id) return { grid, pieces, moved: false }
-  }
-
-  const nextGrid = cloneGrid(grid)
-  for (const x of cells) nextGrid[x.r][x.c] = 0
-  for (const n of nextCells) nextGrid[n.r][n.c] = p.id
-
-  const nextPieces = pieces.map((x) =>
-    x.id === p.id ? { ...x, row: x.row + dr, col: x.col + dc } : x
-  )
-  return { grid: nextGrid, pieces: nextPieces, moved: true }
-}
-
-export function isTraficoSolved(
-  pieces: TrafficPiece[],
+export interface LaberintoLevel {
+  level: number
+  rows: number
   cols: number
-): boolean {
-  const hero = pieces.find((p) => p.isHero)
-  if (!hero) return false
-  // el héroe toca la columna de salida (última)
-  return hero.col + hero.length - 1 >= cols - 2 && hero.horizontal
+  /** 'hole' = hueco sin rellenar; una vez la roca cae, se trata como piso */
+  grid: MazeCellType[][]
+  start: MazeCoord
+  exit: MazeCoord
+  boulders: MazeBoulder[]
+  /** Radio de niebla de guerra en casillas (0 = sin niebla, mapa visible) */
+  fogRadius: number
+  /** 0 = sin límite */
+  moveLimit: number
+  targetSeconds: number
+  goal: string
+  seed: number
 }
 
-/* ── LABERINTO ── */
-
+/** Laberinto perfecto por backtracking recursivo (siempre conexo) */
 function carveMaze(
-  rows: number,
-  cols: number,
+  rooms: number,
   rng: () => number
-): DespejeGrid {
-  // odd sizes work better for recursive backtracker
-  const R = rows % 2 === 0 ? rows - 1 : rows
-  const C = cols % 2 === 0 ? cols - 1 : cols
-  const grid = emptyGrid(R, C, 1)
+): MazeCellType[][] {
+  const W = rooms * 2 + 1
+  const H = rooms * 2 + 1
+  const grid: MazeCellType[][] = Array.from({ length: H }, () =>
+    Array<MazeCellType>(W).fill('wall')
+  )
+  const visited = Array.from({ length: rooms }, () =>
+    Array<boolean>(rooms).fill(false)
+  )
+  const stack: [number, number][] = [[0, 0]]
+  visited[0][0] = true
+  grid[1][1] = 'floor'
+  const dirs: [number, number][] = [
+    [0, 1],
+    [0, -1],
+    [1, 0],
+    [-1, 0],
+  ]
 
-  function carve(r: number, c: number) {
-    grid[r][c] = 0
-    const dirs = DESPEJE_DIRS.slice()
-    for (let i = dirs.length - 1; i > 0; i--) {
-      const j = Math.floor(rng() * (i + 1))
-      ;[dirs[i], dirs[j]] = [dirs[j], dirs[i]]
+  while (stack.length) {
+    const [r, c] = stack[stack.length - 1]
+    const order = shuffledArray(dirs, rng)
+    let moved = false
+    for (const [dr, dc] of order) {
+      const nr = r + dr
+      const nc = c + dc
+      if (nr < 0 || nr >= rooms || nc < 0 || nc >= rooms) continue
+      if (visited[nr][nc]) continue
+      visited[nr][nc] = true
+      grid[1 + r * 2 + dr][1 + c * 2 + dc] = 'floor'
+      grid[1 + nr * 2][1 + nc * 2] = 'floor'
+      stack.push([nr, nc])
+      moved = true
+      break
     }
-    for (const dir of dirs) {
-      const { dr, dc } = DIR_DELTA[dir]
-      const nr = r + dr * 2
-      const nc = c + dc * 2
-      if (nr > 0 && nc > 0 && nr < R - 1 && nc < C - 1 && grid[nr][nc] === 1) {
-        grid[r + dr][c + dc] = 0
-        carve(nr, nc)
-      }
-    }
-  }
-
-  carve(1, 1)
-
-  // expand to requested size if even
-  if (R !== rows || C !== cols) {
-    const full = emptyGrid(rows, cols, 1)
-    for (let r = 0; r < R; r++) {
-      for (let c = 0; c < C; c++) full[r][c] = grid[r][c]
-    }
-    return full
+    if (!moved) stack.pop()
   }
   return grid
 }
 
+/** Añade atajos (ciclos) al laberinto perfecto: más difícil de leer visualmente */
+function braidMaze(
+  grid: MazeCellType[][],
+  rng: () => number,
+  extraRatio: number
+) {
+  const H = grid.length
+  const W = grid[0].length
+  for (let r = 1; r < H - 1; r++) {
+    for (let c = 1; c < W - 1; c++) {
+      if (grid[r][c] !== 'wall') continue
+      if (r % 2 === 1 && c % 2 === 0) {
+        if (
+          grid[r][c - 1] === 'floor' &&
+          grid[r][c + 1] === 'floor' &&
+          rng() < extraRatio
+        ) {
+          grid[r][c] = 'floor'
+        }
+      } else if (r % 2 === 0 && c % 2 === 1) {
+        if (
+          grid[r - 1][c] === 'floor' &&
+          grid[r + 1][c] === 'floor' &&
+          rng() < extraRatio
+        ) {
+          grid[r][c] = 'floor'
+        }
+      }
+    }
+  }
+}
+
+function mazeBfsPath(
+  grid: MazeCellType[][],
+  start: MazeCoord,
+  goal: MazeCoord
+): MazeCoord[] | null {
+  const H = grid.length
+  const W = grid[0].length
+  const key = (r: number, c: number) => r * W + c
+  const prev = new Map<number, number>()
+  const seen = new Set<number>([key(start.row, start.col)])
+  const queue: MazeCoord[] = [start]
+  let qi = 0
+  while (qi < queue.length) {
+    const { row: r, col: c } = queue[qi++]
+    if (r === goal.row && c === goal.col) break
+    for (const [dr, dc] of [
+      [0, 1],
+      [0, -1],
+      [1, 0],
+      [-1, 0],
+    ] as const) {
+      const nr = r + dr
+      const nc = c + dc
+      if (nr < 0 || nr >= H || nc < 0 || nc >= W) continue
+      if (grid[nr][nc] === 'wall') continue
+      const k = key(nr, nc)
+      if (seen.has(k)) continue
+      seen.add(k)
+      prev.set(k, key(r, c))
+      queue.push({ row: nr, col: nc })
+    }
+  }
+  const gk = key(goal.row, goal.col)
+  if (!seen.has(gk)) return null
+  const path: MazeCoord[] = []
+  let cur = gk
+  const sk = key(start.row, start.col)
+  while (cur !== sk) {
+    path.push({ row: Math.floor(cur / W), col: cur % W })
+    cur = prev.get(cur)!
+  }
+  path.push(start)
+  path.reverse()
+  return path
+}
+
+/** Simula el despeje en orden: valida que la generación sea 100% resoluble */
+function simulateMazeClear(
+  grid: MazeCellType[][],
+  boulders: MazeBoulder[],
+  start: MazeCoord,
+  exit: MazeCoord
+): boolean {
+  const work = grid.map((row) => row.slice())
+  for (const b of boulders) work[b.row][b.col] = 'wall'
+  let cur = start
+  for (const b of boulders) {
+    const from = boulderApproach(b)
+    const path = mazeBfsPath(work, cur, from)
+    if (!path) return false
+    work[b.row][b.col] = 'floor'
+    cur = { row: b.row, col: b.col }
+  }
+  return !!mazeBfsPath(work, cur, exit)
+}
+
+function boulderApproach(b: MazeBoulder): MazeCoord {
+  const dr = b.holeRow - b.row
+  const dc = b.holeCol - b.col
+  return { row: b.row - dr, col: b.col - dc }
+}
+
+/** Construye rocas + huecos garantizando que el nivel sea resoluble en orden */
+function placeMazeBoulders(
+  grid: MazeCellType[][],
+  path: MazeCoord[],
+  count: number,
+  rng: () => number,
+  start: MazeCoord,
+  exit: MazeCoord
+): MazeBoulder[] {
+  const H = grid.length
+  const W = grid[0].length
+  const pathSet = new Set(path.map((p) => p.row * W + p.col))
+  const placed: MazeBoulder[] = []
+  const candidates = shuffledArray(path.slice(1, -1), rng)
+  let idCounter = 0
+
+  for (const p of candidates) {
+    if (placed.length >= count) break
+    if (placed.some((b) => b.row === p.row && b.col === p.col)) continue
+
+    const dirs = shuffledArray(
+      [
+        [0, 1],
+        [0, -1],
+        [1, 0],
+        [-1, 0],
+      ] as const,
+      rng
+    )
+    for (const [dr, dc] of dirs) {
+      const hr = p.row + dr
+      const hc = p.col + dc
+      if (hr < 0 || hr >= H || hc < 0 || hc >= W) continue
+      if (grid[hr][hc] === 'wall') continue
+      if (pathSet.has(hr * W + hc)) continue
+      if (placed.some((b) => b.holeRow === hr && b.holeCol === hc)) continue
+      const fr = p.row - dr
+      const fc = p.col - dc
+      if (fr < 0 || fr >= H || fc < 0 || fc >= W) continue
+      if (grid[fr][fc] === 'wall') continue
+
+      const candidate: MazeBoulder = {
+        id: `b${idCounter}`,
+        row: p.row,
+        col: p.col,
+        holeRow: hr,
+        holeCol: hc,
+        cleared: false,
+      }
+      const trial = [...placed, candidate]
+      if (simulateMazeClear(grid, trial, start, exit)) {
+        placed.push(candidate)
+        idCounter++
+        break
+      }
+    }
+  }
+  return placed
+}
+
+/** Curva de dificultad del laberinto */
+export function getLaberintoDifficulty(level: number) {
+  const lv = Math.max(1, Math.floor(level))
+  const rooms = Math.min(4 + Math.floor(lv / 3), 14)
+  const braidRatio = Math.min(0.04 + lv * 0.012, 0.4)
+  const boulderCount = Math.min(1 + Math.floor(lv / 4), 8)
+  const fogRadius = lv >= 26 ? Math.max(2, 6 - Math.floor((lv - 26) / 10)) : 0
+  const moveLimit =
+    lv <= 4 ? 0 : Math.round(rooms * rooms * 2.4 + boulderCount * 6)
+  const targetSeconds = Math.max(
+    20,
+    Math.round(rooms * rooms * 1.6 + boulderCount * 8)
+  )
+  return { rooms, braidRatio, boulderCount, fogRadius, moveLimit, targetSeconds }
+}
+
+/**
+ * Genera un nivel de Laberinto completo (garantizado resoluble).
+ */
 export function generateLaberintoLevel(
   level: number,
   opts?: { seedSalt?: number }
-): DespejeLevel {
+): LaberintoLevel {
   const lv = Math.max(1, Math.floor(level))
-  const seed = levelSeed(lv, 7400 + (opts?.seedSalt ?? 0))
+  const seed = levelSeed(lv, 8100 + (opts?.seedSalt ?? 0))
   const rng = mulberry32(seed)
-  const d = getDespejeDifficulty(lv, 'laberinto')
-  let { rows, cols } = d
-  // prefer odd
-  if (rows % 2 === 0) rows++
-  if (cols % 2 === 0) cols++
-  rows = Math.min(21, rows)
-  cols = Math.min(21, cols)
+  const d = getLaberintoDifficulty(lv)
 
-  const grid = carveMaze(rows, cols, rng)
-  const start = { r: 1, c: 1 }
-  const goal = { r: rows - 2, c: cols - 2 }
-  grid[start.r][start.c] = 2
-  grid[goal.r][goal.c] = 3
+  const grid = carveMaze(d.rooms, rng)
+  braidMaze(grid, rng, d.braidRatio)
 
-  // abrir un poco más en niveles bajos
-  if (lv <= 6) {
-    for (let i = 0; i < Math.floor(rows * cols * 0.04); i++) {
-      const r = 1 + Math.floor(rng() * (rows - 2))
-      const c = 1 + Math.floor(rng() * (cols - 2))
-      if (grid[r][c] === 1) grid[r][c] = 0
-    }
+  const start: MazeCoord = { row: 1, col: 1 }
+  const exit: MazeCoord = { row: d.rooms * 2 - 1, col: d.rooms * 2 - 1 }
+  const path = mazeBfsPath(grid, start, exit) ?? [start, exit]
+
+  const boulders = placeMazeBoulders(
+    grid,
+    path,
+    d.boulderCount,
+    rng,
+    start,
+    exit
+  )
+
+  // marca el tipo 'hole' en la grilla para cada roca colocada
+  for (const b of boulders) {
+    grid[b.holeRow][b.holeCol] = 'hole'
   }
 
   return {
-    mode: 'laberinto',
     level: lv,
-    rows,
-    cols,
+    rows: grid.length,
+    cols: grid[0].length,
     grid,
     start,
-    goal,
-    crateCount: 0,
-    moveHint: d.moveHint,
+    exit,
+    boulders,
+    fogRadius: d.fogRadius,
+    moveLimit: d.moveLimit,
     targetSeconds: d.targetSeconds,
+    goal:
+      boulders.length > 0
+        ? 'Empuja las rocas a los huecos para despejar el camino a la salida.'
+        : 'Encuentra el camino hasta la salida.',
     seed,
-    goalText: 'Encuentra la salida del laberinto.',
   }
 }
 
-/* ── API unificada ── */
-
-export function generateDespejeLevel(
-  mode: DespejeMode,
-  level: number,
-  opts?: { seedSalt?: number }
-): DespejeLevel {
-  switch (mode) {
-    case 'hielo':
-      return generateHieloLevel(level, opts)
-    case 'empuje':
-      return generateEmpujeLevel(level, opts)
-    case 'trafico':
-      return generateTraficoLevel(level, opts)
-    case 'laberinto':
-      return generateLaberintoLevel(level, opts)
-    default:
-      return generateHieloLevel(level, opts)
-  }
-}
-
-export function isDespejeWon(
-  mode: DespejeMode,
-  grid: DespejeGrid,
-  pr: number,
-  pc: number,
-  goal: { r: number; c: number },
-  traffic?: TrafficPiece[]
+export function isMazeWalkable(
+  level: LaberintoLevel,
+  boulders: MazeBoulder[],
+  row: number,
+  col: number
 ): boolean {
-  if (mode === 'empuje') return isEmpujeSolved(grid)
-  if (mode === 'trafico' && traffic) {
-    return isTraficoSolved(traffic, grid[0].length)
+  if (row < 0 || row >= level.rows || col < 0 || col >= level.cols)
+    return false
+  const cell = level.grid[row][col]
+  if (cell === 'wall') return false
+  if (boulders.some((b) => !b.cleared && b.row === row && b.col === col))
+    return false
+  if (cell === 'hole') {
+    // solo transitable si YA fue rellenado por una roca despejada en esa celda
+    return boulders.some(
+      (b) => b.cleared && b.holeRow === row && b.holeCol === col
+    )
   }
-  // hielo / laberinto: jugador en meta
-  return pr === goal.r && pc === goal.c
+  return true
 }
 
-export function calcDespejeStars(
+export interface MazeMoveResult {
+  player: MazeCoord
+  boulders: MazeBoulder[]
+  moved: boolean
+  pushed: boolean
+}
+
+/** Aplica un movimiento del jugador (y empuja roca si corresponde) */
+export function laberintoStep(
+  level: LaberintoLevel,
+  boulders: MazeBoulder[],
+  player: MazeCoord,
+  dir: Direction
+): MazeMoveResult {
+  const { dr, dc } = DIRECTION_DELTA[dir]
+  const targetRow = player.row + dr
+  const targetCol = player.col + dc
+  const noMove: MazeMoveResult = { player, boulders, moved: false, pushed: false }
+
+  if (
+    targetRow < 0 ||
+    targetRow >= level.rows ||
+    targetCol < 0 ||
+    targetCol >= level.cols
+  )
+    return noMove
+  if (level.grid[targetRow][targetCol] === 'wall') return noMove
+
+  const boulderHere = boulders.find(
+    (b) => !b.cleared && b.row === targetRow && b.col === targetCol
+  )
+
+  if (boulderHere) {
+    const beyondRow = targetRow + dr
+    const beyondCol = targetCol + dc
+    if (
+      beyondRow < 0 ||
+      beyondRow >= level.rows ||
+      beyondCol < 0 ||
+      beyondCol >= level.cols
+    )
+      return noMove
+    const beyondType = level.grid[beyondRow][beyondCol]
+    if (beyondType === 'wall') return noMove
+    const otherBoulder = boulders.find(
+      (b) => !b.cleared && b.row === beyondRow && b.col === beyondCol
+    )
+    if (otherBoulder) return noMove
+
+    if (beyondType === 'hole') {
+      const nextBoulders = boulders.map((b) =>
+        b.id === boulderHere.id
+          ? { ...b, row: beyondRow, col: beyondCol, cleared: true }
+          : b
+      )
+      return {
+        player: { row: targetRow, col: targetCol },
+        boulders: nextBoulders,
+        moved: true,
+        pushed: true,
+      }
+    }
+    // piso normal: la roca se desliza una casilla
+    const nextBoulders = boulders.map((b) =>
+      b.id === boulderHere.id ? { ...b, row: beyondRow, col: beyondCol } : b
+    )
+    return {
+      player: { row: targetRow, col: targetCol },
+      boulders: nextBoulders,
+      moved: true,
+      pushed: true,
+    }
+  }
+
+  if (!isMazeWalkable(level, boulders, targetRow, targetCol)) return noMove
+  return {
+    player: { row: targetRow, col: targetCol },
+    boulders,
+    moved: true,
+    pushed: false,
+  }
+}
+
+export function isMazeComplete(player: MazeCoord, exit: MazeCoord): boolean {
+  return player.row === exit.row && player.col === exit.col
+}
+
+/** Celdas visibles según niebla de guerra (Chebyshev radius). fogRadius 0 = todo visible */
+export function visibleMazeCells(
+  level: LaberintoLevel,
+  player: MazeCoord
+): Set<number> {
+  const visible = new Set<number>()
+  const W = level.cols
+  if (level.fogRadius <= 0) {
+    for (let r = 0; r < level.rows; r++)
+      for (let c = 0; c < level.cols; c++) visible.add(r * W + c)
+    return visible
+  }
+  for (
+    let r = Math.max(0, player.row - level.fogRadius);
+    r <= Math.min(level.rows - 1, player.row + level.fogRadius);
+    r++
+  ) {
+    for (
+      let c = Math.max(0, player.col - level.fogRadius);
+      c <= Math.min(level.cols - 1, player.col + level.fogRadius);
+      c++
+    ) {
+      if (Math.max(Math.abs(r - player.row), Math.abs(c - player.col)) <= level.fogRadius) {
+        visible.add(r * W + c)
+      }
+    }
+  }
+  return visible
+}
+
+export function calcLaberintoStars(
   moves: number,
   timeMs: number,
-  moveHint: number,
-  targetSeconds: number
+  targetSeconds: number,
+  moveLimit: number
 ): 0 | 1 | 2 | 3 {
   if (moves <= 0) return 0
   let stars: 0 | 1 | 2 | 3 = 1
   if (targetSeconds > 0 && timeMs <= targetSeconds * 1000) stars = 2
-  if (moves <= moveHint && stars >= 2) stars = 3
-  else if (moves <= moveHint * 1.4 && stars === 1) stars = 2
+  const soft = moveLimit > 0 ? moveLimit : moves * 2
+  if (stars >= 2 && moves <= soft * 0.6) stars = 3
   return stars
 }
 
-/** Tamaño de celda responsive */
-export function despejeCellPx(
-  rows: number,
-  cols: number,
-  isMobile: boolean
-): number {
-  const maxBoard = isMobile ? Math.min(360, typeof window !== 'undefined' ? window.innerWidth - 32 : 360) : 480
-  const cell = Math.floor(maxBoard / Math.max(rows, cols))
-  return Math.max(22, Math.min(isMobile ? 48 : 56, cell))
+/* ── 3.2 Croma: gemas de color que deben llegar a su meta ──
+ *
+ * Estilo "block jam" simplificado y garantizado resoluble: cada gema
+ * empieza en su casilla meta (estado resuelto) y se desordena con
+ * movimientos legales de una casilla, igual que shuffleBoard. Los
+ * obstáculos son fijos y nunca se mueven ("obstruidos").
+ */
+
+export interface CromaColorDef {
+  id: string
+  hue: number
+  label: string
+}
+
+export const GEM_COLORS: CromaColorDef[] = [
+  { id: 'rosa', hue: 340, label: 'Rosa' },
+  { id: 'cian', hue: 190, label: 'Cian' },
+  { id: 'ambar', hue: 40, label: 'Ámbar' },
+  { id: 'violeta', hue: 265, label: 'Violeta' },
+  { id: 'lima', hue: 95, label: 'Lima' },
+  { id: 'coral', hue: 12, label: 'Coral' },
+]
+
+export function gemHue(colorId: string): number {
+  return GEM_COLORS.find((g) => g.id === colorId)?.hue ?? 200
+}
+
+export interface Gem {
+  id: string
+  color: string
+  row: number
+  col: number
+}
+
+export interface CromaGoal {
+  color: string
+  row: number
+  col: number
+}
+
+export interface CromaLevel {
+  level: number
+  rows: number
+  cols: number
+  obstacles: MazeCoord[]
+  gems: Gem[]
+  goals: CromaGoal[]
+  shuffleMoves: number
+  moveLimit: number
+  targetSeconds: number
+  goal: string
+  seed: number
+}
+
+export function getCromaDifficulty(level: number) {
+  const lv = Math.max(1, Math.floor(level))
+  const size = Math.min(5 + Math.floor(lv / 6), 9)
+  const gemCount = Math.min(2 + Math.floor(lv / 3), GEM_COLORS.length)
+  const obstacleCount = Math.min(Math.floor(lv / 2), Math.floor(size * size * 0.22))
+  const shuffleMoves = Math.min(10 + lv * 3, 220)
+  const moveLimit = Math.round(shuffleMoves * 1.9 + gemCount * 4)
+  const targetSeconds = Math.max(18, Math.round(shuffleMoves * 0.9 + gemCount * 3))
+  return { size, gemCount, obstacleCount, shuffleMoves, moveLimit, targetSeconds }
+}
+
+function isBorderCell(row: number, col: number, size: number) {
+  return row === 0 || col === 0 || row === size - 1 || col === size - 1
+}
+
+export function generateCromaLevel(
+  level: number,
+  opts?: { seedSalt?: number }
+): CromaLevel {
+  const lv = Math.max(1, Math.floor(level))
+  const seed = levelSeed(lv, 9100 + (opts?.seedSalt ?? 0))
+  const rng = mulberry32(seed)
+  const d = getCromaDifficulty(lv)
+  const size = d.size
+
+  const borderCells: MazeCoord[] = []
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (isBorderCell(r, c, size)) borderCells.push({ row: r, col: c })
+    }
+  }
+  const borderShuffled = shuffledArray(borderCells, rng)
+  const colors = shuffledArray(GEM_COLORS, rng).slice(0, d.gemCount)
+  const goals: CromaGoal[] = colors.map((c, i) => ({
+    color: c.id,
+    row: borderShuffled[i].row,
+    col: borderShuffled[i].col,
+  }))
+  const occupied = new Set(goals.map((g) => g.row * size + g.col))
+
+  const interiorCells: MazeCoord[] = []
+  for (let r = 1; r < size - 1; r++) {
+    for (let c = 1; c < size - 1; c++) {
+      if (!occupied.has(r * size + c)) interiorCells.push({ row: r, col: c })
+    }
+  }
+  const obstacles = shuffledArray(interiorCells, rng).slice(0, d.obstacleCount)
+  for (const o of obstacles) occupied.add(o.row * size + o.col)
+
+  // Estado resuelto: cada gema sobre su meta
+  let gems: Gem[] = goals.map((g, i) => ({
+    id: `g${i}`,
+    color: g.color,
+    row: g.row,
+    col: g.col,
+  }))
+
+  const blocked = new Set(obstacles.map((o) => o.row * size + o.col))
+  const dirs: Direction[] = ['up', 'down', 'left', 'right']
+
+  let applied = 0
+  let guard = 0
+  while (applied < d.shuffleMoves && guard < d.shuffleMoves * 12) {
+    guard++
+    const gemIdx = Math.floor(rng() * gems.length)
+    const dir = dirs[Math.floor(rng() * 4)]
+    const { dr, dc } = DIRECTION_DELTA[dir]
+    const gem = gems[gemIdx]
+    const nr = gem.row + dr
+    const nc = gem.col + dc
+    if (nr < 0 || nr >= size || nc < 0 || nc >= size) continue
+    if (blocked.has(nr * size + nc)) continue
+    if (gems.some((g) => g.row === nr && g.col === nc)) continue
+    gems = gems.map((g, i) => (i === gemIdx ? { ...g, row: nr, col: nc } : g))
+    applied++
+  }
+
+  return {
+    level: lv,
+    rows: size,
+    cols: size,
+    obstacles,
+    gems,
+    goals,
+    shuffleMoves: d.shuffleMoves,
+    moveLimit: d.moveLimit,
+    targetSeconds: d.targetSeconds,
+    goal: 'Lleva cada gema a su meta del mismo color esquivando los bloques.',
+    seed,
+  }
+}
+
+export function cromaTryMove(
+  level: CromaLevel,
+  gems: Gem[],
+  gemId: string,
+  dir: Direction
+): Gem[] | null {
+  const gem = gems.find((g) => g.id === gemId)
+  if (!gem) return null
+  const { dr, dc } = DIRECTION_DELTA[dir]
+  const nr = gem.row + dr
+  const nc = gem.col + dc
+  if (nr < 0 || nr >= level.rows || nc < 0 || nc >= level.cols) return null
+  if (level.obstacles.some((o) => o.row === nr && o.col === nc)) return null
+  if (gems.some((g) => g.id !== gemId && g.row === nr && g.col === nc))
+    return null
+  return gems.map((g) => (g.id === gemId ? { ...g, row: nr, col: nc } : g))
+}
+
+export function cromaIsComplete(level: CromaLevel, gems: Gem[]): boolean {
+  return gems.every((g) =>
+    level.goals.some(
+      (goal) => goal.color === g.color && goal.row === g.row && goal.col === g.col
+    )
+  )
+}
+
+export function calcCromaStars(
+  moves: number,
+  timeMs: number,
+  targetSeconds: number,
+  shuffleMoves: number
+): 0 | 1 | 2 | 3 {
+  if (moves <= 0) return 0
+  let stars: 0 | 1 | 2 | 3 = 1
+  if (targetSeconds > 0 && timeMs <= targetSeconds * 1000) stars = 2
+  if (stars >= 2 && moves <= Math.max(shuffleMoves, 4) * 1.3) stars = 3
+  return stars
+}
+
+/* ── 3.3 Pintar: colorea figuras con celdas obstruidas ──
+ *
+ * Sub-modo de Croma pensado para "colorear objetos de distintas formas":
+ * cada nivel muestra una figura (silueta) con un patrón objetivo de
+ * colores; algunas celdas empiezan "obstruidas" (con escombros) y deben
+ * despejarse con varios toques antes de poder pintarse.
+ */
+
+export type PaintShapeId =
+  | 'cuadro'
+  | 'cruz'
+  | 'diamante'
+  | 'anillo'
+  | 'corazon'
+  | 'estrella'
+  | 'reloj_arena'
+
+/** Máscaras: '1' = celda activa de la figura, '0' = celda vacía (no se dibuja) */
+export const PAINT_SHAPES: Record<PaintShapeId, string[]> = {
+  cuadro: ['11111', '11111', '11111', '11111', '11111'],
+  cruz: ['00100', '00100', '11111', '00100', '00100'],
+  diamante: ['00100', '01110', '11111', '01110', '00100'],
+  anillo: ['11111', '10001', '10001', '10001', '11111'],
+  corazon: [
+    '0110110',
+    '1111111',
+    '1111111',
+    '0111110',
+    '0011100',
+    '0001000',
+  ],
+  estrella: [
+    '0001000',
+    '0001000',
+    '1111111',
+    '0111110',
+    '0110110',
+    '0100010',
+    '1000001',
+  ],
+  reloj_arena: ['1111111', '0111110', '0011100', '0001000', '0011100', '0111110', '1111111'],
+}
+
+const PAINT_SHAPE_ORDER: PaintShapeId[] = [
+  'cuadro',
+  'cruz',
+  'diamante',
+  'anillo',
+  'corazon',
+  'estrella',
+  'reloj_arena',
+]
+
+export const PAINT_PALETTE: CromaColorDef[] = [
+  { id: 'p1', hue: 340, label: 'Rosa' },
+  { id: 'p2', hue: 190, label: 'Cian' },
+  { id: 'p3', hue: 40, label: 'Ámbar' },
+  { id: 'p4', hue: 265, label: 'Violeta' },
+  { id: 'p5', hue: 95, label: 'Lima' },
+  { id: 'p6', hue: 12, label: 'Coral' },
+  { id: 'p7', hue: 220, label: 'Azul' },
+  { id: 'p8', hue: 320, label: 'Fucsia' },
+]
+
+export interface PaintCell {
+  row: number
+  col: number
+  target: string
+  current: string | null
+  locked: boolean
+  clearsNeeded: number
+  clearsDone: number
+}
+
+export interface PintarLevel {
+  level: number
+  shape: PaintShapeId
+  rows: number
+  cols: number
+  cells: PaintCell[]
+  palette: CromaColorDef[]
+  targetSeconds: number
+  goal: string
+  seed: number
+}
+
+function shapeActiveCells(mask: string[]): MazeCoord[] {
+  const cells: MazeCoord[] = []
+  mask.forEach((rowStr, r) => {
+    for (let c = 0; c < rowStr.length; c++) {
+      if (rowStr[c] === '1') cells.push({ row: r, col: c })
+    }
+  })
+  return cells
+}
+
+export function getPintarDifficulty(level: number) {
+  const lv = Math.max(1, Math.floor(level))
+  const shape = PAINT_SHAPE_ORDER[(lv - 1) % PAINT_SHAPE_ORDER.length]
+  const colorCount = Math.min(2 + Math.floor(lv / 4), PAINT_PALETTE.length)
+  const obstructedRatio = Math.min(0.08 + lv * 0.012, 0.42)
+  const clearsNeeded = lv < 8 ? 1 : lv < 20 ? 2 : 3
+  const targetSeconds = Math.max(
+    20,
+    Math.round(shapeActiveCells(PAINT_SHAPES[shape]).length * 2.2)
+  )
+  return { shape, colorCount, obstructedRatio, clearsNeeded, targetSeconds }
+}
+
+export function generatePintarLevel(
+  level: number,
+  opts?: { seedSalt?: number }
+): PintarLevel {
+  const lv = Math.max(1, Math.floor(level))
+  const seed = levelSeed(lv, 9700 + (opts?.seedSalt ?? 0))
+  const rng = mulberry32(seed)
+  const d = getPintarDifficulty(lv)
+  const mask = PAINT_SHAPES[d.shape]
+  const activeCells = shapeActiveCells(mask)
+  const palette = PAINT_PALETTE.slice(0, d.colorCount)
+
+  const cells: PaintCell[] = activeCells.map(({ row, col }) => {
+    const target = palette[Math.floor(rng() * palette.length)].id
+    const locked = rng() < d.obstructedRatio
+    // color inicial deliberadamente distinto al objetivo para que haya algo que resolver
+    let startIdx = Math.floor(rng() * palette.length)
+    if (palette[startIdx].id === target && palette.length > 1) {
+      startIdx = (startIdx + 1) % palette.length
+    }
+    return {
+      row,
+      col,
+      target,
+      current: locked ? null : palette[startIdx].id,
+      locked,
+      clearsNeeded: locked ? d.clearsNeeded : 0,
+      clearsDone: 0,
+    }
+  })
+
+  return {
+    level: lv,
+    shape: d.shape,
+    rows: mask.length,
+    cols: mask[0].length,
+    cells,
+    palette,
+    targetSeconds: d.targetSeconds,
+    goal: 'Despeja los escombros y pinta cada celda del color objetivo.',
+    seed,
+  }
+}
+
+/** Toca una celda: si está obstruida la despeja poco a poco; si no, avanza su color */
+export function pintarTapCell(
+  level: PintarLevel,
+  row: number,
+  col: number
+): PintarLevel {
+  const cells = level.cells.map((cell) => {
+    if (cell.row !== row || cell.col !== col) return cell
+    if (cell.locked) {
+      const clearsDone = cell.clearsDone + 1
+      if (clearsDone >= cell.clearsNeeded) {
+        return { ...cell, locked: false, clearsDone, current: null }
+      }
+      return { ...cell, clearsDone }
+    }
+    const idx = level.palette.findIndex((p) => p.id === cell.current)
+    const nextIdx = idx < 0 ? 0 : (idx + 1) % level.palette.length
+    return { ...cell, current: level.palette[nextIdx].id }
+  })
+  return { ...level, cells }
+}
+
+export function pintarIsComplete(level: PintarLevel): boolean {
+  return level.cells.every(
+    (c) => !c.locked && c.current !== null && c.current === c.target
+  )
+}
+
+export function pintarProgress(level: PintarLevel): { done: number; total: number } {
+  const total = level.cells.length
+  const done = level.cells.filter(
+    (c) => !c.locked && c.current === c.target
+  ).length
+  return { done, total }
+}
+
+export function calcPintarStars(
+  timeMs: number,
+  targetSeconds: number,
+  taps: number,
+  cellCount: number
+): 0 | 1 | 2 | 3 {
+  if (timeMs <= 0) return 0
+  let stars: 0 | 1 | 2 | 3 = 1
+  if (targetSeconds > 0 && timeMs <= targetSeconds * 1000) stars = 2
+  if (stars >= 2 && taps <= cellCount * 2.2) stars = 3
+  return stars
 }

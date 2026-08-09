@@ -2,14 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { getTrackBlob, type TrackItem } from '@/core/storage/mediaLibrary'
 
 /**
- * Reproductor offline.
- * Base: tu API (volume, gain, rate, queue, spectrum).
- * Añadidos para MusicaHome / calidad:
- *  - insertNext, error
- *  - soft limiter (DynamicsCompressor) al subir gain > 1
- *  - audio.volume estable con grafo activo
- *  - preservesPitch, resume agresivo, ramp de gain
- *  - getTrackBlob admite Blob directo o { blob }
+ * Reproductor offline con grafo Web Audio (gain boost + soft limiter + analyser)
+ * y soporte robusto de reproducción en segundo plano:
+ *  - Media Session API centralizada aquí (única fuente de verdad: play, pause,
+ *    previoustrack, nexttrack, seekbackward, seekforward, seekto, setPositionState).
+ *  - resumeAudioContext(): reintenta reanudar el AudioContext cuando el navegador
+ *    lo suspende al volver de segundo plano (pestaña oculta, app minimizada, etc.).
+ *  - insertNext, error, preservesPitch, ramp de gain, soft limiter al boostear volumen.
  */
 export function useMediaPlayer() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -23,6 +22,7 @@ export function useMediaPlayer() {
   const gainRef = useRef<GainNode | null>(null)
   const compRef = useRef<DynamicsCompressorNode | null>(null)
   const graphReady = useRef(false)
+  const mediaSessionReady = useRef(false)
 
   const [track, setTrack] = useState<TrackItem | null>(null)
   const [playing, setPlaying] = useState(false)
@@ -34,6 +34,13 @@ export function useMediaPlayer() {
   const [rate, setRateState] = useState(1)
   const [gain, setGainState] = useState(1)
   const [error, setError] = useState<string | null>(null)
+
+  // Refs "espejo" para que los handlers de Media Session (registrados una sola vez)
+  // siempre llamen a la versión más reciente de toggle/next/prev/seek sin clausuras obsoletas.
+  const toggleRef = useRef<() => Promise<void>>(async () => {})
+  const nextRef = useRef<() => Promise<void>>(async () => {})
+  const prevRef = useRef<() => Promise<void>>(async () => {})
+  const seekRef = useRef<(ms: number) => void>(() => {})
 
   const cleanupUrl = () => {
     if (urlRef.current) {
@@ -102,6 +109,44 @@ export function useMediaPlayer() {
     }
   }
 
+  /**
+   * Reintenta reanudar el AudioContext (y, si estaba sonando, el <audio>) cuando
+   * el navegador lo suspende al volver de segundo plano. Seguro de llamar en
+   * cualquier momento — no hace nada si ya está activo o no hay pista cargada.
+   */
+  const resumeAudioContext = useCallback(async () => {
+    const ctx = ctxRef.current
+    if (ctx && ctx.state === 'suspended') {
+      try {
+        await ctx.resume()
+      } catch {
+        /* algunos navegadores exigen un gesto del usuario; se reintentará luego */
+      }
+    }
+    const audio = audioRef.current
+    if (audio && audio.src && audio.paused && playing) {
+      try {
+        await audio.play()
+      } catch {
+        /* política de autoplay del navegador: el usuario deberá tocar ▶ una vez */
+      }
+    }
+  }, [playing])
+
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState === 'visible') void resumeAudioContext()
+    }
+    document.addEventListener('visibilitychange', handler)
+    window.addEventListener('focus', handler)
+    window.addEventListener('pageshow', handler)
+    return () => {
+      document.removeEventListener('visibilitychange', handler)
+      window.removeEventListener('focus', handler)
+      window.removeEventListener('pageshow', handler)
+    }
+  }, [resumeAudioContext])
+
   const ensureAudio = () => {
     if (!audioRef.current) {
       const a = new Audio()
@@ -113,10 +158,20 @@ export function useMediaPlayer() {
         /* Safari antiguo */
       }
       a.volume = volume
-      a.ontimeupdate = () => setCurrentMs((a.currentTime || 0) * 1000)
+      a.ontimeupdate = () => {
+        const ms = (a.currentTime || 0) * 1000
+        setCurrentMs(ms)
+        updatePositionState(a.duration ? a.duration * 1000 : 0, ms)
+      }
       a.onloadedmetadata = () => setDurationMs((a.duration || 0) * 1000)
-      a.onplay = () => setPlaying(true)
-      a.onpause = () => setPlaying(false)
+      a.onplay = () => {
+        setPlaying(true)
+        setMediaSessionPlaybackState('playing')
+      }
+      a.onpause = () => {
+        setPlaying(false)
+        setMediaSessionPlaybackState('paused')
+      }
       a.onended = () => {
         void onEndedRef.current()
       }
@@ -126,8 +181,38 @@ export function useMediaPlayer() {
       }
       audioRef.current = a
       ensureGraph(a)
+      ensureMediaSessionHandlers()
     }
     return audioRef.current
+  }
+
+  /** Registra los handlers de Media Session una sola vez; siempre delegan en los refs "espejo". */
+  const ensureMediaSessionHandlers = () => {
+    if (mediaSessionReady.current) return
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return
+    try {
+      navigator.mediaSession.setActionHandler('play', () => void toggleRef.current())
+      navigator.mediaSession.setActionHandler('pause', () => void toggleRef.current())
+      navigator.mediaSession.setActionHandler('previoustrack', () => void prevRef.current())
+      navigator.mediaSession.setActionHandler('nexttrack', () => void nextRef.current())
+      navigator.mediaSession.setActionHandler('stop', () => void toggleRef.current())
+      navigator.mediaSession.setActionHandler('seekbackward', (d) => {
+        const audio = audioRef.current
+        if (!audio) return
+        seekRef.current(Math.max(0, audio.currentTime * 1000 - (d.seekOffset ?? 10) * 1000))
+      })
+      navigator.mediaSession.setActionHandler('seekforward', (d) => {
+        const audio = audioRef.current
+        if (!audio) return
+        seekRef.current(audio.currentTime * 1000 + (d.seekOffset ?? 10) * 1000)
+      })
+      navigator.mediaSession.setActionHandler('seekto', (d) => {
+        if (d.seekTime != null) seekRef.current(d.seekTime * 1000)
+      })
+      mediaSessionReady.current = true
+    } catch {
+      /* alguna acción puede no estar soportada; las que sí lo están quedan registradas */
+    }
   }
 
   const onEndedRef = useRef<() => Promise<void>>(async () => {})
@@ -165,7 +250,7 @@ export function useMediaPlayer() {
       setTrack(t)
       setCurrentMs(0)
       setDurationMs(t.durationMs || 0)
-      updateMediaSession(t)
+      updateMediaSessionMetadata(t)
 
       await new Promise<void>((resolve) => {
         const onMeta = () => {
@@ -253,6 +338,7 @@ export function useMediaPlayer() {
     const t = Math.max(0, d ? Math.min(d, ms / 1000) : ms / 1000)
     audio.currentTime = t
     setCurrentMs(t * 1000)
+    updatePositionState(d * 1000, t * 1000)
   }, [])
 
   const playIndex = useCallback(
@@ -307,6 +393,10 @@ export function useMediaPlayer() {
   }, [next, repeat])
 
   onEndedRef.current = onEnded
+  toggleRef.current = toggle
+  nextRef.current = next
+  prevRef.current = prev
+  seekRef.current = seek
 
   const setVolume = useCallback((v: number) => {
     const val = Math.min(1, Math.max(0, v))
@@ -345,7 +435,7 @@ export function useMediaPlayer() {
     }
   }, [])
 
-  /** Inserta pista justo después de la actual (MusicaHome → “Reproducir a continuación”) */
+  /** Inserta pista justo después de la actual (MusicaHome → "Reproducir a continuación") */
   const insertNext = useCallback((t: TrackItem) => {
     const q = [...queueRef.current]
     const i = indexRef.current
@@ -381,10 +471,25 @@ export function useMediaPlayer() {
       void ctxRef.current?.close()
       ctxRef.current = null
       graphReady.current = false
+      mediaSessionReady.current = false
       sourceRef.current = null
       gainRef.current = null
       compRef.current = null
       analyserRef.current = null
+      try {
+        if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+          navigator.mediaSession.setActionHandler('play', null)
+          navigator.mediaSession.setActionHandler('pause', null)
+          navigator.mediaSession.setActionHandler('previoustrack', null)
+          navigator.mediaSession.setActionHandler('nexttrack', null)
+          navigator.mediaSession.setActionHandler('stop', null)
+          navigator.mediaSession.setActionHandler('seekbackward', null)
+          navigator.mediaSession.setActionHandler('seekforward', null)
+          navigator.mediaSession.setActionHandler('seekto', null)
+        }
+      } catch {
+        /* */
+      }
     },
     []
   )
@@ -415,22 +520,54 @@ export function useMediaPlayer() {
     },
     getQueue,
     getFrequencyData,
+    /** Reintenta reanudar audio/contexto tras volver de segundo plano. Seguro de llamar siempre. */
+    resumeAudioContext,
     error,
   }
 }
 
-function updateMediaSession(t: TrackItem) {
-  if (!('mediaSession' in navigator)) return
+function updateMediaSessionMetadata(t: TrackItem) {
+  if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return
   try {
     navigator.mediaSession.metadata = new MediaMetadata({
       title: t.title,
       artist: t.artist,
+      album: t.album || '',
       artwork: t.coverDataUrl
-        ? [{ src: t.coverDataUrl, sizes: '512x512', type: 'image/png' }]
+        ? [
+            { src: t.coverDataUrl, sizes: '256x256', type: 'image/png' },
+            { src: t.coverDataUrl, sizes: '512x512', type: 'image/png' },
+          ]
         : [],
     })
   } catch {
     /* */
+  }
+}
+
+function setMediaSessionPlaybackState(state: 'playing' | 'paused') {
+  if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return
+  try {
+    navigator.mediaSession.playbackState = state
+  } catch {
+    /* */
+  }
+}
+
+function updatePositionState(durationMs: number, positionMs: number) {
+  if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return
+  const ms = navigator.mediaSession as MediaSession & {
+    setPositionState?: (state: { duration: number; playbackRate: number; position: number }) => void
+  }
+  if (!ms.setPositionState || !durationMs) return
+  try {
+    ms.setPositionState({
+      duration: durationMs / 1000,
+      playbackRate: 1,
+      position: Math.min(positionMs, durationMs) / 1000,
+    })
+  } catch {
+    /* algunos navegadores exigen que position ≤ duration exactamente; se ignora si falla */
   }
 }
 

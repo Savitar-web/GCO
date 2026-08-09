@@ -1,1961 +1,2705 @@
+/**
+ * RompecabezasGame — GymCogOrigins
+ * Liquid glass · Container Queries · Play fit-to-screen
+ * Motor: ../generateLevel.ts
+ */
+
 import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
   useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+  memo,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type ChangeEvent,
+  type MouseEvent as ReactMouseEvent,
 } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import { GlassButton } from '@/components/ui/GlassButton'
 import {
-  soundClick,
-  soundCard,
-  soundMatch,
-  soundFail,
-  soundSuccess,
-  soundStart,
-  soundToggle,
-} from '@/core/audio/uiSounds'
-import {
-  getGameProgress,
-  recordLevelResult,
-  getLevelBestTime,
-  formatDuration,
-} from '@/core/storage/progress'
-import {
-  DEFAULT_IMAGES,
   PIECE_SHAPES,
-  PIECE_SUGGESTIONS,
   CATEGORY_LABELS,
-  generateJigsawLevel,
-  createPieces,
-  trySnap,
-  isPuzzleComplete,
-  countLocked,
-  formatTime,
-  calcStars,
+  CATEGORY_EMOJI,
+  CATEGORY_ORDER,
+  DEFAULT_IMAGES,
+  imagesByCategory,
+  PIECE_SUGGESTIONS,
+  PIECES_MIN,
+  PIECES_MAX,
+  clampPieceCount,
+  pieceTierInfoForLevel,
   piecesForLevel,
-  compressImageFile,
+  generateJigsawLevel,
+  generateCreativeJigsaw,
+  imageForLevel,
+  buildPiecePath,
+  pieceTabPad,
+  createPieces,
+  distanceToCorrect,
+  SNAP_THRESHOLD_CELLS,
+  countLocked,
+  isPuzzleComplete,
+  calcJigsawStars,
+  formatTime,
   loadCustomImages,
   addCustomImage,
   removeCustomImage,
-  drawFallbackCover,
-  type PuzzleImage,
-  type PieceShape,
-  type JigsawLevel,
-  type JigsawPiece,
-  type ImageCategory,
+  compressImageFile,
+  loadPuzzleProgress,
+  savePuzzleProgress,
+} from '../generateLevel'
+import type {
+  PieceShape,
+  PuzzleImage,
+  JigsawLevel,
+  JigsawPiece,
+  PuzzleProgress,
 } from '../generateLevel'
 
-type HubTab =
-  | 'home'
+/* ═══════════════════════════════════════════════════════════════════════════
+   Tipos
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+type Screen =
   | 'normal'
-  | 'creative'
-  | 'gallery'
-  | 'mine'
-  | 'playing'
+  | 'creativo'
+  | 'galeria'
+  | 'mis-imagenes'
+  | 'ajustes'
+  | 'play'
 
-type Phase = 'hub' | 'playing' | 'success'
+type PlayOrigin = 'normal' | 'creativo'
 
-const GAME_CAT = 'logica' as const
-const GAME_ID = 'rompecabezas'
-
-/** Preferencias locales del rompecabezas */
-const PREFS_KEY = 'gco:jigsaw-prefs'
-
-type JigsawPrefs = {
-  showPreviewDefault: boolean
-  showEdgesDefault: boolean
-  snapAssist: boolean
-  softProgression: boolean
+interface SavedCreativeLevel {
+  id: string
+  name: string
+  image: PuzzleImage
+  pieces: number
+  shape: PieceShape
+  createdAt: number
+  updatedAt: number
 }
 
-function loadPrefs(): JigsawPrefs {
+const CREATIVE_LEVELS_KEY = 'gco:puzzle-creative-levels'
+
+function loadCreativeLevels(): SavedCreativeLevel[] {
   try {
-    const raw = localStorage.getItem(PREFS_KEY)
-    if (raw) {
-      const p = JSON.parse(raw) as Partial<JigsawPrefs>
-      return {
-        showPreviewDefault: p.showPreviewDefault ?? false,
-        showEdgesDefault: p.showEdgesDefault ?? true,
-        snapAssist: p.snapAssist ?? true,
-        softProgression: p.softProgression ?? false,
-      }
+    const raw = localStorage.getItem(CREATIVE_LEVELS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as SavedCreativeLevel[]
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function saveCreativeLevels(list: SavedCreativeLevel[]): void {
+  try {
+    localStorage.setItem(CREATIVE_LEVELS_KEY, JSON.stringify(list))
+  } catch {
+    /* quota */
+  }
+}
+
+
+interface RompecabezasGameProps {
+  onExit?: () => void
+  userName?: string
+}
+
+interface PuzzleSettings {
+  sound: boolean
+  haptics: boolean
+  defaultShape: PieceShape
+}
+
+interface CompletionInfo {
+  stars: 0 | 1 | 2 | 3
+  timeMs: number
+}
+
+const SETTINGS_KEY = 'gco:puzzle-settings'
+
+const STATS_KEY = 'gco:puzzle-stats'
+
+interface PuzzleStats {
+  wins: number
+  losses: number
+  totalPlayMs: number
+  history: {
+    id: string
+    at: number
+    mode: 'normal' | 'creativo'
+    level: number
+    pieces: number
+    stars: 0 | 1 | 2 | 3
+    timeMs: number
+  }[]
+}
+
+function defaultStats(): PuzzleStats {
+  return { wins: 0, losses: 0, totalPlayMs: 0, history: [] }
+}
+
+function loadStats(): PuzzleStats {
+  try {
+    const raw = localStorage.getItem(STATS_KEY)
+    if (!raw) return defaultStats()
+    const p = JSON.parse(raw) as Partial<PuzzleStats>
+    return {
+      wins: p.wins ?? 0,
+      losses: p.losses ?? 0,
+      totalPlayMs: p.totalPlayMs ?? 0,
+      history: Array.isArray(p.history) ? p.history.slice(0, 50) : [],
     }
+  } catch {
+    return defaultStats()
+  }
+}
+
+function saveStats(s: PuzzleStats): void {
+  try {
+    localStorage.setItem(STATS_KEY, JSON.stringify(s))
   } catch {
     /* */
   }
-  return {
-    showPreviewDefault: false,
-    showEdgesDefault: true,
-    snapAssist: true,
-    softProgression: false,
-  }
 }
 
-function savePrefs(p: JigsawPrefs) {
-  localStorage.setItem(PREFS_KEY, JSON.stringify(p))
+function formatDurationLong(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
 }
 
-/* ─── helpers UI ─────────────────────────────────────────────────────────── */
-
-function useIsMobile(bp = 900) {
-  const [m, setM] = useState(
-    typeof window !== 'undefined' ? window.innerWidth < bp : true
-  )
-  useEffect(() => {
-    const on = () => setM(window.innerWidth < bp)
-    window.addEventListener('resize', on)
-    return () => window.removeEventListener('resize', on)
-  }, [bp])
-  return m
-}
-
-function StarRow({ n }: { n: number }) {
+function isTouchDevice(): boolean {
+  if (typeof window === 'undefined') return false
   return (
-    <span aria-label={`${n} estrellas`} style={{ letterSpacing: 2 }}>
-      {([1, 2, 3] as const).map((i) => (
-        <span
-          key={i}
-          style={{
-            color: i <= n ? 'var(--gco-primary)' : 'var(--gco-ink-faint)',
-            fontSize: '0.95rem',
-          }}
-        >
-          ★
-        </span>
-      ))}
-    </span>
+    'ontouchstart' in window ||
+    (navigator.maxTouchPoints != null && navigator.maxTouchPoints > 0)
   )
 }
 
-/** Lee un color CSS resuelto (canvas no entiende var(--…)) */
-function cssColor(varName: string, fallback: string): string {
-  if (typeof window === 'undefined') return fallback
+
+function defaultSettings(): PuzzleSettings {
+  return { sound: true, haptics: true, defaultShape: 'classic' }
+}
+
+function loadSettings(): PuzzleSettings {
   try {
-    const v = getComputedStyle(document.documentElement)
-      .getPropertyValue(varName)
-      .trim()
-    return v || fallback
+    const raw = localStorage.getItem(SETTINGS_KEY)
+    if (!raw) return defaultSettings()
+    const parsed = JSON.parse(raw) as Partial<PuzzleSettings>
+    return {
+      sound: parsed.sound ?? true,
+      haptics: parsed.haptics ?? true,
+      defaultShape: parsed.defaultShape ?? 'classic',
+    }
   } catch {
-    return fallback
+    return defaultSettings()
   }
 }
 
-/** roundRect con fallback compatible */
-function fillRoundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number
-) {
-  const rr = Math.min(r, w / 2, h / 2)
-  const anyCtx = ctx as CanvasRenderingContext2D & {
-    roundRect?: (
-      x: number,
-      y: number,
-      w: number,
-      h: number,
-      radii?: number | number[]
-    ) => void
-  }
-  ctx.beginPath()
-  if (typeof anyCtx.roundRect === 'function') {
-    anyCtx.roundRect(x, y, w, h, rr)
-  } else {
-    ctx.moveTo(x + rr, y)
-    ctx.arcTo(x + w, y, x + w, y + h, rr)
-    ctx.arcTo(x + w, y + h, x, y + h, rr)
-    ctx.arcTo(x, y + h, x, y, rr)
-    ctx.arcTo(x, y, x + w, y, rr)
-    ctx.closePath()
+function saveSettings(s: PuzzleSettings): void {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s))
+  } catch {
+    /* */
   }
 }
 
-/* ─── Dibujo de pieza con pestañas ───────────────────────────────────────── */
-
-function piecePath(
-  w: number,
-  h: number,
-  edges: JigsawPiece['edges'],
-  shape: PieceShape
-): Path2D {
-  const path = new Path2D()
-  const tab = Math.min(w, h) * (shape === 'pointed' ? 0.22 : 0.18)
-  const flat = shape === 'round' ? 0.12 : 0.08
-
-  const edge = (
-    side: 'top' | 'right' | 'bottom' | 'left',
-    tabDir: number
-  ) => {
-    if (tabDir === 0) return
-    const sign = tabDir
-    const r = shape === 'round' ? tab * 0.9 : tab
-    if (side === 'top') {
-      const mid = w / 2
-      if (shape === 'pointed') {
-        path.lineTo(mid - r * 0.5, 0)
-        path.lineTo(mid, -r * sign)
-        path.lineTo(mid + r * 0.5, 0)
-      } else {
-        path.lineTo(mid - r, 0)
-        path.bezierCurveTo(
-          mid - r,
-          -r * sign * 1.2,
-          mid + r,
-          -r * sign * 1.2,
-          mid + r,
-          0
-        )
-      }
-    } else if (side === 'right') {
-      const mid = h / 2
-      if (shape === 'pointed') {
-        path.lineTo(w, mid - r * 0.5)
-        path.lineTo(w + r * sign, mid)
-        path.lineTo(w, mid + r * 0.5)
-      } else {
-        path.lineTo(w, mid - r)
-        path.bezierCurveTo(
-          w + r * sign * 1.2,
-          mid - r,
-          w + r * sign * 1.2,
-          mid + r,
-          w,
-          mid + r
-        )
-      }
-    } else if (side === 'bottom') {
-      const mid = w / 2
-      if (shape === 'pointed') {
-        path.lineTo(mid + r * 0.5, h)
-        path.lineTo(mid, h + r * sign)
-        path.lineTo(mid - r * 0.5, h)
-      } else {
-        path.lineTo(mid + r, h)
-        path.bezierCurveTo(
-          mid + r,
-          h + r * sign * 1.2,
-          mid - r,
-          h + r * sign * 1.2,
-          mid - r,
-          h
-        )
-      }
-    } else {
-      const mid = h / 2
-      if (shape === 'pointed') {
-        path.lineTo(0, mid + r * 0.5)
-        path.lineTo(-r * sign, mid)
-        path.lineTo(0, mid - r * 0.5)
-      } else {
-        path.lineTo(0, mid + r)
-        path.bezierCurveTo(
-          -r * sign * 1.2,
-          mid + r,
-          -r * sign * 1.2,
-          mid - r,
-          0,
-          mid - r
-        )
-      }
+function vibrate(pattern: number | number[]): void {
+  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    try {
+      navigator.vibrate(pattern)
+    } catch {
+      /* */
     }
   }
-
-  const inset = Math.min(w, h) * flat
-  path.moveTo(inset, 0)
-  path.lineTo(w * 0.35, 0)
-  edge('top', edges.top)
-  path.lineTo(w - inset, 0)
-  path.lineTo(w, inset)
-  path.lineTo(w, h * 0.35)
-  edge('right', edges.right)
-  path.lineTo(w, h - inset)
-  path.lineTo(w - inset, h)
-  path.lineTo(w * 0.65, h)
-  edge('bottom', edges.bottom)
-  path.lineTo(inset, h)
-  path.lineTo(0, h - inset)
-  path.lineTo(0, h * 0.65)
-  edge('left', edges.left)
-  path.lineTo(0, inset)
-  path.closePath()
-  return path
 }
 
-/* ─── Componente principal ───────────────────────────────────────────────── */
+function stepFor(pieces: number): number {
+  if (pieces < 20) return 1
+  if (pieces < 100) return 5
+  if (pieces < 500) return 25
+  return 100
+}
 
-export function RompecabezasGame() {
+/** Celda que cabe en el viewport disponible (ancho Y alto). */
+function fitCellPx(
+  cols: number,
+  rows: number,
+  availW: number,
+  availH: number,
+  trayRows: number
+): number {
+  const padBudget = 48
+  const w = Math.max(120, availW - padBudget)
+  const h = Math.max(120, availH - padBudget)
+  // espacio vertical: tablero + bandeja debajo
+  const totalRows = rows + trayRows * 1.15 + 1.4
+  const byW = Math.floor(w / Math.max(cols, 1))
+  const byH = Math.floor(h / Math.max(totalRows, 1))
+  const cell = Math.min(byW, byH)
+  return Math.max(28, Math.min(cell, 120))
+}
+
+const NAV_ITEMS: { id: Screen; label: string; emoji: string; sub?: string }[] = [
+  { id: 'normal', label: 'Modo Normal', emoji: '📈', sub: 'Progresión e historial' },
+  { id: 'creativo', label: 'Modo Creativo', emoji: '✨', sub: 'Tus niveles guardados' },
+  { id: 'galeria', label: 'Galería', emoji: '🖼️', sub: 'Imágenes por defecto' },
+  { id: 'mis-imagenes', label: 'Mis Imágenes', emoji: '📁', sub: 'Importadas por ti' },
+  { id: 'ajustes', label: 'Ajustes', emoji: '⚙️', sub: 'Stats y preferencias' },
+]
+
+const MOBILE_NAV: { id: Screen; label: string; emoji: string }[] = [
+  { id: 'normal', label: 'Normal', emoji: '🧩' },
+  { id: 'creativo', label: 'Creativo', emoji: '✨' },
+  { id: 'galeria', label: 'Galería', emoji: '🖼️' },
+  { id: 'mis-imagenes', label: 'Imágenes', emoji: '📁' },
+  { id: 'ajustes', label: 'Ajustes', emoji: '⚙️' },
+]
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Sonido
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function useJigsawSound(enabled: boolean) {
+  const ctxRef = useRef<AudioContext | null>(null)
+
+  function getCtx(): AudioContext | null {
+    if (!enabled || typeof window === 'undefined') return null
+    if (!ctxRef.current) {
+      const Ctor =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext
+      if (!Ctor) return null
+      try {
+        ctxRef.current = new Ctor()
+      } catch {
+        return null
+      }
+    }
+    if (ctxRef.current.state === 'suspended') void ctxRef.current.resume()
+    return ctxRef.current
+  }
+
+  function tone(
+    freq: number,
+    dur: number,
+    type: OscillatorType,
+    peak: number,
+    delay: number
+  ) {
+    const ctx = getCtx()
+    if (!ctx) return
+    const t0 = ctx.currentTime + delay
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = type
+    osc.frequency.value = freq
+    gain.gain.setValueAtTime(0, t0)
+    gain.gain.linearRampToValueAtTime(peak, t0 + 0.012)
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur)
+    osc.connect(gain).connect(ctx.destination)
+    osc.start(t0)
+    osc.stop(t0 + dur + 0.02)
+  }
+
+  return {
+    playSnap: () => tone(720, 0.09, 'sine', 0.14, 0),
+    playComplete: () => {
+      tone(523.25, 0.16, 'triangle', 0.14, 0)
+      tone(659.25, 0.16, 'triangle', 0.14, 0.1)
+      tone(783.99, 0.26, 'triangle', 0.16, 0.2)
+    },
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Estilos
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const SCOPED_STYLES = `
+.pz-root *, .pz-root *::before, .pz-root *::after { box-sizing: border-box; }
+.pz-root {
+  --pz-neon: var(--gco-primary, #22E6C5);
+  --pz-neon-dim: var(--gco-primary-dim, rgba(34,230,197,0.18));
+  --pz-accent: var(--gco-accent, #8B7CF6);
+  --pz-glass: rgba(255, 255, 255, 0.055);
+  --pz-glass-thick: rgba(255, 255, 255, 0.09);
+  --pz-border: rgba(255, 255, 255, 0.14);
+  --pz-border-hi: rgba(255, 255, 255, 0.22);
+  --pz-ink: var(--gco-ink, #F3F5FA);
+  --pz-muted: var(--gco-ink-muted, rgba(243,245,250,0.64));
+  --pz-faint: var(--gco-ink-faint, rgba(243,245,250,0.38));
+  --pz-radius: 20px;
+  --pz-radius-sm: 14px;
+  --pz-nav-h: 88px;
+  --pz-safe-b: env(safe-area-inset-bottom, 0px);
+  --pz-safe-t: env(safe-area-inset-top, 0px);
+
+  /* Ocupa el viewport del host sin pelear con layouts padre */
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 80% 50% at 20% -10%, rgba(34,230,197,0.08), transparent 50%),
+    radial-gradient(ellipse 60% 40% at 90% 10%, rgba(139,124,246,0.07), transparent 45%),
+    var(--gco-bg, #0B1220);
+  color: var(--pz-ink);
+  font-family: var(--font-body, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif);
+  -webkit-font-smoothing: antialiased;
+  container-type: inline-size;
+  container-name: pz-shell;
+  isolation: isolate;
+}
+
+/* Sidebar */
+.pz-sidebar {
+  width: 236px; flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 0.2rem;
+  padding: 1rem 0.8rem;
+  border-right: 1px solid var(--pz-border);
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), transparent 45%);
+  overflow-y: auto; overflow-x: hidden; height: 100%;
+}
+.pz-brand { display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.55rem 0.9rem; font-weight: 700; font-size: 1.02rem; }
+.pz-brand-mark {
+  width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--pz-neon), var(--pz-accent));
+  color: #0B1220; font-size: 1.05rem;
+  box-shadow: 0 0 18px rgba(34,230,197,0.4); flex-shrink: 0;
+}
+.pz-brand-sub { font-size: 0.66rem; font-weight: 500; color: var(--pz-muted); display: block; }
+.pz-nav-btn {
+  display: flex; align-items: center; gap: 0.6rem; width: 100%;
+  padding: 0.65rem 0.7rem; border: 1px solid transparent; border-radius: 12px;
+  background: transparent; color: var(--pz-muted);
+  font: inherit; font-weight: 600; font-size: 0.86rem; text-align: left; cursor: pointer;
+  transition: .15s;
+}
+.pz-nav-btn:hover { background: var(--pz-glass); color: var(--pz-ink); }
+.pz-nav-btn.is-active {
+  background: var(--pz-neon-dim); border-color: rgba(34,230,197,0.4);
+  color: var(--pz-neon); box-shadow: 0 0 20px rgba(34,230,197,0.14);
+}
+.pz-nav-emoji { width: 1.3rem; text-align: center; flex-shrink: 0; }
+.pz-nav-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.pz-nav-sub { font-size: 0.64rem; font-weight: 400; color: var(--pz-faint); }
+.pz-nav-btn.is-active .pz-nav-sub { color: var(--pz-neon); opacity: .75; }
+.pz-side-profile {
+  margin-top: auto; padding: 0.8rem; border-radius: 12px;
+  background: var(--pz-glass); border: 1px solid var(--pz-border);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.pz-side-profile-name { font-weight: 700; font-size: 0.88rem; }
+.pz-side-profile-meta { font-size: 0.72rem; color: var(--pz-muted); }
+
+/* Main */
+.pz-main {
+  flex: 1 1 0%;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+  container-type: inline-size;
+  container-name: pz-main;
+}
+.pz-topbar {
+  flex-shrink: 0; display: flex; align-items: center; gap: 0.45rem;
+  padding: calc(0.55rem + var(--pz-safe-t)) 0.85rem 0.5rem;
+  width: 100%; max-width: 100%; overflow: hidden;
+}
+.pz-topbar-title {
+  flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 0.4rem;
+  font-weight: 700; font-size: 0.98rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pz-topbar-sub { font-weight: 500; font-size: 0.74rem; color: var(--pz-muted); }
+.pz-topbar-right { display: flex; align-items: center; gap: 0.35rem; margin-left: auto; flex-shrink: 0; }
+.pz-pill {
+  padding: 0.32rem 0.7rem; border-radius: 999px;
+  background: linear-gradient(165deg, rgba(255,255,255,0.1), rgba(255,255,255,0.04));
+  border: 1px solid rgba(255,255,255,0.14);
+  backdrop-filter: blur(12px);
+  font-size: 0.78rem; font-variant-numeric: tabular-nums; white-space: nowrap;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.1);
+}
+.pz-icon-btn {
+  width: 36px; height: 36px; min-width: 36px; border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: linear-gradient(165deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04));
+  color: var(--pz-ink);
+  display: grid; place-items: center; cursor: pointer; font-size: 0.95rem; flex-shrink: 0;
+  transition: .18s;
+  backdrop-filter: blur(12px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+}
+.pz-icon-btn:hover { border-color: rgba(34,230,197,0.45); background: rgba(34,230,197,0.12); }
+.pz-icon-btn.is-on {
+  border-color: rgba(34,230,197,0.55); color: var(--pz-neon);
+  background: rgba(34,230,197,0.16);
+  box-shadow: 0 0 14px rgba(34,230,197,0.2);
+}
+
+.pz-content {
+  /* flex-basis 0% es clave: permite que el item se encoja y scrollee */
+  flex: 1 1 0%;
+  min-height: 0 !important;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden !important;
+  overflow-y: scroll !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  padding: 0.7rem 1rem 1.25rem;
+  padding-bottom: 1.25rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(34,230,197,0.25) transparent;
+  position: relative;
+  z-index: 1;
+}
+.pz-content::-webkit-scrollbar { width: 5px; }
+.pz-content::-webkit-scrollbar-thumb {
+  background: rgba(34,230,197,0.28); border-radius: 4px;
+}
+.pz-main.is-playing .pz-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0%;
+  min-height: 0;
+  padding: 0.45rem 0.65rem 0.55rem;
+  overflow: hidden !important;
+  padding-bottom: 0.55rem;
+}
+.pz-scroll-inner {
+  width: 100%;
+  max-width: 100%;
+  min-height: min-content;
+  padding-bottom: 0.5rem;
+}
+
+.pz-welcome { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; width: 100%; }
+.pz-welcome-text { font-size: 0.9rem; color: var(--pz-muted); }
+.pz-welcome-text strong { color: var(--pz-ink); }
+.pz-welcome-stats { margin-left: auto; display: flex; gap: 0.35rem; flex-wrap: wrap; }
+
+.pz-card {
+  background: linear-gradient(
+    155deg,
+    rgba(255,255,255,0.12) 0%,
+    rgba(255,255,255,0.05) 42%,
+    rgba(255,255,255,0.025) 100%
+  );
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: var(--pz-radius);
+  backdrop-filter: blur(36px) saturate(1.7);
+  -webkit-backdrop-filter: blur(36px) saturate(1.7);
+  box-shadow:
+    0 10px 36px rgba(0,0,0,0.3),
+    inset 0 1px 0 rgba(255,255,255,0.16),
+    inset 0 -1px 0 rgba(0,0,0,0.12);
+  width: 100%;
+  max-width: 100%;
+}
+.pz-panel {
+  padding: 1.05rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  max-width: 100%;
+}
+.pz-panel-head { display: flex; align-items: center; gap: 0.4rem; font-weight: 700; font-size: 0.95rem; margin: 0; }
+.pz-panel-desc { font-size: 0.78rem; color: var(--pz-muted); line-height: 1.4; margin: -0.15rem 0 0; }
+
+.pz-inicio-grid {
+  display: grid; grid-template-columns: 1fr; gap: 0.85rem;
+  align-items: start; width: 100%; max-width: 100%;
+  padding-bottom: 0.5rem;
+}
+@container pz-main (min-width: 700px) {
+  .pz-inicio-grid { grid-template-columns: 1fr 1fr; }
+}
+@container pz-main (min-width: 1000px) {
+  .pz-inicio-grid { grid-template-columns: 1.15fr 1fr 0.85fr; }
+}
+
+.pz-level-row {
+  display: flex; gap: 0.55rem; overflow-x: auto; overflow-y: hidden;
+  padding: 2px 1px 8px; scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch; width: 100%; max-width: 100%;
+  overscroll-behavior-x: contain;
+}
+.pz-level-row::-webkit-scrollbar { height: 3px; }
+.pz-level-row::-webkit-scrollbar-thumb { background: rgba(34,230,197,0.35); border-radius: 4px; }
+.pz-level-card {
+  position: relative; flex: 0 0 auto; width: 100px; aspect-ratio: 3/4;
+  border-radius: 14px; overflow: hidden; border: 1.5px solid var(--pz-border);
+  background: rgba(0,0,0,0.25); cursor: pointer; scroll-snap-align: start;
+  padding: 0; text-align: left; color: #fff; transition: .15s;
+}
+.pz-level-card.is-current {
+  border-color: var(--pz-neon);
+  box-shadow: 0 0 0 2px var(--pz-neon-dim), 0 0 20px rgba(34,230,197,0.22);
+}
+.pz-level-card.is-locked { opacity: 0.48; cursor: not-allowed; }
+.pz-level-cover { position: absolute; inset: 0; background-size: cover; background-position: center; }
+.pz-level-body {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 0.55rem;
+  background: linear-gradient(180deg, transparent, rgba(0,0,0,0.78));
+}
+.pz-level-label { font-weight: 700; font-size: 0.84rem; }
+.pz-level-pieces { font-size: 0.68rem; opacity: .88; }
+.pz-level-lock {
+  position: absolute; top: 0.4rem; right: 0.4rem; width: 24px; height: 24px;
+  border-radius: 8px; background: rgba(0,0,0,0.55); display: grid; place-items: center;
+  font-size: 0.75rem; z-index: 2;
+}
+.pz-tier-track { display: flex; align-items: center; gap: 0.28rem; width: 100%; }
+.pz-tier-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pz-border); flex-shrink: 0; }
+.pz-tier-dot.is-on { background: var(--pz-neon); box-shadow: 0 0 8px var(--pz-neon); }
+.pz-tier-line {
+  flex: 1; height: 3px; border-radius: 3px; background: var(--pz-border);
+  position: relative; overflow: hidden; min-width: 0;
+}
+.pz-tier-line > i {
+  position: absolute; left: 0; top: 0; bottom: 0; background: var(--pz-neon);
+  box-shadow: 0 0 10px var(--pz-neon); border-radius: 3px;
+}
+
+.pz-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem;
+  padding: 0.7rem 1.05rem; border-radius: 999px; border: 1px solid transparent;
+  font: inherit; font-weight: 700; font-size: 0.86rem; cursor: pointer;
+  transition: .15s; max-width: 100%;
+}
+.pz-btn:active { transform: scale(0.98); }
+.pz-btn-primary {
+  background: linear-gradient(180deg, #3aefd0 0%, var(--pz-neon) 100%);
+  color: var(--gco-button-text, #0B1220);
+  box-shadow: 0 4px 20px rgba(34,230,197,0.4), inset 0 1px 0 rgba(255,255,255,0.35);
+}
+.pz-btn-accent { background: var(--pz-accent); color: #fff; box-shadow: 0 4px 16px rgba(139,124,246,0.35); }
+.pz-btn-ghost { background: var(--pz-glass); border-color: var(--pz-border); color: var(--pz-ink); }
+.pz-btn-ghost:hover { border-color: var(--pz-neon); color: var(--pz-neon); }
+.pz-btn-block { width: 100%; }
+
+.pz-preview {
+  position: relative; aspect-ratio: 16/9; border-radius: 12px; overflow: hidden;
+  background: rgba(0,0,0,0.25); border: 1px solid var(--pz-border); width: 100%;
+}
+.pz-preview-nav {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--pz-border);
+  background: rgba(11,18,32,0.75); color: #fff; cursor: pointer;
+  display: grid; place-items: center; z-index: 2;
+}
+.pz-preview-nav.prev { left: 8px; }
+.pz-preview-nav.next { right: 8px; }
+.pz-select {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.45rem;
+  padding: 0.58rem 0.75rem; border-radius: 12px; border: 1px solid var(--pz-border);
+  background: var(--gco-input-bg, rgba(0,0,0,0.28)); color: var(--pz-ink);
+  font: inherit; font-weight: 600; font-size: 0.84rem; cursor: pointer;
+  text-align: left; width: 100%; min-width: 0;
+}
+.pz-select > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.pz-select-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem; width: 100%; }
+.pz-shape-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; width: 100%; }
+.pz-shape-card {
+  display: flex; flex-direction: column; align-items: center; gap: 0.3rem;
+  padding: 0.7rem 0.3rem; border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: linear-gradient(165deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+  color: var(--pz-muted); cursor: pointer; font: inherit; transition: .2s;
+  backdrop-filter: blur(12px);
+}
+.pz-shape-card.is-on {
+  border-color: rgba(34,230,197,0.5);
+  background: linear-gradient(165deg, rgba(34,230,197,0.22), rgba(34,230,197,0.08));
+  color: var(--pz-neon);
+  box-shadow: 0 0 18px rgba(34,230,197,0.2), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.pz-shape-emoji { font-size: 1.15rem; }
+.pz-shape-label { font-size: 0.7rem; font-weight: 600; }
+
+.pz-upload {
+  display: flex; flex-direction: column; align-items: center; gap: 0.2rem;
+  padding: 0.95rem; border-radius: 12px; border: 1.5px dashed var(--pz-border);
+  background: rgba(255,255,255,0.03); color: var(--pz-ink);
+  font: inherit; font-weight: 600; font-size: 0.84rem; cursor: pointer; width: 100%;
+}
+.pz-upload:hover { border-color: var(--pz-neon); background: var(--pz-neon-dim); }
+.pz-upload-sub { font-size: 0.68rem; font-weight: 400; color: var(--pz-muted); }
+.pz-mini-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.35rem; width: 100%; }
+.pz-mini-thumb { aspect-ratio: 1; border-radius: 8px; background-size: cover; background-position: center; border: 1px solid var(--pz-border); width: 100%; }
+.pz-img-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 0.6rem; width: 100%; }
+.pz-img-card {
+  display: flex; flex-direction: column; gap: 0.28rem; background: none; border: none; padding: 0;
+  cursor: pointer; text-align: left; color: var(--pz-ink); position: relative; font: inherit;
+  min-width: 0; width: 100%;
+}
+.pz-img-cover {
+  aspect-ratio: 4/3; border-radius: 12px; background-size: cover; background-position: center;
+  border: 1.5px solid transparent; width: 100%; transition: .15s;
+}
+.pz-img-card.is-on .pz-img-cover { border-color: var(--pz-neon); box-shadow: 0 0 14px rgba(34,230,197,0.2); }
+.pz-img-name { font-size: 0.72rem; color: var(--pz-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ═══ PLAY ═══ */
+.pz-play {
+  display: flex; flex-direction: column; gap: 0.4rem;
+  flex: 1; min-height: 0; width: 100%; max-width: 100%; overflow: hidden;
+}
+.pz-play.is-fs {
+  position: fixed; inset: 0; z-index: 150;
+  background: var(--gco-bg, #0B1220);
+  padding: calc(0.4rem + var(--pz-safe-t)) 0.5rem calc(0.4rem + var(--pz-safe-b));
+}
+.pz-toolbar {
+  display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;
+  width: 100%; flex-shrink: 0;
+}
+.pz-tool {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  padding: 0.38rem 0.6rem; border-radius: 999px;
+  border: 1px solid var(--pz-border); background: var(--pz-glass);
+  color: var(--pz-muted); font: inherit; font-size: 0.74rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+.pz-tool.is-on { border-color: var(--pz-neon); background: var(--pz-neon-dim); color: var(--pz-neon); }
+.pz-tool:disabled { opacity: 0.4; cursor: not-allowed; }
+.pz-zoom {
+  display: flex; align-items: center; gap: 0.25rem;
+  margin-left: auto; font-size: 0.72rem; color: var(--pz-muted); flex-shrink: 0;
+}
+
+.pz-prog {
+  display: flex; align-items: center; gap: 0.45rem; width: 100%; flex-shrink: 0;
+}
+.pz-prog-bar {
+  flex: 1; height: 5px; border-radius: 6px;
+  background: rgba(255,255,255,0.08); overflow: hidden; min-width: 0;
+}
+.pz-prog-fill {
+  height: 100%; border-radius: 6px;
+  background: linear-gradient(90deg, var(--pz-neon), var(--pz-accent));
+  box-shadow: 0 0 10px rgba(34,230,197,0.4);
+  transition: width .25s ease;
+}
+.pz-prog-count { font-size: 0.74rem; color: var(--pz-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+
+.pz-arena-scroll {
+  flex: 1; min-height: 0; width: 100%; max-width: 100%;
+  overflow: auto; border-radius: 14px;
+  background:
+    radial-gradient(ellipse at 25% 15%, rgba(34,230,197,0.07), transparent 50%),
+    radial-gradient(ellipse at 80% 85%, rgba(139,124,246,0.06), transparent 45%),
+    rgba(0,0,0,0.22);
+  border: 1px solid var(--pz-border);
+  position: relative;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+}
+.pz-arena {
+  position: relative; transform-origin: top left; touch-action: none; margin: 8px;
+}
+.pz-board {
+  position: absolute; left: 0; top: 0;
+  border: 2px dashed rgba(34,230,197,0.3);
+  border-radius: 6px; overflow: hidden;
+  background: rgba(0,0,0,0.16);
+  box-shadow: inset 0 0 36px rgba(34,230,197,0.05);
+}
+.pz-ghost {
+  position: absolute; inset: 0; background-size: cover; background-position: center;
+  opacity: 0.3; pointer-events: none;
+}
+.pz-piece { position: absolute; touch-action: none; will-change: left, top; cursor: grab; }
+.pz-piece.is-locked { cursor: default; pointer-events: none; }
+.pz-piece.is-dragging {
+  z-index: 9999 !important; cursor: grabbing;
+  filter: drop-shadow(0 8px 18px rgba(0,0,0,0.45)) drop-shadow(0 0 10px rgba(34,230,197,0.3));
+}
+.pz-piece.is-hint { filter: drop-shadow(0 0 10px var(--pz-neon)); }
+
+.pz-pause {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(11,18,32,0.6); backdrop-filter: blur(6px); z-index: 30;
+  border-radius: inherit; padding: 1rem;
+}
+.pz-pause-card {
+  padding: 1.35rem 1.2rem; text-align: center; min-width: 200px;
+  max-width: 100%; width: min(280px, 100%);
+}
+
+/* HUD flotante de progreso (play) */
+.pz-hud {
+  position: fixed;
+  z-index: 120;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  background: linear-gradient(165deg, rgba(255,255,255,0.14), rgba(12,18,32,0.78));
+  border: 1px solid rgba(34,230,197,0.35);
+  backdrop-filter: blur(20px) saturate(1.5);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  font-size: 0.75rem;
+  color: var(--pz-ink);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.4), 0 0 16px rgba(34,230,197,0.12);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  font-variant-numeric: tabular-nums;
+}
+.pz-hud:active { cursor: grabbing; }
+.pz-hud strong { color: var(--pz-neon); }
+.pz-hud-grip {
+  opacity: 0.45;
+  font-size: 0.65rem;
+  letter-spacing: -1px;
+}
+
+/* Modals */
+.pz-overlay {
+  position: fixed; inset: 0; background: rgba(5,10,20,0.68);
+  backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center;
+  z-index: 200; padding: 0.85rem; overflow: auto;
+}
+.pz-modal {
+  width: min(500px, 100%); max-height: min(85dvh, 85vh); overflow: auto;
+  padding: 1.1rem; border-radius: var(--pz-radius); -webkit-overflow-scrolling: touch;
+}
+.pz-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.8rem; gap: 0.5rem; }
+.pz-modal-head h3 { margin: 0; font-size: 1rem; }
+.pz-tabs {
+  display: flex; gap: 0; border-bottom: 1px solid var(--pz-border);
+  margin-bottom: 0.8rem; overflow-x: auto; max-width: 100%;
+}
+.pz-tabs button {
+  padding: 0.48rem 0.1rem; background: none; border: none;
+  border-bottom: 2px solid transparent; color: var(--pz-muted);
+  font: inherit; font-weight: 600; font-size: 0.82rem; cursor: pointer;
+  margin-right: 0.95rem; white-space: nowrap; flex-shrink: 0;
+}
+.pz-tabs button.is-on { color: var(--pz-neon); border-color: var(--pz-neon); }
+.pz-pieces-val {
+  font-size: 2.2rem; font-weight: 800; text-align: center; color: var(--pz-neon);
+  line-height: 1; text-shadow: 0 0 22px rgba(34,230,197,0.35);
+}
+.pz-pieces-lbl { text-align: center; font-size: 0.76rem; color: var(--pz-muted); margin-bottom: 0.85rem; }
+.pz-stepper { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem; width: 100%; }
+.pz-stepper input[type=range] { flex: 1; min-width: 0; accent-color: var(--pz-neon); }
+.pz-chips { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.35rem; margin: 0.7rem 0 0.85rem; width: 100%; }
+.pz-chip {
+  padding: 0.42rem 0.12rem; border-radius: 10px; border: 1px solid var(--pz-border);
+  background: var(--pz-glass); color: var(--pz-muted);
+  font: inherit; font-size: 0.76rem; font-weight: 700; cursor: pointer;
+}
+.pz-chip.is-on { border-color: var(--pz-neon); background: var(--pz-neon-dim); color: var(--pz-neon); }
+.pz-complete {
+  text-align: center;
+  padding: 1.25rem 1.15rem 1.4rem;
+  max-width: min(420px, 100%);
+  width: 100%;
+}
+.pz-complete-art {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: 14px;
+  overflow: hidden;
+  margin: 0.5rem 0 0.85rem;
+  border: 1px solid rgba(34,230,197,0.3);
+  box-shadow: 0 0 28px rgba(34,230,197,0.15);
+  background-size: cover;
+  background-position: center;
+  position: relative;
+}
+.pz-complete-art::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.pz-complete-emoji { font-size: 2.4rem; margin-bottom: 0.25rem; }
+.pz-stars { display: flex; justify-content: center; gap: 0.28rem; font-size: 1.55rem; margin: 0.45rem 0; }
+.pz-star { opacity: 0.25; filter: grayscale(1); }
+.pz-star.is-on { opacity: 1; filter: none; text-shadow: 0 0 12px rgba(255,200,80,0.5); }
+.pz-complete-stats {
+  display: flex; justify-content: center; flex-wrap: wrap; gap: 0.7rem;
+  color: var(--pz-muted); font-size: 0.82rem; margin-bottom: 0.95rem;
+}
+.pz-complete-actions { display: flex; flex-direction: column; gap: 0.4rem; }
+
+/* ═══ Liquid glass neon bottom nav (iOS-style floating dock) ═══ */
+.pz-bottom {
+  display: none;
+  position: fixed;
+  left: 50%;
+  bottom: calc(12px + var(--pz-safe-b));
+  transform: translateX(-50%);
+  z-index: 100;
+  width: min(400px, calc(100% - 24px));
+  max-width: calc(100vw - 24px);
+  padding: 0.45rem 0.4rem;
+  gap: 0.12rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: linear-gradient(
+    180deg,
+    rgba(255,255,255,0.16) 0%,
+    rgba(20, 30, 50, 0.55) 45%,
+    rgba(12, 18, 32, 0.7) 100%
+  );
+  backdrop-filter: blur(48px) saturate(2);
+  -webkit-backdrop-filter: blur(48px) saturate(2);
+  box-shadow:
+    0 14px 48px rgba(0,0,0,0.55),
+    0 0 0 0.5px rgba(255,255,255,0.22) inset,
+    0 1.5px 0 rgba(255,255,255,0.28) inset,
+    0 -1px 0 rgba(0,0,0,0.2) inset,
+    0 0 40px rgba(34,230,197,0.12);
+}
+.pz-bottom-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 0.42rem 0.15rem;
+  background: none;
+  border: none;
+  color: rgba(243,245,250,0.55);
+  font: inherit;
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  border-radius: 999px;
+  min-width: 0;
+  transition: color .2s, background .2s, box-shadow .2s, transform .15s;
+}
+.pz-bottom-item span:first-child { font-size: 1.2rem; line-height: 1.1; }
+.pz-bottom-item span:last-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+}
+.pz-bottom-item:active { transform: scale(0.94); }
+.pz-bottom-item.is-on {
+  color: var(--pz-neon);
+  background: rgba(34,230,197,0.16);
+  box-shadow: 0 0 20px rgba(34,230,197,0.2);
+}
+
+.pz-section-title {
+  font-size: 0.7rem; font-weight: 700; color: var(--pz-muted);
+  text-transform: uppercase; letter-spacing: 0.05em; margin: 0.3rem 0 0.45rem;
+}
+.pz-upcoming { display: flex; flex-direction: column; gap: 0.4rem; width: 100%; }
+.pz-upcoming-row {
+  display: flex; align-items: center; gap: 0.6rem; padding: 0.7rem 0.85rem;
+  border-radius: 14px; width: 100%; max-width: 100%;
+}
+.pz-upcoming-lv { font-weight: 700; flex-shrink: 0; }
+.pz-upcoming-pc {
+  margin-right: auto; font-size: 0.76rem; color: var(--pz-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+
+/* iOS-style liquid switch */
+.pz-switch {
+  position: relative;
+  width: 52px;
+  height: 32px;
+  flex-shrink: 0;
+  border: none;
+  padding: 0;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.12);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.35);
+  cursor: pointer;
+  transition: background .25s ease;
+}
+.pz-switch.is-on {
+  background: linear-gradient(180deg, #4af0d4, var(--pz-neon));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 0 14px rgba(34,230,197,0.35);
+}
+.pz-switch-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #fff, #e8eef8);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35), 0 0 0 0.5px rgba(0,0,0,0.08);
+  transition: transform .25s cubic-bezier(0.34, 1.4, 0.64, 1);
+  pointer-events: none;
+}
+.pz-switch.is-on .pz-switch-knob {
+  transform: translateX(20px);
+}
+.pz-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 0;
+}
+.pz-row + .pz-row {
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.pz-row-label { font-weight: 600; font-size: 0.92rem; }
+.pz-row-sub { font-size: 0.74rem; color: var(--pz-muted); margin-top: 2px; }
+
+/* Glass list group (iOS settings style) */
+.pz-list-group {
+  border-radius: 16px;
+  overflow: hidden;
+  background: linear-gradient(165deg, rgba(255,255,255,0.09), rgba(255,255,255,0.03));
+  border: 1px solid rgba(255,255,255,0.12);
+  backdrop-filter: blur(28px) saturate(1.6);
+  -webkit-backdrop-filter: blur(28px) saturate(1.6);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.1);
+  padding: 0 1rem;
+}
+
+.pz-empty { font-size: 0.82rem; color: var(--pz-muted); line-height: 1.5; padding: 0.4rem 0 0.85rem; }
+.pz-inicio-spacer {
+  width: 100%;
+  height: 0;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+@media (max-width: 900px) {
+  .pz-inicio-spacer {
+    height: calc(var(--pz-nav-h) + var(--pz-safe-b) + 32px);
+  }
+}
+
+.pz-error { font-size: 0.76rem; color: var(--gco-secondary, #FF6B4A); }
+
+/* ── Responsive: media + container (doble garantía) ── */
+@media (max-width: 900px) {
+  .pz-sidebar { display: none !important; }
+  .pz-bottom { display: flex; }
+  /* CRÍTICO: espacio real para que el scroll no muera bajo el dock */
+  .pz-main:not(.is-playing) .pz-content {
+    padding-bottom: calc(var(--pz-nav-h) + var(--pz-safe-b) + 40px) !important;
+  }
+  .pz-topbar { padding-left: 0.85rem; padding-right: 0.85rem; }
+  .pz-content { padding-left: 0.9rem; padding-right: 0.9rem; }
+}
+@media (min-width: 901px) {
+  .pz-bottom { display: none !important; }
+  .pz-sidebar { display: flex; }
+}
+
+@container pz-shell (max-width: 900px) {
+  .pz-sidebar { display: none !important; }
+  .pz-bottom { display: flex; }
+  .pz-main:not(.is-playing) .pz-content {
+    padding-bottom: calc(var(--pz-nav-h) + var(--pz-safe-b) + 40px) !important;
+  }
+}
+@container pz-shell (min-width: 901px) {
+  .pz-bottom { display: none !important; }
+  .pz-sidebar { display: flex; }
+}
+@container pz-main (max-width: 520px) {
+  .pz-select-row { grid-template-columns: 1fr; }
+  .pz-img-grid { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
+  .pz-level-card { width: 92px; }
+  .pz-welcome-stats { width: 100%; margin-left: 0; }
+  .pz-panel { padding: 0.95rem; }
+}
+`
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ImageCover / PieceView
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function ImageCover({
+  image,
+  className,
+  style,
+}: {
+  image: PuzzleImage
+  className?: string
+  style?: CSSProperties
+}) {
+  const [failed, setFailed] = useState(false)
+  return (
+    <div
+      className={className}
+      style={{
+        ...style,
+        backgroundImage: failed
+          ? `linear-gradient(135deg, hsl(${image.fallbackHue} 55% 28%), hsl(${image.fallbackHue2} 50% 22%))`
+          : `url(${image.src})`,
+        backgroundColor: `hsl(${image.fallbackHue} 40% 20%)`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }}
+    >
+      {!failed && (
+        <img src={image.src} alt="" style={{ display: 'none' }} onError={() => setFailed(true)} />
+      )}
+    </div>
+  )
+}
+
+const PieceView = memo(function PieceView({
+  piece,
+  cellPx,
+  pad,
+  shape,
+  imageSrc,
+  fallbackHue,
+  boardPxW,
+  boardPxH,
+  showBorders,
+  isHinted,
+  dragging,
+}: {
+  piece: JigsawPiece
+  cellPx: number
+  pad: number
+  shape: PieceShape
+  imageSrc: string
+  fallbackHue: number
+  boardPxW: number
+  boardPxH: number
+  showBorders: boolean
+  isHinted: boolean
+  dragging: boolean
+}) {
+  const w = cellPx + pad * 2
+  const h = cellPx + pad * 2
+  const path = useMemo(
+    () => buildPiecePath(cellPx, cellPx, pad, piece.edges, shape),
+    [cellPx, pad, piece.edges, shape]
+  )
+  const clipId = `clip-${piece.id}`
+  return (
+    <div
+      className={`pz-piece${piece.locked ? ' is-locked' : ''}${dragging ? ' is-dragging' : ''}${isHinted ? ' is-hint' : ''}`}
+      data-piece-id={piece.id}
+      style={{
+        left: piece.x * cellPx - pad,
+        top: piece.y * cellPx - pad,
+        width: w,
+        height: h,
+        zIndex: piece.locked ? 1 : piece.z,
+      }}
+    >
+      <svg width={w} height={h} style={{ display: 'block', overflow: 'visible' }}>
+        <defs>
+          <clipPath id={clipId}>
+            <path d={path} />
+          </clipPath>
+        </defs>
+        <g clipPath={`url(#${clipId})`}>
+          <rect
+            x={pad - piece.col * cellPx}
+            y={pad - piece.row * cellPx}
+            width={boardPxW}
+            height={boardPxH}
+            fill={`hsl(${fallbackHue} 40% 22%)`}
+          />
+          <image
+            href={imageSrc}
+            x={pad - piece.col * cellPx}
+            y={pad - piece.row * cellPx}
+            width={boardPxW}
+            height={boardPxH}
+            preserveAspectRatio="xMidYMid slice"
+          />
+        </g>
+        {showBorders && (
+          <path
+            d={path}
+            fill="none"
+            stroke={piece.locked ? 'rgba(34,230,197,0.55)' : 'rgba(255,255,255,0.4)'}
+            strokeWidth={1.15}
+          />
+        )}
+      </svg>
+    </div>
+  )
+})
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Root
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+export function RompecabezasGame({
+  onExit,
+  userName: _userName = 'Jugador',
+}: RompecabezasGameProps) {
+  void _userName
   const navigate = useNavigate()
-  const isMobile = useIsMobile()
-  const progress = getGameProgress(GAME_CAT, GAME_ID)
 
-  const [hubTab, setHubTab] = useState<HubTab>('home')
-  const [phase, setPhase] = useState<Phase>('hub')
-  const [prefs, setPrefs] = useState<JigsawPrefs>(() => loadPrefs())
+  const [screen, setScreen] = useState<Screen>('normal')
+  const [progress, setProgress] = useState<PuzzleProgress>(() => loadPuzzleProgress())
+  const [stats, setStats] = useState<PuzzleStats>(() => loadStats())
+  const [isTouch, setIsTouch] = useState(false)
+  const [settings, setSettings] = useState<PuzzleSettings>(() => loadSettings())
+  const [customImages, setCustomImages] = useState<PuzzleImage[]>(() => loadCustomImages())
+  const [savedLevels, setSavedLevels] = useState<SavedCreativeLevel[]>(() => loadCreativeLevels())
+  const [editingLevelId, setEditingLevelId] = useState<string | null>(null)
+  const [levelNameDraft, setLevelNameDraft] = useState('')
 
-  // Normal
-  const [level, setLevel] = useState(Math.max(1, progress.highestLevel || 1))
-  const unlocked = Math.max(1, (progress.highestLevel || 0) + 1)
-
-  // Creative
-  const [customImages, setCustomImages] = useState<PuzzleImage[]>(() =>
-    loadCustomImages()
+  const [creativeImage, setCreativeImage] = useState<PuzzleImage>(DEFAULT_IMAGES[0])
+  const [creativePieces, setCreativePieces] = useState(30)
+  const [creativeShape, setCreativeShape] = useState<PieceShape>(
+    () => loadSettings().defaultShape
   )
-  const [creativeImage, setCreativeImage] = useState<PuzzleImage>(
-    DEFAULT_IMAGES[0]
-  )
-  const [creativePieces, setCreativePieces] = useState(100)
-  const [creativeShape, setCreativeShape] = useState<PieceShape>('classic')
-  const [galleryCat, setGalleryCat] = useState<ImageCategory | 'all'>('all')
+  const [imagePickerOpen, setImagePickerOpen] = useState(false)
+  const [imagePickerTab, setImagePickerTab] = useState<'defecto' | 'mias'>('defecto')
+  const [piecesModalOpen, setPiecesModalOpen] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importing, setImporting] = useState(false)
 
-  // Play state
-  const [cfg, setCfg] = useState<JigsawLevel | null>(null)
+  const [activeLevel, setActiveLevel] = useState<JigsawLevel | null>(null)
   const [pieces, setPieces] = useState<JigsawPiece[]>([])
-  const [elapsedMs, setElapsedMs] = useState(0)
-  const [paused, setPaused] = useState(false)
+  const [playOrigin, setPlayOrigin] = useState<PlayOrigin>('normal')
   const [showPreview, setShowPreview] = useState(false)
-  const [showEdges, setShowEdges] = useState(true)
-  const [hintsLeft, setHintsLeft] = useState(5)
-  const [stars, setStars] = useState<0 | 1 | 2 | 3>(0)
-  const [dragId, setDragId] = useState<string | null>(null)
-  const [msg, setMsg] = useState('')
-  const [history, setHistory] = useState<JigsawPiece[][]>([])
+  const [showBorders, setShowBorders] = useState(true)
+  const [hintsUsed, setHintsUsed] = useState(0)
+  const [hintPieceId, setHintPieceId] = useState<string | null>(null)
+  const [zoom, setZoom] = useState(1)
+  const [paused, setPaused] = useState(false)
+  const [elapsedMs, setElapsedMs] = useState(0)
+  const [completion, setCompletion] = useState<CompletionInfo | null>(null)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  /** pieceId → groupId (piezas sueltas comparten id de grupo al encajar entre sí) */
+  const [groupOf, setGroupOf] = useState<Record<string, string>>({})
+  const [hudPos, setHudPos] = useState<{ x: number; y: number } | null>(null)
+  const hudDragRef = useRef<{ ox: number; oy: number; sx: number; sy: number } | null>(null)
+  const [fullscreen, setFullscreen] = useState(false)
+  const [arenaSize, setArenaSize] = useState({ w: 360, h: 420 })
 
-  const boardRef = useRef<HTMLDivElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const imgRef = useRef<HTMLImageElement | null>(null)
-  const timerRef = useRef<number | null>(null)
-  const startRef = useRef<number | null>(null)
-  const pauseStartedAt = useRef<number | null>(null)
-  const pausedAccum = useRef(0)
-  const fileRef = useRef<HTMLInputElement>(null)
-  const dragOffset = useRef({ x: 0, y: 0 })
-  const zCounter = useRef(10)
-  const boardGeom = useRef({ boardW: 0, boardH: 0, pad: 0, pw: 0, ph: 0 })
+  const timerBaseRef = useRef<number | null>(null)
+  const timerAccumRef = useRef(0)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const arenaScrollRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{
+    id: string
+    startX: number
+    startY: number
+    originX: number
+    originY: number
+    pointerId: number
+  } | null>(null)
+  const piecesRef = useRef(pieces)
+  piecesRef.current = pieces
 
-  const bestTime = cfg
-    ? getLevelBestTime(GAME_CAT, GAME_ID, cfg.level)
-    : null
+  useEffect(() => {
+    setIsTouch(isTouchDevice())
+  }, [])
 
-  const updatePrefs = (patch: Partial<JigsawPrefs>) => {
-    setPrefs((prev) => {
+  const sound = useJigsawSound(settings.sound)
+  const imagePool = useMemo(() => [...DEFAULT_IMAGES, ...customImages], [customImages])
+  const galleryGrouped = useMemo(() => imagesByCategory(DEFAULT_IMAGES), [])
+
+  // Measure arena
+  useEffect(() => {
+    const el = arenaScrollRef.current
+    if (!el || screen !== 'play') return
+    const ro = new ResizeObserver((entries) => {
+      const cr = entries[0]?.contentRect
+      if (!cr) return
+      setArenaSize({ w: Math.floor(cr.width), h: Math.floor(cr.height) })
+    })
+    ro.observe(el)
+    setArenaSize({ w: el.clientWidth, h: el.clientHeight })
+    return () => ro.disconnect()
+  }, [screen, fullscreen])
+
+  useEffect(() => {
+    if (screen !== 'play' || paused || completion) {
+      if (timerBaseRef.current != null) {
+        timerAccumRef.current += performance.now() - timerBaseRef.current
+        timerBaseRef.current = null
+      }
+      return
+    }
+    timerBaseRef.current = performance.now()
+    const id = window.setInterval(() => {
+      if (timerBaseRef.current == null) return
+      setElapsedMs(timerAccumRef.current + (performance.now() - timerBaseRef.current))
+    }, 200)
+    return () => clearInterval(id)
+  }, [screen, paused, completion])
+
+  const resetTimer = () => {
+    timerBaseRef.current = performance.now()
+    timerAccumRef.current = 0
+    setElapsedMs(0)
+  }
+
+  const updateSettings = (patch: Partial<PuzzleSettings>) => {
+    setSettings((prev) => {
       const next = { ...prev, ...patch }
-      savePrefs(next)
+      saveSettings(next)
       return next
     })
   }
 
-  /* ── Cargar imagen del nivel ── */
-  const loadImage = useCallback(
-    (src: string, fallbackHue = 180, label = '') => {
-      return new Promise<HTMLImageElement>((resolve) => {
-        const img = new Image()
-        img.crossOrigin = 'anonymous'
-        img.onload = () => resolve(img)
-        img.onerror = () => {
-          const c = document.createElement('canvas')
-          c.width = 800
-          c.height = 600
-          const ctx = c.getContext('2d')
-          if (ctx) drawFallbackCover(ctx, 800, 600, fallbackHue, label)
-          const fallback = new Image()
-          fallback.onload = () => resolve(fallback)
-          fallback.src = c.toDataURL('image/png')
-        }
-        img.src = src
-      })
-    },
-    []
-  )
-
-  const stopTimer = useCallback(() => {
-    if (timerRef.current) {
-      window.clearInterval(timerRef.current)
-      timerRef.current = null
+  const goBackToLogica = useCallback(() => {
+    if (onExit) {
+      onExit()
+      return
     }
-  }, [])
+    navigate('/categoria/logica')
+  }, [onExit, navigate])
 
-  const computeElapsed = useCallback(() => {
-    if (startRef.current == null) return elapsedMs
-    let extraPause = 0
-    if (pauseStartedAt.current != null) {
-      extraPause = performance.now() - pauseStartedAt.current
-    }
-    return Math.max(
-      0,
-      Math.round(
-        performance.now() - startRef.current - pausedAccum.current - extraPause
-      )
-    )
-  }, [elapsedMs])
-
-  const finishLevel = useCallback(
-    (list: JigsawPiece[], levelCfg: JigsawLevel) => {
-      soundSuccess()
-      stopTimer()
-      const timeMs = computeElapsed()
-      setElapsedMs(timeMs)
-      const s = calcStars(timeMs, levelCfg.targetSeconds, levelCfg.pieces)
-      setStars(s)
-      setPhase('success')
-      setDragId(null)
-      setMsg('')
-
-      if (levelCfg.level > 0) {
-        try {
-          recordLevelResult({
-            categoryId: GAME_CAT,
-            gameId: GAME_ID,
-            level: levelCfg.level,
-            success: true,
-            timeMs,
-          })
-        } catch {
-          /* progress API opcional */
-        }
+  const handleBack = () => {
+    if (screen === 'play') {
+      if (!completion) {
+        const timeMs =
+          timerAccumRef.current +
+          (timerBaseRef.current != null
+            ? performance.now() - timerBaseRef.current
+            : 0)
+        setStats((st) => {
+          const updated: PuzzleStats = {
+            ...st,
+            losses: st.losses + 1,
+            totalPlayMs: st.totalPlayMs + timeMs,
+          }
+          saveStats(updated)
+          return updated
+        })
       }
-      return list
-    },
-    [computeElapsed, stopTimer]
-  )
-
-  /* ── Iniciar partida ── */
-  const startLevel = useCallback(
-    async (lv: JigsawLevel) => {
-      soundStart()
-      setCfg(lv)
-      setPhase('playing')
-      setHubTab('playing')
-      setElapsedMs(0)
-      setPaused(false)
-      setShowPreview(prefs.showPreviewDefault)
-      setShowEdges(prefs.showEdgesDefault)
-      setHintsLeft(
-        Math.max(2, Math.min(10, Math.floor(14 - Math.log2(lv.pieces + 1) * 1.6)))
-      )
-      setStars(0)
-      setDragId(null)
-      setMsg('')
-      setHistory([])
-      pausedAccum.current = 0
-      pauseStartedAt.current = null
-      startRef.current = performance.now()
-
-      const img = await loadImage(
-        lv.image.src,
-        lv.image.fallbackHue,
-        lv.image.name
-      )
-      imgRef.current = img
-
-      const maxW = isMobile
-        ? Math.min(window.innerWidth - 32, 420)
-        : Math.min(560, window.innerWidth * 0.42)
-      const aspect = img.width / Math.max(1, img.height)
-      let boardW = maxW
-      let boardH = boardW / aspect
-      if (boardH > (isMobile ? 360 : 480)) {
-        boardH = isMobile ? 360 : 480
-        boardW = boardH * aspect
-      }
-
-      const list = createPieces(lv, boardW, boardH, 1)
-      setPieces(list)
-
-      const pw = boardW / lv.cols
-      const ph = boardH / lv.rows
-      const pad = Math.max(pw, ph) * 0.25
-      boardGeom.current = { boardW, boardH, pad, pw, ph }
-
-      stopTimer()
-      timerRef.current = window.setInterval(() => {
-        if (startRef.current == null) return
-        if (pauseStartedAt.current != null) return
-        setElapsedMs(
-          Math.round(
-            performance.now() - startRef.current - pausedAccum.current
-          )
-        )
-      }, 200)
-    },
-    [isMobile, loadImage, prefs.showEdgesDefault, prefs.showPreviewDefault, stopTimer]
-  )
-
-  const startNormal = (lvNum: number) => {
-    const lv = generateJigsawLevel(lvNum, {
-      seedSalt: prefs.softProgression ? 11 : 0,
-    })
-    if (prefs.softProgression) {
-      lv.targetSeconds = Math.round(lv.targetSeconds * 1.2)
+      setFullscreen(false)
+      setScreen(playOrigin === 'normal' ? 'normal' : 'creativo')
+      setActiveLevel(null)
+      setPieces([])
+      setCompletion(null)
+      setGroupOf({})
+      return
     }
-    void startLevel(lv)
+    if (screen === 'normal') {
+      goBackToLogica()
+      return
+    }
+    setScreen('normal')
   }
 
-  const startCreative = () => {
-    const lv = generateJigsawLevel(1, {
+  const startNormalLevel = useCallback(
+    (level: number) => {
+      const lv = Math.max(1, level)
+      const data = generateJigsawLevel(lv, imagePool)
+      const pcs = createPieces(data, data.seed + 17)
+      setActiveLevel(data)
+      setPieces(pcs)
+      setPlayOrigin('normal')
+      setHintsUsed(0)
+      setHintPieceId(null)
+      setShowPreview(false)
+      setShowBorders(true)
+      setZoom(1)
+      setPaused(false)
+      setCompletion(null)
+      setDraggingId(null)
+      setFullscreen(false)
+      setGroupOf({})
+      resetTimer()
+      setScreen('play')
+    },
+    [imagePool]
+  )
+
+
+  const persistSavedLevels = (list: SavedCreativeLevel[]) => {
+    setSavedLevels(list)
+    saveCreativeLevels(list)
+  }
+
+  const saveCurrentAsLevel = () => {
+    const name =
+      levelNameDraft.trim() ||
+      `${creativeImage.name} · ${creativePieces} pz`
+    if (editingLevelId) {
+      const list = savedLevels.map((l) =>
+        l.id === editingLevelId
+          ? {
+              ...l,
+              name,
+              image: creativeImage,
+              pieces: creativePieces,
+              shape: creativeShape,
+              updatedAt: Date.now(),
+            }
+          : l
+      )
+      persistSavedLevels(list)
+      setEditingLevelId(null)
+      setLevelNameDraft('')
+      return
+    }
+    const entry: SavedCreativeLevel = {
+      id: `cl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name,
       image: creativeImage,
       pieces: creativePieces,
       shape: creativeShape,
-      seedSalt: Date.now() % 99991,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }
+    persistSavedLevels([entry, ...savedLevels])
+    setLevelNameDraft('')
+  }
+
+  const loadSavedLevel = (lv: SavedCreativeLevel) => {
+    setCreativeImage(lv.image)
+    setCreativePieces(lv.pieces)
+    setCreativeShape(lv.shape)
+    setLevelNameDraft(lv.name)
+    setEditingLevelId(lv.id)
+  }
+
+  const deleteSavedLevel = (id: string) => {
+    if (!window.confirm('¿Borrar este nivel guardado?')) return
+    persistSavedLevels(savedLevels.filter((l) => l.id !== id))
+    if (editingLevelId === id) {
+      setEditingLevelId(null)
+      setLevelNameDraft('')
+    }
+  }
+
+  const playSavedLevel = (lv: SavedCreativeLevel) => {
+    const data = generateCreativeJigsaw({
+      image: lv.image,
+      pieces: lv.pieces,
+      shape: lv.shape,
     })
-    lv.level = 0
-    void startLevel(lv)
+    const pcs = createPieces(data, data.seed + 31)
+    setActiveLevel(data)
+    setPieces(pcs)
+    setPlayOrigin('creativo')
+    setHintsUsed(0)
+    setHintPieceId(null)
+    setShowPreview(false)
+    setShowBorders(true)
+    setZoom(1)
+    setPaused(false)
+    setCompletion(null)
+    setDraggingId(null)
+    setFullscreen(false)
+    setGroupOf({})
+    resetTimer()
+    setScreen('play')
   }
 
-  /* ── Redibujar canvas ── */
-  const paint = useCallback(() => {
-    const canvas = canvasRef.current
-    const img = imgRef.current
-    if (!canvas || !cfg) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
+  const startCreative = useCallback(() => {
+    const data = generateCreativeJigsaw({
+      image: creativeImage,
+      pieces: creativePieces,
+      shape: creativeShape,
+    })
+    const pcs = createPieces(data, data.seed + 31)
+    setActiveLevel(data)
+    setPieces(pcs)
+    setPlayOrigin('creativo')
+    setHintsUsed(0)
+    setHintPieceId(null)
+    setShowPreview(false)
+    setShowBorders(true)
+    setZoom(1)
+    setPaused(false)
+    setCompletion(null)
+    setDraggingId(null)
+    setFullscreen(false)
+    resetTimer()
+    setScreen('play')
+  }, [creativeImage, creativePieces, creativeShape])
 
-    const { boardW, boardH, pad, pw, ph } = boardGeom.current
-    if (boardW <= 0 || boardH <= 0) return
+  const togglePause = () => setPaused((p) => !p)
 
-    const trayH = Math.max(ph * 2.2, 160)
-    const totalW = Math.max(boardW + pad * 2, 320)
-    const totalH = boardH + trayH + pad * 2
+  /* Layout metrics — fit to arena */
+  const trayCols = activeLevel
+    ? Math.max(3, Math.min(activeLevel.cols + 2, Math.ceil(Math.sqrt(activeLevel.pieces * 1.5))))
+    : 4
+  const trayRows = activeLevel ? Math.ceil(activeLevel.pieces / trayCols) : 2
 
-    if (
-      canvas.width !== Math.ceil(totalW) ||
-      canvas.height !== Math.ceil(totalH)
-    ) {
-      canvas.width = Math.ceil(totalW)
-      canvas.height = Math.ceil(totalH)
-    }
-
-    const primary = cssColor('--gco-primary', '#22E6C5')
-    const border = cssColor('--gco-glass-border', 'rgba(255,255,255,0.2)')
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-
-    ctx.save()
-    ctx.translate(pad, pad)
-    ctx.fillStyle = 'rgba(255,255,255,0.04)'
-    ctx.strokeStyle = border
-    ctx.lineWidth = 2
-    fillRoundRect(ctx, 0, 0, boardW, boardH, 12)
-    ctx.fill()
-    ctx.stroke()
-
-    if (showPreview && img) {
-      ctx.globalAlpha = 0.22
-      ctx.drawImage(img, 0, 0, boardW, boardH)
-      ctx.globalAlpha = 1
-    }
-
-    if (showEdges) {
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)'
-      ctx.lineWidth = 1
-      for (let c = 1; c < cfg.cols; c++) {
-        ctx.beginPath()
-        ctx.moveTo(c * pw, 0)
-        ctx.lineTo(c * pw, boardH)
-        ctx.stroke()
-      }
-      for (let r = 1; r < cfg.rows; r++) {
-        ctx.beginPath()
-        ctx.moveTo(0, r * ph)
-        ctx.lineTo(boardW, r * ph)
-        ctx.stroke()
-      }
-    }
-
-    const ordered = [...pieces].sort((a, b) => a.z - b.z)
-    for (const p of ordered) {
-      const path = piecePath(pw, ph, p.edges, cfg.shape)
-      ctx.save()
-      ctx.translate(p.x, p.y)
-
-      if (!p.locked) {
-        ctx.shadowColor = 'rgba(0,0,0,0.35)'
-        ctx.shadowBlur = dragId === p.id ? 16 : 8
-        ctx.shadowOffsetY = 3
-      }
-
-      ctx.clip(path)
-
-      if (img) {
-        ctx.drawImage(
-          img,
-          p.col * (img.width / cfg.cols),
-          p.row * (img.height / cfg.rows),
-          img.width / cfg.cols,
-          img.height / cfg.rows,
-          0,
-          0,
-          pw,
-          ph
-        )
-      } else {
-        ctx.fillStyle = `hsl(${(p.row * 40 + p.col * 25) % 360} 50% 40%)`
-        ctx.fillRect(0, 0, pw, ph)
-      }
-
-      ctx.restore()
-
-      ctx.save()
-      ctx.translate(p.x, p.y)
-      ctx.strokeStyle = p.locked
-        ? 'rgba(34,230,197,0.45)'
-        : dragId === p.id
-          ? primary
-          : 'rgba(255,255,255,0.28)'
-      ctx.lineWidth = p.locked ? 1.5 : 2
-      ctx.stroke(path)
-      ctx.restore()
-    }
-
-    ctx.restore()
-  }, [cfg, pieces, showPreview, showEdges, dragId])
-
-  useEffect(() => {
-    paint()
-  }, [paint])
-
-  useEffect(() => {
-    return () => stopTimer()
-  }, [stopTimer])
-
-  /* ── Pointer drag ── */
-  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!cfg || paused || phase !== 'playing') return
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const rect = canvas.getBoundingClientRect()
-    const scaleX = canvas.width / rect.width
-    const scaleY = canvas.height / rect.height
-    const { pad, pw, ph } = boardGeom.current
-    const mx = (e.clientX - rect.left) * scaleX - pad
-    const my = (e.clientY - rect.top) * scaleY - pad
-
-    const ordered = [...pieces].sort((a, b) => b.z - a.z)
-    for (const p of ordered) {
-      if (p.locked) continue
-      if (mx >= p.x && mx <= p.x + pw && my >= p.y && my <= p.y + ph) {
-        soundCard()
-        zCounter.current += 1
-        setDragId(p.id)
-        dragOffset.current = { x: mx - p.x, y: my - p.y }
-        setHistory((h) => [...h.slice(-24), pieces.map((x) => ({ ...x }))])
-        setPieces((list) =>
-          list.map((x) =>
-            x.id === p.id ? { ...x, z: zCounter.current } : x
-          )
-        )
-        canvas.setPointerCapture(e.pointerId)
-        break
-      }
-    }
-  }
-
-  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!dragId || !cfg) return
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const rect = canvas.getBoundingClientRect()
-    const scaleX = canvas.width / rect.width
-    const scaleY = canvas.height / rect.height
-    const { pad } = boardGeom.current
-    const mx = (e.clientX - rect.left) * scaleX - pad
-    const my = (e.clientY - rect.top) * scaleY - pad
-    setPieces((list) =>
-      list.map((p) =>
-        p.id === dragId
-          ? {
-              ...p,
-              x: mx - dragOffset.current.x,
-              y: my - dragOffset.current.y,
-            }
-          : p
-      )
+  const cellPx = useMemo(() => {
+    if (!activeLevel) return 40
+    return fitCellPx(
+      activeLevel.cols,
+      activeLevel.rows,
+      arenaSize.w,
+      arenaSize.h,
+      trayRows
     )
-  }
+  }, [activeLevel, arenaSize, trayRows])
 
-  const onPointerUp = () => {
-    if (!dragId || !cfg) return
-    const { pw, ph } = boardGeom.current
-    const assist = prefs.snapAssist
+  const padPx = useMemo(() => {
+    if (!activeLevel) return 10
+    return pieceTabPad(cellPx, cellPx, activeLevel.shape)
+  }, [activeLevel, cellPx])
 
-    setPieces((list) => {
-      let next = list.map((p) => {
-        if (p.id !== dragId) return p
-        if (!assist) return p
-        return trySnap(p, pw, ph)
+  const boardPxW = activeLevel ? activeLevel.cols * cellPx : 0
+  const boardPxH = activeLevel ? activeLevel.rows * cellPx : 0
+  const arenaWidthPx = boardPxW + padPx * 2 + 24
+  const arenaHeightPx = boardPxH + padPx * 2 + trayRows * cellPx * 1.2 + 56
+
+  /* Drag */
+  const handleArenaPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (paused || completion || !activeLevel) return
+    const target = (e.target as HTMLElement).closest('[data-piece-id]') as HTMLElement | null
+    if (!target) return
+    const id = target.dataset.pieceId
+    if (!id) return
+    const piece = piecesRef.current.find((p) => p.id === id)
+    if (!piece || piece.locked) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dragRef.current = {
+      id,
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: piece.x,
+      originY: piece.y,
+      pointerId: e.pointerId,
+    }
+    setDraggingId(id)
+    setPieces((prev) => {
+      const maxZ = Math.max(...prev.map((p) => p.z), 1)
+      const gid = groupOf[id]
+      return prev.map((p) => {
+        if (p.id === id || (gid && groupOf[p.id] === gid)) {
+          return { ...p, z: maxZ + 1 }
+        }
+        return p
       })
-      const just = next.find((p) => p.id === dragId)
-      if (just?.locked) {
-        soundMatch()
-      }
-
-      if (isPuzzleComplete(next)) {
-        next = finishLevel(next, cfg)
-      }
-      return next
     })
-    setDragId(null)
   }
 
-  /* ── Pista: coloca una pieza ── */
+  const handleArenaPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== e.pointerId) return
+    const dx = (e.clientX - drag.startX) / (cellPx * zoom)
+    const dy = (e.clientY - drag.startY) / (cellPx * zoom)
+    const gid = groupOf[drag.id]
+    setPieces((prev) => {
+      const origin = prev.find((p) => p.id === drag.id)
+      if (!origin) return prev
+      const ox = drag.originX
+      const oy = drag.originY
+      const primaryNewX = ox + dx
+      const primaryNewY = oy + dy
+      const shiftX = primaryNewX - origin.x
+      const shiftY = primaryNewY - origin.y
+      return prev.map((p) => {
+        if (p.locked) return p
+        if (p.id === drag.id) return { ...p, x: primaryNewX, y: primaryNewY }
+        if (gid && groupOf[p.id] === gid) {
+          return { ...p, x: p.x + shiftX, y: p.y + shiftY }
+        }
+        return p
+      })
+    })
+  }
+
+  const finishDrag = useCallback(
+    (pointerId: number) => {
+      const drag = dragRef.current
+      if (!drag || drag.pointerId !== pointerId || !activeLevel) return
+      dragRef.current = null
+      setDraggingId(null)
+
+      setPieces((prev) => {
+        const piece = prev.find((p) => p.id === drag.id)
+        if (!piece || piece.locked) return prev
+
+        // 1) Intentar snap del grupo completo al tablero
+        const gids = (() => {
+          const gid = groupOf[drag.id]
+          if (!gid) return [drag.id]
+          const members = prev
+            .filter((p) => !p.locked && groupOf[p.id] === gid)
+            .map((p) => p.id)
+          return members.length ? members : [drag.id]
+        })()
+
+        const primary = prev.find((p) => p.id === drag.id)!
+        const distBoard = distanceToCorrect(primary)
+
+        if (distBoard <= SNAP_THRESHOLD_CELLS) {
+          // Snap todo el grupo a posiciones correctas y bloquear
+          const next = prev.map((p) =>
+            gids.includes(p.id)
+              ? { ...p, x: p.correctX, y: p.correctY, locked: true, z: 0 }
+              : p
+          )
+          sound.playSnap()
+          if (settings.haptics && isTouch) vibrate(12)
+
+          setGroupOf((go) => {
+            const n = { ...go }
+            for (const id of gids) delete n[id]
+            return n
+          })
+
+          if (isPuzzleComplete(next)) {
+            const timeMs =
+              timerAccumRef.current +
+              (timerBaseRef.current != null
+                ? performance.now() - timerBaseRef.current
+                : 0)
+            const stars = calcJigsawStars(
+              timeMs,
+              activeLevel.targetSeconds,
+              hintsUsed,
+              activeLevel.hints
+            )
+            window.setTimeout(() => {
+              sound.playComplete()
+              setCompletion({ stars, timeMs })
+              setStats((st) => {
+                const entry = {
+                  id: `${Date.now()}`,
+                  at: Date.now(),
+                  mode: playOrigin,
+                  level: activeLevel.level,
+                  pieces: activeLevel.pieces,
+                  stars,
+                  timeMs,
+                }
+                const updated: PuzzleStats = {
+                  wins: st.wins + 1,
+                  losses: st.losses,
+                  totalPlayMs: st.totalPlayMs + timeMs,
+                  history: [entry, ...st.history].slice(0, 40),
+                }
+                saveStats(updated)
+                return updated
+              })
+              if (playOrigin === 'normal') {
+                setProgress((pr) => {
+                  const nextLevel = Math.max(pr.normalLevel, activeLevel.level + 1)
+                  const prevStars = pr.starsByLevel[activeLevel.level] ?? 0
+                  const best: 0 | 1 | 2 | 3 =
+                    stars > prevStars ? stars : (prevStars as 0 | 1 | 2 | 3)
+                  const starsByLevel: Record<number, 0 | 1 | 2 | 3> = {
+                    ...pr.starsByLevel,
+                    [activeLevel.level]: best,
+                  }
+                  const totalStars = (Object.values(starsByLevel) as number[]).reduce(
+                    (sum, n) => sum + n,
+                    0
+                  )
+                  const updated: PuzzleProgress = {
+                    ...pr,
+                    normalLevel: nextLevel,
+                    starsByLevel,
+                    totalStars,
+                  }
+                  savePuzzleProgress(updated)
+                  return updated
+                })
+              }
+            }, 320)
+          }
+          return next
+        }
+
+        // 2) Encajar SOLO con vecinos ortogonales (N/S/E/O) del tablero lógico.
+        //    No diagonales, no piezas lejanas aunque el offset coincida.
+        let nextPieces = prev
+        let nextGroups = { ...groupOf }
+        const THRESH = SNAP_THRESHOLD_CELLS * 1.08
+
+        /** ¿Comparten un lado en la cuadrícula del puzzle? */
+        const isOrthogonalNeighbor = (
+          a: { row: number; col: number },
+          b: { row: number; col: number }
+        ) => {
+          const dr = Math.abs(a.row - b.row)
+          const dc = Math.abs(a.col - b.col)
+          return (dr === 1 && dc === 0) || (dr === 0 && dc === 1)
+        }
+
+        // Candidatos: cualquier pieza del grupo arrastrado vs cualquier pieza
+        // de otro grupo (o suelta), si son vecinos de rejilla.
+        type Candidate = {
+          fromId: string
+          toId: string
+          err: number
+          shiftX: number
+          shiftY: number
+        }
+        let best: Candidate | null = null
+
+        const draggedSet = new Set(gids)
+        const draggedPieces = prev.filter((p) => draggedSet.has(p.id) && !p.locked)
+        const others = prev.filter((p) => !p.locked && !draggedSet.has(p.id))
+
+        for (const from of draggedPieces) {
+          for (const to of others) {
+            if (!isOrthogonalNeighbor(from, to)) continue
+
+            const dx = from.x - to.x
+            const dy = from.y - to.y
+            const cdx = from.correctX - to.correctX
+            const cdy = from.correctY - to.correctY
+            const err = Math.hypot(dx - cdx, dy - cdy)
+            if (err > THRESH) continue
+
+            const shiftX = to.x + cdx - from.x
+            const shiftY = to.y + cdy - from.y
+            if (!best || err < best.err) {
+              best = { fromId: from.id, toId: to.id, err, shiftX, shiftY }
+            }
+          }
+        }
+
+        if (best) {
+          nextPieces = nextPieces.map((p) =>
+            draggedSet.has(p.id)
+              ? { ...p, x: p.x + best!.shiftX, y: p.y + best!.shiftY }
+              : p
+          )
+
+          // Fusionar grupos (piezas sueltas reciben id de grupo)
+          const toPiece = prev.find((p) => p.id === best!.toId)!
+          const otherG = nextGroups[toPiece.id] ?? `g-${toPiece.id}`
+          const myG = nextGroups[drag.id] ?? `g-${drag.id}`
+          const targetG = otherG
+
+          // piezas del grupo "other"
+          const otherMembers = new Set<string>([toPiece.id])
+          for (const [id, g] of Object.entries(nextGroups)) {
+            if (g === otherG) otherMembers.add(id)
+          }
+          for (const id of draggedSet) nextGroups[id] = targetG
+          for (const id of otherMembers) nextGroups[id] = targetG
+          // unificar restos de myG
+          for (const [id, g] of Object.entries(nextGroups)) {
+            if (g === myG) nextGroups[id] = targetG
+          }
+
+          sound.playSnap()
+          if (settings.haptics && isTouch) vibrate(8)
+        }
+
+        setGroupOf(nextGroups)
+        return nextPieces
+      })
+    },
+    [activeLevel, groupOf, hintsUsed, playOrigin, settings.haptics, sound, isTouch]
+  )
+
+  const handleArenaPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    finishDrag(e.pointerId)
+  }
+
   const useHint = () => {
-    if (hintsLeft <= 0 || !cfg || phase !== 'playing' || paused) return
-    soundClick()
-    setHintsLeft((h) => h - 1)
-    setHistory((h) => [...h.slice(-24), pieces.map((x) => ({ ...x }))])
-    setPieces((list) => {
-      const free = list.filter((p) => !p.locked)
-      if (free.length === 0) return list
-      const target = free[Math.floor(Math.random() * free.length)]
-      soundMatch()
-      let next = list.map((p) =>
+    if (!activeLevel || completion) return
+    if (hintsUsed >= activeLevel.hints) return
+    const unlocked = pieces.filter((p) => !p.locked)
+    if (!unlocked.length) return
+    const target = unlocked[Math.floor(Math.random() * unlocked.length)]
+    setPieces((prev) =>
+      prev.map((p) =>
         p.id === target.id
           ? { ...p, x: p.correctX, y: p.correctY, locked: true, z: 0 }
           : p
       )
-      if (isPuzzleComplete(next)) {
-        next = finishLevel(next, cfg)
-      }
-      return next
+    )
+    setHintsUsed((h) => h + 1)
+    setHintPieceId(target.id)
+    sound.playSnap()
+    window.setTimeout(() => setHintPieceId(null), 1200)
+    window.setTimeout(() => {
+      setPieces((prev) => {
+        if (isPuzzleComplete(prev) && activeLevel) {
+          const timeMs =
+            timerAccumRef.current +
+            (timerBaseRef.current != null
+              ? performance.now() - timerBaseRef.current
+              : 0)
+          const stars = calcJigsawStars(
+            timeMs,
+            activeLevel.targetSeconds,
+            hintsUsed + 1,
+            activeLevel.hints
+          )
+          setCompletion({ stars, timeMs })
+          sound.playComplete()
+        }
+        return prev
+      })
+    }, 100)
+  }
+
+  const onHudPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const el = e.currentTarget
+    el.setPointerCapture(e.pointerId)
+    const rect = el.getBoundingClientRect()
+    const x = hudPos?.x ?? rect.left
+    const y = hudPos?.y ?? rect.top
+    hudDragRef.current = { ox: x, oy: y, sx: e.clientX, sy: e.clientY }
+  }
+
+  const onHudPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = hudDragRef.current
+    if (!d) return
+    const nx = d.ox + (e.clientX - d.sx)
+    const ny = d.oy + (e.clientY - d.sy)
+    const maxX = window.innerWidth - 120
+    const maxY = window.innerHeight - 40
+    setHudPos({
+      x: Math.max(4, Math.min(maxX, nx)),
+      y: Math.max(4, Math.min(maxY, ny)),
     })
   }
 
-  const undoMove = () => {
-    if (history.length === 0 || phase !== 'playing' || paused) {
-      soundFail()
-      return
-    }
-    soundClick()
-    const prev = history[history.length - 1]
-    setHistory((h) => h.slice(0, -1))
-    setPieces(prev.map((p) => ({ ...p })))
-    setMsg('Movimiento deshecho')
-    window.setTimeout(() => setMsg(''), 1200)
-  }
-
-    const togglePause = () => {
-    soundToggle(!paused)
-    if (!paused) {
-    pauseStartedAt.current = performance.now()
-    setPaused(true)
-    setMsg('Pausa')
-  } else {
-    if (pauseStartedAt.current != null) {
-      pausedAccum.current += performance.now() - pauseStartedAt.current
-      pauseStartedAt.current = null
-    }
-    setPaused(false)
-    setMsg('')
-  }
-}
-
-  /* ── Importar imagen ── */
-  const onImportFile = async (file?: File | null) => {
-    if (!file || !file.type.startsWith('image/')) {
-      soundFail()
-      setMsg('Archivo no válido')
-      return
-    }
+  const onHudPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    hudDragRef.current = null
     try {
-      const dataUrl = await compressImageFile(file, 1400, 0.85)
-      const img: PuzzleImage = {
-        id: `custom-${Date.now().toString(36)}`,
-        name: file.name.replace(/\.[^.]+$/, '').slice(0, 48) || 'Mi imagen',
-        category: 'custom',
-        src: dataUrl,
-        isCustom: true,
-        fallbackHue: 200,
-      }
-      const list = addCustomImage(img)
-      setCustomImages(list)
-      setCreativeImage(img)
-      soundSuccess()
-      setHubTab('mine')
-      setMsg('Imagen importada')
-      window.setTimeout(() => setMsg(''), 1500)
+      e.currentTarget.releasePointerCapture(e.pointerId)
     } catch {
-      soundFail()
-      setMsg('No se pudo importar')
+      /* */
     }
   }
 
-  const allImages = useMemo(
-    () => [...DEFAULT_IMAGES, ...customImages],
-    [customImages]
-  )
-
-  const filteredGallery = useMemo(() => {
-    if (galleryCat === 'all') return DEFAULT_IMAGES
-    if (galleryCat === 'custom') return customImages
-    return DEFAULT_IMAGES.filter((i) => i.category === galleryCat)
-  }, [galleryCat, customImages])
-
-  const lockedCount = countLocked(pieces)
-  const progressPct =
-    cfg && cfg.pieces > 0 ? Math.round((lockedCount / cfg.pieces) * 100) : 0
-
-  // Geometría del board cuando cfg/imagen listos
-  useEffect(() => {
-    if (!cfg || !imgRef.current) return
-    const img = imgRef.current
-    const maxW = isMobile
-      ? Math.min(window.innerWidth - 32, 420)
-      : Math.min(560, window.innerWidth * 0.42)
-    const aspect = img.width / Math.max(1, img.height)
-    let boardW = maxW
-    let boardH = boardW / aspect
-    if (boardH > (isMobile ? 360 : 480)) {
-      boardH = isMobile ? 360 : 480
-      boardW = boardH * aspect
-    }
-    const pw = boardW / cfg.cols
-    const ph = boardH / cfg.rows
-    const pad = Math.max(pw, ph) * 0.25
-    boardGeom.current = { boardW, boardH, pad, pw, ph }
-    if (canvasRef.current) {
-      canvasRef.current.dataset.boardW = String(boardW)
-      canvasRef.current.dataset.boardH = String(boardH)
-    }
-    paint()
-  }, [cfg, isMobile, paint, pieces.length])
-
-  // Atajos de teclado
-  useEffect(() => {
-    if (phase !== 'playing') return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'p' || e.key === 'P') {
-        e.preventDefault()
-        togglePause()
-      } else if (e.key === 'h' || e.key === 'H') {
-        e.preventDefault()
-        useHint()
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault()
-        undoMove()
-      } else if (e.key === 'v' || e.key === 'V') {
-        setShowPreview((v) => !v)
-      } else if (e.key === 'b' || e.key === 'B') {
-        setShowEdges((v) => !v)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, paused, hintsLeft, history.length, pieces, cfg])
-
-  const levelCards = useMemo(() => {
-    const start = Math.max(1, level - 2)
-    return Array.from({ length: 5 }, (_, i) => {
-      const n = start + i
-      return {
-        n,
-        pieces: piecesForLevel(n),
-        locked: n > unlocked,
-        current: n === level,
-      }
-    })
-  }, [level, unlocked])
-
-  const goHub = (tab: HubTab = 'home') => {
-    soundClick()
-    stopTimer()
-    setPhase('hub')
-    setHubTab(tab)
-    setCfg(null)
-    setPieces([])
-    setHistory([])
-    setMsg('')
-    setPaused(false)
-    pauseStartedAt.current = null
+  const fitToScreen = () => {
+    setZoom(1)
+    const el = arenaScrollRef.current
+    if (el) el.scrollTo({ top: 0, left: 0, behavior: 'smooth' })
   }
 
-  /* ── Sidebar desktop ── */
-  const sidebar = (
-    <aside
-      className="gco-scroll-y"
-      style={{
-        display: isMobile ? 'none' : 'flex',
-        flexDirection: 'column',
-        gap: 4,
-        width: 220,
-        flexShrink: 0,
-        padding: '1.25rem 0.85rem',
-        borderRight: '1px solid var(--gco-glass-border)',
-        background: 'var(--gco-glass-bg)',
-        backdropFilter: 'blur(var(--gco-glass-blur))',
-        position: 'sticky',
-        top: 0,
-        height: '100dvh',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '0.35rem 0.5rem 1.1rem',
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
-          fontSize: '1.05rem',
-        }}
-      >
-        <span aria-hidden>🧩</span> PUZZLE
-        <span
-          style={{
-            fontSize: '0.7rem',
-            color: 'var(--gco-ink-muted)',
-            fontWeight: 500,
-          }}
-        >
-          Rompecabezas
-        </span>
-      </div>
+  const handleImportFiles = async (files: FileList | null) => {
+    if (!files?.length) return
+    setImporting(true)
+    setImportError(null)
+    try {
+      for (const file of Array.from(files)) {
+        if (!/^image\/(jpeg|png|webp)$/i.test(file.type)) {
+          setImportError('Solo JPG, PNG o WEBP.')
+          continue
+        }
+        const dataUrl = await compressImageFile(file)
+        const img: PuzzleImage = {
+          id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          name: file.name.replace(/\.[^.]+$/, '').slice(0, 40) || 'Mi imagen',
+          category: 'custom',
+          src: dataUrl,
+          isCustom: true,
+          fallbackHue: 200,
+          fallbackHue2: 260,
+        }
+        const list = addCustomImage(img)
+        setCustomImages(list)
+        setCreativeImage(img)
+      }
+    } catch {
+      setImportError('No se pudo importar la imagen.')
+    } finally {
+      setImporting(false)
+    }
+  }
 
-      {(
-        [
-          { id: 'home' as const, label: 'Inicio', icon: '🏠' },
-          { id: 'normal' as const, label: 'Modo Normal', icon: '🧩' },
-          { id: 'creative' as const, label: 'Modo Creativo', icon: '✨' },
-          { id: 'gallery' as const, label: 'Galería', icon: '🖼️' },
-          { id: 'mine' as const, label: 'Mis Imágenes', icon: '📁' },
-        ] as const
-      ).map((item) => {
-        const on =
-          hubTab === item.id || (phase === 'playing' && item.id === 'normal')
-        return (
-          <button
-            key={item.id}
-            type="button"
-            className="sidebar-nav-item"
-            onClick={() => {
-              if (phase === 'playing') {
-                if (!confirm('¿Salir de la partida actual?')) return
-              }
-              goHub(item.id)
-            }}
-            style={{
-              background: on ? 'var(--gco-primary-dim)' : 'transparent',
-              color: on ? 'var(--gco-primary)' : 'var(--gco-ink-muted)',
-              fontWeight: on ? 700 : 500,
-            }}
-          >
-            <span style={{ fontSize: '1.1rem' }}>{item.icon}</span>
-            {item.label}
-          </button>
-        )
-      })}
+  const handleDeleteCustomImage = (id: string) => {
+    const list = removeCustomImage(id)
+    setCustomImages(list)
+    if (creativeImage.id === id) setCreativeImage(DEFAULT_IMAGES[0])
+  }
 
-      <div style={{ flex: 1 }} />
 
-      {/* Preferencias rápidas */}
-      <div
-        style={{
-          padding: '0.6rem 0.5rem',
-          borderTop: '1px solid var(--gco-glass-border)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 6,
-        }}
-      >
-        <p
-          style={{
-            margin: 0,
-            fontSize: '0.72rem',
-            color: 'var(--gco-ink-muted)',
-            fontWeight: 600,
-          }}
-        >
-          Preferencias
-        </p>
-        {(
-          [
-            {
-              key: 'snapAssist' as const,
-              label: 'Auto-encaje',
-            },
-            {
-              key: 'softProgression' as const,
-              label: 'Modo suave',
-            },
-            {
-              key: 'showEdgesDefault' as const,
-              label: 'Bordes por defecto',
-            },
-          ] as const
-        ).map((opt) => (
-          <label
-            key={opt.key}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 8,
-              fontSize: '0.78rem',
-              color: 'var(--gco-ink-muted)',
-              cursor: 'pointer',
-            }}
-          >
-            {opt.label}
-            <input
-              type="checkbox"
-              checked={prefs[opt.key]}
-              onChange={(e) => {
-                soundClick()
-                updatePrefs({ [opt.key]: e.target.checked })
-              }}
-              style={{ accentColor: 'var(--gco-primary)' }}
-            />
-          </label>
-        ))}
-      </div>
+  const currentNormalLevel = progress.normalLevel
+  const tierInfo = pieceTierInfoForLevel(currentNormalLevel)
 
-      <button
-        type="button"
-        className="sidebar-nav-item"
-        onClick={() => {
-          soundClick()
-          navigate('/categoria/logica')
-        }}
-      >
-        ← Lógica
-      </button>
-      <p
-        style={{
-          padding: '0.5rem 0.6rem',
-          fontSize: '0.75rem',
-          color: 'var(--gco-ink-muted)',
-        }}
-      >
-        Nivel {progress.highestLevel || 0} · {progress.totalCompleted || 0} wins
-      </p>
-    </aside>
-  )
+  const cycleCreativeImage = (dir: -1 | 1) => {
+    const pool = DEFAULT_IMAGES
+    const idx = pool.findIndex((i) => i.id === creativeImage.id)
+    const base = idx >= 0 ? idx : 0
+    const next = (base + dir + pool.length) % pool.length
+    setCreativeImage(pool[next])
+  }
 
-  const mobileHeader = isMobile && phase === 'hub' && (
-    <header style={{ marginBottom: '1rem' }}>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 12,
-        }}
-      >
-        <button
-          className="glass-button secondary"
-          style={{ padding: '0.45rem 0.85rem', fontSize: '0.85rem' }}
-          onClick={() => {
-            soundClick()
-            navigate('/categoria/logica')
-          }}
-        >
-          ← Volver
-        </button>
-        <span style={{ fontWeight: 700, fontSize: '1.05rem' }}>🧩 Puzzle</span>
-        <span style={{ width: 64 }} />
-      </div>
-    </header>
-  )
+  /* ── Screens ── */
 
-  const homePanel = (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div>
-        <h2 style={{ fontSize: '1.35rem', marginBottom: 4 }}>Bienvenido</h2>
-        <p style={{ color: 'var(--gco-ink-muted)', fontSize: '0.9rem' }}>
-          Elige un modo para armar rompecabezas con imágenes.
-        </p>
-      </div>
+  function renderNormal() {
+    const current = currentNormalLevel
+    // Niveles 1..current todos jugables; current+1..current+4 como preview bloqueados
+    const pastAndCurrent = Array.from({ length: current }, (_, i) => i + 1).reverse()
+    const upcoming = Array.from({ length: 4 }, (_, i) => current + 1 + i)
+    const img = imageForLevel(current, imagePool)
+    const starsFor = (lv: number) => progress.starsByLevel[lv] ?? 0
 
-      {(
-        [
-          {
-            id: 'normal' as const,
-            title: 'Modo Normal',
-            desc: 'Sube de nivel resolviendo rompecabezas cada vez más difíciles.',
-            color: 'var(--gco-primary)',
-            emoji: '🧩',
-          },
-          {
-            id: 'creative' as const,
-            title: 'Modo Creativo',
-            desc: 'Elige imagen, cantidad de piezas y forma de las piezas.',
-            color: 'var(--gco-accent, #8B7CF6)',
-            emoji: '✨',
-          },
-          {
-            id: 'gallery' as const,
-            title: 'Galería',
-            desc: 'Imágenes por defecto: naturaleza, animales, libros…',
-            color: 'var(--gco-secondary)',
-            emoji: '🖼️',
-          },
-          {
-            id: 'mine' as const,
-            title: 'Mis Imágenes',
-            desc: `${customImages.length} importadas · JPG, PNG, WEBP`,
-            color: '#c9b6ff',
-            emoji: '📁',
-          },
-        ] as const
-      ).map((card) => (
-        <button
-          key={card.id}
-          type="button"
-          className="glass-card"
-          onClick={() => {
-            soundClick()
-            setHubTab(card.id)
-          }}
-          style={{
-            textAlign: 'left',
-            padding: '1.1rem 1.2rem',
-            border: '1px solid var(--gco-glass-border)',
-            cursor: 'pointer',
-            color: 'inherit',
-            font: 'inherit',
-            background: 'var(--gco-glass-bg)',
-          }}
-        >
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <span style={{ fontSize: '1.6rem' }}>{card.emoji}</span>
-            <div>
-              <p style={{ fontWeight: 700, color: card.color, margin: 0 }}>
-                {card.title}
-              </p>
-              <p
-                style={{
-                  margin: '4px 0 0',
-                  fontSize: '0.82rem',
-                  color: 'var(--gco-ink-muted)',
-                  lineHeight: 1.35,
-                }}
+    return (
+      <div style={{ maxWidth: 640, width: '100%', paddingBottom: 8 }}>
+        <div className="pz-welcome">
+          <div className="pz-welcome-text">
+            <strong>Modo Normal</strong>
+            <span style={{ color: 'var(--pz-muted)', fontWeight: 500 }}> · progresión</span>
+          </div>
+          <div className="pz-welcome-stats">
+            <span className="pz-pill">🏆 {stats.wins}</span>
+            <span className="pz-pill">⭐ {progress.totalStars}</span>
+            <span className="pz-pill">Nv {current}</span>
+          </div>
+        </div>
+
+        <div className="pz-card pz-panel" style={{ marginBottom: '0.9rem' }}>
+          <div style={{ position: 'relative', aspectRatio: '16/9', borderRadius: 14, overflow: 'hidden' }}>
+            <ImageCover image={img} style={{ position: 'absolute', inset: 0 }} />
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: 'linear-gradient(180deg, transparent 30%, rgba(0,0,0,0.78))',
+              display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
+              padding: '0.9rem 1rem', color: '#fff',
+            }}>
+              <div>
+                <div style={{ fontSize: '0.7rem', opacity: 0.85, letterSpacing: '0.06em', fontWeight: 600 }}>NIVEL ACTUAL</div>
+                <div style={{ fontWeight: 800, fontSize: '1.45rem', letterSpacing: '-0.02em' }}>Nivel {current}</div>
+                <div style={{ fontSize: '0.8rem', opacity: 0.9, marginTop: 2 }}>
+                  {piecesForLevel(current)} piezas · {'⭐'.repeat(starsFor(current)) || 'Sin estrellas aún'}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="pz-btn pz-btn-primary"
+                style={{ padding: '0.65rem 1.1rem', flexShrink: 0 }}
+                onClick={() => startNormalLevel(current)}
               >
-                {card.desc}
-              </p>
+                Continuar ▶
+              </button>
             </div>
           </div>
-        </button>
-      ))}
+          <p style={{ fontSize: '0.76rem', color: 'var(--pz-muted)', textAlign: 'center', margin: 0 }}>
+            Escalón {tierInfo.tierIndex + 1} · {tierInfo.pieces} piezas
+            {!tierInfo.isMaxTier && ` · ${tierInfo.levelsUntilNextTier ?? 0} para el siguiente`}
+          </p>
+        </div>
 
-      <div
-        className="glass-card"
-        style={{
-          padding: '0.9rem 1rem',
-          fontSize: '0.8rem',
-          color: 'var(--gco-ink-muted)',
-        }}
-      >
-        <p style={{ margin: '0 0 6px', fontWeight: 600, color: 'var(--gco-ink)' }}>
-          Atajos (PC)
-        </p>
-        <p style={{ margin: 0, lineHeight: 1.5 }}>
-          <span className="mono">P</span> pausa ·{' '}
-          <span className="mono">H</span> pista ·{' '}
-          <span className="mono">Ctrl+Z</span> deshacer ·{' '}
-          <span className="mono">V</span> vista previa ·{' '}
-          <span className="mono">B</span> bordes
-        </p>
+        <div className="pz-section-title">Tu progreso — puedes rejugar cualquier nivel</div>
+        <div className="pz-level-row" style={{ marginBottom: 12 }}>
+          {pastAndCurrent.slice(0, 12).map((lv) => {
+            const piecesN = piecesForLevel(lv)
+            const cover = imageForLevel(lv, imagePool)
+            const st = starsFor(lv)
+            const isCur = lv === current
+            return (
+              <button
+                key={lv}
+                type="button"
+                className={`pz-level-card${isCur ? ' is-current' : ''}`}
+                onClick={() => startNormalLevel(lv)}
+                title={`Jugar nivel ${lv}`}
+              >
+                <ImageCover image={cover} className="pz-level-cover" />
+                <div className="pz-level-body">
+                  <div className="pz-level-label">Nivel {lv}</div>
+                  <div className="pz-level-pieces">
+                    {piecesN} pz{st > 0 ? ` · ${'★'.repeat(st)}` : ''}
+                  </div>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="pz-section-title">Próximos (bloqueados)</div>
+        <div className="pz-upcoming" style={{ marginBottom: 8 }}>
+          {upcoming.map((lv) => (
+            <div key={lv} className="pz-card pz-upcoming-row" style={{ opacity: 0.5 }}>
+              <span className="pz-upcoming-lv">Nivel {lv}</span>
+              <span className="pz-upcoming-pc">{piecesForLevel(lv)} piezas</span>
+              <span>🔒</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="pz-inicio-spacer" aria-hidden />
       </div>
-    </div>
-  )
+    )
+  }
 
-  const normalPanel = (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div>
-        <h2 style={{ fontSize: '1.25rem', marginBottom: 4 }}>Modo Normal</h2>
-        <p style={{ color: 'var(--gco-ink-muted)', fontSize: '0.88rem' }}>
-          Sube de nivel · las piezas aumentan por tramos
-        </p>
-      </div>
-
-      <div className="hscroll" style={{ gap: 10, paddingBottom: 8 }}>
-        {levelCards.map((c) => (
-          <button
-            key={c.n}
-            type="button"
-            disabled={c.locked}
-            onClick={() => {
-              if (c.locked) return
-              soundClick()
-              setLevel(c.n)
-            }}
-            className="glass-card"
-            style={{
-              minWidth: isMobile ? 110 : 128,
-              flex: '0 0 auto',
-              padding: '1rem 0.85rem',
-              textAlign: 'center',
-              border: c.current
-                ? '1.5px solid var(--gco-primary)'
-                : '1px solid var(--gco-glass-border)',
-              opacity: c.locked ? 0.45 : 1,
-              cursor: c.locked ? 'not-allowed' : 'pointer',
-              color: 'inherit',
-              font: 'inherit',
-              background: c.current
-                ? 'var(--gco-primary-dim)'
-                : 'var(--gco-glass-bg)',
-            }}
-          >
-            <p
-              style={{
-                margin: 0,
-                fontSize: '0.75rem',
-                color: 'var(--gco-ink-muted)',
-              }}
-            >
-              Nivel
-            </p>
-            <p
-              style={{
-                margin: '4px 0',
-                fontSize: '1.75rem',
-                fontWeight: 700,
-                fontFamily: 'var(--font-display)',
-                color: c.current ? 'var(--gco-primary)' : 'inherit',
-              }}
-            >
-              {c.n}
-            </p>
-            <p style={{ margin: 0, fontSize: '0.78rem' }}>
-              {c.locked ? '🔒' : `${c.pieces} piezas`}
-            </p>
+  function renderCreativo() {
+    return (
+      <div style={{ maxWidth: 520, width: '100%' }}>
+        <div className="pz-card pz-panel" style={{ marginBottom: '0.9rem' }}>
+          <h3 className="pz-panel-head"><span>✨</span> {editingLevelId ? 'Editar nivel' : 'Nuevo nivel'}</h3>
+          <p className="pz-panel-desc">
+            Configura imagen, piezas y forma. Guárdalo para rejugario o editarlo después.
+          </p>
+          <div className="pz-preview">
+            <button type="button" className="pz-preview-nav prev" onClick={() => cycleCreativeImage(-1)}>‹</button>
+            <ImageCover image={creativeImage} style={{ position: 'absolute', inset: 0 }} />
+            <button type="button" className="pz-preview-nav next" onClick={() => cycleCreativeImage(1)}>›</button>
+          </div>
+          <button type="button" className="pz-select" onClick={() => setImagePickerOpen(true)}>
+            <span><span style={{ color: 'var(--pz-muted)', fontWeight: 500 }}>Imagen </span>{creativeImage.name}</span>
+            <span>▾</span>
           </button>
-        ))}
-      </div>
-
-      <div style={{ padding: '0 4px' }}>
-        <input
-          type="range"
-          min={1}
-          max={Math.max(unlocked, 30)}
-          value={Math.min(level, unlocked)}
-          onChange={(e) => {
-            const v = parseInt(e.target.value, 10)
-            if (v <= unlocked) setLevel(v)
-          }}
-          style={{ width: '100%', accentColor: 'var(--gco-primary)' }}
-        />
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            fontSize: '0.75rem',
-            color: 'var(--gco-ink-muted)',
-          }}
-        >
-          <span>1</span>
-          <span>
-            Nivel {level} · {piecesForLevel(level)} piezas
-          </span>
-          <span>{Math.max(unlocked, 30)}</span>
-        </div>
-      </div>
-
-      {bestTime != null && bestTime > 0 && (
-        <p style={{ fontSize: '0.85rem', color: 'var(--gco-primary)' }}>
-          Mejor tiempo nv.{level}:{' '}
-          <span className="mono">{formatDuration(bestTime)}</span>
-        </p>
-      )}
-
-      <label
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          fontSize: '0.85rem',
-          color: 'var(--gco-ink-muted)',
-          cursor: 'pointer',
-        }}
-      >
-        <input
-          type="checkbox"
-          checked={prefs.softProgression}
-          onChange={(e) => {
-            soundClick()
-            updatePrefs({ softProgression: e.target.checked })
-          }}
-          style={{ accentColor: 'var(--gco-primary)' }}
-        />
-        Progresión suave (más tiempo objetivo)
-      </label>
-
-      <GlassButton onClick={() => startNormal(level)}>
-        Continuar Nivel {level} ▶
-      </GlassButton>
-    </div>
-  )
-
-  const creativePanel = (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div>
-        <h2 style={{ fontSize: '1.25rem', marginBottom: 4 }}>Modo Creativo</h2>
-        <p style={{ color: 'var(--gco-ink-muted)', fontSize: '0.88rem' }}>
-          Elige imagen, cantidad de piezas y forma.
-        </p>
-      </div>
-
-      <div
-        className="glass-card"
-        style={{
-          padding: 12,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 10,
-        }}
-      >
-        <div
-          style={{
-            width: '100%',
-            maxWidth: 320,
-            aspectRatio: '4/3',
-            borderRadius: 14,
-            overflow: 'hidden',
-            background: 'var(--gco-primary-dim)',
-            display: 'grid',
-            placeItems: 'center',
-          }}
-        >
-          <img
-            src={creativeImage.src}
-            alt={creativeImage.name}
-            onError={(e) => {
-              e.currentTarget.style.display = 'none'
-            }}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          />
-        </div>
-        <select
-          className="glass-input"
-          value={creativeImage.id}
-          onChange={(e) => {
-            soundClick()
-            const found =
-              allImages.find((i) => i.id === e.target.value) ?? DEFAULT_IMAGES[0]
-            setCreativeImage(found)
-          }}
-          style={{ maxWidth: 320 }}
-        >
-          <optgroup label="Por defecto">
-            {DEFAULT_IMAGES.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name}
-              </option>
+          <button type="button" className="pz-select" onClick={() => setPiecesModalOpen(true)}>
+            <span><span style={{ color: 'var(--pz-muted)', fontWeight: 500 }}>Piezas </span>{creativePieces}</span>
+            <span>▾</span>
+          </button>
+          <div className="pz-section-title">Forma</div>
+          <div className="pz-shape-grid">
+            {PIECE_SHAPES.map((s) => (
+              <button key={s.id} type="button" className={`pz-shape-card${creativeShape === s.id ? ' is-on' : ''}`} onClick={() => setCreativeShape(s.id)}>
+                <span className="pz-shape-emoji">{s.emoji}</span>
+                <span className="pz-shape-label">{s.label}</span>
+              </button>
             ))}
-          </optgroup>
-          {customImages.length > 0 && (
-            <optgroup label="Mis imágenes">
-              {customImages.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name}
-                </option>
-              ))}
-            </optgroup>
+          </div>
+          <input
+            type="text"
+            value={levelNameDraft}
+            onChange={(e) => setLevelNameDraft(e.target.value)}
+            placeholder="Nombre del nivel (opcional)"
+            style={{
+              width: '100%',
+              padding: '0.65rem 0.85rem',
+              borderRadius: 12,
+              border: '1px solid var(--pz-border)',
+              background: 'var(--gco-input-bg, rgba(0,0,0,0.28))',
+              color: 'var(--pz-ink)',
+              font: 'inherit',
+              fontSize: '0.88rem',
+            }}
+          />
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="pz-btn pz-btn-primary" style={{ flex: 1 }} onClick={startCreative}>
+              ▶ Jugar ahora
+            </button>
+            <button type="button" className="pz-btn pz-btn-accent" style={{ flex: 1 }} onClick={saveCurrentAsLevel}>
+              {editingLevelId ? '💾 Actualizar' : '💾 Guardar'}
+            </button>
+          </div>
+          {editingLevelId && (
+            <button
+              type="button"
+              className="pz-btn pz-btn-ghost pz-btn-block"
+              onClick={() => {
+                setEditingLevelId(null)
+                setLevelNameDraft('')
+              }}
+            >
+              Cancelar edición
+            </button>
           )}
-        </select>
-      </div>
+        </div>
 
+        <div className="pz-section-title">
+          Mis niveles ({savedLevels.length})
+        </div>
+        {savedLevels.length === 0 ? (
+          <p className="pz-empty">
+            Aún no tienes niveles guardados. Configura uno arriba y pulsa Guardar.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
+            {savedLevels.map((lv) => (
+              <div
+                key={lv.id}
+                className="pz-card"
+                style={{
+                  padding: '0.75rem',
+                  display: 'flex',
+                  gap: 12,
+                  alignItems: 'center',
+                }}
+              >
+                <ImageCover
+                  image={lv.image}
+                  style={{
+                    width: 64,
+                    height: 48,
+                    borderRadius: 10,
+                    flexShrink: 0,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
+                  }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {lv.name}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--pz-muted)' }}>
+                    {lv.pieces} piezas · {PIECE_SHAPES.find((s) => s.id === lv.shape)?.label ?? lv.shape}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  <button type="button" className="pz-btn pz-btn-primary" style={{ padding: '0.4rem 0.65rem', fontSize: '0.75rem' }} onClick={() => playSavedLevel(lv)}>
+                    ▶
+                  </button>
+                  <button type="button" className="pz-btn pz-btn-ghost" style={{ padding: '0.4rem 0.55rem', fontSize: '0.75rem' }} onClick={() => loadSavedLevel(lv)}>
+                    ✎
+                  </button>
+                  <button type="button" className="pz-btn pz-btn-ghost" style={{ padding: '0.4rem 0.55rem', fontSize: '0.75rem' }} onClick={() => deleteSavedLevel(lv.id)}>
+                    🗑
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="pz-inicio-spacer" aria-hidden />
+      </div>
+    )
+  }
+
+  function renderGaleria() {
+    return (
       <div>
-        <p style={{ fontWeight: 600, marginBottom: 8 }}>
-          Piezas:{' '}
-          <span className="mono" style={{ color: 'var(--gco-primary)' }}>
-            {creativePieces}
-          </span>
-        </p>
-        <input
-          type="range"
-          min={4}
-          max={2200}
-          step={1}
-          value={creativePieces}
-          onChange={(e) => setCreativePieces(parseInt(e.target.value, 10))}
-          style={{ width: '100%', accentColor: 'var(--gco-primary)' }}
-        />
+        {CATEGORY_ORDER.map((cat) => {
+          const imgs = galleryGrouped[cat] ?? []
+          if (!imgs.length) return null
+          return (
+            <div key={cat} style={{ marginBottom: '1.1rem' }}>
+              <div className="pz-section-title">{CATEGORY_EMOJI[cat]} {CATEGORY_LABELS[cat]}</div>
+              <div className="pz-img-grid">
+                {imgs.map((img) => (
+                  <button
+                    key={img.id}
+                    type="button"
+                    className={`pz-img-card${creativeImage.id === img.id ? ' is-on' : ''}`}
+                    onClick={() => { setCreativeImage(img); setScreen('creativo') }}
+                  >
+                    <ImageCover image={img} className="pz-img-cover" />
+                    <span className="pz-img-name">{img.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  function renderMisImagenes() {
+    return (
+      <div>
+        <button type="button" className="pz-upload" style={{ marginBottom: '0.9rem' }} onClick={() => fileInputRef.current?.click()} disabled={importing}>
+          <span style={{ fontSize: '1.3rem' }}>⬆️</span>
+          {importing ? 'Importando…' : 'Importar imagen'}
+          <span className="pz-upload-sub">JPG, PNG, WEBP</span>
+        </button>
+        {importError && <p className="pz-error">{importError}</p>}
+        {customImages.length === 0 ? (
+          <p className="pz-empty">Todavía no importaste imágenes.</p>
+        ) : (
+          <div className="pz-img-grid">
+            {customImages.map((img) => (
+              <div key={img.id} style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  className={`pz-img-card${creativeImage.id === img.id ? ' is-on' : ''}`}
+                  style={{ width: '100%' }}
+                  onClick={() => { setCreativeImage(img); setScreen('creativo') }}
+                >
+                  <ImageCover image={img} className="pz-img-cover" />
+                  <span className="pz-img-name">{img.name}</span>
+                </button>
+                <button
+                  type="button"
+                  className="pz-icon-btn"
+                  style={{ position: 'absolute', top: 6, right: 6, width: 28, height: 28, minWidth: 28, background: 'rgba(11,18,32,0.7)', fontSize: '0.75rem' }}
+                  onClick={() => handleDeleteCustomImage(img.id)}
+                  aria-label="Eliminar"
+                >
+                  🗑️
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  function renderAjustes() {
+    const recent = stats.history.slice(0, 15)
+    const winRate =
+      stats.wins + stats.losses > 0
+        ? Math.round((stats.wins / (stats.wins + stats.losses)) * 100)
+        : 0
+
+    return (
+      <div style={{ maxWidth: 520, width: '100%' }}>
+        <div className="pz-section-title">Resumen</div>
         <div
           style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 6,
-            marginTop: 8,
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, 1fr)',
+            gap: '0.55rem',
+            marginBottom: '1.1rem',
           }}
         >
-          {PIECE_SUGGESTIONS.map((n) => (
-            <button
-              key={n}
-              type="button"
-              className={`glass-button ${creativePieces === n ? '' : 'secondary'}`}
-              style={{ fontSize: '0.75rem', padding: '0.35rem 0.55rem' }}
-              onClick={() => {
-                soundClick()
-                setCreativePieces(n)
-              }}
+          {[
+            { label: 'Victorias', value: String(stats.wins), icon: '🏆' },
+            { label: 'Derrotas', value: String(stats.losses), icon: '📉' },
+            {
+              label: 'Tiempo total',
+              value: formatDurationLong(stats.totalPlayMs),
+              icon: '⏱',
+            },
+            {
+              label: 'Ratio victorias',
+              value: `${winRate}%`,
+              icon: '📊',
+            },
+            {
+              label: 'Nivel máximo',
+              value: String(Math.max(1, progress.normalLevel)),
+              icon: '📈',
+            },
+            {
+              label: 'Estrellas',
+              value: String(progress.totalStars),
+              icon: '⭐',
+            },
+          ].map((s) => (
+            <div
+              key={s.label}
+              className="pz-card"
+              style={{ padding: '0.85rem 0.95rem' }}
             >
-              {n}
-            </button>
+              <div style={{ fontSize: '0.72rem', color: 'var(--pz-muted)', marginBottom: 6 }}>
+                {s.icon} {s.label}
+              </div>
+              <div style={{ fontWeight: 700, fontSize: '1.2rem', letterSpacing: '-0.02em' }}>
+                {s.value}
+              </div>
+            </div>
           ))}
         </div>
-        <p
-          style={{
-            fontSize: '0.75rem',
-            color: 'var(--gco-ink-muted)',
-            marginTop: 6,
-          }}
-        >
-          Más piezas, mayor desafío. En móviles evita +500 si tu dispositivo es
-          modesto.
-        </p>
-      </div>
 
-      <div>
-        <p style={{ fontWeight: 600, marginBottom: 8 }}>Forma de las piezas</p>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {PIECE_SHAPES.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className={`glass-button ${creativeShape === s.id ? '' : 'secondary'}`}
-              style={{ fontSize: '0.85rem', padding: '0.55rem 0.9rem' }}
-              onClick={() => {
-                soundClick()
-                setCreativeShape(s.id)
-              }}
-              title={s.desc}
-            >
-              {s.emoji} {s.label}
-            </button>
-          ))}
+        <div className="pz-section-title">Historial reciente</div>
+        <div className="pz-card" style={{ padding: '0.35rem 0', marginBottom: '1.1rem' }}>
+          {recent.length === 0 ? (
+            <p className="pz-empty" style={{ padding: '0.85rem 1rem' }}>
+              Completa un nivel para ver el historial aquí.
+            </p>
+          ) : (
+            recent.map((h, i) => (
+              <div
+                key={h.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '0.7rem 1rem',
+                  borderTop: i === 0 ? 'none' : '1px solid rgba(255,255,255,0.06)',
+                  fontSize: '0.82rem',
+                }}
+              >
+                <span style={{ fontWeight: 700, minWidth: 70 }}>
+                  {h.mode === 'normal' ? `Nv ${h.level}` : 'Creativo'}
+                </span>
+                <span style={{ color: 'var(--pz-muted)', flex: 1 }}>
+                  {h.pieces} pz · {formatTime(h.timeMs)}
+                </span>
+                <span aria-label={`${h.stars} estrellas`}>
+                  {h.stars > 0 ? '⭐'.repeat(h.stars) : '—'}
+                </span>
+              </div>
+            ))
+          )}
         </div>
-      </div>
 
-      <GlassButton onClick={startCreative}>🧩 Crear Rompecabezas</GlassButton>
-    </div>
-  )
+        <div className="pz-section-title">Preferencias</div>
+        <div className="pz-list-group" style={{ marginBottom: '1.1rem' }}>
+          <div className="pz-row">
+            <div>
+              <div className="pz-row-label">Sonido al encajar</div>
+              <div className="pz-row-sub">Feedback al unir piezas y al completar</div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={settings.sound}
+              className={`pz-switch${settings.sound ? ' is-on' : ''}`}
+              onClick={() => updateSettings({ sound: !settings.sound })}
+            >
+              <span className="pz-switch-knob" />
+            </button>
+          </div>
+          {isTouch && (
+            <div className="pz-row">
+              <div>
+                <div className="pz-row-label">Vibración</div>
+                <div className="pz-row-sub">Háptica al encajar (solo móvil)</div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings.haptics}
+                className={`pz-switch${settings.haptics ? ' is-on' : ''}`}
+                onClick={() => updateSettings({ haptics: !settings.haptics })}
+              >
+                <span className="pz-switch-knob" />
+              </button>
+            </div>
+          )}
+        </div>
 
-  const galleryPanel = (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <h2 style={{ fontSize: '1.25rem' }}>Galería</h2>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <div className="pz-section-title">Forma de pieza por defecto</div>
+        <div className="pz-card pz-panel" style={{ marginBottom: '1.1rem' }}>
+          <div className="pz-shape-grid">
+            {PIECE_SHAPES.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className={`pz-shape-card${settings.defaultShape === s.id ? ' is-on' : ''}`}
+                onClick={() => {
+                  updateSettings({ defaultShape: s.id })
+                  setCreativeShape(s.id)
+                }}
+              >
+                <span className="pz-shape-emoji">{s.emoji}</span>
+                <span className="pz-shape-label">{s.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         <button
           type="button"
-          className={`glass-button ${galleryCat === 'all' ? '' : 'secondary'}`}
-          style={{ fontSize: '0.78rem', padding: '0.4rem 0.7rem' }}
-          onClick={() => {
-            soundClick()
-            setGalleryCat('all')
-          }}
+          className="pz-btn pz-btn-ghost pz-btn-block"
+          onClick={goBackToLogica}
+          style={{ marginBottom: 8 }}
         >
-          Todas
+          ← Volver a Lógica
         </button>
-        {(Object.keys(CATEGORY_LABELS) as ImageCategory[])
-          .filter((c) => c !== 'custom')
-          .map((c) => (
+        <div className="pz-inicio-spacer" aria-hidden />
+      </div>
+    )
+  }
+
+  function renderPlay() {
+    if (!activeLevel) return null
+    const locked = countLocked(pieces)
+    const pct = pieces.length ? Math.round((locked / pieces.length) * 100) : 0
+
+    return (
+      <div className={`pz-play${fullscreen ? ' is-fs' : ''}`}>
+        <div className="pz-toolbar">
+          <button type="button" className={`pz-tool${showPreview ? ' is-on' : ''}`} onClick={() => setShowPreview((v) => !v)}>
+            👁️ Preview
+          </button>
+          <button type="button" className={`pz-tool${showBorders ? ' is-on' : ''}`} onClick={() => setShowBorders((v) => !v)}>
+            🔲 Bordes
+          </button>
+          <button
+            type="button"
+            className="pz-tool"
+            onClick={useHint}
+            disabled={hintsUsed >= activeLevel.hints || !!completion}
+          >
+            💡 {Math.max(0, activeLevel.hints - hintsUsed)}
+          </button>
+          <button type="button" className="pz-tool" onClick={fitToScreen} title="Ajustar a pantalla">
+            ⊡ Fit
+          </button>
+          <button
+            type="button"
+            className={`pz-tool${fullscreen ? ' is-on' : ''}`}
+            onClick={() => setFullscreen((f) => !f)}
+            title="Pantalla completa"
+          >
+            {fullscreen ? '⛶' : '⛶'} FS
+          </button>
+          <div className="pz-zoom">
             <button
-              key={c}
               type="button"
-              className={`glass-button ${galleryCat === c ? '' : 'secondary'}`}
-              style={{ fontSize: '0.78rem', padding: '0.4rem 0.7rem' }}
-              onClick={() => {
-                soundClick()
-                setGalleryCat(c)
-              }}
+              className="pz-icon-btn"
+              style={{ width: 28, height: 28, minWidth: 28 }}
+              onClick={() => setZoom((z) => Math.max(0.45, +(z - 0.15).toFixed(2)))}
+              aria-label="Alejar"
             >
-              {CATEGORY_LABELS[c]}
+              −
+            </button>
+            <span style={{ minWidth: 36, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
+            <button
+              type="button"
+              className="pz-icon-btn"
+              style={{ width: 28, height: 28, minWidth: 28 }}
+              onClick={() => setZoom((z) => Math.min(2.2, +(z + 0.15).toFixed(2)))}
+              aria-label="Acercar"
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        <div className="pz-prog">
+          <div className="pz-prog-bar">
+            <div className="pz-prog-fill" style={{ width: `${pct}%` }} />
+          </div>
+          <span className="pz-prog-count">{locked}/{pieces.length}</span>
+        </div>
+
+        {/* Burbuja de tiempo fuera del arena, arrastrable */}
+        <div
+          className="pz-hud"
+          style={
+            hudPos
+              ? { left: hudPos.x, top: hudPos.y }
+              : { left: '50%', top: 'max(12px, calc(env(safe-area-inset-top, 0px) + 52px))', transform: 'translateX(-50%)' }
+          }
+          onPointerDown={onHudPointerDown}
+          onPointerMove={onHudPointerMove}
+          onPointerUp={onHudPointerUp}
+          onPointerCancel={onHudPointerUp}
+          title="Arrastra para mover"
+        >
+          <span className="pz-hud-grip">⠿</span>
+          <span>{formatTime(elapsedMs)}</span>
+          <strong>{pct}%</strong>
+          <span>{locked}/{pieces.length}</span>
+        </div>
+
+        <div className="pz-arena-scroll" ref={arenaScrollRef}>
+          <div style={{ width: arenaWidthPx * zoom, height: arenaHeightPx * zoom, position: 'relative' }}>
+            <div
+              className="pz-arena"
+              style={{ width: arenaWidthPx, height: arenaHeightPx, transform: `scale(${zoom})` }}
+              onPointerDown={handleArenaPointerDown}
+              onPointerMove={handleArenaPointerMove}
+              onPointerUp={handleArenaPointerUp}
+              onPointerCancel={handleArenaPointerUp}
+            >
+              <div className="pz-board" style={{ width: boardPxW, height: boardPxH }}>
+                {showPreview && (
+                  <div
+                    className="pz-ghost"
+                    style={{
+                      backgroundImage: `url(${activeLevel.image.src})`,
+                      backgroundColor: `hsl(${activeLevel.image.fallbackHue} 40% 20%)`,
+                    }}
+                  />
+                )}
+              </div>
+              {pieces.map((p) => (
+                <PieceView
+                  key={p.id}
+                  piece={p}
+                  cellPx={cellPx}
+                  pad={padPx}
+                  shape={activeLevel.shape}
+                  imageSrc={activeLevel.image.src}
+                  fallbackHue={activeLevel.image.fallbackHue}
+                  boardPxW={boardPxW}
+                  boardPxH={boardPxH}
+                  showBorders={showBorders}
+                  isHinted={p.id === hintPieceId}
+                  dragging={p.id === draggingId}
+                />
+              ))}
+            </div>
+          </div>
+
+          {paused && (
+            <div className="pz-pause">
+              <div className="pz-card pz-pause-card">
+                <div style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: '0.9rem' }}>⏸️ Pausado</div>
+                <button type="button" className="pz-btn pz-btn-primary pz-btn-block" onClick={togglePause}>
+                  Continuar
+                </button>
+                <button type="button" className="pz-btn pz-btn-ghost pz-btn-block" style={{ marginTop: 8 }} onClick={handleBack}>
+                  Salir del nivel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  function renderImagePickerModal() {
+    return (
+      <div className="pz-overlay" onClick={() => setImagePickerOpen(false)}>
+        <div className="pz-card pz-modal" onClick={(e: ReactMouseEvent) => e.stopPropagation()}>
+          <div className="pz-modal-head">
+            <h3>Seleccionar imagen</h3>
+            <button type="button" className="pz-icon-btn" onClick={() => setImagePickerOpen(false)}>✕</button>
+          </div>
+          <div className="pz-tabs">
+            <button type="button" className={imagePickerTab === 'defecto' ? 'is-on' : ''} onClick={() => setImagePickerTab('defecto')}>Por defecto</button>
+            <button type="button" className={imagePickerTab === 'mias' ? 'is-on' : ''} onClick={() => setImagePickerTab('mias')}>Mis imágenes ({customImages.length})</button>
+          </div>
+          {imagePickerTab === 'defecto'
+            ? CATEGORY_ORDER.map((cat) => {
+                const imgs = galleryGrouped[cat] ?? []
+                if (!imgs.length) return null
+                return (
+                  <div key={cat}>
+                    <div className="pz-section-title">{CATEGORY_EMOJI[cat]} {CATEGORY_LABELS[cat]}</div>
+                    <div className="pz-img-grid">
+                      {imgs.map((img) => (
+                        <button key={img.id} type="button" className={`pz-img-card${creativeImage.id === img.id ? ' is-on' : ''}`} onClick={() => { setCreativeImage(img); setImagePickerOpen(false) }}>
+                          <ImageCover image={img} className="pz-img-cover" />
+                          <span className="pz-img-name">{img.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })
+            : customImages.length === 0
+              ? <p className="pz-empty">Todavía no importaste imágenes.</p>
+              : (
+                <div className="pz-img-grid">
+                  {customImages.map((img) => (
+                    <button key={img.id} type="button" className={`pz-img-card${creativeImage.id === img.id ? ' is-on' : ''}`} onClick={() => { setCreativeImage(img); setImagePickerOpen(false) }}>
+                      <ImageCover image={img} className="pz-img-cover" />
+                      <span className="pz-img-name">{img.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+        </div>
+      </div>
+    )
+  }
+
+  function renderPiecesModal() {
+    return (
+      <div className="pz-overlay" onClick={() => setPiecesModalOpen(false)}>
+        <div className="pz-card pz-modal" style={{ maxWidth: 400 }} onClick={(e: ReactMouseEvent) => e.stopPropagation()}>
+          <div className="pz-modal-head">
+            <h3>Seleccionar piezas</h3>
+            <button type="button" className="pz-icon-btn" onClick={() => setPiecesModalOpen(false)}>✕</button>
+          </div>
+          <div className="pz-pieces-val">{creativePieces}</div>
+          <div className="pz-pieces-lbl">piezas</div>
+          <div className="pz-stepper">
+            <button type="button" className="pz-icon-btn" onClick={() => setCreativePieces((p) => clampPieceCount(p - stepFor(p)))}>−</button>
+            <input type="range" min={PIECES_MIN} max={PIECES_MAX} value={creativePieces} onChange={(e: ChangeEvent<HTMLInputElement>) => setCreativePieces(clampPieceCount(Number(e.target.value)))} />
+            <button type="button" className="pz-icon-btn" onClick={() => setCreativePieces((p) => clampPieceCount(p + stepFor(p)))}>+</button>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--pz-muted)', marginBottom: 8 }}>
+            <span>{PIECES_MIN}</span><span>{PIECES_MAX}</span>
+          </div>
+          <div className="pz-section-title">Sugerencias</div>
+          <div className="pz-chips">
+            {PIECE_SUGGESTIONS.map((n) => (
+              <button key={n} type="button" className={`pz-chip${creativePieces === n ? ' is-on' : ''}`} onClick={() => setCreativePieces(n)}>{n}</button>
+            ))}
+          </div>
+          <button type="button" className="pz-btn pz-btn-primary pz-btn-block" onClick={() => setPiecesModalOpen(false)}>Continuar</button>
+        </div>
+      </div>
+    )
+  }
+
+  function renderCompletionModal() {
+    if (!completion || !activeLevel) return null
+    const art = activeLevel.image
+    return (
+      <div className="pz-overlay">
+        <div className="pz-card pz-complete">
+          <div className="pz-complete-emoji">🎉</div>
+          <h3 style={{ margin: '0 0 0.15rem' }}>¡Completado!</h3>
+          <p style={{ margin: '0 0 0.35rem', fontSize: '0.8rem', color: 'var(--pz-muted)' }}>
+            Tu rompecabezas terminado
+          </p>
+          <div
+            className="pz-complete-art"
+            style={{
+              backgroundImage: `url(${art.src})`,
+              backgroundColor: `hsl(${art.fallbackHue} 40% 22%)`,
+            }}
+            role="img"
+            aria-label={art.name}
+          />
+          <div style={{ fontSize: '0.78rem', color: 'var(--pz-muted)', marginBottom: 6 }}>
+            {art.name}
+          </div>
+          <div className="pz-stars">
+            {[1, 2, 3].map((n) => (
+              <span key={n} className={`pz-star${n <= completion.stars ? ' is-on' : ''}`}>⭐</span>
+            ))}
+          </div>
+          <div className="pz-complete-stats">
+            <span>{formatTime(completion.timeMs)}</span>
+            <span>{activeLevel.pieces} piezas</span>
+            <span>{hintsUsed} pistas</span>
+          </div>
+          <div className="pz-complete-actions">
+            {playOrigin === 'normal' ? (
+              <>
+                <button type="button" className="pz-btn pz-btn-primary pz-btn-block" onClick={() => startNormalLevel(activeLevel.level + 1)}>
+                  Siguiente nivel ▶
+                </button>
+                <button type="button" className="pz-btn pz-btn-ghost pz-btn-block" onClick={() => { setFullscreen(false); setScreen('normal') }}>
+                  Inicio
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="pz-btn pz-btn-primary pz-btn-block" onClick={startCreative}>Otro igual</button>
+                <button type="button" className="pz-btn pz-btn-ghost pz-btn-block" onClick={() => { setFullscreen(false); setScreen('creativo') }}>Ajustar</button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const topbarTitle = (() => {
+    switch (screen) {
+      case 'normal':
+        return (<><span>🧩</span> Modo Normal <span className="pz-topbar-sub">Puzzle</span></>)
+      case 'creativo': return 'Modo Creativo'
+      case 'galeria': return 'Galería'
+      case 'mis-imagenes': return 'Mis Imágenes'
+      case 'ajustes': return 'Ajustes'
+      case 'play':
+        if (!activeLevel) return ''
+        return (
+          <>
+            {activeLevel.level > 0 ? `Nivel ${activeLevel.level}` : 'Creativo'}
+            <span className="pz-topbar-sub">{activeLevel.pieces} piezas</span>
+          </>
+        )
+      default: return ''
+    }
+  })()
+
+  return (
+    <div className="pz-root">
+      <style>{SCOPED_STYLES}</style>
+
+      {screen !== 'play' && (
+        <aside className="pz-sidebar">
+          <div className="pz-brand">
+            <div className="pz-brand-mark">🧩</div>
+            <div>Puzzle<span className="pz-brand-sub">Rompecabezas</span></div>
+          </div>
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`pz-nav-btn${screen === item.id ? ' is-active' : ''}`}
+              onClick={() => setScreen(item.id)}
+            >
+              <span className="pz-nav-emoji">{item.emoji}</span>
+              <span className="pz-nav-text">
+                <span>{item.label}</span>
+                {item.sub && <span className="pz-nav-sub">{item.sub}</span>}
+              </span>
             </button>
           ))}
-      </div>
-      <div className="book-grid">
-        {filteredGallery.map((img) => (
-          <button
-            key={img.id}
-            type="button"
-            className="book-grid-card"
-            onClick={() => {
-              soundClick()
-              setCreativeImage(img)
-              setHubTab('creative')
-            }}
-            style={{
-              border: 'none',
-              background: 'transparent',
-              color: 'inherit',
-              font: 'inherit',
-              cursor: 'pointer',
-              padding: 0,
-              textAlign: 'left',
-            }}
-          >
-            <div className="book-cover book-cover-grid">
-              <img
-                src={img.src}
-                alt=""
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none'
-                }}
-              />
-            </div>
-            <span className="book-title">{img.name}</span>
-            <span className="book-author">
-              {CATEGORY_LABELS[img.category]}
+          <div className="pz-side-profile">
+            <span className="pz-side-profile-name">📊 Estadísticas</span>
+            <span className="pz-side-profile-meta">
+              🏆 {stats.wins} · 📉 {stats.losses} · ⭐ {progress.totalStars}
             </span>
-          </button>
-        ))}
+            <span className="pz-side-profile-meta">Nv {progress.normalLevel} · ⏱ {formatDurationLong(stats.totalPlayMs)}</span>
+          </div>
+        </aside>
+      )}
+
+      <div className={`pz-main${screen === 'play' ? ' is-playing' : ''}`}>
+        {!fullscreen && (
+          <header className="pz-topbar">
+            <button type="button" className="pz-icon-btn" onClick={handleBack} aria-label="Volver">‹</button>
+            <div className="pz-topbar-title">{topbarTitle}</div>
+            {screen === 'play' && activeLevel && (
+              <div className="pz-topbar-right">
+                <span className="pz-pill">{formatTime(elapsedMs)}</span>
+                <button type="button" className="pz-icon-btn" onClick={togglePause} aria-label={paused ? 'Continuar' : 'Pausar'}>
+                  {paused ? '▶' : '⏸'}
+                </button>
+              </div>
+            )}
+            {screen === 'normal' && (
+              <div className="pz-topbar-right">
+                <button type="button" className="pz-btn pz-btn-ghost" style={{ padding: '0.35rem 0.75rem', fontSize: '0.78rem' }} onClick={goBackToLogica}>
+                  ← Lógica
+                </button>
+              </div>
+            )}
+          </header>
+        )}
+
+        <main className="pz-content">
+          {screen === 'play' ? (
+            renderPlay()
+          ) : (
+            <div className="pz-scroll-inner">
+              {screen === 'normal' && renderNormal()}
+              {screen === 'creativo' && renderCreativo()}
+              {screen === 'galeria' && renderGaleria()}
+              {screen === 'mis-imagenes' && renderMisImagenes()}
+              {screen === 'ajustes' && renderAjustes()}
+            </div>
+          )}
+        </main>
       </div>
-    </div>
-  )
 
-  const minePanel = (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <h2 style={{ fontSize: '1.25rem' }}>Mis Imágenes</h2>
-      <p style={{ color: 'var(--gco-ink-muted)', fontSize: '0.88rem' }}>
-        {customImages.length} importadas · se guardan en este dispositivo
-      </p>
+      {screen !== 'play' && (
+        <nav className="pz-bottom" aria-label="Navegación">
+          {MOBILE_NAV.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`pz-bottom-item${screen === item.id ? ' is-on' : ''}`}
+              onClick={() => setScreen(item.id)}
+            >
+              <span>{item.emoji}</span>
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
+      )}
 
-      <button
-        type="button"
-        className="glass-card"
-        onClick={() => {
-          soundClick()
-          fileRef.current?.click()
-        }}
-        style={{
-          padding: '1.4rem',
-          textAlign: 'center',
-          border: '1.5px dashed var(--gco-glass-border)',
-          cursor: 'pointer',
-          color: 'inherit',
-          font: 'inherit',
-          background: 'var(--gco-glass-bg)',
-        }}
-      >
-        <p style={{ fontSize: '1.5rem', margin: '0 0 6px' }}>⬆️</p>
-        <p style={{ fontWeight: 700, margin: 0 }}>Importar imagen</p>
-        <p
-          style={{
-            fontSize: '0.8rem',
-            color: 'var(--gco-ink-muted)',
-            margin: '4px 0 0',
-          }}
-        >
-          JPG, PNG, WEBP
-        </p>
-      </button>
+      {imagePickerOpen && renderImagePickerModal()}
+      {piecesModalOpen && renderPiecesModal()}
+      {completion && renderCompletionModal()}
+
       <input
-        ref={fileRef}
+        ref={fileInputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp,image/*"
-        hidden
-        onChange={(e) => {
-          void onImportFile(e.target.files?.[0])
+        accept="image/jpeg,image/png,image/webp"
+        multiple
+        style={{ display: 'none' }}
+        onChange={(e: ChangeEvent<HTMLInputElement>) => {
+          void handleImportFiles(e.target.files)
           e.target.value = ''
         }}
       />
-
-      <div className="book-grid">
-        {customImages.map((img) => (
-          <div key={img.id} className="book-grid-card">
-            <button
-              type="button"
-              onClick={() => {
-                soundClick()
-                setCreativeImage(img)
-                setHubTab('creative')
-              }}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                padding: 0,
-                cursor: 'pointer',
-                color: 'inherit',
-                font: 'inherit',
-                textAlign: 'left',
-                width: '100%',
-              }}
-            >
-              <div className="book-cover book-cover-grid">
-                <img
-                  src={img.src}
-                  alt=""
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                />
-              </div>
-              <span className="book-title">{img.name}</span>
-            </button>
-            <button
-              type="button"
-              className="glass-button secondary"
-              style={{ fontSize: '0.72rem', padding: '0.3rem 0.5rem' }}
-              onClick={() => {
-                soundClick()
-                if (confirm(`¿Borrar "${img.name}"?`)) {
-                  setCustomImages(removeCustomImage(img.id))
-                  if (creativeImage.id === img.id) {
-                    setCreativeImage(DEFAULT_IMAGES[0])
-                  }
-                }
-              }}
-            >
-              Borrar
-            </button>
-          </div>
-        ))}
-      </div>
-      {customImages.length === 0 && (
-        <p
-          style={{
-            textAlign: 'center',
-            color: 'var(--gco-ink-muted)',
-            padding: '1rem 0',
-          }}
-        >
-          Aún no has importado imágenes.
-        </p>
-      )}
-    </div>
-  )
-
-  const playingPanel = cfg && (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          flexWrap: 'wrap',
-        }}
-      >
-        <button
-          type="button"
-          className="glass-button secondary"
-          style={{ padding: '0.4rem 0.7rem', fontSize: '0.85rem' }}
-          onClick={() => {
-            if (confirm('¿Abandonar partida?')) goHub('normal')
-          }}
-        >
-          ←
-        </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ margin: 0, fontWeight: 700, fontSize: '0.95rem' }}>
-            {cfg.level > 0 ? `Nivel ${cfg.level}` : 'Creativo'} · {cfg.pieces}{' '}
-            piezas
-          </p>
-          <p
-            style={{
-              margin: 0,
-              fontSize: '0.78rem',
-              color: 'var(--gco-ink-muted)',
-            }}
-          >
-            {cfg.image.name} · {cfg.cols}×{cfg.rows} · {cfg.shape}
-          </p>
-        </div>
-        <span className="mono" style={{ fontWeight: 600 }}>
-          {formatTime(elapsedMs)}
-        </span>
-        <button
-          type="button"
-          className="theme-cycle-btn"
-          onClick={togglePause}
-          aria-label={paused ? 'Reanudar' : 'Pausa'}
-        >
-          {paused ? '▶' : '⏸'}
-        </button>
-      </div>
-
-      <div
-        style={{
-          height: 6,
-          borderRadius: 99,
-          background: 'var(--gco-glass-border)',
-          overflow: 'hidden',
-        }}
-      >
-        <div
-          style={{
-            width: `${progressPct}%`,
-            height: '100%',
-            background: 'var(--gco-primary)',
-            transition: 'width 0.2s ease',
-          }}
-        />
-      </div>
-      <p
-        style={{
-          fontSize: '0.78rem',
-          color: 'var(--gco-ink-muted)',
-          margin: 0,
-        }}
-      >
-        {lockedCount}/{cfg.pieces} · {progressPct}%
-        {cfg.targetSeconds > 0 && (
-          <>
-            {' '}
-            · meta{' '}
-            <span className="mono">{formatTime(cfg.targetSeconds * 1000)}</span>
-          </>
-        )}
-        {msg && (
-          <>
-            {' '}
-            · <span style={{ color: 'var(--gco-primary)' }}>{msg}</span>
-          </>
-        )}
-      </p>
-
-      <div
-        ref={boardRef}
-        style={{
-          width: '100%',
-          overflow: 'auto',
-          borderRadius: 16,
-          border: '1px solid var(--gco-glass-border)',
-          background: 'rgba(0,0,0,0.2)',
-          touchAction: 'none',
-          position: 'relative',
-        }}
-      >
-        {paused && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              zIndex: 5,
-              display: 'grid',
-              placeItems: 'center',
-              background: 'rgba(0,0,0,0.35)',
-              backdropFilter: 'blur(4px)',
-              color: 'var(--gco-ink)',
-              fontWeight: 700,
-              pointerEvents: 'none',
-            }}
-          >
-            Pausado
-          </div>
-        )}
-        <canvas
-          ref={canvasRef}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
-          style={{
-            display: 'block',
-            width: '100%',
-            maxWidth: 640,
-            margin: '0 auto',
-            cursor: dragId ? 'grabbing' : 'grab',
-            opacity: paused ? 0.55 : 1,
-          }}
-        />
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          gap: 8,
-          flexWrap: 'wrap',
-          justifyContent: 'center',
-        }}
-      >
-        <button
-          type="button"
-          className={`glass-button ${showPreview ? '' : 'secondary'}`}
-          style={{ fontSize: '0.8rem', padding: '0.45rem 0.75rem' }}
-          onClick={() => {
-            soundClick()
-            setShowPreview((v) => !v)
-          }}
-        >
-          👁 Vista previa
-        </button>
-        <button
-          type="button"
-          className={`glass-button ${showEdges ? '' : 'secondary'}`}
-          style={{ fontSize: '0.8rem', padding: '0.45rem 0.75rem' }}
-          onClick={() => {
-            soundClick()
-            setShowEdges((v) => !v)
-          }}
-        >
-          ▦ Bordes
-        </button>
-        <button
-          type="button"
-          className="glass-button secondary"
-          style={{ fontSize: '0.8rem', padding: '0.45rem 0.75rem' }}
-          disabled={hintsLeft <= 0 || paused}
-          onClick={useHint}
-        >
-          💡 Pista {hintsLeft}
-        </button>
-        <button
-          type="button"
-          className="glass-button secondary"
-          style={{ fontSize: '0.8rem', padding: '0.45rem 0.75rem' }}
-          disabled={history.length === 0 || paused}
-          onClick={undoMove}
-        >
-          ↩ Deshacer
-        </button>
-      </div>
-
-      <AnimatePresence>
-        {phase === 'success' && (
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="glass-card"
-            style={{
-              padding: '1.25rem',
-              textAlign: 'center',
-              border: '1px solid var(--gco-glass-border)',
-            }}
-          >
-            <p
-              style={{
-                color: 'var(--gco-primary)',
-                fontWeight: 700,
-                fontSize: '1.15rem',
-                marginBottom: 6,
-              }}
-            >
-              ¡Completado!
-            </p>
-            <StarRow n={stars} />
-            <p
-              style={{
-                margin: '8px 0',
-                fontSize: '0.9rem',
-                color: 'var(--gco-ink-muted)',
-              }}
-            >
-              Tiempo <span className="mono">{formatTime(elapsedMs)}</span>
-              {cfg.targetSeconds > 0 && (
-                <>
-                  {' '}
-                  · meta{' '}
-                  <span className="mono">
-                    {formatTime(cfg.targetSeconds * 1000)}
-                  </span>
-                </>
-              )}
-            </p>
-            <div
-              style={{
-                display: 'flex',
-                gap: 8,
-                justifyContent: 'center',
-                flexWrap: 'wrap',
-                marginTop: 10,
-              }}
-            >
-              {cfg.level > 0 ? (
-                <GlassButton onClick={() => startNormal(cfg.level + 1)}>
-                  Siguiente nivel
-                </GlassButton>
-              ) : (
-                <GlassButton onClick={() => goHub('creative')}>
-                  Nuevo creativo
-                </GlassButton>
-              )}
-              <button
-                type="button"
-                className="glass-button secondary"
-                onClick={() => {
-                  if (cfg.level > 0) startNormal(cfg.level)
-                  else startCreative()
-                }}
-              >
-                Reintentar
-              </button>
-              <button
-                type="button"
-                className="glass-button secondary"
-                onClick={() => goHub('normal')}
-              >
-                Menú
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  )
-
-  const mainContent =
-    phase === 'playing' || phase === 'success'
-      ? playingPanel
-      : hubTab === 'home'
-        ? homePanel
-        : hubTab === 'normal'
-          ? normalPanel
-          : hubTab === 'creative'
-            ? creativePanel
-            : hubTab === 'gallery'
-              ? galleryPanel
-              : minePanel
-
-  const mobileNav = isMobile && phase === 'hub' && (
-    <nav
-      className="bottom-nav"
-      style={{ zIndex: 40 }}
-      aria-label="Navegación puzzle"
-    >
-      {(
-        [
-          { id: 'home' as const, label: 'Inicio', icon: '🏠' },
-          { id: 'normal' as const, label: 'Normal', icon: '🧩' },
-          { id: 'creative' as const, label: 'Creativo', icon: '✨' },
-          { id: 'gallery' as const, label: 'Galería', icon: '🖼️' },
-          { id: 'mine' as const, label: 'Mías', icon: '📁' },
-        ] as const
-      ).map((t) => {
-        const on = hubTab === t.id
-        return (
-          <button
-            key={t.id}
-            type="button"
-            className={`bottom-nav-item${on ? ' active' : ''}`}
-            onClick={() => {
-              soundClick()
-              setHubTab(t.id)
-            }}
-          >
-            <span style={{ fontSize: '1.15rem' }}>{t.icon}</span>
-            {t.label}
-          </button>
-        )
-      })}
-    </nav>
-  )
-
-  return (
-    <div
-      className="app-layout"
-      style={{
-        minHeight: '100dvh',
-        color: 'var(--gco-ink)',
-      }}
-    >
-      {sidebar}
-      <div
-        className="app-main app-shell"
-        style={{
-          flex: 1,
-          minWidth: 0,
-          paddingBottom: isMobile && phase === 'hub' ? '5.5rem' : undefined,
-        }}
-      >
-        {mobileHeader}
-        {mainContent}
-      </div>
-      {mobileNav}
     </div>
   )
 }
