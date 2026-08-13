@@ -2,26 +2,52 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { getTrackBlob, type TrackItem } from '@/core/storage/mediaLibrary'
 
 /**
- * Reproductor offline con grafo Web Audio (gain boost + soft limiter + analyser)
- * y soporte robusto de reproducción en segundo plano:
- *  - Media Session API centralizada aquí (única fuente de verdad: play, pause,
- *    previoustrack, nexttrack, seekbackward, seekforward, seekto, setPositionState).
- *  - resumeAudioContext(): reintenta reanudar el AudioContext cuando el navegador
- *    lo suspende al volver de segundo plano (pestaña oculta, app minimizada, etc.).
- *  - insertNext, error, preservesPitch, ramp de gain, soft limiter al boostear volumen.
+ * Reproductor offline profesional con reproducción en segundo plano real.
+ *
+ * Arquitectura de audio (clave para background):
+ *  1. El sonido SIEMPRE sale por el <audio> nativo → los navegadores
+ *     (incl. iOS Safari) permiten que siga sonando en pestaña oculta /
+ *     pantalla bloqueada si hay Media Session activa.
+ *  2. El espectro se obtiene con captureStream() → MediaStreamSource →
+ *     AnalyserNode (sin conectar a destination). Así no se “roba” la
+ *     salida del elemento y el background no se rompe.
+ *  3. Fallback: createMediaElementSource + gain + soft-limiter solo si
+ *     captureStream no está disponible (navegadores antiguos). En ese
+ *     modo el background puede degradarse en iOS.
+ *
+ * Media Session vive solo aquí (única fuente de verdad).
  */
+
+export type RepeatMode = 'off' | 'one' | 'all'
+export type OutputMode = 'native' | 'webaudio' | 'none'
+
+export type MediaPlayerApi = ReturnType<typeof useMediaPlayer>
+
+type CaptureAudioElement = HTMLAudioElement & {
+  captureStream?: () => MediaStream
+  mozCaptureStream?: () => MediaStream
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n))
+}
+
 export function useMediaPlayer() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const urlRef = useRef<string | null>(null)
   const queueRef = useRef<TrackItem[]>([])
   const indexRef = useRef(0)
+  /** Evita que una carga antigua pise una más reciente (doble clic, skip rápido). */
+  const loadGenRef = useRef(0)
 
   const ctxRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
-  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null)
+  const mediaSourceRef = useRef<MediaElementAudioSourceNode | null>(null)
+  const streamSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
   const gainRef = useRef<GainNode | null>(null)
   const compRef = useRef<DynamicsCompressorNode | null>(null)
   const graphReady = useRef(false)
+  const outputModeRef = useRef<OutputMode>('none')
   const mediaSessionReady = useRef(false)
 
   const [track, setTrack] = useState<TrackItem | null>(null)
@@ -29,18 +55,29 @@ export function useMediaPlayer() {
   const [currentMs, setCurrentMs] = useState(0)
   const [durationMs, setDurationMs] = useState(0)
   const [shuffle, setShuffle] = useState(false)
-  const [repeat, setRepeat] = useState<'off' | 'one' | 'all'>('off')
+  const [repeat, setRepeat] = useState<RepeatMode>('off')
   const [volume, setVolumeState] = useState(1)
   const [rate, setRateState] = useState(1)
+  /** 0–3. En modo nativo solo afecta hasta ×1 en volumen real; el resto refuerza el espectro. */
   const [gain, setGainState] = useState(1)
   const [error, setError] = useState<string | null>(null)
+  const [outputMode, setOutputMode] = useState<OutputMode>('none')
 
-  // Refs "espejo" para que los handlers de Media Session (registrados una sola vez)
-  // siempre llamen a la versión más reciente de toggle/next/prev/seek sin clausuras obsoletas.
+  // Refs espejo para Media Session (handlers registrados una sola vez).
   const toggleRef = useRef<() => Promise<void>>(async () => {})
   const nextRef = useRef<() => Promise<void>>(async () => {})
   const prevRef = useRef<() => Promise<void>>(async () => {})
   const seekRef = useRef<(ms: number) => void>(() => {})
+  const onEndedRef = useRef<() => Promise<void>>(async () => {})
+  const playingRef = useRef(false)
+  const volumeRef = useRef(volume)
+  const gainRefState = useRef(gain)
+  const rateRef = useRef(rate)
+
+  playingRef.current = playing
+  volumeRef.current = volume
+  gainRefState.current = gain
+  rateRef.current = rate
 
   const cleanupUrl = () => {
     if (urlRef.current) {
@@ -49,144 +86,153 @@ export function useMediaPlayer() {
     }
   }
 
-  const ensureGraph = (audio: HTMLAudioElement) => {
-    try {
-      if (!ctxRef.current) {
-        const AC =
-          window.AudioContext ||
-          (window as unknown as { webkitAudioContext: typeof AudioContext })
-            .webkitAudioContext
-        ctxRef.current = new AC({ latencyHint: 'playback' })
+  const applyElementVolume = (audio: HTMLAudioElement) => {
+    // En salida nativa el hardware no amplifica > 1; gain extra va al visualizador.
+    const v = volumeRef.current
+    const g = gainRefState.current
+    if (outputModeRef.current === 'webaudio') {
+      audio.volume = clamp(v, 0, 1)
+      if (gainRef.current && ctxRef.current) {
+        const t = ctxRef.current.currentTime
+        const node = gainRef.current
+        node.gain.cancelScheduledValues(t)
+        node.gain.setValueAtTime(node.gain.value, t)
+        node.gain.linearRampToValueAtTime(clamp(g, 0, 3), t + 0.04)
       }
-      const ctx = ctxRef.current
-      if (ctx.state === 'suspended') void ctx.resume()
-
-      if (!graphReady.current) {
-        if (!gainRef.current) {
-          const g = ctx.createGain()
-          g.gain.value = 1
-          gainRef.current = g
-        }
-
-        // Soft limiter: evita distorsión con boost > 100 %
-        if (!compRef.current) {
-          const c = ctx.createDynamicsCompressor()
-          c.threshold.value = -6
-          c.knee.value = 12
-          c.ratio.value = 4
-          c.attack.value = 0.003
-          c.release.value = 0.18
-          compRef.current = c
-        }
-
-        if (!analyserRef.current) {
-          const an = ctx.createAnalyser()
-          an.fftSize = 512
-          an.smoothingTimeConstant = 0.75
-          an.minDecibels = -90
-          an.maxDecibels = -10
-          analyserRef.current = an
-        }
-
-        // source → gain → compressor → analyser → destination (solo una vez)
-        if (!sourceRef.current) {
-          sourceRef.current = ctx.createMediaElementSource(audio)
-          sourceRef.current.connect(gainRef.current)
-          gainRef.current.connect(compRef.current)
-          compRef.current.connect(analyserRef.current)
-          analyserRef.current.connect(ctx.destination)
-        }
-
-        graphReady.current = true
-      }
-
-      // Con grafo activo el elemento sigue respetando volume (0–1);
-      // el boost extra (0–3) va solo por GainNode.
-      audio.volume = volume
-    } catch {
-      /* ya conectado o no soportado — el elemento sigue sonando solo */
-      graphReady.current = false
+    } else {
+      audio.volume = clamp(v * clamp(g, 0, 1), 0, 1)
     }
   }
 
+  const ensureAudioContext = () => {
+    if (ctxRef.current) return ctxRef.current
+    const AC =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    ctxRef.current = new AC({ latencyHint: 'playback' })
+    return ctxRef.current
+  }
+
   /**
-   * Reintenta reanudar el AudioContext (y, si estaba sonando, el <audio>) cuando
-   * el navegador lo suspende al volver de segundo plano. Seguro de llamar en
-   * cualquier momento — no hace nada si ya está activo o no hay pista cargada.
+   * Grafo de análisis / boost.
+   * Preferencia: captureStream (salida nativa intacta → background OK).
+   * Fallback: MediaElementSource (boost real, background menos fiable en iOS).
    */
+  const ensureGraph = (audio: HTMLAudioElement) => {
+    try {
+      const ctx = ensureAudioContext()
+      if (ctx.state === 'suspended') void ctx.resume()
+
+      if (!analyserRef.current) {
+        const an = ctx.createAnalyser()
+        an.fftSize = 512
+        an.smoothingTimeConstant = 0.75
+        an.minDecibels = -90
+        an.maxDecibels = -10
+        analyserRef.current = an
+      }
+
+      if (graphReady.current) {
+        applyElementVolume(audio)
+        return
+      }
+
+      const el = audio as CaptureAudioElement
+      const captureFn =
+        typeof el.captureStream === 'function'
+          ? () => el.captureStream!()
+          : typeof el.mozCaptureStream === 'function'
+            ? () => el.mozCaptureStream!()
+            : null
+
+      if (captureFn) {
+        try {
+          const stream = captureFn()
+          streamSourceRef.current = ctx.createMediaStreamSource(stream)
+          streamSourceRef.current.connect(analyserRef.current)
+          // No conectar a destination: el <audio> sigue yendo a altavoces.
+          outputModeRef.current = 'native'
+          setOutputMode('native')
+          graphReady.current = true
+          applyElementVolume(audio)
+          return
+        } catch {
+          /* captura no disponible o bloqueada → fallback */
+        }
+      }
+
+      // ── Fallback Web Audio completo (puede limitar background en iOS) ──
+      if (!gainRef.current) {
+        const g = ctx.createGain()
+        g.gain.value = clamp(gainRefState.current, 0, 3)
+        gainRef.current = g
+      }
+      if (!compRef.current) {
+        const c = ctx.createDynamicsCompressor()
+        c.threshold.value = -6
+        c.knee.value = 12
+        c.ratio.value = 4
+        c.attack.value = 0.003
+        c.release.value = 0.18
+        compRef.current = c
+      }
+      if (!mediaSourceRef.current) {
+        mediaSourceRef.current = ctx.createMediaElementSource(audio)
+        mediaSourceRef.current.connect(gainRef.current)
+        gainRef.current.connect(compRef.current)
+        compRef.current.connect(analyserRef.current)
+        analyserRef.current.connect(ctx.destination)
+      }
+      outputModeRef.current = 'webaudio'
+      setOutputMode('webaudio')
+      graphReady.current = true
+      applyElementVolume(audio)
+    } catch {
+      graphReady.current = false
+      outputModeRef.current = 'none'
+      setOutputMode('none')
+    }
+  }
+
+  /** Reanuda AudioContext + <audio> al volver de segundo plano. */
   const resumeAudioContext = useCallback(async () => {
     const ctx = ctxRef.current
     if (ctx && ctx.state === 'suspended') {
       try {
         await ctx.resume()
       } catch {
-        /* algunos navegadores exigen un gesto del usuario; se reintentará luego */
+        /* gesto de usuario requerido en algunos motores */
       }
     }
     const audio = audioRef.current
-    if (audio && audio.src && audio.paused && playing) {
+    if (audio && audio.src && audio.paused && playingRef.current) {
       try {
         await audio.play()
       } catch {
-        /* política de autoplay del navegador: el usuario deberá tocar ▶ una vez */
+        /* autoplay policy */
       }
     }
-  }, [playing])
+  }, [])
 
   useEffect(() => {
-    const handler = () => {
+    const onVisible = () => {
       if (document.visibilityState === 'visible') void resumeAudioContext()
     }
-    document.addEventListener('visibilitychange', handler)
-    window.addEventListener('focus', handler)
-    window.addEventListener('pageshow', handler)
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    window.addEventListener('pageshow', onVisible)
+    // iOS a veces congela la página; al descongelar reanudamos.
+    const onResume = () => void resumeAudioContext()
+    window.addEventListener('resume', onResume as EventListener)
+    document.addEventListener('freeze', () => {}, { passive: true })
     return () => {
-      document.removeEventListener('visibilitychange', handler)
-      window.removeEventListener('focus', handler)
-      window.removeEventListener('pageshow', handler)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+      window.removeEventListener('pageshow', onVisible)
+      window.removeEventListener('resume', onResume as EventListener)
     }
   }, [resumeAudioContext])
 
-  const ensureAudio = () => {
-    if (!audioRef.current) {
-      const a = new Audio()
-      a.preload = 'auto'
-      a.crossOrigin = 'anonymous'
-      try {
-        a.preservesPitch = true
-      } catch {
-        /* Safari antiguo */
-      }
-      a.volume = volume
-      a.ontimeupdate = () => {
-        const ms = (a.currentTime || 0) * 1000
-        setCurrentMs(ms)
-        updatePositionState(a.duration ? a.duration * 1000 : 0, ms)
-      }
-      a.onloadedmetadata = () => setDurationMs((a.duration || 0) * 1000)
-      a.onplay = () => {
-        setPlaying(true)
-        setMediaSessionPlaybackState('playing')
-      }
-      a.onpause = () => {
-        setPlaying(false)
-        setMediaSessionPlaybackState('paused')
-      }
-      a.onended = () => {
-        void onEndedRef.current()
-      }
-      a.onerror = () => {
-        setError('No se pudo decodificar el archivo de audio.')
-        setPlaying(false)
-      }
-      audioRef.current = a
-      ensureGraph(a)
-      ensureMediaSessionHandlers()
-    }
-    return audioRef.current
-  }
-
-  /** Registra los handlers de Media Session una sola vez; siempre delegan en los refs "espejo". */
   const ensureMediaSessionHandlers = () => {
     if (mediaSessionReady.current) return
     if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return
@@ -211,13 +257,86 @@ export function useMediaPlayer() {
       })
       mediaSessionReady.current = true
     } catch {
-      /* alguna acción puede no estar soportada; las que sí lo están quedan registradas */
+      /* acciones no soportadas se ignoran */
     }
   }
 
-  const onEndedRef = useRef<() => Promise<void>>(async () => {})
+  const ensureAudio = () => {
+    if (!audioRef.current) {
+      const a = new Audio()
+      a.preload = 'auto'
+      a.crossOrigin = 'anonymous'
+      a.setAttribute('playsinline', 'true')
+      // Ayuda a que algunos WebViews no traten el media como “solo en primer plano”.
+      try {
+        ;(a as HTMLAudioElement & { disableRemotePlayback?: boolean }).disableRemotePlayback = false
+      } catch {
+        /* */
+      }
+      try {
+        a.preservesPitch = true
+      } catch {
+        /* Safari antiguo */
+      }
+      a.volume = clamp(volumeRef.current, 0, 1)
 
-  /** Admite Blob directo o { blob } según implementación de getTrackBlob */
+      a.ontimeupdate = () => {
+        const ms = (a.currentTime || 0) * 1000
+        setCurrentMs(ms)
+        updatePositionState(a.duration ? a.duration * 1000 : 0, ms, rateRef.current)
+      }
+      a.onloadedmetadata = () => {
+        setDurationMs((a.duration || 0) * 1000)
+      }
+      a.ondurationchange = () => {
+        if (a.duration && Number.isFinite(a.duration)) {
+          setDurationMs(a.duration * 1000)
+        }
+      }
+      a.onplay = () => {
+        setPlaying(true)
+        playingRef.current = true
+        setMediaSessionPlaybackState('playing')
+      }
+      a.onplaying = () => {
+        setPlaying(true)
+        playingRef.current = true
+        setMediaSessionPlaybackState('playing')
+        void resumeAudioContext()
+      }
+      a.onpause = () => {
+        // No forzar paused si el navegador pausó por suspensión breve;
+        // solo reflejamos el estado real del elemento.
+        setPlaying(false)
+        playingRef.current = false
+        setMediaSessionPlaybackState('paused')
+      }
+      a.onended = () => {
+        void onEndedRef.current()
+      }
+      a.onerror = () => {
+        setError('No se pudo decodificar el archivo de audio.')
+        setPlaying(false)
+        playingRef.current = false
+        // Auto-avanzar si hay cola (evita quedarse bloqueado en un archivo malo).
+        window.setTimeout(() => {
+          void nextRef.current()
+        }, 400)
+      }
+      a.onstalled = () => {
+        /* blob local: raro; no paramos la UI */
+      }
+      a.onwaiting = () => {
+        /* buffering */
+      }
+
+      audioRef.current = a
+      ensureGraph(a)
+      ensureMediaSessionHandlers()
+    }
+    return audioRef.current
+  }
+
   const resolveBlob = async (blobKey: string): Promise<Blob | null> => {
     const raw = await getTrackBlob(blobKey)
     if (!raw) return null
@@ -228,42 +347,52 @@ export function useMediaPlayer() {
     return null
   }
 
-  const loadTrack = useCallback(
-    async (t: TrackItem) => {
-      setError(null)
-      const media = await resolveBlob(t.blobKey)
-      if (!media) {
-        setError('Archivo no encontrado en la biblioteca offline.')
+  const loadTrack = useCallback(async (t: TrackItem) => {
+    const gen = ++loadGenRef.current
+    setError(null)
+    const media = await resolveBlob(t.blobKey)
+    if (gen !== loadGenRef.current) return
+    if (!media) {
+      setError('Archivo no encontrado en la biblioteca offline.')
+      return
+    }
+
+    const audio = ensureAudio()
+    ensureGraph(audio)
+    cleanupUrl()
+
+    const url = URL.createObjectURL(media)
+    urlRef.current = url
+    audio.src = url
+    audio.playbackRate = rateRef.current
+    try {
+      audio.preservesPitch = true
+    } catch {
+      /* */
+    }
+    applyElementVolume(audio)
+
+    setTrack(t)
+    setCurrentMs(0)
+    setDurationMs(t.durationMs || 0)
+    updateMediaSessionMetadata(t)
+
+    await new Promise<void>((resolve) => {
+      if (gen !== loadGenRef.current) {
+        resolve()
         return
       }
-      const audio = ensureAudio()
-      ensureGraph(audio)
-      cleanupUrl()
-      const url = URL.createObjectURL(media)
-      urlRef.current = url
-      audio.src = url
-      audio.playbackRate = rate
-      audio.volume = volume
-      if (gainRef.current) {
-        gainRef.current.gain.value = gain
-      }
-      setTrack(t)
-      setCurrentMs(0)
-      setDurationMs(t.durationMs || 0)
-      updateMediaSessionMetadata(t)
-
-      await new Promise<void>((resolve) => {
-        const onMeta = () => {
+      const onMeta = () => {
+        if (gen === loadGenRef.current) {
           setDurationMs((audio.duration || 0) * 1000)
-          audio.removeEventListener('loadedmetadata', onMeta)
-          resolve()
         }
-        if (audio.readyState >= 1) onMeta()
-        else audio.addEventListener('loadedmetadata', onMeta)
-      })
-    },
-    [volume, rate, gain]
-  )
+        audio.removeEventListener('loadedmetadata', onMeta)
+        resolve()
+      }
+      if (audio.readyState >= 1) onMeta()
+      else audio.addEventListener('loadedmetadata', onMeta)
+    })
+  }, [])
 
   const playTrack = useCallback(
     async (t: TrackItem, queue?: TrackItem[]) => {
@@ -277,9 +406,11 @@ export function useMediaPlayer() {
       } else {
         indexRef.current = queueRef.current.findIndex((x) => x.id === t.id)
       }
+
       await loadTrack(t)
       const audio = ensureAudio()
       ensureGraph(audio)
+
       if (ctxRef.current?.state === 'suspended') {
         try {
           await ctxRef.current.resume()
@@ -287,15 +418,20 @@ export function useMediaPlayer() {
           /* */
         }
       }
+
       try {
         await audio.play()
         setPlaying(true)
+        playingRef.current = true
         setError(null)
       } catch (e) {
         setPlaying(false)
+        playingRef.current = false
         const msg = e instanceof Error ? e.message : String(e)
         if (/NotAllowedError|interact/i.test(msg)) {
           setError('Pulsa ▶ para iniciar la reproducción (política del navegador).')
+        } else {
+          setError('No se pudo iniciar la reproducción.')
         }
       }
     },
@@ -322,13 +458,16 @@ export function useMediaPlayer() {
       try {
         await audio.play()
         setPlaying(true)
+        playingRef.current = true
         setError(null)
       } catch {
         setPlaying(false)
+        playingRef.current = false
       }
     } else {
       audio.pause()
       setPlaying(false)
+      playingRef.current = false
     }
   }, [playTrack])
 
@@ -338,7 +477,7 @@ export function useMediaPlayer() {
     const t = Math.max(0, d ? Math.min(d, ms / 1000) : ms / 1000)
     audio.currentTime = t
     setCurrentMs(t * 1000)
-    updatePositionState(d * 1000, t * 1000)
+    updatePositionState(d * 1000, t * 1000, rateRef.current)
   }, [])
 
   const playIndex = useCallback(
@@ -369,6 +508,7 @@ export function useMediaPlayer() {
     if (audio.currentTime > 3) {
       audio.currentTime = 0
       setCurrentMs(0)
+      updatePositionState((audio.duration || 0) * 1000, 0, rateRef.current)
       return
     }
     await playIndex(indexRef.current - 1)
@@ -380,8 +520,11 @@ export function useMediaPlayer() {
       audio.currentTime = 0
       try {
         await audio.play()
+        setPlaying(true)
+        playingRef.current = true
       } catch {
-        /* */
+        setPlaying(false)
+        playingRef.current = false
       }
       return
     }
@@ -389,6 +532,8 @@ export function useMediaPlayer() {
       await next()
     } else {
       setPlaying(false)
+      playingRef.current = false
+      setMediaSessionPlaybackState('paused')
     }
   }, [next, repeat])
 
@@ -399,31 +544,26 @@ export function useMediaPlayer() {
   seekRef.current = seek
 
   const setVolume = useCallback((v: number) => {
-    const val = Math.min(1, Math.max(0, v))
+    const val = clamp(v, 0, 1)
     setVolumeState(val)
+    volumeRef.current = val
     const audio = audioRef.current
-    if (audio) audio.volume = val
+    if (audio) applyElementVolume(audio)
   }, [])
 
-  /** 0–3 → hasta 300 % de ganancia real (GainNode + soft limiter) */
+  /** 0–3. En modo nativo el volumen real se satura en 1; el exceso refuerza getFrequencyData. */
   const setGain = useCallback((g: number) => {
-    const val = Math.min(3, Math.max(0, g))
+    const val = clamp(g, 0, 3)
     setGainState(val)
-    const node = gainRef.current
-    const ctx = ctxRef.current
-    if (node && ctx) {
-      const t = ctx.currentTime
-      node.gain.cancelScheduledValues(t)
-      node.gain.setValueAtTime(node.gain.value, t)
-      node.gain.linearRampToValueAtTime(val, t + 0.05)
-    } else if (node) {
-      node.gain.value = val
-    }
+    gainRefState.current = val
+    const audio = audioRef.current
+    if (audio) applyElementVolume(audio)
   }, [])
 
   const setPlaybackRate = useCallback((r: number) => {
-    const val = Math.min(2, Math.max(0.5, r))
+    const val = clamp(r, 0.5, 2)
     setRateState(val)
+    rateRef.current = val
     const audio = audioRef.current
     if (audio) {
       audio.playbackRate = val
@@ -432,10 +572,14 @@ export function useMediaPlayer() {
       } catch {
         /* */
       }
+      updatePositionState(
+        (audio.duration || 0) * 1000,
+        (audio.currentTime || 0) * 1000,
+        val
+      )
     }
   }, [])
 
-  /** Inserta pista justo después de la actual (MusicaHome → "Reproducir a continuación") */
   const insertNext = useCallback((t: TrackItem) => {
     const q = [...queueRef.current]
     const i = indexRef.current
@@ -451,17 +595,43 @@ export function useMediaPlayer() {
     if (!an) return null
     const buf = new Uint8Array(an.frequencyBinCount)
     an.getByteFrequencyData(buf)
+    // En modo nativo, gain > 1 no sube el altavoz; refuerza el espectro para el UI.
+    if (outputModeRef.current === 'native' && gainRefState.current > 1) {
+      const boost = gainRefState.current
+      for (let i = 0; i < buf.length; i++) {
+        buf[i] = Math.min(255, Math.round(buf[i] * boost))
+      }
+    }
     return buf
   }, [])
 
   const getQueue = useCallback(() => [...queueRef.current], [])
 
+  const getIndex = useCallback(() => indexRef.current, [])
+
+  const setQueue = useCallback((q: TrackItem[]) => {
+    queueRef.current = q
+    if (!q.length) {
+      indexRef.current = 0
+      return
+    }
+    const curId = track?.id
+    if (curId) {
+      const i = q.findIndex((x) => x.id === curId)
+      indexRef.current = i >= 0 ? i : clamp(indexRef.current, 0, q.length - 1)
+    } else {
+      indexRef.current = clamp(indexRef.current, 0, q.length - 1)
+    }
+  }, [track?.id])
+
+  // Cleanup
   useEffect(
     () => () => {
       audioRef.current?.pause()
       cleanupUrl()
       try {
-        sourceRef.current?.disconnect()
+        mediaSourceRef.current?.disconnect()
+        streamSourceRef.current?.disconnect()
         gainRef.current?.disconnect()
         compRef.current?.disconnect()
         analyserRef.current?.disconnect()
@@ -472,20 +642,32 @@ export function useMediaPlayer() {
       ctxRef.current = null
       graphReady.current = false
       mediaSessionReady.current = false
-      sourceRef.current = null
+      mediaSourceRef.current = null
+      streamSourceRef.current = null
       gainRef.current = null
       compRef.current = null
       analyserRef.current = null
+      outputModeRef.current = 'none'
       try {
         if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
-          navigator.mediaSession.setActionHandler('play', null)
-          navigator.mediaSession.setActionHandler('pause', null)
-          navigator.mediaSession.setActionHandler('previoustrack', null)
-          navigator.mediaSession.setActionHandler('nexttrack', null)
-          navigator.mediaSession.setActionHandler('stop', null)
-          navigator.mediaSession.setActionHandler('seekbackward', null)
-          navigator.mediaSession.setActionHandler('seekforward', null)
-          navigator.mediaSession.setActionHandler('seekto', null)
+          const actions = [
+            'play',
+            'pause',
+            'previoustrack',
+            'nexttrack',
+            'stop',
+            'seekbackward',
+            'seekforward',
+            'seekto',
+          ] as const
+          for (const action of actions) {
+            try {
+              navigator.mediaSession.setActionHandler(action, null)
+            } catch {
+              /* */
+            }
+          }
+          navigator.mediaSession.metadata = null
         }
       } catch {
         /* */
@@ -515,14 +697,14 @@ export function useMediaPlayer() {
     next,
     prev,
     insertNext,
-    setQueue: (q: TrackItem[]) => {
-      queueRef.current = q
-    },
+    setQueue,
     getQueue,
+    getIndex,
     getFrequencyData,
-    /** Reintenta reanudar audio/contexto tras volver de segundo plano. Seguro de llamar siempre. */
     resumeAudioContext,
     error,
+    /** 'native' = background fiable; 'webaudio' = fallback con boost real. */
+    outputMode,
   }
 }
 
@@ -545,7 +727,7 @@ function updateMediaSessionMetadata(t: TrackItem) {
   }
 }
 
-function setMediaSessionPlaybackState(state: 'playing' | 'paused') {
+function setMediaSessionPlaybackState(state: 'playing' | 'paused' | 'none') {
   if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return
   try {
     navigator.mediaSession.playbackState = state
@@ -554,21 +736,25 @@ function setMediaSessionPlaybackState(state: 'playing' | 'paused') {
   }
 }
 
-function updatePositionState(durationMs: number, positionMs: number) {
+function updatePositionState(durationMs: number, positionMs: number, playbackRate = 1) {
   if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return
   const ms = navigator.mediaSession as MediaSession & {
-    setPositionState?: (state: { duration: number; playbackRate: number; position: number }) => void
+    setPositionState?: (state: {
+      duration: number
+      playbackRate: number
+      position: number
+    }) => void
   }
-  if (!ms.setPositionState || !durationMs) return
+  if (!ms.setPositionState || !durationMs || !Number.isFinite(durationMs)) return
   try {
+    const duration = durationMs / 1000
+    const position = clamp(positionMs, 0, durationMs) / 1000
     ms.setPositionState({
-      duration: durationMs / 1000,
-      playbackRate: 1,
-      position: Math.min(positionMs, durationMs) / 1000,
+      duration,
+      playbackRate: playbackRate || 1,
+      position: Math.min(position, duration),
     })
   } catch {
-    /* algunos navegadores exigen que position ≤ duration exactamente; se ignora si falla */
+    /* */
   }
 }
-
-export type MediaPlayerApi = ReturnType<typeof useMediaPlayer>
