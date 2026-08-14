@@ -1812,8 +1812,9 @@ export function BookReader() {
 
         /* Mobile */
         .reader-mobile {
-          display: flex; flex-direction: column; min-height: 100dvh;
-          padding: 0 1rem calc(5rem + env(safe-area-inset-bottom));
+          display: flex; flex-direction: column; min-height: 100dvh; min-height: 100svh;
+          padding: 0 max(1rem, env(safe-area-inset-right)) calc(5rem + env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+          overflow-x: hidden;
         }
         .mobile-topbar {
           display: flex; justify-content: space-between; align-items: center;
@@ -1833,9 +1834,12 @@ export function BookReader() {
           background: var(--reader-glass); border: 1px solid var(--reader-border);
           backdrop-filter: blur(16px); z-index: 20;
           box-shadow: 0 8px 28px rgba(0,0,0,0.25);
+          max-width: calc(100vw - 2rem);
         }
         .reader-bottom-progress.mobile {
-          position: fixed; left: 1rem; right: 1rem;
+          position: fixed;
+          left: max(1rem, env(safe-area-inset-left));
+          right: max(1rem, env(safe-area-inset-right));
           bottom: calc(4.2rem + env(safe-area-inset-bottom));
           z-index: 15;
         }

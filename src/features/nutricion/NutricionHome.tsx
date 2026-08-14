@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode, type DragEvent as ReactDragEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { GlassButton } from '@/components/ui/GlassButton'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
@@ -981,11 +981,23 @@ function ImportModal({
   const [year, setYear] = useState('')
   const [cover, setCover] = useState<string | null>(null)
   const [folderId, setFolderId] = useState<string | null>(defaultFolderId)
+  const [dragActive, setDragActive] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const coverRef = useRef<HTMLInputElement>(null)
 
+  const ACCEPTED_EXT = ['.txt', '.pdf', '.docx', '.epub']
+  const ACCEPT_ATTR =
+    '.txt,.pdf,.docx,.epub,text/plain,application/pdf,application/epub+zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
+  const isAcceptedFile = (file: File) => {
+    const name = file.name.toLowerCase()
+    return ACCEPTED_EXT.some((ext) => name.endsWith(ext))
+  }
+
   const pickSource = async (s: ImportSource) => {
     soundClick()
+    setImportError(null)
     setSource(s)
     if (s === 'archivo') {
       fileRef.current?.click()
@@ -996,6 +1008,7 @@ function ImportModal({
         const t = await navigator.clipboard.readText()
         if (!t.trim()) {
           soundFail()
+          setImportError('El portapapeles está vacío o no contiene texto.')
           return
         }
         setText(t)
@@ -1003,6 +1016,7 @@ function ImportModal({
         setStep(2)
       } catch {
         soundFail()
+        setImportError('No se pudo leer el portapapeles. Revisa los permisos del navegador.')
       }
       return
     }
@@ -1011,11 +1025,18 @@ function ImportModal({
   }
 
   const onFile = async (file: File) => {
+    setImportError(null)
+    if (!isAcceptedFile(file)) {
+      soundFail()
+      setImportError('Formato no compatible. Usa TXT, PDF, DOCX o EPUB.')
+      return
+    }
     setBusy(true)
     try {
       const content = await extractTextFromFile(file)
       if (!content.trim()) {
         soundFail()
+        setImportError('No se pudo extraer texto de este archivo.')
         return
       }
       setText(content)
@@ -1025,8 +1046,32 @@ function ImportModal({
     } catch (e) {
       console.error(e)
       soundFail()
+      setImportError('Ocurrió un error al importar el archivo. Inténtalo de nuevo.')
     } finally {
       setBusy(false)
+    }
+  }
+
+  const onDragOver = (e: ReactDragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!busy) setDragActive(true)
+  }
+  const onDragLeave = (e: ReactDragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+  }
+  const onDrop = (e: ReactDragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+    if (busy) return
+    const f = e.dataTransfer.files?.[0]
+    if (f) {
+      soundClick()
+      setSource('archivo')
+      void onFile(f)
     }
   }
 
@@ -1073,36 +1118,39 @@ function ImportModal({
 
         {step === 1 && (
           <>
-            <p style={{ fontSize: '0.85rem', color: 'var(--gco-ink-muted)', marginBottom: '1rem' }}>
-              ¿Desde dónde quieres importar el texto?
-            </p>
-            <button type="button" className="source-option" onClick={() => pickSource('texto')}>
-              <span className="source-icon"><IconType /></span>
-              <span>
-                <span className="source-label" style={{ display: 'block' }}>Escribir o pegar texto</span>
-                <span className="source-sub">Redacta o pega el contenido manualmente</span>
+            <p className="import-intro">Elige cómo quieres traer tu próximo audiolibro.</p>
+
+            <div
+              className={`import-dropzone ${dragActive ? 'active' : ''} ${busy ? 'busy' : ''}`}
+              onDragOver={onDragOver}
+              onDragLeave={onDragLeave}
+              onDrop={onDrop}
+              onClick={() => !busy && pickSource('archivo')}
+              role="button"
+              tabIndex={0}
+              aria-label="Subir archivo TXT, PDF, DOCX o EPUB"
+              onKeyDown={(e) => {
+                if ((e.key === 'Enter' || e.key === ' ') && !busy) {
+                  e.preventDefault()
+                  void pickSource('archivo')
+                }
+              }}
+            >
+              <span className="import-dropzone-icon">
+                {busy ? <span className="import-spinner" aria-hidden /> : <IconFile />}
               </span>
-            </button>
-            <button type="button" className="source-option" onClick={() => pickSource('portapapeles')}>
-              <span className="source-icon"><IconPaste /></span>
-              <span>
-                <span className="source-label" style={{ display: 'block' }}>Desde el portapapeles</span>
-                <span className="source-sub">Usa lo último que copiaste</span>
+              <span className="import-dropzone-title">
+                {busy ? 'Extrayendo texto…' : 'Arrastra un archivo aquí'}
               </span>
-            </button>
-            <button type="button" className="source-option" disabled={busy} onClick={() => pickSource('archivo')}>
-              <span className="source-icon"><IconFile /></span>
-              <span>
-                <span className="source-label" style={{ display: 'block' }}>
-                  {busy ? 'Importando…' : 'Subir archivo'}
-                </span>
-                <span className="source-sub">TXT, PDF, DOCX o EPUB</span>
+              <span className="import-dropzone-sub">
+                {busy ? 'Esto puede tardar unos segundos' : 'o toca para elegir · TXT, PDF, DOCX o EPUB'}
               </span>
-            </button>
+            </div>
+
             <input
               ref={fileRef}
               type="file"
-              accept=".txt,.pdf,.docx,.epub,text/plain,application/pdf,application/epub+zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              accept={ACCEPT_ATTR}
               hidden
               onChange={(e) => {
                 const f = e.target.files?.[0]
@@ -1111,14 +1159,52 @@ function ImportModal({
               }}
             />
 
+            {importError && (
+              <div className="import-error" role="alert">
+                {importError}
+              </div>
+            )}
+
+            <div className="import-divider">
+              <span />
+              <em>o también</em>
+              <span />
+            </div>
+
+            <div className="import-quick-options">
+              <button
+                type="button"
+                className={`source-option compact ${source === 'texto' ? 'selected' : ''}`}
+                onClick={() => pickSource('texto')}
+              >
+                <span className="source-icon"><IconType /></span>
+                <span>
+                  <span className="source-label" style={{ display: 'block' }}>Escribir o pegar texto</span>
+                  <span className="source-sub">Redacta el contenido manualmente</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className="source-option compact"
+                onClick={() => pickSource('portapapeles')}
+              >
+                <span className="source-icon"><IconPaste /></span>
+                <span>
+                  <span className="source-label" style={{ display: 'block' }}>Desde el portapapeles</span>
+                  <span className="source-sub">Usa lo último que copiaste</span>
+                </span>
+              </button>
+            </div>
+
             {source === 'texto' && (
               <textarea
+                autoFocus
                 className="glass-input"
                 placeholder="Pega o escribe el texto…"
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 rows={6}
-                style={{ marginTop: 8, resize: 'vertical' }}
+                style={{ marginTop: 12, resize: 'vertical' }}
               />
             )}
 
@@ -1127,9 +1213,11 @@ function ImportModal({
                 onClick={() => {
                   if (!text.trim()) {
                     soundFail()
+                    setImportError('Escribe o pega algo de texto para continuar.')
                     return
                   }
                   soundClick()
+                  setImportError(null)
                   setStep(2)
                 }}
                 style={{ marginTop: 10, width: '100%' }}

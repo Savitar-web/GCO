@@ -2,24 +2,32 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { getTrackBlob, type TrackItem } from '@/core/storage/mediaLibrary'
 
 /**
- * Reproductor offline profesional con reproducción en segundo plano real.
+ * Reproductor offline profesional — background real en iOS / Android / desktop.
  *
- * Arquitectura de audio (clave para background):
- *  1. El sonido SIEMPRE sale por el <audio> nativo → los navegadores
- *     (incl. iOS Safari) permiten que siga sonando en pestaña oculta /
- *     pantalla bloqueada si hay Media Session activa.
- *  2. El espectro se obtiene con captureStream() → MediaStreamSource →
- *     AnalyserNode (sin conectar a destination). Así no se “roba” la
- *     salida del elemento y el background no se rompe.
- *  3. Fallback: createMediaElementSource + gain + soft-limiter solo si
- *     captureStream no está disponible (navegadores antiguos). En ese
- *     modo el background puede degradarse en iOS.
- *
- * Media Session vive solo aquí (única fuente de verdad).
+ * Principios (orden de prioridad):
+ *  1. El sonido SIEMPRE sale por el <audio> nativo. Nunca se “roba” la salida
+ *     con createMediaElementSource en plataformas donde eso rompe el background
+ *     (Safari / iOS PWA).
+ *  2. Espectro:
+ *     - Preferido: captureStream() → MediaStreamSource → Analyser (sin destination).
+ *       Disponible en Chrome, Edge, Firefox, Android.
+ *     - iOS / Safari: captureStream no existe → no se crea MediaElementSource.
+ *       El visualizador recibe null y usa su animación de reposo (ya soportada).
+ *     - Fallback opcional (solo desktop no-Safari): MediaElementSource + gain
+ *       + compressor → analyser → destination (boost real, background fiable).
+ *  3. Media Session es la única fuente de verdad (handlers + metadata + position).
+ *  4. Reanudación agresiva al volver de segundo plano / freeze / pageshow.
+ *  5. navigator.audioSession.type = 'playback' cuando existe (iOS 17+).
  */
 
 export type RepeatMode = 'off' | 'one' | 'all'
-export type OutputMode = 'native' | 'webaudio' | 'none'
+
+/** Cómo se está sacando el audio / el espectro. */
+export type OutputMode =
+  | 'native' // <audio> puro + captureStream (mejor background + espectro)
+  | 'native-nospec' // <audio> puro, sin espectro real (iOS / Safari)
+  | 'webaudio' // MediaElementSource → destination (boost real; no usar en iOS)
+  | 'none'
 
 export type MediaPlayerApi = ReturnType<typeof useMediaPlayer>
 
@@ -28,8 +36,35 @@ type CaptureAudioElement = HTMLAudioElement & {
   mozCaptureStream?: () => MediaStream
 }
 
+type AudioSessionLike = {
+  type?: string
+}
+
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n))
+}
+
+function isAppleWebKit(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  // iPhone, iPad, iPod, o Safari de escritorio (sin Chrome/Chromium/Firefox/Edg)
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  const isSafariDesktop =
+    /Safari/.test(ua) && !/Chrome|Chromium|CriOS|Edg|OPR|Firefox|FxiOS/.test(ua)
+  return isIOS || isSafariDesktop
+}
+
+function setAudioSessionPlayback() {
+  try {
+    const nav = navigator as Navigator & { audioSession?: AudioSessionLike }
+    if (nav.audioSession && typeof nav.audioSession === 'object') {
+      // 'playback' = categoría de medios largos; ayuda a no silenciar con el switch
+      // y a mantener la sesión cuando la pantalla se bloquea (iOS 17+).
+      nav.audioSession.type = 'playback'
+    }
+  } catch {
+    /* API no disponible o de solo lectura en este motor */
+  }
 }
 
 export function useMediaPlayer() {
@@ -37,7 +72,7 @@ export function useMediaPlayer() {
   const urlRef = useRef<string | null>(null)
   const queueRef = useRef<TrackItem[]>([])
   const indexRef = useRef(0)
-  /** Evita que una carga antigua pise una más reciente (doble clic, skip rápido). */
+  /** Generación de carga: evita que un load antiguo pise uno nuevo (skip rápido). */
   const loadGenRef = useRef(0)
 
   const ctxRef = useRef<AudioContext | null>(null)
@@ -49,6 +84,7 @@ export function useMediaPlayer() {
   const graphReady = useRef(false)
   const outputModeRef = useRef<OutputMode>('none')
   const mediaSessionReady = useRef(false)
+  const appleWebKit = useRef(isAppleWebKit())
 
   const [track, setTrack] = useState<TrackItem | null>(null)
   const [playing, setPlaying] = useState(false)
@@ -58,12 +94,12 @@ export function useMediaPlayer() {
   const [repeat, setRepeat] = useState<RepeatMode>('off')
   const [volume, setVolumeState] = useState(1)
   const [rate, setRateState] = useState(1)
-  /** 0–3. En modo nativo solo afecta hasta ×1 en volumen real; el resto refuerza el espectro. */
+  /** 0–3. En salida nativa el hardware satura en 1; el exceso solo refuerza el espectro. */
   const [gain, setGainState] = useState(1)
   const [error, setError] = useState<string | null>(null)
   const [outputMode, setOutputMode] = useState<OutputMode>('none')
 
-  // Refs espejo para Media Session (handlers registrados una sola vez).
+  // Refs espejo para Media Session (handlers se registran una sola vez).
   const toggleRef = useRef<() => Promise<void>>(async () => {})
   const nextRef = useRef<() => Promise<void>>(async () => {})
   const prevRef = useRef<() => Promise<void>>(async () => {})
@@ -73,11 +109,13 @@ export function useMediaPlayer() {
   const volumeRef = useRef(volume)
   const gainRefState = useRef(gain)
   const rateRef = useRef(rate)
+  const trackRef = useRef<TrackItem | null>(null)
 
   playingRef.current = playing
   volumeRef.current = volume
   gainRefState.current = gain
   rateRef.current = rate
+  trackRef.current = track
 
   const cleanupUrl = () => {
     if (urlRef.current) {
@@ -87,7 +125,6 @@ export function useMediaPlayer() {
   }
 
   const applyElementVolume = (audio: HTMLAudioElement) => {
-    // En salida nativa el hardware no amplifica > 1; gain extra va al visualizador.
     const v = volumeRef.current
     const g = gainRefState.current
     if (outputModeRef.current === 'webaudio') {
@@ -100,28 +137,63 @@ export function useMediaPlayer() {
         node.gain.linearRampToValueAtTime(clamp(g, 0, 3), t + 0.04)
       }
     } else {
+      // Nativo: el hardware no amplifica > 1.
       audio.volume = clamp(v * clamp(g, 0, 1), 0, 1)
     }
   }
 
-  const ensureAudioContext = () => {
-    if (ctxRef.current) return ctxRef.current
-    const AC =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-    ctxRef.current = new AC({ latencyHint: 'playback' })
-    return ctxRef.current
+  const ensureAudioContext = (): AudioContext | null => {
+    try {
+      if (ctxRef.current) {
+        if (ctxRef.current.state === 'suspended') {
+          void ctxRef.current.resume().catch(() => {})
+        }
+        return ctxRef.current
+      }
+      const AC =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+      if (!AC) return null
+      ctxRef.current = new AC({ latencyHint: 'playback' })
+      return ctxRef.current
+    } catch {
+      return null
+    }
   }
 
   /**
    * Grafo de análisis / boost.
-   * Preferencia: captureStream (salida nativa intacta → background OK).
-   * Fallback: MediaElementSource (boost real, background menos fiable en iOS).
+   *
+   * - Apple WebKit (iOS + Safari): NUNCA createMediaElementSource.
+   *   El <audio> sigue siendo el único path de salida → background fiable.
+   * - Resto: captureStream si existe; si no, MediaElementSource + destination.
    */
   const ensureGraph = (audio: HTMLAudioElement) => {
     try {
+      if (graphReady.current) {
+        applyElementVolume(audio)
+        return
+      }
+
+      // ── iOS / Safari: solo nativo, sin robar la salida ──
+      if (appleWebKit.current) {
+        outputModeRef.current = 'native-nospec'
+        setOutputMode('native-nospec')
+        graphReady.current = true
+        applyElementVolume(audio)
+        setAudioSessionPlayback()
+        return
+      }
+
       const ctx = ensureAudioContext()
-      if (ctx.state === 'suspended') void ctx.resume()
+      if (!ctx) {
+        outputModeRef.current = 'native-nospec'
+        setOutputMode('native-nospec')
+        graphReady.current = true
+        applyElementVolume(audio)
+        return
+      }
+      if (ctx.state === 'suspended') void ctx.resume().catch(() => {})
 
       if (!analyserRef.current) {
         const an = ctx.createAnalyser()
@@ -132,11 +204,6 @@ export function useMediaPlayer() {
         analyserRef.current = an
       }
 
-      if (graphReady.current) {
-        applyElementVolume(audio)
-        return
-      }
-
       const el = audio as CaptureAudioElement
       const captureFn =
         typeof el.captureStream === 'function'
@@ -145,23 +212,27 @@ export function useMediaPlayer() {
             ? () => el.mozCaptureStream!()
             : null
 
+      // ── Preferido: captureStream (salida nativa intacta) ──
       if (captureFn) {
         try {
           const stream = captureFn()
-          streamSourceRef.current = ctx.createMediaStreamSource(stream)
-          streamSourceRef.current.connect(analyserRef.current)
-          // No conectar a destination: el <audio> sigue yendo a altavoces.
-          outputModeRef.current = 'native'
-          setOutputMode('native')
-          graphReady.current = true
-          applyElementVolume(audio)
-          return
+          // Algunos motores exigen que el elemento ya tenga datos; si falla, fallback.
+          if (stream && stream.getAudioTracks().length > 0) {
+            streamSourceRef.current = ctx.createMediaStreamSource(stream)
+            streamSourceRef.current.connect(analyserRef.current)
+            // NO conectar a destination: el <audio> sigue yendo a altavoces.
+            outputModeRef.current = 'native'
+            setOutputMode('native')
+            graphReady.current = true
+            applyElementVolume(audio)
+            return
+          }
         } catch {
           /* captura no disponible o bloqueada → fallback */
         }
       }
 
-      // ── Fallback Web Audio completo (puede limitar background en iOS) ──
+      // ── Fallback Web Audio completo (solo no-Apple; background más fiable ahí) ──
       if (!gainRef.current) {
         const g = ctx.createGain()
         g.gain.value = clamp(gainRefState.current, 0, 3)
@@ -180,28 +251,31 @@ export function useMediaPlayer() {
         mediaSourceRef.current = ctx.createMediaElementSource(audio)
         mediaSourceRef.current.connect(gainRef.current)
         gainRef.current.connect(compRef.current)
-        compRef.current.connect(analyserRef.current)
-        analyserRef.current.connect(ctx.destination)
+        compRef.current.connect(analyserRef.current!)
+        analyserRef.current!.connect(ctx.destination)
       }
       outputModeRef.current = 'webaudio'
       setOutputMode('webaudio')
       graphReady.current = true
       applyElementVolume(audio)
     } catch {
-      graphReady.current = false
-      outputModeRef.current = 'none'
-      setOutputMode('none')
+      // Cualquier fallo → modo nativo sin espectro; el audio debe seguir funcionando.
+      outputModeRef.current = 'native-nospec'
+      setOutputMode('native-nospec')
+      graphReady.current = true
+      applyElementVolume(audio)
     }
   }
 
-  /** Reanuda AudioContext + <audio> al volver de segundo plano. */
+  /** Reanuda AudioContext + <audio> al volver de segundo plano / freeze. */
   const resumeAudioContext = useCallback(async () => {
+    setAudioSessionPlayback()
     const ctx = ctxRef.current
     if (ctx && ctx.state === 'suspended') {
       try {
         await ctx.resume()
       } catch {
-        /* gesto de usuario requerido en algunos motores */
+        /* gestos de usuario requeridos en algunos motores */
       }
     }
     const audio = audioRef.current
@@ -221,7 +295,7 @@ export function useMediaPlayer() {
     document.addEventListener('visibilitychange', onVisible)
     window.addEventListener('focus', onVisible)
     window.addEventListener('pageshow', onVisible)
-    // iOS a veces congela la página; al descongelar reanudamos.
+    // Algunos WebViews disparan 'resume' al descongelar.
     const onResume = () => void resumeAudioContext()
     window.addEventListener('resume', onResume as EventListener)
     document.addEventListener('freeze', () => {}, { passive: true })
@@ -297,6 +371,7 @@ export function useMediaPlayer() {
         setPlaying(true)
         playingRef.current = true
         setMediaSessionPlaybackState('playing')
+        setAudioSessionPlayback()
       }
       a.onplaying = () => {
         setPlaying(true)
@@ -305,8 +380,7 @@ export function useMediaPlayer() {
         void resumeAudioContext()
       }
       a.onpause = () => {
-        // No forzar paused si el navegador pausó por suspensión breve;
-        // solo reflejamos el estado real del elemento.
+        // Refleja el estado real del elemento (no forzar si fue pausa breve del SO).
         setPlaying(false)
         playingRef.current = false
         setMediaSessionPlaybackState('paused')
@@ -333,6 +407,7 @@ export function useMediaPlayer() {
       audioRef.current = a
       ensureGraph(a)
       ensureMediaSessionHandlers()
+      setAudioSessionPlayback()
     }
     return audioRef.current
   }
@@ -373,6 +448,7 @@ export function useMediaPlayer() {
     applyElementVolume(audio)
 
     setTrack(t)
+    trackRef.current = t
     setCurrentMs(0)
     setDurationMs(t.durationMs || 0)
     updateMediaSessionMetadata(t)
@@ -410,6 +486,7 @@ export function useMediaPlayer() {
       await loadTrack(t)
       const audio = ensureAudio()
       ensureGraph(audio)
+      setAudioSessionPlayback()
 
       if (ctxRef.current?.state === 'suspended') {
         try {
@@ -424,6 +501,7 @@ export function useMediaPlayer() {
         setPlaying(true)
         playingRef.current = true
         setError(null)
+        setMediaSessionPlaybackState('playing')
       } catch (e) {
         setPlaying(false)
         playingRef.current = false
@@ -441,6 +519,7 @@ export function useMediaPlayer() {
   const toggle = useCallback(async () => {
     const audio = ensureAudio()
     ensureGraph(audio)
+    setAudioSessionPlayback()
     if (ctxRef.current?.state === 'suspended') {
       try {
         await ctxRef.current.resume()
@@ -460,6 +539,7 @@ export function useMediaPlayer() {
         setPlaying(true)
         playingRef.current = true
         setError(null)
+        setMediaSessionPlaybackState('playing')
       } catch {
         setPlaying(false)
         playingRef.current = false
@@ -468,6 +548,7 @@ export function useMediaPlayer() {
       audio.pause()
       setPlaying(false)
       playingRef.current = false
+      setMediaSessionPlaybackState('paused')
     }
   }, [playTrack])
 
@@ -522,6 +603,7 @@ export function useMediaPlayer() {
         await audio.play()
         setPlaying(true)
         playingRef.current = true
+        setMediaSessionPlaybackState('playing')
       } catch {
         setPlaying(false)
         playingRef.current = false
@@ -609,22 +691,25 @@ export function useMediaPlayer() {
 
   const getIndex = useCallback(() => indexRef.current, [])
 
-  const setQueue = useCallback((q: TrackItem[]) => {
-    queueRef.current = q
-    if (!q.length) {
-      indexRef.current = 0
-      return
-    }
-    const curId = track?.id
-    if (curId) {
-      const i = q.findIndex((x) => x.id === curId)
-      indexRef.current = i >= 0 ? i : clamp(indexRef.current, 0, q.length - 1)
-    } else {
-      indexRef.current = clamp(indexRef.current, 0, q.length - 1)
-    }
-  }, [track?.id])
+  const setQueue = useCallback(
+    (q: TrackItem[]) => {
+      queueRef.current = q
+      if (!q.length) {
+        indexRef.current = 0
+        return
+      }
+      const curId = trackRef.current?.id
+      if (curId) {
+        const i = q.findIndex((x) => x.id === curId)
+        indexRef.current = i >= 0 ? i : clamp(indexRef.current, 0, q.length - 1)
+      } else {
+        indexRef.current = clamp(indexRef.current, 0, q.length - 1)
+      }
+    },
+    []
+  )
 
-  // Cleanup
+  // Cleanup al desmontar el motor (no al cambiar de vista: el motor es global).
   useEffect(
     () => () => {
       audioRef.current?.pause()
@@ -703,7 +788,11 @@ export function useMediaPlayer() {
     getFrequencyData,
     resumeAudioContext,
     error,
-    /** 'native' = background fiable; 'webaudio' = fallback con boost real. */
+    /**
+     * 'native'        = background fiable + espectro real (captureStream)
+     * 'native-nospec' = background fiable, sin espectro (iOS / Safari)
+     * 'webaudio'      = boost real vía Web Audio (desktop no-Safari)
+     */
     outputMode,
   }
 }
