@@ -1966,3 +1966,979 @@ export function calcPintarStars(
   if (stars >= 2 && taps <= cellCount * 2.2) stars = 3
   return stars
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   4) DESPEJES — Motor de cuadrícula ampliado: Hielo, Interruptores,
+      Teletransportadores, Láser y Circuitos
+   ═══════════════════════════════════════════════════════════════════════════
+ */
+
+export type GridPos = MazeCoord
+
+/* ── 4.1 Hielo — Ice Slide Puzzle ── */
+
+export type IceCellType = 'wall' | 'ice' | 'floor' | 'goal'
+
+export interface IceSlideLevel {
+  level: number
+  rows: number
+  cols: number
+  grid: IceCellType[][]
+  start: MazeCoord
+  target: MazeCoord
+  moveLimit: number
+  targetSeconds: number
+  goal: string
+  seed: number
+}
+
+export function iceSlideTarget(level: IceSlideLevel, pos: MazeCoord, dir: Direction): MazeCoord {
+  const { dr, dc } = DIRECTION_DELTA[dir]
+  let cur = pos
+  while (true) {
+    const nr = cur.row + dr
+    const nc = cur.col + dc
+    if (nr < 0 || nr >= level.rows || nc < 0 || nc >= level.cols) break
+    if (level.grid[nr][nc] === 'wall') break
+    cur = { row: nr, col: nc }
+    if (level.grid[nr][nc] !== 'ice') break
+  }
+  return cur
+}
+
+export function iceSlideBfs(level: IceSlideLevel): MazeCoord[] | null {
+  const W = level.cols
+  const key = (p: MazeCoord) => p.row * W + p.col
+  const startKey = key(level.start)
+  const targetKey = key(level.target)
+  const prev = new Map<number, number>()
+  const seen = new Set<number>([startKey])
+  const queue: MazeCoord[] = [level.start]
+  let qi = 0
+  const dirs: Direction[] = ['up', 'down', 'left', 'right']
+  while (qi < queue.length) {
+    const cur = queue[qi++]
+    const ck = key(cur)
+    if (ck === targetKey) break
+    for (const dir of dirs) {
+      const next = iceSlideTarget(level, cur, dir)
+      const nk = key(next)
+      if (nk === ck) continue
+      if (seen.has(nk)) continue
+      seen.add(nk)
+      prev.set(nk, ck)
+      queue.push(next)
+    }
+  }
+  if (!seen.has(targetKey)) return null
+  const path: MazeCoord[] = []
+  let cur = targetKey
+  while (cur !== startKey) {
+    path.push({ row: Math.floor(cur / W), col: cur % W })
+    const p = prev.get(cur)
+    if (p === undefined) return null
+    cur = p
+  }
+  path.push(level.start)
+  path.reverse()
+  return path
+}
+
+export function isIceSlideSolvable(level: IceSlideLevel): boolean {
+  return iceSlideBfs(level) !== null
+}
+
+export function getIceSlideDifficulty(level: number) {
+  const lv = Math.max(1, Math.floor(level))
+  const size = Math.min(6 + Math.floor(lv / 4), 13)
+  const obstacleRatio = Math.min(0.06 + lv * 0.01, 0.28)
+  const moveLimit = Math.round(6 + lv * 0.8)
+  const targetSeconds = Math.max(15, Math.round(20 + lv * 2))
+  return { size, obstacleRatio, moveLimit, targetSeconds }
+}
+
+export function generateIceSlideLevel(level: number, opts?: { seedSalt?: number }): IceSlideLevel {
+  const lv = Math.max(1, Math.floor(level))
+  const d = getIceSlideDifficulty(lv)
+  const maxAttempts = 40
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const seed = levelSeed(lv, 10100 + (opts?.seedSalt ?? 0) + attempt * 733)
+    const rng = mulberry32(seed)
+    const rows = d.size
+    const cols = d.size
+    const grid: IceCellType[][] = Array.from({ length: rows }, () => Array<IceCellType>(cols).fill('ice'))
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (r === 0 || c === 0 || r === rows - 1 || c === cols - 1) grid[r][c] = 'wall'
+      }
+    }
+    for (let r = 2; r < rows - 2; r++) {
+      for (let c = 2; c < cols - 2; c++) {
+        if (rng() < d.obstacleRatio) grid[r][c] = rng() < 0.4 ? 'wall' : 'floor'
+      }
+    }
+    const interior: MazeCoord[] = []
+    for (let r = 1; r < rows - 1; r++) {
+      for (let c = 1; c < cols - 1; c++) {
+        if (grid[r][c] !== 'wall') interior.push({ row: r, col: c })
+      }
+    }
+    const shuffled = shuffledArray(interior, rng)
+    if (shuffled.length < 2) continue
+    const start = shuffled[0]
+    const target = shuffled[shuffled.length - 1]
+    grid[start.row][start.col] = 'floor'
+    grid[target.row][target.col] = 'goal'
+    const candidate: IceSlideLevel = {
+      level: lv,
+      rows,
+      cols,
+      grid,
+      start,
+      target,
+      moveLimit: d.moveLimit,
+      targetSeconds: d.targetSeconds,
+      goal: 'Deslízate sobre el hielo hasta llegar a la meta.',
+      seed,
+    }
+    const path = iceSlideBfs(candidate)
+    if (path && path.length >= 3) return candidate
+  }
+  const rows = 7
+  const cols = 7
+  const grid: IceCellType[][] = Array.from({ length: rows }, (_, r) =>
+    Array.from({ length: cols }, (_, c) =>
+      (r === 0 || c === 0 || r === rows - 1 || c === cols - 1 ? 'wall' : 'ice') as IceCellType
+    )
+  )
+  grid[1][1] = 'floor'
+  grid[rows - 2][cols - 2] = 'goal'
+  return {
+    level: lv,
+    rows,
+    cols,
+    grid,
+    start: { row: 1, col: 1 },
+    target: { row: rows - 2, col: cols - 2 },
+    moveLimit: 0,
+    targetSeconds: 60,
+    goal: 'Deslízate sobre el hielo hasta llegar a la meta.',
+    seed: levelSeed(lv, 10999),
+  }
+}
+
+export function calcIceSlideStars(moves: number, timeMs: number, targetSeconds: number, moveLimit: number): 0 | 1 | 2 | 3 {
+  if (moves <= 0) return 0
+  let stars: 0 | 1 | 2 | 3 = 1
+  if (targetSeconds > 0 && timeMs <= targetSeconds * 1000) stars = 2
+  const soft = moveLimit > 0 ? moveLimit : moves * 2
+  if (stars >= 2 && moves <= soft * 0.6) stars = 3
+  return stars
+}
+
+/* ── 4.2 Interruptores — Switch Puzzle ── */
+
+export interface SwitchDef {
+  id: string
+  row: number
+  col: number
+  doorIds: string[]
+}
+
+export interface DoorDef {
+  id: string
+  row: number
+  col: number
+  openInitially: boolean
+}
+
+export interface SwitchLevel {
+  level: number
+  rows: number
+  cols: number
+  grid: ('wall' | 'floor')[][]
+  start: MazeCoord
+  target: MazeCoord
+  switches: SwitchDef[]
+  doors: DoorDef[]
+  moveLimit: number
+  targetSeconds: number
+  goal: string
+  seed: number
+}
+
+export interface SwitchState {
+  doorsOpen: Record<string, boolean>
+}
+
+export function switchInitialState(level: SwitchLevel): SwitchState {
+  const doorsOpen: Record<string, boolean> = {}
+  for (const d of level.doors) doorsOpen[d.id] = d.openInitially
+  return { doorsOpen }
+}
+
+export function isSwitchWalkable(level: SwitchLevel, state: SwitchState, row: number, col: number): boolean {
+  if (row < 0 || row >= level.rows || col < 0 || col >= level.cols) return false
+  if (level.grid[row][col] === 'wall') return false
+  const door = level.doors.find((d) => d.row === row && d.col === col)
+  if (door && !state.doorsOpen[door.id]) return false
+  return true
+}
+
+export function switchStep(
+  level: SwitchLevel,
+  state: SwitchState,
+  player: MazeCoord,
+  dir: Direction
+): { player: MazeCoord; state: SwitchState; moved: boolean } {
+  const { dr, dc } = DIRECTION_DELTA[dir]
+  const nr = player.row + dr
+  const nc = player.col + dc
+  if (!isSwitchWalkable(level, state, nr, nc)) return { player, state, moved: false }
+  let nextState = state
+  const sw = level.switches.find((s) => s.row === nr && s.col === nc)
+  if (sw) {
+    const doorsOpen = { ...state.doorsOpen }
+    for (const id of sw.doorIds) doorsOpen[id] = !doorsOpen[id]
+    nextState = { doorsOpen }
+  }
+  return { player: { row: nr, col: nc }, state: nextState, moved: true }
+}
+
+export function switchIsComplete(level: SwitchLevel, player: MazeCoord): boolean {
+  return player.row === level.target.row && player.col === level.target.col
+}
+
+export function isSwitchLevelSolvable(level: SwitchLevel): boolean {
+  const doorIds = level.doors.map((d) => d.id)
+  const bitFor = (state: SwitchState) =>
+    doorIds.reduce((acc, id, i) => acc | ((state.doorsOpen[id] ? 1 : 0) << i), 0)
+  const initial = switchInitialState(level)
+  const startKey = `${level.start.row},${level.start.col},${bitFor(initial)}`
+  const seen = new Set<string>([startKey])
+  const queue: { player: MazeCoord; state: SwitchState }[] = [{ player: level.start, state: initial }]
+  let qi = 0
+  const dirs: Direction[] = ['up', 'down', 'left', 'right']
+  while (qi < queue.length) {
+    const cur = queue[qi++]
+    if (switchIsComplete(level, cur.player)) return true
+    for (const dir of dirs) {
+      const res = switchStep(level, cur.state, cur.player, dir)
+      if (!res.moved) continue
+      const k = `${res.player.row},${res.player.col},${bitFor(res.state)}`
+      if (seen.has(k)) continue
+      seen.add(k)
+      queue.push({ player: res.player, state: res.state })
+    }
+  }
+  return false
+}
+
+export function getSwitchDifficulty(level: number) {
+  const lv = Math.max(1, Math.floor(level))
+  const size = Math.min(6 + Math.floor(lv / 4), 12)
+  const switchCount = Math.min(1 + Math.floor(lv / 6), 4)
+  const moveLimit = Math.round(size * size * 0.9 + switchCount * 10)
+  const targetSeconds = Math.max(20, Math.round(size * size * 1.1 + switchCount * 12))
+  return { size, switchCount, moveLimit, targetSeconds }
+}
+
+export function generateSwitchLevel(level: number, opts?: { seedSalt?: number }): SwitchLevel {
+  const lv = Math.max(1, Math.floor(level))
+  const d = getSwitchDifficulty(lv)
+  const maxAttempts = 40
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const seed = levelSeed(lv, 11100 + (opts?.seedSalt ?? 0) + attempt * 619)
+    const rng = mulberry32(seed)
+    const rows = d.size
+    const cols = d.size
+    const grid: ('wall' | 'floor')[][] = Array.from({ length: rows }, () => Array<'wall' | 'floor'>(cols).fill('floor'))
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (r === 0 || c === 0 || r === rows - 1 || c === cols - 1) grid[r][c] = 'wall'
+      }
+    }
+    const barrierCol = Math.floor(cols / 2)
+    for (let r = 1; r < rows - 1; r++) grid[r][barrierCol] = 'wall'
+
+    const doors: DoorDef[] = []
+    const gapRows = shuffledArray(
+      Array.from({ length: rows - 2 }, (_, i) => i + 1),
+      rng
+    ).slice(0, d.switchCount)
+    gapRows.forEach((r, i) => {
+      grid[r][barrierCol] = 'floor'
+      doors.push({ id: `door${i}`, row: r, col: barrierCol, openInitially: false })
+    })
+    if (doors.length === 0) continue
+
+    const leftCells: MazeCoord[] = []
+    const rightCells: MazeCoord[] = []
+    for (let r = 1; r < rows - 1; r++) {
+      for (let c = 1; c < barrierCol; c++) leftCells.push({ row: r, col: c })
+      for (let c = barrierCol + 1; c < cols - 1; c++) rightCells.push({ row: r, col: c })
+    }
+    if (!leftCells.length || !rightCells.length) continue
+    const start = shuffledArray(leftCells, rng)[0]
+    const target = shuffledArray(rightCells, rng)[0]
+
+    const usedSwitchCells = new Set<number>()
+    const switches: SwitchDef[] = doors.map((door, i) => {
+      const options = shuffledArray(leftCells, rng).filter(
+        (p) => !(p.row === start.row && p.col === start.col) && !usedSwitchCells.has(p.row * cols + p.col)
+      )
+      const pos = options[0] ?? leftCells[0]
+      usedSwitchCells.add(pos.row * cols + pos.col)
+      return { id: `sw${i}`, row: pos.row, col: pos.col, doorIds: [door.id] }
+    })
+
+    const candidate: SwitchLevel = {
+      level: lv,
+      rows,
+      cols,
+      grid,
+      start,
+      target,
+      switches,
+      doors,
+      moveLimit: d.moveLimit,
+      targetSeconds: d.targetSeconds,
+      goal: 'Activa los interruptores para abrir las puertas y llega a la meta.',
+      seed,
+    }
+    if (isSwitchLevelSolvable(candidate)) return candidate
+  }
+  const rows = 7
+  const cols = 7
+  const grid: ('wall' | 'floor')[][] = Array.from({ length: rows }, (_, r) =>
+    Array.from({ length: cols }, (_, c) =>
+      (r === 0 || c === 0 || r === rows - 1 || c === cols - 1 ? 'wall' : 'floor') as 'wall' | 'floor'
+    )
+  )
+  const barrierCol = 3
+  for (let r = 1; r < rows - 1; r++) grid[r][barrierCol] = 'wall'
+  grid[3][barrierCol] = 'floor'
+  return {
+    level: lv,
+    rows,
+    cols,
+    grid,
+    start: { row: 1, col: 1 },
+    target: { row: 1, col: cols - 2 },
+    switches: [{ id: 'sw0', row: 1, col: 1, doorIds: ['door0'] }],
+    doors: [{ id: 'door0', row: 3, col: barrierCol, openInitially: false }],
+    moveLimit: 0,
+    targetSeconds: 60,
+    goal: 'Activa los interruptores para abrir las puertas y llega a la meta.',
+    seed: levelSeed(lv, 11999),
+  }
+}
+
+export function calcSwitchStars(moves: number, timeMs: number, targetSeconds: number, moveLimit: number): 0 | 1 | 2 | 3 {
+  if (moves <= 0) return 0
+  let stars: 0 | 1 | 2 | 3 = 1
+  if (targetSeconds > 0 && timeMs <= targetSeconds * 1000) stars = 2
+  const soft = moveLimit > 0 ? moveLimit : moves * 2
+  if (stars >= 2 && moves <= soft * 0.6) stars = 3
+  return stars
+}
+
+/* ── 4.3 Teletransportadores — Teleport Puzzle ── */
+
+export interface TeleportPortal {
+  id: string
+  row: number
+  col: number
+}
+
+export interface TeleportPair {
+  a: TeleportPortal
+  b: TeleportPortal
+}
+
+export interface TeleportLevel {
+  level: number
+  rows: number
+  cols: number
+  grid: ('wall' | 'floor')[][]
+  start: MazeCoord
+  target: MazeCoord
+  pairs: TeleportPair[]
+  moveLimit: number
+  targetSeconds: number
+  goal: string
+  seed: number
+}
+
+export function teleportPortalAt(level: TeleportLevel, row: number, col: number): { pair: TeleportPair; isA: boolean } | null {
+  for (const pair of level.pairs) {
+    if (pair.a.row === row && pair.a.col === col) return { pair, isA: true }
+    if (pair.b.row === row && pair.b.col === col) return { pair, isA: false }
+  }
+  return null
+}
+
+export function teleportStep(
+  level: TeleportLevel,
+  player: MazeCoord,
+  dir: Direction
+): { player: MazeCoord; moved: boolean; teleported: boolean } {
+  const { dr, dc } = DIRECTION_DELTA[dir]
+  const nr = player.row + dr
+  const nc = player.col + dc
+  if (nr < 0 || nr >= level.rows || nc < 0 || nc >= level.cols) return { player, moved: false, teleported: false }
+  if (level.grid[nr][nc] === 'wall') return { player, moved: false, teleported: false }
+  const portal = teleportPortalAt(level, nr, nc)
+  if (portal) {
+    const dest = portal.isA ? portal.pair.b : portal.pair.a
+    return { player: { row: dest.row, col: dest.col }, moved: true, teleported: true }
+  }
+  return { player: { row: nr, col: nc }, moved: true, teleported: false }
+}
+
+export function teleportIsComplete(level: TeleportLevel, player: MazeCoord): boolean {
+  return player.row === level.target.row && player.col === level.target.col
+}
+
+export function isTeleportLevelSolvable(level: TeleportLevel): boolean {
+  const W = level.cols
+  const key = (p: MazeCoord) => p.row * W + p.col
+  const seen = new Set<number>([key(level.start)])
+  const queue: MazeCoord[] = [level.start]
+  let qi = 0
+  const dirs: Direction[] = ['up', 'down', 'left', 'right']
+  while (qi < queue.length) {
+    const cur = queue[qi++]
+    if (teleportIsComplete(level, cur)) return true
+    for (const dir of dirs) {
+      const res = teleportStep(level, cur, dir)
+      if (!res.moved) continue
+      const k = key(res.player)
+      if (seen.has(k)) continue
+      seen.add(k)
+      queue.push(res.player)
+    }
+  }
+  return false
+}
+
+export function getTeleportDifficulty(level: number) {
+  const lv = Math.max(1, Math.floor(level))
+  const size = Math.min(6 + Math.floor(lv / 4), 12)
+  const pairCount = Math.min(1 + Math.floor(lv / 5), 3)
+  const wallRatio = Math.min(0.08 + lv * 0.008, 0.22)
+  const moveLimit = Math.round(size * size * 0.7 + pairCount * 8)
+  const targetSeconds = Math.max(20, Math.round(size * size + pairCount * 10))
+  return { size, pairCount, wallRatio, moveLimit, targetSeconds }
+}
+
+export function generateTeleportLevel(level: number, opts?: { seedSalt?: number }): TeleportLevel {
+  const lv = Math.max(1, Math.floor(level))
+  const d = getTeleportDifficulty(lv)
+  const maxAttempts = 40
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const seed = levelSeed(lv, 12100 + (opts?.seedSalt ?? 0) + attempt * 541)
+    const rng = mulberry32(seed)
+    const rows = d.size
+    const cols = d.size
+    const grid: ('wall' | 'floor')[][] = Array.from({ length: rows }, () => Array<'wall' | 'floor'>(cols).fill('floor'))
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (r === 0 || c === 0 || r === rows - 1 || c === cols - 1) grid[r][c] = 'wall'
+      }
+    }
+    const interior: MazeCoord[] = []
+    for (let r = 1; r < rows - 1; r++) {
+      for (let c = 1; c < cols - 1; c++) interior.push({ row: r, col: c })
+    }
+    for (const p of interior) {
+      if (rng() < d.wallRatio) grid[p.row][p.col] = 'wall'
+    }
+    const openCells = interior.filter((p) => grid[p.row][p.col] === 'floor')
+    if (openCells.length < d.pairCount * 2 + 2) continue
+    const shuffled = shuffledArray(openCells, rng)
+    const start = shuffled[0]
+    const target = shuffled[1]
+    const pairs: TeleportPair[] = []
+    let idx = 2
+    for (let i = 0; i < d.pairCount; i++) {
+      if (idx + 1 >= shuffled.length) break
+      const a = shuffled[idx++]
+      const b = shuffled[idx++]
+      pairs.push({ a: { id: `t${i}a`, row: a.row, col: a.col }, b: { id: `t${i}b`, row: b.row, col: b.col } })
+    }
+    if (!pairs.length) continue
+    const candidate: TeleportLevel = {
+      level: lv,
+      rows,
+      cols,
+      grid,
+      start,
+      target,
+      pairs,
+      moveLimit: d.moveLimit,
+      targetSeconds: d.targetSeconds,
+      goal: 'Usa los portales para llegar a la meta.',
+      seed,
+    }
+    if (isTeleportLevelSolvable(candidate)) return candidate
+  }
+  const rows = 7
+  const cols = 7
+  const grid: ('wall' | 'floor')[][] = Array.from({ length: rows }, (_, r) =>
+    Array.from({ length: cols }, (_, c) =>
+      (r === 0 || c === 0 || r === rows - 1 || c === cols - 1 ? 'wall' : 'floor') as 'wall' | 'floor'
+    )
+  )
+  return {
+    level: lv,
+    rows,
+    cols,
+    grid,
+    start: { row: 1, col: 1 },
+    target: { row: rows - 2, col: cols - 2 },
+    pairs: [{ a: { id: 't0a', row: 1, col: cols - 2 }, b: { id: 't0b', row: rows - 2, col: 1 } }],
+    moveLimit: 0,
+    targetSeconds: 60,
+    goal: 'Usa los portales para llegar a la meta.',
+    seed: levelSeed(lv, 12999),
+  }
+}
+
+export function calcTeleportStars(moves: number, timeMs: number, targetSeconds: number, moveLimit: number): 0 | 1 | 2 | 3 {
+  if (moves <= 0) return 0
+  let stars: 0 | 1 | 2 | 3 = 1
+  if (targetSeconds > 0 && timeMs <= targetSeconds * 1000) stars = 2
+  const soft = moveLimit > 0 ? moveLimit : moves * 2
+  if (stars >= 2 && moves <= soft * 0.6) stars = 3
+  return stars
+}
+
+/* ── 4.4 Láser — Laser & Mirrors Puzzle ── */
+
+export type MirrorOrientation = '/' | '\\'
+
+export interface LaserMirror {
+  id: string
+  row: number
+  col: number
+  orientation: MirrorOrientation
+  fixed: boolean
+}
+
+export interface LaserLevel {
+  level: number
+  rows: number
+  cols: number
+  walls: MazeCoord[]
+  source: { row: number; col: number; dir: Direction }
+  target: MazeCoord
+  mirrors: LaserMirror[]
+  moveLimit: number
+  targetSeconds: number
+  goal: string
+  seed: number
+}
+
+const MIRROR_REFLECT: Record<MirrorOrientation, Record<Direction, Direction>> = {
+  '/': { up: 'right', right: 'up', down: 'left', left: 'down' },
+  '\\': { up: 'left', left: 'up', down: 'right', right: 'down' },
+}
+
+export function simulateLaser(level: LaserLevel, mirrors: LaserMirror[]): MazeCoord[] {
+  const wallSet = new Set(level.walls.map((w) => w.row * level.cols + w.col))
+  const mirrorMap = new Map<number, LaserMirror>()
+  for (const m of mirrors) mirrorMap.set(m.row * level.cols + m.col, m)
+  const path: MazeCoord[] = []
+  let row = level.source.row
+  let col = level.source.col
+  let dir: Direction = level.source.dir
+  const maxSteps = level.rows * level.cols * 4
+  for (let step = 0; step < maxSteps; step++) {
+    const { dr, dc } = DIRECTION_DELTA[dir]
+    row += dr
+    col += dc
+    if (row < 0 || row >= level.rows || col < 0 || col >= level.cols) break
+    const key = row * level.cols + col
+    path.push({ row, col })
+    if (wallSet.has(key)) break
+    const mirror = mirrorMap.get(key)
+    if (mirror) dir = MIRROR_REFLECT[mirror.orientation][dir]
+    if (row === level.target.row && col === level.target.col) break
+  }
+  return path
+}
+
+export function laserHitsTarget(level: LaserLevel, mirrors: LaserMirror[]): boolean {
+  const path = simulateLaser(level, mirrors)
+  return path.some((p) => p.row === level.target.row && p.col === level.target.col)
+}
+
+export function toggleMirror(mirrors: LaserMirror[], id: string): LaserMirror[] {
+  return mirrors.map((m) => (m.id === id && !m.fixed ? { ...m, orientation: m.orientation === '/' ? '\\' : ('/' as MirrorOrientation) } : m))
+}
+
+function laserOrientationForBend(from: Direction, to: Direction): MirrorOrientation | null {
+  const pairs: [Direction, Direction, MirrorOrientation][] = [
+    ['right', 'up', '/'],
+    ['up', 'right', '/'],
+    ['left', 'down', '/'],
+    ['down', 'left', '/'],
+    ['right', 'down', '\\'],
+    ['down', 'right', '\\'],
+    ['left', 'up', '\\'],
+    ['up', 'left', '\\'],
+  ]
+  for (const [f, t, o] of pairs) if (f === from && t === to) return o
+  return null
+}
+
+export function getLaserDifficulty(level: number) {
+  const lv = Math.max(1, Math.floor(level))
+  const size = Math.min(6 + Math.floor(lv / 5), 11)
+  const bendCount = Math.min(1 + Math.floor(lv / 4), 5)
+  const moveLimit = 0
+  const targetSeconds = Math.max(20, Math.round(20 + lv * 2))
+  return { size, bendCount, moveLimit, targetSeconds }
+}
+
+export function generateLaserLevel(level: number, opts?: { seedSalt?: number }): LaserLevel {
+  const lv = Math.max(1, Math.floor(level))
+  const d = getLaserDifficulty(lv)
+  const maxAttempts = 30
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const seed = levelSeed(lv, 13100 + (opts?.seedSalt ?? 0) + attempt * 467)
+    const rng = mulberry32(seed)
+    const rows = d.size
+    const cols = d.size
+    const startDir: Direction = 'right'
+    const source: { row: number; col: number; dir: Direction } = {
+      row: Math.floor(rows / 2),
+      col: 0,
+      dir: startDir,
+    }
+
+    let curRow: number = source.row
+    let curCol: number = source.col
+    let curDir: Direction = source.dir
+    const mirrors: LaserMirror[] = []
+    let ok = true
+    for (let i = 0; i < d.bendCount; i++) {
+      const dirsAvail: Direction[] =
+        curDir === 'up' || curDir === 'down' ? ['left', 'right'] : ['up', 'down']
+      const nextDir: Direction = dirsAvail[Math.floor(rng() * dirsAvail.length)]
+      const orientation = laserOrientationForBend(curDir, nextDir)
+      if (!orientation) {
+        ok = false
+        break
+      }
+      const { dr, dc } = DIRECTION_DELTA[curDir]
+      const steps = 1 + Math.floor(rng() * 2)
+      let br = curRow
+      let bc = curCol
+      for (let s = 0; s < steps; s++) {
+        br += dr
+        bc += dc
+      }
+      if (br <= 0 || br >= rows - 1 || bc <= 0 || bc >= cols - 1) {
+        ok = false
+        break
+      }
+      mirrors.push({ id: `m${i}`, row: br, col: bc, orientation, fixed: false })
+      curRow = br
+      curCol = bc
+      curDir = nextDir
+    }
+    if (!ok) continue
+    const { dr, dc } = DIRECTION_DELTA[curDir]
+    const finalSteps = 1 + Math.floor(rng() * 2)
+    let tr = curRow
+    let tc = curCol
+    for (let s = 0; s < finalSteps; s++) {
+      tr += dr
+      tc += dc
+    }
+    if (tr <= 0 || tr >= rows - 1 || tc <= 0 || tc >= cols - 1) continue
+    if (mirrors.some((m) => m.row === tr && m.col === tc)) continue
+
+    const target: MazeCoord = { row: tr, col: tc }
+    const candidate: LaserLevel = {
+      level: lv,
+      rows,
+      cols,
+      walls: [],
+      source,
+      target,
+      mirrors,
+      moveLimit: d.moveLimit,
+      targetSeconds: d.targetSeconds,
+      goal: 'Gira los espejos para dirigir el láser hasta el objetivo.',
+      seed,
+    }
+    if (!laserHitsTarget(candidate, mirrors)) continue
+
+    const scrambled = mirrors.map((m) =>
+      rng() < 0.6 ? { ...m, orientation: m.orientation === '/' ? '\\' : ('/' as MirrorOrientation) } : m
+    )
+    if (laserHitsTarget(candidate, scrambled)) continue
+    return { ...candidate, mirrors: scrambled }
+  }
+  const rows = 7
+  const cols = 7
+  const source = { row: 3, col: 0, dir: 'right' as Direction }
+  const mirrors: LaserMirror[] = [{ id: 'm0', row: 3, col: 3, orientation: '/', fixed: false }]
+  return {
+    level: lv,
+    rows,
+    cols,
+    walls: [],
+    source,
+    target: { row: 1, col: 3 },
+    mirrors,
+    moveLimit: 0,
+    targetSeconds: 60,
+    goal: 'Gira los espejos para dirigir el láser hasta el objetivo.',
+    seed: levelSeed(lv, 13999),
+  }
+}
+
+export function isLaserLevelSolvable(level: LaserLevel): boolean {
+  const rotatable = level.mirrors.filter((m) => !m.fixed)
+  const n = Math.min(rotatable.length, 10)
+  for (let mask = 0; mask < 1 << n; mask++) {
+    const trial = level.mirrors.map((m) => {
+      if (m.fixed) return m
+      const idx = rotatable.indexOf(m)
+      if (idx < 0 || idx >= n) return m
+      const flip = (mask >> idx) & 1
+      return flip ? { ...m, orientation: m.orientation === '/' ? '\\' : ('/' as MirrorOrientation) } : m
+    })
+    if (laserHitsTarget(level, trial)) return true
+  }
+  return false
+}
+
+export function calcLaserStars(timeMs: number, targetSeconds: number, moves: number): 0 | 1 | 2 | 3 {
+  if (timeMs <= 0) return 0
+  let stars: 0 | 1 | 2 | 3 = 1
+  if (targetSeconds > 0 && timeMs <= targetSeconds * 1000) stars = 2
+  if (stars >= 2 && moves <= 6) stars = 3
+  return stars
+}
+
+/* ── 4.5 Circuitos — Circuit Puzzle ── */
+
+export type CircuitPieceKind = 'straight' | 'corner' | 't' | 'cross' | 'source' | 'target' | 'empty'
+
+export interface CircuitPiece {
+  row: number
+  col: number
+  kind: CircuitPieceKind
+  rotation: 0 | 90 | 180 | 270
+  fixed: boolean
+}
+
+export interface CircuitLevel {
+  level: number
+  rows: number
+  cols: number
+  pieces: CircuitPiece[][]
+  source: MazeCoord
+  target: MazeCoord
+  moveLimit: number
+  targetSeconds: number
+  goal: string
+  seed: number
+}
+
+const BASE_CONNECTIONS: Record<CircuitPieceKind, Direction[]> = {
+  straight: ['up', 'down'],
+  corner: ['up', 'right'],
+  t: ['left', 'up', 'right'],
+  cross: ['up', 'down', 'left', 'right'],
+  source: ['right'],
+  target: ['left'],
+  empty: [],
+}
+
+const DIR_ROTATE: Record<Direction, Direction> = { up: 'right', right: 'down', down: 'left', left: 'up' }
+const OPPOSITE: Record<Direction, Direction> = { up: 'down', down: 'up', left: 'right', right: 'left' }
+
+export function pieceConnections(piece: CircuitPiece): Direction[] {
+  const steps = piece.rotation / 90
+  let dirs = BASE_CONNECTIONS[piece.kind]
+  for (let i = 0; i < steps; i++) dirs = dirs.map((d) => DIR_ROTATE[d])
+  return dirs
+}
+
+export function rotateCircuitPiece(level: CircuitLevel, row: number, col: number): CircuitLevel {
+  const pieces = level.pieces.map((r) => r.map((p) => ({ ...p })))
+  const target = pieces[row][col]
+  if (target.fixed) return level
+  target.rotation = ((target.rotation + 90) % 360) as 0 | 90 | 180 | 270
+  return { ...level, pieces }
+}
+
+export function isCircuitComplete(level: CircuitLevel): boolean {
+  const W = level.cols
+  const key = (r: number, c: number) => r * W + c
+  const seen = new Set<number>([key(level.source.row, level.source.col)])
+  const queue: MazeCoord[] = [level.source]
+  let qi = 0
+  while (qi < queue.length) {
+    const cur = queue[qi++]
+    const piece = level.pieces[cur.row][cur.col]
+    const dirs = pieceConnections(piece)
+    for (const dir of dirs) {
+      const { dr, dc } = DIRECTION_DELTA[dir]
+      const nr = cur.row + dr
+      const nc = cur.col + dc
+      if (nr < 0 || nr >= level.rows || nc < 0 || nc >= level.cols) continue
+      const neighbor = level.pieces[nr][nc]
+      const neighborDirs = pieceConnections(neighbor)
+      if (!neighborDirs.includes(OPPOSITE[dir])) continue
+      const k = key(nr, nc)
+      if (seen.has(k)) continue
+      seen.add(k)
+      queue.push({ row: nr, col: nc })
+    }
+  }
+  return seen.has(key(level.target.row, level.target.col))
+}
+
+function dirBetween(a: MazeCoord, b: MazeCoord): Direction {
+  if (b.row < a.row) return 'up'
+  if (b.row > a.row) return 'down'
+  if (b.col < a.col) return 'left'
+  return 'right'
+}
+
+function rotationForCorner(d1: Direction, d2: Direction): 0 | 90 | 180 | 270 {
+  const sets: [0 | 90 | 180 | 270, Direction, Direction][] = [
+    [0, 'up', 'right'],
+    [90, 'right', 'down'],
+    [180, 'down', 'left'],
+    [270, 'left', 'up'],
+  ]
+  const want = new Set([d1, d2])
+  for (const [rotation, a, b] of sets) {
+    if (want.has(a) && want.has(b) && want.size === 2) return rotation
+  }
+  return 0
+}
+
+export function getCircuitDifficulty(level: number) {
+  const lv = Math.max(1, Math.floor(level))
+  const size = Math.min(5 + Math.floor(lv / 5), 9)
+  const moveLimit = 0
+  const targetSeconds = Math.max(20, Math.round(15 + lv * 2))
+  return { size, moveLimit, targetSeconds }
+}
+
+export function generateCircuitLevel(level: number, opts?: { seedSalt?: number }): CircuitLevel {
+  const lv = Math.max(1, Math.floor(level))
+  const d = getCircuitDifficulty(lv)
+  const seed = levelSeed(lv, 14100 + (opts?.seedSalt ?? 0))
+  const rng = mulberry32(seed)
+  const rows = d.size
+  const cols = d.size
+
+  const source: MazeCoord = { row: Math.floor(rows / 2), col: 0 }
+  const rawTargetRow = Math.floor(rows / 2) + (rng() < 0.5 ? -1 : 1) * Math.min(2, Math.floor(rows / 3))
+  const clampedTarget: MazeCoord = {
+    row: Math.max(1, Math.min(rows - 2, rawTargetRow)),
+    col: cols - 1,
+  }
+
+  const path: MazeCoord[] = [source]
+  let cur = { ...source }
+  while (cur.col < cols - 1) {
+    cur = { row: cur.row, col: cur.col + 1 }
+    path.push(cur)
+  }
+  while (cur.row !== clampedTarget.row) {
+    cur = { row: cur.row + (clampedTarget.row > cur.row ? 1 : -1), col: cur.col }
+    path.push(cur)
+  }
+
+  const pieces: CircuitPiece[][] = Array.from({ length: rows }, (_, r) =>
+    Array.from({ length: cols }, (_, c) => ({ row: r, col: c, kind: 'empty' as CircuitPieceKind, rotation: 0 as const, fixed: true }))
+  )
+
+  for (let i = 0; i < path.length; i++) {
+    const cell = path[i]
+    const prev = path[i - 1]
+    const next = path[i + 1]
+    let kind: CircuitPieceKind = 'straight'
+    let rotation: 0 | 90 | 180 | 270 = 0
+    let fixed = false
+
+    if (i === 0) {
+      kind = 'source'
+      rotation = 0
+      fixed = true
+    } else if (i === path.length - 1) {
+      kind = 'target'
+      rotation = 0
+      fixed = true
+    } else {
+      const inDir = dirBetween(prev, cell)
+      const outDir = dirBetween(cell, next)
+      if (inDir === outDir) {
+        kind = 'straight'
+        rotation = inDir === 'left' || inDir === 'right' ? 90 : 0
+      } else {
+        kind = 'corner'
+        rotation = rotationForCorner(OPPOSITE[inDir], outDir)
+      }
+    }
+    pieces[cell.row][cell.col] = { row: cell.row, col: cell.col, kind, rotation, fixed }
+  }
+
+  const solved: CircuitLevel = {
+    level: lv,
+    rows,
+    cols,
+    pieces,
+    source,
+    target: clampedTarget,
+    moveLimit: d.moveLimit,
+    targetSeconds: d.targetSeconds,
+    goal: 'Gira las piezas para conectar la fuente con el objetivo.',
+    seed,
+  }
+
+  let scrambledPieces = pieces.map((r) =>
+    r.map((p) => (p.fixed || p.kind === 'empty' ? p : { ...p, rotation: ([0, 90, 180, 270] as const)[Math.floor(rng() * 4)] }))
+  )
+  let scrambled: CircuitLevel = { ...solved, pieces: scrambledPieces }
+  if (isCircuitComplete(scrambled)) {
+    const rotatableCells: MazeCoord[] = []
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const p = scrambledPieces[r][c]
+        if (!p.fixed && p.kind !== 'empty') rotatableCells.push({ row: r, col: c })
+      }
+    }
+    if (rotatableCells.length > 0) {
+      const pick = rotatableCells[Math.floor(rng() * rotatableCells.length)]
+      scrambledPieces = scrambledPieces.map((row, r) =>
+        row.map((p, c) =>
+          r === pick.row && c === pick.col
+            ? { ...p, rotation: ((p.rotation + 90) % 360) as 0 | 90 | 180 | 270 }
+            : p
+        )
+      )
+      scrambled = { ...solved, pieces: scrambledPieces }
+    }
+  }
+  return scrambled
+}
+
+export function calcCircuitStars(timeMs: number, targetSeconds: number, rotations: number, pieceCount: number): 0 | 1 | 2 | 3 {
+  if (timeMs <= 0) return 0
+  let stars: 0 | 1 | 2 | 3 = 1
+  if (targetSeconds > 0 && timeMs <= targetSeconds * 1000) stars = 2
+  if (stars >= 2 && rotations <= pieceCount * 2) stars = 3
+  return stars
+}

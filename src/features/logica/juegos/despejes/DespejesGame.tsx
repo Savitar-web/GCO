@@ -1,8 +1,9 @@
 /**
- * Despejes — Laberinto · Croma (Gemas) · Pintar
+ * Despejes — Laberinto · Croma (Gemas) · Pintar · Hielo · Interruptores ·
+ * Teletransportadores · Láser · Circuitos
  * src/features/logica/juegos/despejes/DespejesGame.tsx
  *
- * Motor: ../generateLevel (sección 3 DESPEJES)
+ * Motor: ../generateLevel (sección 3 DESPEJES + sección 4 GRID PUZZLE ENGINE)
  * Progreso: recordLevelResult / getGameProgress
  *
  * Nota: GlassCard/GlassButton del proyecto NO aceptan prop `style`.
@@ -55,6 +56,37 @@ import {
   calcPintarStars,
   PAINT_PALETTE,
   formatTime,
+  type IceSlideLevel,
+  generateIceSlideLevel,
+  iceSlideTarget,
+  calcIceSlideStars,
+  type SwitchLevel,
+  type SwitchState,
+  generateSwitchLevel,
+  switchInitialState,
+  switchStep,
+  switchIsComplete,
+  calcSwitchStars,
+  type TeleportLevel,
+  generateTeleportLevel,
+  teleportStep,
+  teleportIsComplete,
+  teleportPortalAt,
+  calcTeleportStars,
+  type LaserLevel,
+  type LaserMirror,
+  generateLaserLevel,
+  simulateLaser,
+  laserHitsTarget,
+  toggleMirror,
+  calcLaserStars,
+  type CircuitLevel,
+  type CircuitPiece,
+  generateCircuitLevel,
+  rotateCircuitPiece,
+  isCircuitComplete,
+  pieceConnections,
+  calcCircuitStars,
 } from '../generateLevel'
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -64,11 +96,26 @@ import {
 const GAME_CAT = 'logica' as const
 const GAME_ID = 'despejes'
 
-type SubGame = 'laberinto' | 'croma'
+type SubGame =
+  | 'laberinto'
+  | 'croma'
+  | 'hielo'
+  | 'interruptores'
+  | 'teleport'
+  | 'laser'
+  | 'circuito'
 type CromaStyle = 'desplazar' | 'colorear'
 type PlayMode = 'progresivo' | 'contrarreloj' | 'zen'
 type Screen = 'inicio' | 'niveles' | 'jugando' | 'resumen'
-type TrackId = 'laberinto' | 'cromaDesplazar' | 'cromaColorear'
+type TrackId =
+  | 'laberinto'
+  | 'cromaDesplazar'
+  | 'cromaColorear'
+  | 'hielo'
+  | 'interruptores'
+  | 'teleport'
+  | 'laser'
+  | 'circuito'
 
 interface LevelResult {
   stars: 0 | 1 | 2 | 3
@@ -106,7 +153,8 @@ const MODE_INFO: {
 
 function trackKey(sub: SubGame, style: CromaStyle): TrackId {
   if (sub === 'laberinto') return 'laberinto'
-  return style === 'colorear' ? 'cromaColorear' : 'cromaDesplazar'
+  if (sub === 'croma') return style === 'colorear' ? 'cromaColorear' : 'cromaDesplazar'
+  return sub
 }
 
 function progressGameId(track: TrackId): string {
@@ -172,6 +220,8 @@ function useGameTimer(active: boolean) {
   const [elapsed, setElapsed] = useState(0)
   const baseRef = useRef<number | null>(null)
   const accumRef = useRef(0)
+  const activeRef = useRef(active)
+  activeRef.current = active
 
   useEffect(() => {
     if (!active) {
@@ -190,10 +240,10 @@ function useGameTimer(active: boolean) {
   }, [active])
 
   const reset = useCallback(() => {
-    baseRef.current = active ? performance.now() : null
+    baseRef.current = activeRef.current ? performance.now() : null
     accumRef.current = 0
     setElapsed(0)
-  }, [active])
+  }, [])
 
   return { elapsed, reset }
 }
@@ -300,18 +350,21 @@ export function DespejesGame(props: DespejesGameProps = {}) {
     [track, currentLevel]
   )
 
-  const title =
-    screen === 'inicio'
-      ? 'Despejes'
-      : subGame === 'laberinto'
-        ? 'Laberinto'
-        : cromaStyle === 'colorear'
-          ? 'Croma · Pintar'
-          : 'Croma · Gemas'
+  const subGameLabel: Record<SubGame, string> = {
+    laberinto: 'Laberinto',
+    croma: cromaStyle === 'colorear' ? 'Croma · Pintar' : 'Croma · Gemas',
+    hielo: 'Hielo',
+    interruptores: 'Interruptores',
+    teleport: 'Teletransportadores',
+    laser: 'Láser',
+    circuito: 'Circuitos',
+  }
+
+  const title = screen === 'inicio' ? 'Despejes' : subGameLabel[subGame]
 
   const subtitle =
     screen === 'inicio'
-      ? 'Despeja el camino, mueve gemas y colorea'
+      ? 'Despeja el camino, mueve gemas y resuelve la cuadrícula'
       : screen === 'niveles'
         ? undefined
         : `Nivel ${currentLevel} · ${MODE_INFO.find((m) => m.id === playMode)?.label ?? ''}`
@@ -329,14 +382,7 @@ export function DespejesGame(props: DespejesGameProps = {}) {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.22 }}
           >
-            <HomeScreen
-              onSelect={openSubGame}
-              labUnlocked={unlockedFor('laberinto')}
-              cromaUnlocked={Math.max(
-                unlockedFor('cromaDesplazar'),
-                unlockedFor('cromaColorear')
-              )}
-            />
+            <HomeScreen onSelect={openSubGame} />
           </motion.div>
         )}
 
@@ -431,6 +477,106 @@ export function DespejesGame(props: DespejesGameProps = {}) {
             </motion.div>
           )}
 
+        {screen === 'jugando' && subGame === 'hielo' && (
+          <motion.div
+            key={`play-hielo-${currentLevel}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <HieloScreen
+              level={currentLevel}
+              playMode={playMode}
+              isMobile={isMobile}
+              onComplete={handleComplete}
+              onExit={() => {
+                soundClick()
+                setScreen('niveles')
+              }}
+            />
+          </motion.div>
+        )}
+
+        {screen === 'jugando' && subGame === 'interruptores' && (
+          <motion.div
+            key={`play-switch-${currentLevel}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <InterruptoresScreen
+              level={currentLevel}
+              playMode={playMode}
+              isMobile={isMobile}
+              onComplete={handleComplete}
+              onExit={() => {
+                soundClick()
+                setScreen('niveles')
+              }}
+            />
+          </motion.div>
+        )}
+
+        {screen === 'jugando' && subGame === 'teleport' && (
+          <motion.div
+            key={`play-teleport-${currentLevel}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <TeleportScreen
+              level={currentLevel}
+              playMode={playMode}
+              isMobile={isMobile}
+              onComplete={handleComplete}
+              onExit={() => {
+                soundClick()
+                setScreen('niveles')
+              }}
+            />
+          </motion.div>
+        )}
+
+        {screen === 'jugando' && subGame === 'laser' && (
+          <motion.div
+            key={`play-laser-${currentLevel}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <LaserScreen
+              level={currentLevel}
+              playMode={playMode}
+              isMobile={isMobile}
+              onComplete={handleComplete}
+              onExit={() => {
+                soundClick()
+                setScreen('niveles')
+              }}
+            />
+          </motion.div>
+        )}
+
+        {screen === 'jugando' && subGame === 'circuito' && (
+          <motion.div
+            key={`play-circuit-${currentLevel}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <CircuitScreen
+              level={currentLevel}
+              playMode={playMode}
+              isMobile={isMobile}
+              onComplete={handleComplete}
+              onExit={() => {
+                soundClick()
+                setScreen('niveles')
+              }}
+            />
+          </motion.div>
+        )}
+
         {screen === 'resumen' && lastResult && (
           <motion.div
             key="resumen"
@@ -522,15 +668,7 @@ function HeaderBar({
    Inicio
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function HomeScreen({
-  onSelect,
-  labUnlocked,
-  cromaUnlocked,
-}: {
-  onSelect: (sub: SubGame) => void
-  labUnlocked: number
-  cromaUnlocked: number
-}) {
+function HomeScreen({ onSelect }: { onSelect: (sub: SubGame) => void }) {
   const cards: {
     id: SubGame
     title: string
@@ -543,14 +681,49 @@ function HomeScreen({
       title: 'Laberinto',
       desc: 'Encuentra la salida y empuja rocas a los huecos para despejar el camino.',
       icon: '🧱',
-      level: labUnlocked,
+      level: unlockedFor('laberinto'),
     },
     {
       id: 'croma',
       title: 'Croma',
       desc: 'Lleva gemas de color a su meta o pinta figuras despejando escombros.',
       icon: '💎',
-      level: cromaUnlocked,
+      level: Math.max(unlockedFor('cromaDesplazar'), unlockedFor('cromaColorear')),
+    },
+    {
+      id: 'hielo',
+      title: 'Hielo',
+      desc: 'Deslízate sobre el hielo hasta chocar con un obstáculo o llegar a la meta.',
+      icon: '🧊',
+      level: unlockedFor('hielo'),
+    },
+    {
+      id: 'interruptores',
+      title: 'Interruptores',
+      desc: 'Activa interruptores para abrir puertas y despejar tu camino.',
+      icon: '🔘',
+      level: unlockedFor('interruptores'),
+    },
+    {
+      id: 'teleport',
+      title: 'Teletransportadores',
+      desc: 'Usa portales conectados para llegar a lugares inalcanzables.',
+      icon: '🌀',
+      level: unlockedFor('teleport'),
+    },
+    {
+      id: 'laser',
+      title: 'Láser',
+      desc: 'Gira los espejos para dirigir el rayo hasta el objetivo.',
+      icon: '🔴',
+      level: unlockedFor('laser'),
+    },
+    {
+      id: 'circuito',
+      title: 'Circuitos',
+      desc: 'Gira las piezas para conectar la fuente de energía con el objetivo.',
+      icon: '⚡',
+      level: unlockedFor('circuito'),
     },
   ]
 
@@ -561,7 +734,7 @@ function HomeScreen({
           key={c.id}
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: i * 0.06, duration: 0.28 }}
+          transition={{ delay: i * 0.05, duration: 0.28 }}
         >
           <div
             onClick={() => onSelect(c.id)}
@@ -658,10 +831,10 @@ function HomeScreen({
                 lineHeight: 1.45,
               }}
             >
-              En Laberinto usa flechas o el D-pad para moverte y empujar rocas
-              hacia los huecos. En Croma · Gemas, toca una gema y deslízala a su
-              meta. En Croma · Pintar, despeja escombros y colorea hasta igualar
-              el objetivo.
+              Usa flechas, WASD o el D-pad para moverte en Laberinto, Hielo,
+              Interruptores y Teletransportadores. En Croma toca y desliza las
+              gemas o pinta las celdas. En Láser y Circuitos toca las piezas
+              para girarlas hasta completar el camino.
             </div>
           </div>
         </div>
@@ -673,6 +846,16 @@ function HomeScreen({
 /* ═══════════════════════════════════════════════════════════════════════════
    Selector de niveles
    ═══════════════════════════════════════════════════════════════════════════ */
+
+const SUBGAME_TITLES: Record<SubGame, string> = {
+  laberinto: 'Laberinto',
+  croma: 'Croma',
+  hielo: 'Hielo',
+  interruptores: 'Interruptores',
+  teleport: 'Teletransportadores',
+  laser: 'Láser',
+  circuito: 'Circuitos',
+}
 
 function LevelSelectScreen({
   subGame,
@@ -766,7 +949,7 @@ function LevelSelectScreen({
                 marginBottom: '0.75rem',
               }}
             >
-              🗺️ Niveles — {subGame === 'laberinto' ? 'Laberinto' : 'Croma'}
+              🗺️ Niveles — {SUBGAME_TITLES[subGame]}
             </div>
             <div
               style={{
@@ -1048,6 +1231,7 @@ function DPad({ onPress }: { onPress: (dir: Direction) => void }) {
         gap: 6,
         margin: '0 auto',
         justifyContent: 'center',
+        touchAction: 'none',
       }}
     >
       {btn('up', '↑', 'up')}
@@ -2035,6 +2219,1049 @@ function CromaColorearScreen({
       </GlassCard>
 
       <HintPill text="Toca los escombros para despejarlos. Toca las celdas libres para cambiar el color hasta igualar el objetivo." />
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HIELO — Ice Slide
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function HieloScreen({
+  level,
+  playMode,
+  isMobile,
+  onComplete,
+  onExit,
+}: {
+  level: number
+  playMode: PlayMode
+  isMobile: boolean
+  onComplete: (r: LevelResult) => void
+  onExit: () => void
+}) {
+  const [seedSalt, setSeedSalt] = useState(0)
+  const data = useMemo(
+    () => generateIceSlideLevel(level, { seedSalt }),
+    [level, seedSalt]
+  )
+
+  const [player, setPlayer] = useState<MazeCoord>(data.start)
+  const [moves, setMoves] = useState(0)
+  const [finished, setFinished] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const [failReason, setFailReason] = useState('')
+  const completedRef = useRef(false)
+  const playerRef = useRef(player)
+  playerRef.current = player
+
+  type Snap = { player: MazeCoord; moves: number }
+  const historyRef = useRef<Snap[]>([])
+
+  const { elapsed, reset: resetTimer } = useGameTimer(!finished && !failed)
+
+  const softReset = useCallback(
+    (d: IceSlideLevel) => {
+      setPlayer(d.start)
+      setMoves(0)
+      setFinished(false)
+      setFailed(false)
+      setFailReason('')
+      completedRef.current = false
+      historyRef.current = []
+      resetTimer()
+    },
+    [resetTimer]
+  )
+
+  useEffect(() => {
+    softReset(data)
+  }, [data, softReset])
+
+  const enforceLimits = useCallback(
+    (nextMoves: number, timeMs: number): boolean => {
+      if (playMode === 'zen') return true
+      if (data.moveLimit > 0 && nextMoves > data.moveLimit) {
+        setFailed(true)
+        setFailReason('Límite de deslizamientos agotado.')
+        return false
+      }
+      if (
+        playMode === 'contrarreloj' &&
+        data.targetSeconds > 0 &&
+        timeMs > data.targetSeconds * 1000
+      ) {
+        setFailed(true)
+        setFailReason('Se acabó el tiempo.')
+        return false
+      }
+      return true
+    },
+    [playMode, data.moveLimit, data.targetSeconds]
+  )
+
+  const handleMove = useCallback(
+    (dir: Direction) => {
+      if (finished || failed || completedRef.current) return
+      const cur = playerRef.current
+      const next = iceSlideTarget(data, cur, dir)
+      if (next.row === cur.row && next.col === cur.col) return
+      historyRef.current.push({ player: cur, moves })
+      if (historyRef.current.length > 80) historyRef.current.shift()
+      const nextMoves = moves + 1
+      setPlayer(next)
+      setMoves(nextMoves)
+      if (next.row === data.target.row && next.col === data.target.col) {
+        setFinished(true)
+        return
+      }
+      enforceLimits(nextMoves, elapsed)
+    },
+    [data, finished, failed, moves, elapsed, enforceLimits]
+  )
+
+  useKeyboardDirection(handleMove, !finished && !failed)
+
+  useEffect(() => {
+    if (finished || failed || playMode !== 'contrarreloj') return
+    if (data.targetSeconds > 0 && elapsed > data.targetSeconds * 1000) {
+      setFailed(true)
+      setFailReason('Se acabó el tiempo.')
+    }
+  }, [elapsed, playMode, data.targetSeconds, finished, failed])
+
+  useEffect(() => {
+    if ((!finished && !failed) || completedRef.current) return
+    completedRef.current = true
+    const t = window.setTimeout(() => {
+      if (failed) {
+        onComplete({
+          stars: 0,
+          timeMs: elapsed,
+          moves,
+          failed: true,
+          reason: failReason,
+        })
+        return
+      }
+      const stars =
+        playMode === 'zen'
+          ? 1
+          : calcIceSlideStars(moves, elapsed, data.targetSeconds, data.moveLimit)
+      onComplete({ stars, timeMs: elapsed, moves })
+    }, 480)
+    return () => clearTimeout(t)
+  }, [finished, failed, elapsed, moves, data, playMode, failReason, onComplete])
+
+  const undo = () => {
+    const prev = historyRef.current.pop()
+    if (!prev) return
+    setPlayer(prev.player)
+    setMoves(prev.moves)
+  }
+
+  const cellPx = isMobile ? (data.cols > 10 ? 24 : 30) : data.cols > 10 ? 28 : 36
+
+  return (
+    <div>
+      <PlayToolbar
+        elapsed={elapsed}
+        playMode={playMode}
+        moves={moves}
+        moveLimit={data.moveLimit}
+        onUndo={undo}
+        canUndo={historyRef.current.length > 0 && !finished && !failed}
+        onRestart={() => setSeedSalt((s) => s + 1)}
+        onExit={onExit}
+      />
+      <GlassCard>
+        <div
+          style={{
+            padding: '0.85rem',
+            display: 'flex',
+            justifyContent: 'center',
+            overflow: 'auto',
+          }}
+        >
+          <div
+            role="grid"
+            aria-label="Hielo"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${data.cols}, ${cellPx}px)`,
+              gridTemplateRows: `repeat(${data.rows}, ${cellPx}px)`,
+              gap: 1,
+            }}
+          >
+            {data.grid.map((row, r) =>
+              row.map((cellType, c) => {
+                const isPlayer = player.row === r && player.col === c
+                let bg = 'rgba(120,200,255,0.14)'
+                let content: ReactNode = null
+                if (cellType === 'wall') bg = 'var(--gco-glass-border)'
+                else if (cellType === 'floor')
+                  bg = 'var(--gco-fill-quaternary, rgba(255,255,255,0.08))'
+                else if (cellType === 'goal') {
+                  bg = 'rgba(34,230,197,0.22)'
+                  content = '🚩'
+                }
+                if (isPlayer) content = '🧑'
+                return (
+                  <div
+                    key={r * data.cols + c}
+                    role="gridcell"
+                    style={{
+                      width: cellPx,
+                      height: cellPx,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: bg,
+                      borderRadius: 3,
+                      fontSize: cellPx * 0.6,
+                      transition: 'background 0.12s ease',
+                    }}
+                  >
+                    {content}
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+      </GlassCard>
+      <div style={{ marginTop: '1.1rem' }}>
+        <DPad onPress={handleMove} />
+      </div>
+      <HintPill text={data.goal} />
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   INTERRUPTORES — Switch Puzzle
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function InterruptoresScreen({
+  level,
+  playMode,
+  isMobile,
+  onComplete,
+  onExit,
+}: {
+  level: number
+  playMode: PlayMode
+  isMobile: boolean
+  onComplete: (r: LevelResult) => void
+  onExit: () => void
+}) {
+  const [seedSalt, setSeedSalt] = useState(0)
+  const data = useMemo(
+    () => generateSwitchLevel(level, { seedSalt }),
+    [level, seedSalt]
+  )
+
+  const [player, setPlayer] = useState<MazeCoord>(data.start)
+  const [state, setState] = useState<SwitchState>(() => switchInitialState(data))
+  const [moves, setMoves] = useState(0)
+  const [finished, setFinished] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const [failReason, setFailReason] = useState('')
+  const completedRef = useRef(false)
+  const playerRef = useRef(player)
+  const stateRef = useRef(state)
+  playerRef.current = player
+  stateRef.current = state
+
+  type Snap = { player: MazeCoord; state: SwitchState; moves: number }
+  const historyRef = useRef<Snap[]>([])
+
+  const { elapsed, reset: resetTimer } = useGameTimer(!finished && !failed)
+
+  const softReset = useCallback(
+    (d: SwitchLevel) => {
+      setPlayer(d.start)
+      setState(switchInitialState(d))
+      setMoves(0)
+      setFinished(false)
+      setFailed(false)
+      setFailReason('')
+      completedRef.current = false
+      historyRef.current = []
+      resetTimer()
+    },
+    [resetTimer]
+  )
+
+  useEffect(() => {
+    softReset(data)
+  }, [data, softReset])
+
+  const enforceLimits = useCallback(
+    (nextMoves: number, timeMs: number): boolean => {
+      if (playMode === 'zen') return true
+      if (data.moveLimit > 0 && nextMoves > data.moveLimit) {
+        setFailed(true)
+        setFailReason('Límite de movimientos agotado.')
+        return false
+      }
+      if (
+        playMode === 'contrarreloj' &&
+        data.targetSeconds > 0 &&
+        timeMs > data.targetSeconds * 1000
+      ) {
+        setFailed(true)
+        setFailReason('Se acabó el tiempo.')
+        return false
+      }
+      return true
+    },
+    [playMode, data.moveLimit, data.targetSeconds]
+  )
+
+  const handleMove = useCallback(
+    (dir: Direction) => {
+      if (finished || failed || completedRef.current) return
+      const curPlayer = playerRef.current
+      const curState = stateRef.current
+      const res = switchStep(data, curState, curPlayer, dir)
+      if (!res.moved) return
+      historyRef.current.push({ player: curPlayer, state: curState, moves })
+      if (historyRef.current.length > 80) historyRef.current.shift()
+      const nextMoves = moves + 1
+      setPlayer(res.player)
+      setState(res.state)
+      setMoves(nextMoves)
+      if (switchIsComplete(data, res.player)) {
+        setFinished(true)
+        return
+      }
+      enforceLimits(nextMoves, elapsed)
+    },
+    [data, finished, failed, moves, elapsed, enforceLimits]
+  )
+
+  useKeyboardDirection(handleMove, !finished && !failed)
+
+  useEffect(() => {
+    if (finished || failed || playMode !== 'contrarreloj') return
+    if (data.targetSeconds > 0 && elapsed > data.targetSeconds * 1000) {
+      setFailed(true)
+      setFailReason('Se acabó el tiempo.')
+    }
+  }, [elapsed, playMode, data.targetSeconds, finished, failed])
+
+  useEffect(() => {
+    if ((!finished && !failed) || completedRef.current) return
+    completedRef.current = true
+    const t = window.setTimeout(() => {
+      if (failed) {
+        onComplete({
+          stars: 0,
+          timeMs: elapsed,
+          moves,
+          failed: true,
+          reason: failReason,
+        })
+        return
+      }
+      const stars =
+        playMode === 'zen'
+          ? 1
+          : calcSwitchStars(moves, elapsed, data.targetSeconds, data.moveLimit)
+      onComplete({ stars, timeMs: elapsed, moves })
+    }, 480)
+    return () => clearTimeout(t)
+  }, [finished, failed, elapsed, moves, data, playMode, failReason, onComplete])
+
+  const undo = () => {
+    const prev = historyRef.current.pop()
+    if (!prev) return
+    setPlayer(prev.player)
+    setState(prev.state)
+    setMoves(prev.moves)
+  }
+
+  const cellPx = isMobile ? (data.cols > 10 ? 26 : 32) : data.cols > 10 ? 30 : 38
+
+  return (
+    <div>
+      <PlayToolbar
+        elapsed={elapsed}
+        playMode={playMode}
+        moves={moves}
+        moveLimit={data.moveLimit}
+        onUndo={undo}
+        canUndo={historyRef.current.length > 0 && !finished && !failed}
+        onRestart={() => setSeedSalt((s) => s + 1)}
+        onExit={onExit}
+      />
+      <GlassCard>
+        <div
+          style={{
+            padding: '0.85rem',
+            display: 'flex',
+            justifyContent: 'center',
+            overflow: 'auto',
+          }}
+        >
+          <div
+            role="grid"
+            aria-label="Interruptores"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${data.cols}, ${cellPx}px)`,
+              gridTemplateRows: `repeat(${data.rows}, ${cellPx}px)`,
+              gap: 1,
+            }}
+          >
+            {data.grid.map((row, r) =>
+              row.map((cellType, c) => {
+                const isPlayer = player.row === r && player.col === c
+                const sw = data.switches.find((s) => s.row === r && s.col === c)
+                const door = data.doors.find((d) => d.row === r && d.col === c)
+                let bg =
+                  cellType === 'wall'
+                    ? 'var(--gco-glass-border)'
+                    : 'var(--gco-fill-quaternary, rgba(255,255,255,0.06))'
+                let content: ReactNode = null
+                if (door) {
+                  const open = state.doorsOpen[door.id]
+                  bg = open ? 'rgba(34,230,197,0.18)' : 'rgba(255,120,120,0.22)'
+                  content = open ? '🚪' : '🔒'
+                }
+                if (sw) content = '🔘'
+                if (data.target.row === r && data.target.col === c && !isPlayer)
+                  content = '🚩'
+                if (isPlayer) content = '🧑'
+                return (
+                  <div
+                    key={r * data.cols + c}
+                    role="gridcell"
+                    style={{
+                      width: cellPx,
+                      height: cellPx,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: bg,
+                      borderRadius: 3,
+                      fontSize: cellPx * 0.58,
+                      transition: 'background 0.15s ease',
+                    }}
+                  >
+                    {content}
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+      </GlassCard>
+      <div style={{ marginTop: '1.1rem' }}>
+        <DPad onPress={handleMove} />
+      </div>
+      <HintPill text={data.goal} />
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TELETRANSPORTADORES — Teleport Puzzle
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function portalIdColor(id: string) {
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 360
+  return h
+}
+
+function TeleportScreen({
+  level,
+  playMode,
+  isMobile,
+  onComplete,
+  onExit,
+}: {
+  level: number
+  playMode: PlayMode
+  isMobile: boolean
+  onComplete: (r: LevelResult) => void
+  onExit: () => void
+}) {
+  const [seedSalt, setSeedSalt] = useState(0)
+  const data = useMemo(
+    () => generateTeleportLevel(level, { seedSalt }),
+    [level, seedSalt]
+  )
+
+  const [player, setPlayer] = useState<MazeCoord>(data.start)
+  const [moves, setMoves] = useState(0)
+  const [finished, setFinished] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const [failReason, setFailReason] = useState('')
+  const completedRef = useRef(false)
+  const playerRef = useRef(player)
+  playerRef.current = player
+
+  type Snap = { player: MazeCoord; moves: number }
+  const historyRef = useRef<Snap[]>([])
+
+  const { elapsed, reset: resetTimer } = useGameTimer(!finished && !failed)
+
+  const softReset = useCallback(
+    (d: TeleportLevel) => {
+      setPlayer(d.start)
+      setMoves(0)
+      setFinished(false)
+      setFailed(false)
+      setFailReason('')
+      completedRef.current = false
+      historyRef.current = []
+      resetTimer()
+    },
+    [resetTimer]
+  )
+
+  useEffect(() => {
+    softReset(data)
+  }, [data, softReset])
+
+  const enforceLimits = useCallback(
+    (nextMoves: number, timeMs: number): boolean => {
+      if (playMode === 'zen') return true
+      if (data.moveLimit > 0 && nextMoves > data.moveLimit) {
+        setFailed(true)
+        setFailReason('Límite de movimientos agotado.')
+        return false
+      }
+      if (
+        playMode === 'contrarreloj' &&
+        data.targetSeconds > 0 &&
+        timeMs > data.targetSeconds * 1000
+      ) {
+        setFailed(true)
+        setFailReason('Se acabó el tiempo.')
+        return false
+      }
+      return true
+    },
+    [playMode, data.moveLimit, data.targetSeconds]
+  )
+
+  const handleMove = useCallback(
+    (dir: Direction) => {
+      if (finished || failed || completedRef.current) return
+      const cur = playerRef.current
+      const res = teleportStep(data, cur, dir)
+      if (!res.moved) return
+      historyRef.current.push({ player: cur, moves })
+      if (historyRef.current.length > 80) historyRef.current.shift()
+      const nextMoves = moves + 1
+      setPlayer(res.player)
+      setMoves(nextMoves)
+      if (teleportIsComplete(data, res.player)) {
+        setFinished(true)
+        return
+      }
+      enforceLimits(nextMoves, elapsed)
+    },
+    [data, finished, failed, moves, elapsed, enforceLimits]
+  )
+
+  useKeyboardDirection(handleMove, !finished && !failed)
+
+  useEffect(() => {
+    if (finished || failed || playMode !== 'contrarreloj') return
+    if (data.targetSeconds > 0 && elapsed > data.targetSeconds * 1000) {
+      setFailed(true)
+      setFailReason('Se acabó el tiempo.')
+    }
+  }, [elapsed, playMode, data.targetSeconds, finished, failed])
+
+  useEffect(() => {
+    if ((!finished && !failed) || completedRef.current) return
+    completedRef.current = true
+    const t = window.setTimeout(() => {
+      if (failed) {
+        onComplete({
+          stars: 0,
+          timeMs: elapsed,
+          moves,
+          failed: true,
+          reason: failReason,
+        })
+        return
+      }
+      const stars =
+        playMode === 'zen'
+          ? 1
+          : calcTeleportStars(moves, elapsed, data.targetSeconds, data.moveLimit)
+      onComplete({ stars, timeMs: elapsed, moves })
+    }, 480)
+    return () => clearTimeout(t)
+  }, [finished, failed, elapsed, moves, data, playMode, failReason, onComplete])
+
+  const undo = () => {
+    const prev = historyRef.current.pop()
+    if (!prev) return
+    setPlayer(prev.player)
+    setMoves(prev.moves)
+  }
+
+  const cellPx = isMobile ? (data.cols > 10 ? 26 : 32) : data.cols > 10 ? 30 : 38
+
+  return (
+    <div>
+      <PlayToolbar
+        elapsed={elapsed}
+        playMode={playMode}
+        moves={moves}
+        moveLimit={data.moveLimit}
+        onUndo={undo}
+        canUndo={historyRef.current.length > 0 && !finished && !failed}
+        onRestart={() => setSeedSalt((s) => s + 1)}
+        onExit={onExit}
+      />
+      <GlassCard>
+        <div
+          style={{
+            padding: '0.85rem',
+            display: 'flex',
+            justifyContent: 'center',
+            overflow: 'auto',
+          }}
+        >
+          <div
+            role="grid"
+            aria-label="Teletransportadores"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${data.cols}, ${cellPx}px)`,
+              gridTemplateRows: `repeat(${data.rows}, ${cellPx}px)`,
+              gap: 1,
+            }}
+          >
+            {data.grid.map((row, r) =>
+              row.map((cellType, c) => {
+                const isPlayer = player.row === r && player.col === c
+                const portal = teleportPortalAt(data, r, c)
+                let bg =
+                  cellType === 'wall'
+                    ? 'var(--gco-glass-border)'
+                    : 'var(--gco-fill-quaternary, rgba(255,255,255,0.06))'
+                let content: ReactNode = null
+                if (portal) {
+                  const hue = portalIdColor(portal.pair.a.id)
+                  bg = `hsl(${hue} 70% 45% / 0.28)`
+                  content = '🌀'
+                }
+                if (data.target.row === r && data.target.col === c && !isPlayer)
+                  content = '🚩'
+                if (isPlayer) content = '🧑'
+                return (
+                  <div
+                    key={r * data.cols + c}
+                    role="gridcell"
+                    style={{
+                      width: cellPx,
+                      height: cellPx,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: bg,
+                      borderRadius: 3,
+                      fontSize: cellPx * 0.58,
+                      transition: 'background 0.15s ease',
+                    }}
+                  >
+                    {content}
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+      </GlassCard>
+      <div style={{ marginTop: '1.1rem' }}>
+        <DPad onPress={handleMove} />
+      </div>
+      <HintPill text={data.goal} />
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LÁSER — Laser & Mirrors Puzzle
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function LaserScreen({
+  level,
+  playMode,
+  isMobile,
+  onComplete,
+  onExit,
+}: {
+  level: number
+  playMode: PlayMode
+  isMobile: boolean
+  onComplete: (r: LevelResult) => void
+  onExit: () => void
+}) {
+  const [seedSalt, setSeedSalt] = useState(0)
+  const data = useMemo<LaserLevel>(
+    () => generateLaserLevel(level, { seedSalt }),
+    [level, seedSalt]
+  )
+
+  const [mirrors, setMirrors] = useState<LaserMirror[]>(() =>
+    data.mirrors.map((m) => ({ ...m }))
+  )
+  const [rotations, setRotations] = useState(0)
+  const [finished, setFinished] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const completedRef = useRef(false)
+
+  type Snap = { mirrors: LaserMirror[]; rotations: number }
+  const historyRef = useRef<Snap[]>([])
+
+  const { elapsed, reset: resetTimer } = useGameTimer(!finished && !failed)
+
+  useEffect(() => {
+    setMirrors(data.mirrors.map((m) => ({ ...m })))
+    setRotations(0)
+    setFinished(false)
+    setFailed(false)
+    completedRef.current = false
+    historyRef.current = []
+    resetTimer()
+  }, [data, resetTimer])
+
+  useEffect(() => {
+    if (finished || failed || playMode !== 'contrarreloj') return
+    if (data.targetSeconds > 0 && elapsed > data.targetSeconds * 1000) {
+      setFailed(true)
+    }
+  }, [elapsed, playMode, data.targetSeconds, finished, failed])
+
+  const path = useMemo(() => simulateLaser(data, mirrors), [data, mirrors])
+  const hit = useMemo(() => laserHitsTarget(data, mirrors), [data, mirrors])
+
+  useEffect(() => {
+    if (hit && !finished && !failed) setFinished(true)
+  }, [hit, finished, failed])
+
+  useEffect(() => {
+    if ((!finished && !failed) || completedRef.current) return
+    completedRef.current = true
+    const t = window.setTimeout(() => {
+      if (failed) {
+        onComplete({
+          stars: 0,
+          timeMs: elapsed,
+          moves: rotations,
+          failed: true,
+          reason: 'Se acabó el tiempo.',
+        })
+        return
+      }
+      const stars = playMode === 'zen' ? 1 : calcLaserStars(elapsed, data.targetSeconds, rotations)
+      onComplete({ stars, timeMs: elapsed, moves: rotations })
+    }, 480)
+    return () => clearTimeout(t)
+  }, [finished, failed, elapsed, rotations, data, playMode, onComplete])
+
+  const handleRotate = (id: string) => {
+    if (finished || failed) return
+    soundClick()
+    historyRef.current.push({
+      mirrors: mirrors.map((m) => ({ ...m })),
+      rotations,
+    })
+    if (historyRef.current.length > 80) historyRef.current.shift()
+    setMirrors((prev) => toggleMirror(prev, id))
+    setRotations((r) => r + 1)
+  }
+
+  const undo = () => {
+    const prev = historyRef.current.pop()
+    if (!prev) return
+    setMirrors(prev.mirrors)
+    setRotations(prev.rotations)
+  }
+
+  const cellPx = isMobile ? (data.cols > 9 ? 30 : 36) : data.cols > 9 ? 36 : 44
+  const pathSet = useMemo(
+    () => new Set(path.map((p) => p.row * data.cols + p.col)),
+    [path, data.cols]
+  )
+
+  return (
+    <div>
+      <PlayToolbar
+        elapsed={elapsed}
+        playMode={playMode}
+        moves={rotations}
+        moveLimit={0}
+        onUndo={undo}
+        canUndo={historyRef.current.length > 0 && !finished && !failed}
+        onRestart={() => setSeedSalt((s) => s + 1)}
+        onExit={onExit}
+      />
+      <GlassCard>
+        <div
+          style={{
+            padding: '0.85rem',
+            display: 'flex',
+            justifyContent: 'center',
+            overflow: 'auto',
+          }}
+        >
+          <div
+            role="grid"
+            aria-label="Láser"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${data.cols}, ${cellPx}px)`,
+              gridTemplateRows: `repeat(${data.rows}, ${cellPx}px)`,
+              gap: 1,
+            }}
+          >
+            {Array.from({ length: data.rows }).map((_, r) =>
+              Array.from({ length: data.cols }).map((__, c) => {
+                const idx = r * data.cols + c
+                const mirror = mirrors.find((m) => m.row === r && m.col === c)
+                const isSource = data.source.row === r && data.source.col === c
+                const isTarget = data.target.row === r && data.target.col === c
+                const onPath = pathSet.has(idx)
+                let bg = 'var(--gco-fill-quaternary, rgba(255,255,255,0.06))'
+                if (onPath) bg = 'rgba(255,90,90,0.22)'
+                if (isTarget) bg = hit ? 'rgba(34,230,197,0.35)' : 'rgba(34,230,197,0.15)'
+                let content: ReactNode = null
+                if (isSource) content = '🔴'
+                if (isTarget) content = '🎯'
+                if (mirror) content = mirror.orientation === '/' ? '╱' : '╲'
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => mirror && handleRotate(mirror.id)}
+                    disabled={!mirror || finished || failed}
+                    style={{
+                      width: cellPx,
+                      height: cellPx,
+                      borderRadius: 4,
+                      border: '1px solid var(--gco-hairline, rgba(255,255,255,0.08))',
+                      background: bg,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: cellPx * 0.55,
+                      cursor: mirror ? 'pointer' : 'default',
+                      padding: 0,
+                      transition: 'background 0.15s ease',
+                    }}
+                    aria-label={
+                      mirror
+                        ? `Espejo ${mirror.orientation}`
+                        : isSource
+                          ? 'Fuente'
+                          : isTarget
+                            ? 'Objetivo'
+                            : 'Vacío'
+                    }
+                  >
+                    {content}
+                  </button>
+                )
+              })
+            )}
+          </div>
+        </div>
+      </GlassCard>
+      <HintPill text={data.goal} />
+    </div>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CIRCUITOS — Circuit Puzzle
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function CircuitScreen({
+  level,
+  playMode,
+  isMobile,
+  onComplete,
+  onExit,
+}: {
+  level: number
+  playMode: PlayMode
+  isMobile: boolean
+  onComplete: (r: LevelResult) => void
+  onExit: () => void
+}) {
+  const [seedSalt, setSeedSalt] = useState(0)
+  const initial = useMemo(
+    () => generateCircuitLevel(level, { seedSalt }),
+    [level, seedSalt]
+  )
+  const [data, setData] = useState<CircuitLevel>(initial)
+  const [rotations, setRotations] = useState(0)
+  const [finished, setFinished] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const completedRef = useRef(false)
+
+  type Snap = { data: CircuitLevel; rotations: number }
+  const historyRef = useRef<Snap[]>([])
+
+  const { elapsed, reset: resetTimer } = useGameTimer(!finished && !failed)
+
+  useEffect(() => {
+    setData(initial)
+    setRotations(0)
+    setFinished(false)
+    setFailed(false)
+    completedRef.current = false
+    historyRef.current = []
+    resetTimer()
+  }, [initial, resetTimer])
+
+  useEffect(() => {
+    if (finished || failed || playMode !== 'contrarreloj') return
+    if (data.targetSeconds > 0 && elapsed > data.targetSeconds * 1000) {
+      setFailed(true)
+    }
+  }, [elapsed, playMode, data.targetSeconds, finished, failed])
+
+  const complete = useMemo(() => isCircuitComplete(data), [data])
+
+  useEffect(() => {
+    if (complete && !finished && !failed) setFinished(true)
+  }, [complete, finished, failed])
+
+  useEffect(() => {
+    if ((!finished && !failed) || completedRef.current) return
+    completedRef.current = true
+    const t = window.setTimeout(() => {
+      if (failed) {
+        onComplete({
+          stars: 0,
+          timeMs: elapsed,
+          moves: rotations,
+          failed: true,
+          reason: 'Se acabó el tiempo.',
+        })
+        return
+      }
+      const total = data.rows * data.cols
+      const stars =
+        playMode === 'zen'
+          ? 1
+          : calcCircuitStars(elapsed, data.targetSeconds, rotations, total)
+      onComplete({ stars, timeMs: elapsed, moves: rotations })
+    }, 480)
+    return () => clearTimeout(t)
+  }, [finished, failed, elapsed, rotations, data, playMode, onComplete])
+
+  const handleRotate = (row: number, col: number) => {
+    if (finished || failed) return
+    soundClick()
+    historyRef.current.push({ data, rotations })
+    if (historyRef.current.length > 80) historyRef.current.shift()
+    setData((prev) => rotateCircuitPiece(prev, row, col))
+    setRotations((r) => r + 1)
+  }
+
+  const undo = () => {
+    const prev = historyRef.current.pop()
+    if (!prev) return
+    setData(prev.data)
+    setRotations(prev.rotations)
+  }
+
+  const cellPx = isMobile ? (data.cols > 8 ? 32 : 38) : data.cols > 8 ? 38 : 46
+
+  const pieceGlyph = (p: CircuitPiece) => {
+    if (p.kind === 'empty') return null
+    if (p.kind === 'source') return '⚡'
+    if (p.kind === 'target') return '🔋'
+    const dirs = pieceConnections(p)
+    if (p.kind === 'cross') return '╬'
+    if (p.kind === 't') return '┼'
+    if (p.kind === 'straight') return dirs.includes('up') ? '│' : '─'
+    return '└'
+  }
+
+  return (
+    <div>
+      <PlayToolbar
+        elapsed={elapsed}
+        playMode={playMode}
+        moves={rotations}
+        moveLimit={0}
+        onUndo={undo}
+        canUndo={historyRef.current.length > 0 && !finished && !failed}
+        onRestart={() => setSeedSalt((s) => s + 1)}
+        onExit={onExit}
+      />
+      <GlassCard>
+        <div
+          style={{
+            padding: '0.85rem',
+            display: 'flex',
+            justifyContent: 'center',
+            overflow: 'auto',
+          }}
+        >
+          <div
+            role="grid"
+            aria-label="Circuitos"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${data.cols}, ${cellPx}px)`,
+              gridTemplateRows: `repeat(${data.rows}, ${cellPx}px)`,
+              gap: 2,
+            }}
+          >
+            {data.pieces.map((row, r) =>
+              row.map((piece, c) => {
+                const rotatable = !piece.fixed && piece.kind !== 'empty'
+                return (
+                  <button
+                    key={r * data.cols + c}
+                    type="button"
+                    onClick={() => rotatable && handleRotate(r, c)}
+                    disabled={!rotatable || finished || failed}
+                    style={{
+                      width: cellPx,
+                      height: cellPx,
+                      borderRadius: 4,
+                      border: '1px solid var(--gco-hairline, rgba(255,255,255,0.08))',
+                      background:
+                        piece.kind === 'empty'
+                          ? 'transparent'
+                          : 'var(--gco-fill-quaternary, rgba(255,255,255,0.06))',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: cellPx * 0.55,
+                      cursor: rotatable ? 'pointer' : 'default',
+                      padding: 0,
+                      transform: `rotate(${piece.rotation}deg)`,
+                      transition: 'transform 0.15s ease',
+                    }}
+                    aria-label={`Pieza ${piece.kind}`}
+                  >
+                    {pieceGlyph(piece)}
+                  </button>
+                )
+              })
+            )}
+          </div>
+        </div>
+      </GlassCard>
+      <HintPill text={data.goal} />
     </div>
   )
 }
