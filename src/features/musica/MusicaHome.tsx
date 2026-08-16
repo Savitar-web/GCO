@@ -780,10 +780,11 @@ const SORT_OPTIONS: { id: SortMode; label: string }[] = [
 ]
 
 const LAYOUT_CSS = `
-.gco-music-root { min-height: 100dvh; color: var(--gco-ink); }
+.gco-music-root { min-height: 100vh; min-height: 100dvh; width: 100%; max-width: none; color: var(--gco-ink); box-sizing: border-box; }
 .gco-music-shell {
-  display: flex; flex-direction: column; min-height: 100dvh;
-  width: 100%; margin: 0; padding: 0 0.65rem;
+  display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh;
+  width: 100%; max-width: 100%; margin: 0; padding: 0;
+  box-sizing: border-box;
 }
 .gco-music-sidebar { display: none; }
 .gco-music-bottom-nav { display: block; }
@@ -923,19 +924,20 @@ const LAYOUT_CSS = `
 
 @media (min-width: 960px) {
   .gco-music-shell {
-    width: 100%; margin: 0; padding: 0;
-    display: grid; grid-template-columns: 240px 1fr; min-height: 100dvh;
+    width: 100%; max-width: 100%; margin: 0; padding: 0;
+    display: grid; grid-template-columns: 240px minmax(0, 1fr);
+    min-height: 100vh; min-height: 100dvh;
   }
   .gco-music-sidebar {
     display: flex; flex-direction: column; gap: 0.35rem;
     padding: 1.25rem 0.85rem;
     border-right: 1px solid var(--gco-glass-border);
     background: color-mix(in srgb, var(--gco-bg, #0B1220) 92%, transparent);
-    position: sticky; top: 0; height: 100dvh; overflow: auto;
-    border-top-left-radius: 26px;
+    position: sticky; top: 0; height: 100vh; height: 100dvh; overflow: auto;
+    border-top-left-radius: 0;
   }
   .gco-music-main {
-    display: flex; flex-direction: column; min-width: 0;
+    display: flex; flex-direction: column; min-width: 0; width: 100%;
     padding: 1.25rem 1.75rem 5.5rem;
   }
   .gco-music-bottom-nav { display: none !important; }
@@ -966,6 +968,68 @@ const LAYOUT_CSS = `
 
 @media (min-width: 1280px) {
   .gco-music-main { padding: 1.5rem 2.25rem 5.5rem; }
+}
+
+/* ============================================================================
+ * ACABADO PROFESIONAL Y ANCHO COMPLETO (pantallas ≥960px)
+ * 'app-shell-pro' (theme.css) limita el ancho a 1100px y centra el bloque:
+ * correcto para pantallas de una sola columna, pero esta vista ya tiene su
+ * propio layout responsive de sidebar + contenido, así que ese límite hacía
+ * que todo se viera "cortado" y flotando en el centro con espacio muerto a
+ * los lados. Lo anulamos SOLO aquí (el resto de la app sigue usando
+ * 'app-shell-pro' normalmente) para que la sidebar llegue al borde y el
+ * contenido aproveche el ancho real de la pantalla.
+ * ========================================================================= */
+@media (min-width: 960px) {
+  .gco-music-root.app-shell-pro,
+  .gco-music-root.app-shell {
+    max-width: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .gco-music-root {
+    max-width: none !important;
+    width: 100% !important;
+  }
+}
+
+/* El contenido interno se centra con un ancho máximo cómodo en monitores
+   muy anchos, en vez de estirar cada línea de borde a borde de la pantalla. */
+.gco-music-content-inner { width: 100%; max-width: none; margin: 0; box-sizing: border-box; }
+@media (min-width: 960px) {
+  .gco-music-content-inner { max-width: none; width: 100%; margin: 0; padding: 0 1.25rem; }
+}
+@media (min-width: 1440px) {
+  .gco-music-content-inner { padding: 0 1.75rem; }
+}
+
+/* Cabecera de escritorio con más presencia y separación clara del contenido */
+.gco-music-desktop-top {
+  padding-bottom: 1rem !important;
+  margin-bottom: 1.5rem !important;
+  border-bottom: 1px solid var(--gco-hairline);
+}
+
+/* Filas de la tabla de canciones: leve zebra + cabecera más legible */
+.gco-song-row:nth-child(even) {
+  background: color-mix(in srgb, var(--gco-ink) 2.5%, transparent);
+}
+.gco-music-table-head span {
+  opacity: 0.85;
+}
+
+/* Tarjetas "reproduciendo recientemente" con más presencia en escritorio */
+@media (min-width: 960px) {
+  .gco-music-root .continue-card { min-width: 320px; max-width: 380px; }
+}
+
+/* Pantallas grandes: sidebar y márgenes más generosos, look de app de escritorio */
+@media (min-width: 1440px) {
+  .gco-music-shell { grid-template-columns: 272px 1fr; }
+  .gco-music-sidebar { padding: 1.85rem 1.15rem; }
+  .gco-music-player-dock { left: 272px !important; }
+  .gco-music-main { padding: 1.85rem 3rem 5.5rem; }
 }
 `
 
@@ -3641,7 +3705,7 @@ export function MusicaHome() {
     : null
 
   return (
-    <div className="app-shell app-shell-pro" style={{ paddingBottom: padBottom }}>
+    <div className="app-shell app-shell-pro gco-music-root" style={{ paddingBottom: padBottom, width: '100%', maxWidth: 'none', margin: 0 }}>
       <style>{LAYOUT_CSS}</style>
       <div className="gco-music-shell">
         <aside className="gco-music-sidebar gco-scroll-y" aria-label="Navegación lateral">
@@ -3703,49 +3767,51 @@ export function MusicaHome() {
         </aside>
 
         <div className="gco-music-main" style={{ flex: 1, minWidth: 0 }}>
-          <div className="gco-music-mobile-header">{header}</div>
+          <div className="gco-music-content-inner">
+            <div className="gco-music-mobile-header">{header}</div>
 
-          <div className="gco-music-desktop-top" style={{ justifyContent: 'flex-end' }}>
-            <p style={{ margin: '0 auto 0 0', fontWeight: 700, fontSize: '1.02rem', opacity: 0.9 }}>
-              {tab === 'library'
-                ? 'Biblioteca'
-                : tab === 'playlists'
-                  ? 'Listas de reproducción'
-                  : tab === 'now'
-                    ? 'Reproduciendo'
-                    : tab === 'import'
-                      ? 'Importar'
-                      : 'Más'}
-            </p>
-            <ModeSwitch />
-            <ThemeToggle />
-            <button
-              type="button"
-              className="theme-cycle-btn gco-icon-btn"
-              aria-label={playerHidden ? 'Mostrar reproductor' : 'Ocultar reproductor'}
-              onClick={() => {
-                soundClick()
-                setPlayerHidden((v) => !v)
-              }}
-              style={{ width: 44, height: 44, borderRadius: 13, display: 'grid', placeItems: 'center' }}
-            >
-              {playerHidden ? <Icon.chevronUp /> : <Icon.chevronDown />}
-            </button>
-            <button
-              type="button"
-              className="theme-cycle-btn gco-icon-btn"
-              aria-label="Abrir ajustes"
-              onClick={() => {
-                soundClick()
-                navigate('/ajustes')
-              }}
-              style={{ width: 44, height: 44, borderRadius: 13, display: 'grid', placeItems: 'center' }}
-            >
-              <Icon.gear />
-            </button>
+            <div className="gco-music-desktop-top" style={{ justifyContent: 'flex-end' }}>
+              <p style={{ margin: '0 auto 0 0', fontWeight: 700, fontSize: '1.02rem', opacity: 0.9 }}>
+                {tab === 'library'
+                  ? 'Biblioteca'
+                  : tab === 'playlists'
+                    ? 'Listas de reproducción'
+                    : tab === 'now'
+                      ? 'Reproduciendo'
+                      : tab === 'import'
+                        ? 'Importar'
+                        : 'Más'}
+              </p>
+              <ModeSwitch />
+              <ThemeToggle />
+              <button
+                type="button"
+                className="theme-cycle-btn gco-icon-btn"
+                aria-label={playerHidden ? 'Mostrar reproductor' : 'Ocultar reproductor'}
+                onClick={() => {
+                  soundClick()
+                  setPlayerHidden((v) => !v)
+                }}
+                style={{ width: 44, height: 44, borderRadius: 13, display: 'grid', placeItems: 'center' }}
+              >
+                {playerHidden ? <Icon.chevronUp /> : <Icon.chevronDown />}
+              </button>
+              <button
+                type="button"
+                className="theme-cycle-btn gco-icon-btn"
+                aria-label="Abrir ajustes"
+                onClick={() => {
+                  soundClick()
+                  navigate('/ajustes')
+                }}
+                style={{ width: 44, height: 44, borderRadius: 13, display: 'grid', placeItems: 'center' }}
+              >
+                <Icon.gear />
+              </button>
+            </div>
+
+            <main style={{ minWidth: 0 }}>{mainContent}</main>
           </div>
-
-          <main style={{ minWidth: 0 }}>{mainContent}</main>
         </div>
       </div>
 

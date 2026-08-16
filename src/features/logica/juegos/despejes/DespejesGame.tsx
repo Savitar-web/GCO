@@ -87,6 +87,15 @@ import {
   isCircuitComplete,
   pieceConnections,
   calcCircuitStars,
+  PLAYER_SKINS,
+  loadPlayerSkin,
+  savePlayerSkin,
+  type PathUniqueLevel,
+  generatePathUniqueLevel,
+  pathUniqueStep,
+  pathUniqueInitialVisited,
+  pathUniqueIsComplete,
+  calcPathUniqueStars,
 } from '../generateLevel'
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -104,6 +113,7 @@ type SubGame =
   | 'teleport'
   | 'laser'
   | 'circuito'
+  | 'caminounico'
 type CromaStyle = 'desplazar' | 'colorear'
 type PlayMode = 'progresivo' | 'contrarreloj' | 'zen'
 type Screen = 'inicio' | 'niveles' | 'jugando' | 'resumen'
@@ -116,6 +126,8 @@ type TrackId =
   | 'teleport'
   | 'laser'
   | 'circuito'
+  | 'caminounico'
+
 
 interface LevelResult {
   stars: 0 | 1 | 2 | 3
@@ -300,6 +312,12 @@ export function DespejesGame(props: DespejesGameProps = {}) {
   const [currentLevel, setCurrentLevel] = useState(1)
   const [lastResult, setLastResult] = useState<LevelResult | null>(null)
   const [progressTick, setProgressTick] = useState(0)
+  const [playerSkin, setPlayerSkin] = useState<string>(() => loadPlayerSkin())
+
+  const changePlayerSkin = useCallback((skin: string) => {
+    setPlayerSkin(skin)
+    savePlayerSkin(skin)
+  }, [])
 
   const track = trackKey(subGame, cromaStyle)
   const unlockedLevel = useMemo(
@@ -358,6 +376,7 @@ export function DespejesGame(props: DespejesGameProps = {}) {
     teleport: 'Teletransportadores',
     laser: 'Láser',
     circuito: 'Circuitos',
+    caminounico: 'Camino Único',
   }
 
   const title = screen === 'inicio' ? 'Despejes' : subGameLabel[subGame]
@@ -424,6 +443,8 @@ export function DespejesGame(props: DespejesGameProps = {}) {
               level={currentLevel}
               playMode={playMode}
               isMobile={isMobile}
+              playerSkin={playerSkin}
+              onChangeSkin={changePlayerSkin}
               onComplete={handleComplete}
               onExit={() => {
                 soundClick()
@@ -488,6 +509,8 @@ export function DespejesGame(props: DespejesGameProps = {}) {
               level={currentLevel}
               playMode={playMode}
               isMobile={isMobile}
+              playerSkin={playerSkin}
+              onChangeSkin={changePlayerSkin}
               onComplete={handleComplete}
               onExit={() => {
                 soundClick()
@@ -508,6 +531,8 @@ export function DespejesGame(props: DespejesGameProps = {}) {
               level={currentLevel}
               playMode={playMode}
               isMobile={isMobile}
+              playerSkin={playerSkin}
+              onChangeSkin={changePlayerSkin}
               onComplete={handleComplete}
               onExit={() => {
                 soundClick()
@@ -528,6 +553,8 @@ export function DespejesGame(props: DespejesGameProps = {}) {
               level={currentLevel}
               playMode={playMode}
               isMobile={isMobile}
+              playerSkin={playerSkin}
+              onChangeSkin={changePlayerSkin}
               onComplete={handleComplete}
               onExit={() => {
                 soundClick()
@@ -568,6 +595,28 @@ export function DespejesGame(props: DespejesGameProps = {}) {
               level={currentLevel}
               playMode={playMode}
               isMobile={isMobile}
+              onComplete={handleComplete}
+              onExit={() => {
+                soundClick()
+                setScreen('niveles')
+              }}
+            />
+          </motion.div>
+        )}
+
+        {screen === 'jugando' && subGame === 'caminounico' && (
+          <motion.div
+            key={`play-pathunique-${currentLevel}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <CaminoUnicoScreen
+              level={currentLevel}
+              playMode={playMode}
+              isMobile={isMobile}
+              playerSkin={playerSkin}
+              onChangeSkin={changePlayerSkin}
               onComplete={handleComplete}
               onExit={() => {
                 soundClick()
@@ -725,6 +774,13 @@ function HomeScreen({ onSelect }: { onSelect: (sub: SubGame) => void }) {
       icon: '⚡',
       level: unlockedFor('circuito'),
     },
+    {
+      id: 'caminounico',
+      title: 'Camino Único',
+      desc: 'Recorre cada casilla del tablero exactamente una vez y termina en la meta.',
+      icon: '🧭',
+      level: unlockedFor('caminounico'),
+    },
   ]
 
   return (
@@ -855,6 +911,7 @@ const SUBGAME_TITLES: Record<SubGame, string> = {
   teleport: 'Teletransportadores',
   laser: 'Láser',
   circuito: 'Circuitos',
+  caminounico: 'Camino Único',
 }
 
 function LevelSelectScreen({
@@ -1199,6 +1256,84 @@ function HintPill({ text }: { text: string }) {
   )
 }
 
+function CharacterPickerButton({
+  skin,
+  onChange,
+}: {
+  skin: string
+  onChange: (s: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDocClick = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [open])
+
+  return (
+    <div ref={rootRef} style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        type="button"
+        className="glass-button secondary"
+        onClick={() => {
+          soundClick()
+          setOpen((o) => !o)
+        }}
+        style={{ padding: '0.4rem 0.65rem', fontSize: '1.05rem', minWidth: 0 }}
+        aria-label="Elegir personaje"
+        title="Elegir personaje"
+      >
+        {skin}
+      </button>
+      {open ? (
+        <div
+          className="glass-card"
+          style={{
+            position: 'absolute',
+            top: '115%',
+            right: 0,
+            zIndex: 30,
+            padding: '0.5rem',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(5, 1fr)',
+            gap: 4,
+            width: 190,
+          }}
+        >
+          {PLAYER_SKINS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => {
+                soundClick()
+                onChange(s)
+                setOpen(false)
+              }}
+              style={{
+                fontSize: '1.15rem',
+                background:
+                  s === skin ? 'var(--gco-primary-dim, rgba(34,230,197,0.18))' : 'transparent',
+                border: 'none',
+                borderRadius: 8,
+                padding: '0.3rem 0',
+                cursor: 'pointer',
+              }}
+              aria-label={`Personaje ${s}`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function DPad({ onPress }: { onPress: (dir: Direction) => void }) {
   const btn = (dir: Direction, label: string, area: string) => (
     <button
@@ -1249,6 +1384,7 @@ function PlayToolbar({
   moves,
   moveLimit,
   extra,
+  characterPicker,
   onUndo,
   canUndo,
   onRestart,
@@ -1259,6 +1395,7 @@ function PlayToolbar({
   moves: number
   moveLimit: number
   extra?: ReactNode
+  characterPicker?: ReactNode
   onUndo?: () => void
   canUndo?: boolean
   onRestart: () => void
@@ -1285,6 +1422,7 @@ function PlayToolbar({
           </StatBadge>
           {extra}
         </div>
+        {characterPicker ? <div style={{ flexShrink: 0 }}>{characterPicker}</div> : null}
       </div>
       <div
         style={{
@@ -1340,12 +1478,16 @@ function LaberintoScreen({
   level,
   playMode,
   isMobile,
+  playerSkin,
+  onChangeSkin,
   onComplete,
   onExit,
 }: {
   level: number
   playMode: PlayMode
   isMobile: boolean
+  playerSkin: string
+  onChangeSkin: (s: string) => void
   onComplete: (r: LevelResult) => void
   onExit: () => void
 }) {
@@ -1535,6 +1677,7 @@ function LaberintoScreen({
             </StatBadge>
           ) : undefined
         }
+        characterPicker={<CharacterPickerButton skin={playerSkin} onChange={onChangeSkin} />}
         onUndo={undo}
         canUndo={historyRef.current.length > 0 && !finished && !failed}
         onRestart={() => setSeedSalt((s) => s + 1)}
@@ -1591,7 +1734,7 @@ function LaberintoScreen({
                   if (filledHole) content = null
                   if (isExit && !isPlayer) content = '🚩'
                   if (boulderHere) content = '🪨'
-                  if (isPlayer) content = '🧑'
+                  if (isPlayer) content = playerSkin
                 }
 
                 return (
@@ -2155,15 +2298,11 @@ function CromaColorearScreen({
                       />
                     )
                   }
-                  const matched =
-                    !cell.locked && cell.current === cell.target
                   const style: CSSProperties = {
                     width: cellPx,
                     height: cellPx,
                     borderRadius: 10,
-                    border: matched
-                      ? '2px solid var(--gco-primary)'
-                      : '1px solid var(--gco-glass-border)',
+                    border: '1px solid var(--gco-glass-border)',
                     background: cell.locked
                       ? 'var(--gco-input-bg, rgba(0,0,0,0.25))'
                       : cell.current
@@ -2198,17 +2337,6 @@ function CromaColorearScreen({
                             : '⚡'}
                         </span>
                       ) : null}
-                      {matched && !cell.locked ? (
-                        <span
-                          style={{
-                            fontSize: cellPx * 0.38,
-                            color: '#fff',
-                            fontWeight: 800,
-                          }}
-                        >
-                          ✓
-                        </span>
-                      ) : null}
                     </button>
                   )
                 })
@@ -2231,12 +2359,16 @@ function HieloScreen({
   level,
   playMode,
   isMobile,
+  playerSkin,
+  onChangeSkin,
   onComplete,
   onExit,
 }: {
   level: number
   playMode: PlayMode
   isMobile: boolean
+  playerSkin: string
+  onChangeSkin: (s: string) => void
   onComplete: (r: LevelResult) => void
   onExit: () => void
 }) {
@@ -2369,6 +2501,7 @@ function HieloScreen({
         playMode={playMode}
         moves={moves}
         moveLimit={data.moveLimit}
+        characterPicker={<CharacterPickerButton skin={playerSkin} onChange={onChangeSkin} />}
         onUndo={undo}
         canUndo={historyRef.current.length > 0 && !finished && !failed}
         onRestart={() => setSeedSalt((s) => s + 1)}
@@ -2405,7 +2538,7 @@ function HieloScreen({
                   bg = 'rgba(34,230,197,0.22)'
                   content = '🚩'
                 }
-                if (isPlayer) content = '🧑'
+                if (isPlayer) content = playerSkin
                 return (
                   <div
                     key={r * data.cols + c}
@@ -2446,12 +2579,16 @@ function InterruptoresScreen({
   level,
   playMode,
   isMobile,
+  playerSkin,
+  onChangeSkin,
   onComplete,
   onExit,
 }: {
   level: number
   playMode: PlayMode
   isMobile: boolean
+  playerSkin: string
+  onChangeSkin: (s: string) => void
   onComplete: (r: LevelResult) => void
   onExit: () => void
 }) {
@@ -2591,6 +2728,7 @@ function InterruptoresScreen({
         playMode={playMode}
         moves={moves}
         moveLimit={data.moveLimit}
+        characterPicker={<CharacterPickerButton skin={playerSkin} onChange={onChangeSkin} />}
         onUndo={undo}
         canUndo={historyRef.current.length > 0 && !finished && !failed}
         onRestart={() => setSeedSalt((s) => s + 1)}
@@ -2633,7 +2771,7 @@ function InterruptoresScreen({
                 if (sw) content = '🔘'
                 if (data.target.row === r && data.target.col === c && !isPlayer)
                   content = '🚩'
-                if (isPlayer) content = '🧑'
+                if (isPlayer) content = playerSkin
                 return (
                   <div
                     key={r * data.cols + c}
@@ -2680,12 +2818,16 @@ function TeleportScreen({
   level,
   playMode,
   isMobile,
+  playerSkin,
+  onChangeSkin,
   onComplete,
   onExit,
 }: {
   level: number
   playMode: PlayMode
   isMobile: boolean
+  playerSkin: string
+  onChangeSkin: (s: string) => void
   onComplete: (r: LevelResult) => void
   onExit: () => void
 }) {
@@ -2818,6 +2960,7 @@ function TeleportScreen({
         playMode={playMode}
         moves={moves}
         moveLimit={data.moveLimit}
+        characterPicker={<CharacterPickerButton skin={playerSkin} onChange={onChangeSkin} />}
         onUndo={undo}
         canUndo={historyRef.current.length > 0 && !finished && !failed}
         onRestart={() => setSeedSalt((s) => s + 1)}
@@ -2858,7 +3001,7 @@ function TeleportScreen({
                 }
                 if (data.target.row === r && data.target.col === c && !isPlayer)
                   content = '🚩'
-                if (isPlayer) content = '🧑'
+                if (isPlayer) content = playerSkin
                 return (
                   <div
                     key={r * data.cols + c}
@@ -3182,17 +3325,6 @@ function CircuitScreen({
 
   const cellPx = isMobile ? (data.cols > 8 ? 32 : 38) : data.cols > 8 ? 38 : 46
 
-  const pieceGlyph = (p: CircuitPiece) => {
-    if (p.kind === 'empty') return null
-    if (p.kind === 'source') return '⚡'
-    if (p.kind === 'target') return '🔋'
-    const dirs = pieceConnections(p)
-    if (p.kind === 'cross') return '╬'
-    if (p.kind === 't') return '┼'
-    if (p.kind === 'straight') return dirs.includes('up') ? '│' : '─'
-    return '└'
-  }
-
   return (
     <div>
       <PlayToolbar
@@ -3245,15 +3377,12 @@ function CircuitScreen({
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: cellPx * 0.55,
                       cursor: rotatable ? 'pointer' : 'default',
                       padding: 0,
-                      transform: `rotate(${piece.rotation}deg)`,
-                      transition: 'transform 0.15s ease',
                     }}
                     aria-label={`Pieza ${piece.kind}`}
                   >
-                    {pieceGlyph(piece)}
+                    <CircuitPieceVisual piece={piece} size={cellPx} />
                   </button>
                 )
               })
@@ -3261,6 +3390,288 @@ function CircuitScreen({
           </div>
         </div>
       </GlassCard>
+      <HintPill text={data.goal} />
+    </div>
+  )
+}
+
+function CircuitPieceVisual({ piece, size }: { piece: CircuitPiece; size: number }) {
+  if (piece.kind === 'empty') return null
+  const dirs = pieceConnections(piece)
+  const mid = size / 2
+  const strokeWidth = Math.max(2, size * 0.1)
+  const lineColor = 'var(--gco-primary, #22e6c5)'
+  const nodeColor =
+    piece.kind === 'source' ? '#ffcf4d' : piece.kind === 'target' ? 'var(--gco-primary, #22e6c5)' : lineColor
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      style={{ display: 'block', pointerEvents: 'none' }}
+      aria-hidden
+    >
+      {dirs.includes('up') && (
+        <line x1={mid} y1={mid} x2={mid} y2={0} stroke={lineColor} strokeWidth={strokeWidth} strokeLinecap="round" />
+      )}
+      {dirs.includes('down') && (
+        <line x1={mid} y1={mid} x2={mid} y2={size} stroke={lineColor} strokeWidth={strokeWidth} strokeLinecap="round" />
+      )}
+      {dirs.includes('left') && (
+        <line x1={mid} y1={mid} x2={0} y2={mid} stroke={lineColor} strokeWidth={strokeWidth} strokeLinecap="round" />
+      )}
+      {dirs.includes('right') && (
+        <line x1={mid} y1={mid} x2={size} y2={mid} stroke={lineColor} strokeWidth={strokeWidth} strokeLinecap="round" />
+      )}
+      <circle cx={mid} cy={mid} r={Math.max(3, size * 0.12)} fill={nodeColor} />
+    </svg>
+  )
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CAMINO ÚNICO — Hamiltonian Path Puzzle
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function CaminoUnicoScreen({
+  level,
+  playMode,
+  isMobile,
+  playerSkin,
+  onChangeSkin,
+  onComplete,
+  onExit,
+}: {
+  level: number
+  playMode: PlayMode
+  isMobile: boolean
+  playerSkin: string
+  onChangeSkin: (s: string) => void
+  onComplete: (r: LevelResult) => void
+  onExit: () => void
+}) {
+  const [seedSalt, setSeedSalt] = useState(0)
+  const data = useMemo(
+    () => generatePathUniqueLevel(level, { seedSalt }),
+    [level, seedSalt]
+  )
+
+  const [player, setPlayer] = useState<MazeCoord>(data.start)
+  const [visited, setVisited] = useState<Set<number>>(() => pathUniqueInitialVisited(data))
+  const [moves, setMoves] = useState(0)
+  const [finished, setFinished] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const [failReason, setFailReason] = useState('')
+  const completedRef = useRef(false)
+  const playerRef = useRef(player)
+  const visitedRef = useRef(visited)
+  playerRef.current = player
+  visitedRef.current = visited
+
+  type Snap = { player: MazeCoord; visited: Set<number>; moves: number }
+  const historyRef = useRef<Snap[]>([])
+
+  const { elapsed, reset: resetTimer } = useGameTimer(!finished && !failed)
+
+  const softReset = useCallback(
+    (d: PathUniqueLevel) => {
+      setPlayer(d.start)
+      setVisited(pathUniqueInitialVisited(d))
+      setMoves(0)
+      setFinished(false)
+      setFailed(false)
+      setFailReason('')
+      completedRef.current = false
+      historyRef.current = []
+      resetTimer()
+    },
+    [resetTimer]
+  )
+
+  useEffect(() => {
+    softReset(data)
+  }, [data, softReset])
+
+  const enforceLimits = useCallback(
+    (timeMs: number): boolean => {
+      if (playMode === 'zen') return true
+      if (
+        playMode === 'contrarreloj' &&
+        data.targetSeconds > 0 &&
+        timeMs > data.targetSeconds * 1000
+      ) {
+        setFailed(true)
+        setFailReason('Se acabó el tiempo.')
+        return false
+      }
+      return true
+    },
+    [playMode, data.targetSeconds]
+  )
+
+  const handleMove = useCallback(
+    (dir: Direction) => {
+      if (finished || failed || completedRef.current) return
+      const curPlayer = playerRef.current
+      const curVisited = visitedRef.current
+      const res = pathUniqueStep(data, curVisited, curPlayer, dir)
+      if (!res.moved) return
+
+      historyRef.current.push({
+        player: curPlayer,
+        visited: new Set(curVisited),
+        moves,
+      })
+      if (historyRef.current.length > 200) historyRef.current.shift()
+
+      const nextMoves = moves + 1
+      setPlayer(res.player)
+      setVisited(res.visited)
+      setMoves(nextMoves)
+
+      if (pathUniqueIsComplete(data, res.player, res.visited)) {
+        setFinished(true)
+        return
+      }
+      enforceLimits(elapsed)
+    },
+    [data, finished, failed, moves, elapsed, enforceLimits]
+  )
+
+  useKeyboardDirection(handleMove, !finished && !failed)
+
+  useEffect(() => {
+    if (finished || failed || playMode !== 'contrarreloj') return
+    if (data.targetSeconds > 0 && elapsed > data.targetSeconds * 1000) {
+      setFailed(true)
+      setFailReason('Se acabó el tiempo.')
+    }
+  }, [elapsed, playMode, data.targetSeconds, finished, failed])
+
+  useEffect(() => {
+    if ((!finished && !failed) || completedRef.current) return
+    completedRef.current = true
+    const t = window.setTimeout(() => {
+      if (failed) {
+        onComplete({
+          stars: 0,
+          timeMs: elapsed,
+          moves,
+          failed: true,
+          reason: failReason,
+        })
+        return
+      }
+      const stars =
+        playMode === 'zen'
+          ? 1
+          : calcPathUniqueStars(moves, elapsed, data.targetSeconds, data.totalWalkable)
+      onComplete({ stars, timeMs: elapsed, moves })
+    }, 480)
+    return () => clearTimeout(t)
+  }, [finished, failed, elapsed, moves, data, playMode, failReason, onComplete])
+
+  const undo = () => {
+    const prev = historyRef.current.pop()
+    if (!prev) return
+    setPlayer(prev.player)
+    setVisited(prev.visited)
+    setMoves(prev.moves)
+  }
+
+  const cellPx = useMemo(() => {
+    if (isMobile) {
+      if (data.cols > 10) return 24
+      if (data.cols > 7) return 30
+      return 36
+    }
+    if (data.cols > 10) return 28
+    if (data.cols > 7) return 34
+    return 40
+  }, [data.cols, isMobile])
+
+  return (
+    <div>
+      <PlayToolbar
+        elapsed={elapsed}
+        playMode={playMode}
+        moves={moves}
+        moveLimit={0}
+        extra={
+          <StatBadge>
+            🧭 {visited.size}/{data.totalWalkable}
+          </StatBadge>
+        }
+        characterPicker={<CharacterPickerButton skin={playerSkin} onChange={onChangeSkin} />}
+        onUndo={undo}
+        canUndo={historyRef.current.length > 0 && !finished && !failed}
+        onRestart={() => setSeedSalt((s) => s + 1)}
+        onExit={onExit}
+      />
+      <GlassCard>
+        <div
+          style={{
+            padding: '0.85rem',
+            display: 'flex',
+            justifyContent: 'center',
+            overflow: 'auto',
+          }}
+        >
+          <div
+            role="grid"
+            aria-label="Camino Único"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${data.cols}, ${cellPx}px)`,
+              gridTemplateRows: `repeat(${data.rows}, ${cellPx}px)`,
+              gap: 1,
+            }}
+          >
+            {data.grid.map((row, r) =>
+              row.map((cellType, c) => {
+                const key = r * data.cols + c
+                const isPlayer = player.row === r && player.col === c
+                const isVisited = visited.has(key)
+                const isTarget = data.target.row === r && data.target.col === c
+
+                let bg =
+                  cellType === 'wall'
+                    ? 'var(--gco-glass-border)'
+                    : 'var(--gco-fill-quaternary, rgba(255,255,255,0.06))'
+                let content: ReactNode = null
+
+                if (cellType === 'floor') {
+                  if (isVisited) bg = 'rgba(34,230,197,0.22)'
+                  if (isTarget && !isPlayer) content = '🚩'
+                  if (isPlayer) content = playerSkin
+                }
+
+                return (
+                  <div
+                    key={key}
+                    role="gridcell"
+                    style={{
+                      width: cellPx,
+                      height: cellPx,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: bg,
+                      borderRadius: 3,
+                      fontSize: cellPx * 0.58,
+                      transition: 'background 0.15s ease',
+                    }}
+                  >
+                    {content}
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+      </GlassCard>
+      <div style={{ marginTop: '1.1rem' }}>
+        <DPad onPress={handleMove} />
+      </div>
       <HintPill text={data.goal} />
     </div>
   )

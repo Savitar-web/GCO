@@ -1363,10 +1363,10 @@ function placeMazeBoulders(
 /** Curva de dificultad del laberinto */
 export function getLaberintoDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const rooms = Math.min(4 + Math.floor(lv / 3), 14)
-  const braidRatio = Math.min(0.04 + lv * 0.012, 0.4)
-  const boulderCount = Math.min(1 + Math.floor(lv / 4), 8)
-  const fogRadius = lv >= 26 ? Math.max(2, 6 - Math.floor((lv - 26) / 10)) : 0
+  const rooms = Math.min(4 + Math.floor(lv / 2.2), 19)
+  const braidRatio = Math.min(0.04 + lv * 0.014, 0.46)
+  const boulderCount = Math.min(1 + Math.floor(lv / 3), 12)
+  const fogRadius = lv >= 22 ? Math.max(2, 6 - Math.floor((lv - 22) / 9)) : 0
   const moveLimit =
     lv <= 4 ? 0 : Math.round(rooms * rooms * 2.4 + boulderCount * 6)
   const targetSeconds = Math.max(
@@ -1601,6 +1601,10 @@ export const GEM_COLORS: CromaColorDef[] = [
   { id: 'violeta', hue: 265, label: 'Violeta' },
   { id: 'lima', hue: 95, label: 'Lima' },
   { id: 'coral', hue: 12, label: 'Coral' },
+  { id: 'azul', hue: 220, label: 'Azul' },
+  { id: 'fucsia', hue: 320, label: 'Fucsia' },
+  { id: 'oliva', hue: 70, label: 'Oliva' },
+  { id: 'turquesa', hue: 172, label: 'Turquesa' },
 ]
 
 export function gemHue(colorId: string): number {
@@ -1636,10 +1640,10 @@ export interface CromaLevel {
 
 export function getCromaDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const size = Math.min(5 + Math.floor(lv / 6), 9)
-  const gemCount = Math.min(2 + Math.floor(lv / 3), GEM_COLORS.length)
-  const obstacleCount = Math.min(Math.floor(lv / 2), Math.floor(size * size * 0.22))
-  const shuffleMoves = Math.min(10 + lv * 3, 220)
+  const size = Math.min(5 + Math.floor(lv / 4), 11)
+  const gemCount = Math.min(2 + Math.floor(lv / 2.4), GEM_COLORS.length)
+  const obstacleCount = Math.min(Math.floor(lv / 1.6), Math.floor(size * size * 0.3))
+  const shuffleMoves = Math.min(10 + lv * 4, 320)
   const moveLimit = Math.round(shuffleMoves * 1.9 + gemCount * 4)
   const targetSeconds = Math.max(18, Math.round(shuffleMoves * 0.9 + gemCount * 3))
   return { size, gemCount, obstacleCount, shuffleMoves, moveLimit, targetSeconds }
@@ -1781,6 +1785,9 @@ export type PaintShapeId =
   | 'corazon'
   | 'estrella'
   | 'reloj_arena'
+  | 'mosaico'
+  | 'anillo_grande'
+  | 'copo'
 
 /** Máscaras: '1' = celda activa de la figura, '0' = celda vacía (no se dibuja) */
 export const PAINT_SHAPES: Record<PaintShapeId, string[]> = {
@@ -1806,7 +1813,43 @@ export const PAINT_SHAPES: Record<PaintShapeId, string[]> = {
     '1000001',
   ],
   reloj_arena: ['1111111', '0111110', '0011100', '0001000', '0011100', '0111110', '1111111'],
+  mosaico: [
+    '111111111',
+    '111111111',
+    '111111111',
+    '111111111',
+    '111111111',
+    '111111111',
+    '111111111',
+    '111111111',
+    '111111111',
+  ],
+  anillo_grande: [
+    '111111111',
+    '100000001',
+    '101111101',
+    '101000101',
+    '101010101',
+    '101000101',
+    '101111101',
+    '100000001',
+    '111111111',
+  ],
+  copo: [
+    '000101000',
+    '000101000',
+    '100101001',
+    '010101010',
+    '111111111',
+    '010101010',
+    '100101001',
+    '000101000',
+    '000101000',
+  ],
 }
+
+const SMALL_SHAPE_ORDER: PaintShapeId[] = ['cuadro', 'cruz', 'diamante', 'anillo']
+const BIG_SHAPE_ORDER: PaintShapeId[] = ['corazon', 'estrella', 'reloj_arena', 'mosaico', 'anillo_grande', 'copo']
 
 const PAINT_SHAPE_ORDER: PaintShapeId[] = [
   'cuadro',
@@ -1827,6 +1870,14 @@ export const PAINT_PALETTE: CromaColorDef[] = [
   { id: 'p6', hue: 12, label: 'Coral' },
   { id: 'p7', hue: 220, label: 'Azul' },
   { id: 'p8', hue: 320, label: 'Fucsia' },
+  { id: 'p9', hue: 0, label: 'Rojo' },
+  { id: 'p10', hue: 60, label: 'Amarillo' },
+  { id: 'p11', hue: 150, label: 'Esmeralda' },
+  { id: 'p12', hue: 172, label: 'Turquesa' },
+  { id: 'p13', hue: 205, label: 'Celeste' },
+  { id: 'p14', hue: 285, label: 'Índigo' },
+  { id: 'p15', hue: 20, label: 'Naranja' },
+  { id: 'p16', hue: 300, label: 'Magenta' },
 ]
 
 export interface PaintCell {
@@ -1863,13 +1914,14 @@ function shapeActiveCells(mask: string[]): MazeCoord[] {
 
 export function getPintarDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const shape = PAINT_SHAPE_ORDER[(lv - 1) % PAINT_SHAPE_ORDER.length]
-  const colorCount = Math.min(2 + Math.floor(lv / 4), PAINT_PALETTE.length)
-  const obstructedRatio = Math.min(0.08 + lv * 0.012, 0.42)
-  const clearsNeeded = lv < 8 ? 1 : lv < 20 ? 2 : 3
+  const pool = lv <= 6 ? SMALL_SHAPE_ORDER : lv <= 14 ? PAINT_SHAPE_ORDER : BIG_SHAPE_ORDER
+  const shape = pool[(lv - 1) % pool.length]
+  const colorCount = Math.min(2 + Math.floor(lv / 2.2), PAINT_PALETTE.length)
+  const obstructedRatio = Math.min(0.08 + lv * 0.016, 0.5)
+  const clearsNeeded = lv < 8 ? 1 : lv < 18 ? 2 : lv < 30 ? 3 : 4
   const targetSeconds = Math.max(
     20,
-    Math.round(shapeActiveCells(PAINT_SHAPES[shape]).length * 2.2)
+    Math.round(shapeActiveCells(PAINT_SHAPES[shape]).length * 2.4)
   )
   return { shape, colorCount, obstructedRatio, clearsNeeded, targetSeconds }
 }
@@ -2050,11 +2102,12 @@ export function isIceSlideSolvable(level: IceSlideLevel): boolean {
 
 export function getIceSlideDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const size = Math.min(6 + Math.floor(lv / 4), 13)
-  const obstacleRatio = Math.min(0.06 + lv * 0.01, 0.28)
-  const moveLimit = Math.round(6 + lv * 0.8)
-  const targetSeconds = Math.max(15, Math.round(20 + lv * 2))
-  return { size, obstacleRatio, moveLimit, targetSeconds }
+  const size = Math.min(6 + Math.floor(lv / 3), 17)
+  const obstacleRatio = Math.min(0.06 + lv * 0.013, 0.34)
+  const moveLimit = Math.round(6 + lv * 0.9)
+  const targetSeconds = Math.max(15, Math.round(20 + lv * 2.2))
+  const minPathLength = Math.min(3 + Math.floor(lv / 2), 12)
+  return { size, obstacleRatio, moveLimit, targetSeconds, minPathLength }
 }
 
 export function generateIceSlideLevel(level: number, opts?: { seedSalt?: number }): IceSlideLevel {
@@ -2085,24 +2138,29 @@ export function generateIceSlideLevel(level: number, opts?: { seedSalt?: number 
     }
     const shuffled = shuffledArray(interior, rng)
     if (shuffled.length < 2) continue
-    const start = shuffled[0]
-    const target = shuffled[shuffled.length - 1]
-    grid[start.row][start.col] = 'floor'
-    grid[target.row][target.col] = 'goal'
-    const candidate: IceSlideLevel = {
-      level: lv,
-      rows,
-      cols,
-      grid,
-      start,
-      target,
-      moveLimit: d.moveLimit,
-      targetSeconds: d.targetSeconds,
-      goal: 'Deslízate sobre el hielo hasta llegar a la meta.',
-      seed,
+    const pairTries = Math.min(6, shuffled.length - 1)
+    for (let pt = 0; pt < pairTries; pt++) {
+      const start = shuffled[pt]
+      const target = shuffled[shuffled.length - 1 - pt]
+      if (start.row === target.row && start.col === target.col) continue
+      const trialGrid = grid.map((row) => row.slice())
+      trialGrid[start.row][start.col] = 'floor'
+      trialGrid[target.row][target.col] = 'goal'
+      const candidate: IceSlideLevel = {
+        level: lv,
+        rows,
+        cols,
+        grid: trialGrid,
+        start,
+        target,
+        moveLimit: d.moveLimit,
+        targetSeconds: d.targetSeconds,
+        goal: 'Deslízate sobre el hielo hasta llegar a la meta.',
+        seed,
+      }
+      const path = iceSlideBfs(candidate)
+      if (path && path.length >= d.minPathLength) return candidate
     }
-    const path = iceSlideBfs(candidate)
-    if (path && path.length >= 3) return candidate
   }
   const rows = 7
   const cols = 7
@@ -2236,11 +2294,12 @@ export function isSwitchLevelSolvable(level: SwitchLevel): boolean {
 
 export function getSwitchDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const size = Math.min(6 + Math.floor(lv / 4), 12)
-  const switchCount = Math.min(1 + Math.floor(lv / 6), 4)
-  const moveLimit = Math.round(size * size * 0.9 + switchCount * 10)
-  const targetSeconds = Math.max(20, Math.round(size * size * 1.1 + switchCount * 12))
-  return { size, switchCount, moveLimit, targetSeconds }
+  const size = Math.min(6 + Math.floor(lv / 3), 15)
+  const switchCount = Math.min(1 + Math.floor(lv / 4), 6)
+  const decoySwitches = lv >= 10 ? Math.min(Math.floor((lv - 10) / 5) + 1, 4) : 0
+  const moveLimit = Math.round(size * size * 0.95 + switchCount * 12 + decoySwitches * 8)
+  const targetSeconds = Math.max(20, Math.round(size * size * 1.15 + switchCount * 14 + decoySwitches * 10))
+  return { size, switchCount, decoySwitches, moveLimit, targetSeconds }
 }
 
 export function generateSwitchLevel(level: number, opts?: { seedSalt?: number }): SwitchLevel {
@@ -2291,6 +2350,17 @@ export function generateSwitchLevel(level: number, opts?: { seedSalt?: number })
       usedSwitchCells.add(pos.row * cols + pos.col)
       return { id: `sw${i}`, row: pos.row, col: pos.col, doorIds: [door.id] }
     })
+
+    for (let i = 0; i < d.decoySwitches; i++) {
+      const rightOptions = shuffledArray(rightCells, rng).filter(
+        (p) => !(p.row === target.row && p.col === target.col) && !usedSwitchCells.has(p.row * cols + p.col)
+      )
+      const pos = rightOptions[0]
+      if (!pos || doors.length === 0) continue
+      usedSwitchCells.add(pos.row * cols + pos.col)
+      const targetDoor = doors[Math.floor(rng() * doors.length)]
+      switches.push({ id: `decoy${i}`, row: pos.row, col: pos.col, doorIds: [targetDoor.id] })
+    }
 
     const candidate: SwitchLevel = {
       level: lv,
@@ -2424,10 +2494,10 @@ export function isTeleportLevelSolvable(level: TeleportLevel): boolean {
 
 export function getTeleportDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const size = Math.min(6 + Math.floor(lv / 4), 12)
-  const pairCount = Math.min(1 + Math.floor(lv / 5), 3)
-  const wallRatio = Math.min(0.08 + lv * 0.008, 0.22)
-  const moveLimit = Math.round(size * size * 0.7 + pairCount * 8)
+  const size = Math.min(6 + Math.floor(lv / 3), 15)
+  const pairCount = Math.min(1 + Math.floor(lv / 3.5), 5)
+  const wallRatio = Math.min(0.08 + lv * 0.011, 0.3)
+  const moveLimit = Math.round(size * size * 0.75 + pairCount * 9)
   const targetSeconds = Math.max(20, Math.round(size * size + pairCount * 10))
   return { size, pairCount, wallRatio, moveLimit, targetSeconds }
 }
@@ -2595,10 +2665,10 @@ function laserOrientationForBend(from: Direction, to: Direction): MirrorOrientat
 
 export function getLaserDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const size = Math.min(6 + Math.floor(lv / 5), 11)
-  const bendCount = Math.min(1 + Math.floor(lv / 4), 5)
+  const size = Math.min(6 + Math.floor(lv / 3.5), 13)
+  const bendCount = Math.min(1 + Math.floor(lv / 3), 7)
   const moveLimit = 0
-  const targetSeconds = Math.max(20, Math.round(20 + lv * 2))
+  const targetSeconds = Math.max(20, Math.round(20 + lv * 2.4))
   return { size, bendCount, moveLimit, targetSeconds }
 }
 
@@ -2829,110 +2899,206 @@ function rotationForCorner(d1: Direction, d2: Direction): 0 | 90 | 180 | 270 {
 
 export function getCircuitDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const size = Math.min(5 + Math.floor(lv / 5), 9)
+  const size = Math.min(5 + Math.floor(lv / 3), 13)
+  const bends = Math.min(1 + Math.floor(lv / 3), 8)
   const moveLimit = 0
-  const targetSeconds = Math.max(20, Math.round(15 + lv * 2))
-  return { size, moveLimit, targetSeconds }
+  const targetSeconds = Math.max(20, Math.round(15 + lv * 2.4))
+  return { size, bends, moveLimit, targetSeconds }
 }
 
 export function generateCircuitLevel(level: number, opts?: { seedSalt?: number }): CircuitLevel {
   const lv = Math.max(1, Math.floor(level))
   const d = getCircuitDifficulty(lv)
-  const seed = levelSeed(lv, 14100 + (opts?.seedSalt ?? 0))
-  const rng = mulberry32(seed)
-  const rows = d.size
-  const cols = d.size
+  const maxAttempts = 20
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const seed = levelSeed(lv, 14100 + (opts?.seedSalt ?? 0) + attempt * 823)
+    const rng = mulberry32(seed)
+    const rows = d.size
+    const cols = d.size
 
-  const source: MazeCoord = { row: Math.floor(rows / 2), col: 0 }
-  const rawTargetRow = Math.floor(rows / 2) + (rng() < 0.5 ? -1 : 1) * Math.min(2, Math.floor(rows / 3))
-  const clampedTarget: MazeCoord = {
-    row: Math.max(1, Math.min(rows - 2, rawTargetRow)),
-    col: cols - 1,
-  }
+    const source: MazeCoord = { row: Math.floor(rows / 2), col: 0 }
+    const occupied = new Set<number>([source.row * cols + source.col])
+    const path: MazeCoord[] = [source]
+    let cur = { ...source }
+    let curDir: Direction = 'right'
+    let ok = true
 
-  const path: MazeCoord[] = [source]
-  let cur = { ...source }
-  while (cur.col < cols - 1) {
-    cur = { row: cur.row, col: cur.col + 1 }
-    path.push(cur)
-  }
-  while (cur.row !== clampedTarget.row) {
-    cur = { row: cur.row + (clampedTarget.row > cur.row ? 1 : -1), col: cur.col }
-    path.push(cur)
-  }
-
-  const pieces: CircuitPiece[][] = Array.from({ length: rows }, (_, r) =>
-    Array.from({ length: cols }, (_, c) => ({ row: r, col: c, kind: 'empty' as CircuitPieceKind, rotation: 0 as const, fixed: true }))
-  )
-
-  for (let i = 0; i < path.length; i++) {
-    const cell = path[i]
-    const prev = path[i - 1]
-    const next = path[i + 1]
-    let kind: CircuitPieceKind = 'straight'
-    let rotation: 0 | 90 | 180 | 270 = 0
-    let fixed = false
-
-    if (i === 0) {
-      kind = 'source'
-      rotation = 0
-      fixed = true
-    } else if (i === path.length - 1) {
-      kind = 'target'
-      rotation = 0
-      fixed = true
-    } else {
-      const inDir = dirBetween(prev, cell)
-      const outDir = dirBetween(cell, next)
-      if (inDir === outDir) {
-        kind = 'straight'
-        rotation = inDir === 'left' || inDir === 'right' ? 90 : 0
-      } else {
-        kind = 'corner'
-        rotation = rotationForCorner(OPPOSITE[inDir], outDir)
+    for (let bend = 0; bend < d.bends && ok; bend++) {
+      const dirsAvail: Direction[] =
+        curDir === 'up' || curDir === 'down' ? ['left', 'right'] : ['up', 'down']
+      const candidates = shuffledArray(dirsAvail, rng)
+      let moved = false
+      for (const nextDir of candidates) {
+        const { dr, dc } = DIRECTION_DELTA[nextDir]
+        const steps = 1 + Math.floor(rng() * 2)
+        const trial: MazeCoord[] = []
+        let tr = cur.row
+        let tc = cur.col
+        let stepOk = true
+        for (let s = 0; s < steps; s++) {
+          tr += dr
+          tc += dc
+          if (tr <= 0 || tr >= rows - 1 || tc < 0 || tc >= cols - 1) {
+            stepOk = false
+            break
+          }
+          if (occupied.has(tr * cols + tc)) {
+            stepOk = false
+            break
+          }
+          trial.push({ row: tr, col: tc })
+        }
+        if (!stepOk || trial.length === 0) continue
+        for (const p of trial) {
+          occupied.add(p.row * cols + p.col)
+          path.push(p)
+        }
+        cur = trial[trial.length - 1]
+        curDir = nextDir
+        moved = true
+        break
+      }
+      if (!moved) {
+        const { dc } = DIRECTION_DELTA['right']
+        const tr = cur.row
+        const tc = cur.col + dc
+        if (tc >= cols - 1 || occupied.has(tr * cols + tc)) {
+          ok = false
+          break
+        }
+        occupied.add(tr * cols + tc)
+        path.push({ row: tr, col: tc })
+        cur = { row: tr, col: tc }
+        curDir = 'right'
       }
     }
-    pieces[cell.row][cell.col] = { row: cell.row, col: cell.col, kind, rotation, fixed }
+    if (!ok) continue
+
+    while (cur.col < cols - 1) {
+      const nr = cur.row
+      const nc = cur.col + 1
+      if (occupied.has(nr * cols + nc)) {
+        ok = false
+        break
+      }
+      occupied.add(nr * cols + nc)
+      path.push({ row: nr, col: nc })
+      cur = { row: nr, col: nc }
+      curDir = 'right'
+    }
+    if (!ok) continue
+
+    const target: MazeCoord = { ...cur }
+    if (path.length < 3) continue
+
+    const pieces: CircuitPiece[][] = Array.from({ length: rows }, (_, r) =>
+      Array.from({ length: cols }, (_, c) => ({
+        row: r,
+        col: c,
+        kind: 'empty' as CircuitPieceKind,
+        rotation: 0 as const,
+        fixed: true,
+      }))
+    )
+
+    for (let i = 0; i < path.length; i++) {
+      const cell = path[i]
+      const prev = path[i - 1]
+      const next = path[i + 1]
+      let kind: CircuitPieceKind = 'straight'
+      let rotation: 0 | 90 | 180 | 270 = 0
+      let fixed = false
+
+      if (i === 0) {
+        kind = 'source'
+        rotation = 0
+        fixed = true
+      } else if (i === path.length - 1) {
+        kind = 'target'
+        rotation = 0
+        fixed = true
+      } else {
+        const inDir = dirBetween(prev, cell)
+        const outDir = dirBetween(cell, next)
+        if (inDir === outDir) {
+          kind = 'straight'
+          rotation = inDir === 'left' || inDir === 'right' ? 90 : 0
+        } else {
+          kind = 'corner'
+          rotation = rotationForCorner(OPPOSITE[inDir], outDir)
+        }
+      }
+      pieces[cell.row][cell.col] = { row: cell.row, col: cell.col, kind, rotation, fixed }
+    }
+
+    const solved: CircuitLevel = {
+      level: lv,
+      rows,
+      cols,
+      pieces,
+      source,
+      target,
+      moveLimit: d.moveLimit,
+      targetSeconds: d.targetSeconds,
+      goal: 'Gira las piezas para conectar la fuente con el objetivo.',
+      seed,
+    }
+
+    let scrambledPieces = pieces.map((r) =>
+      r.map((p) =>
+        p.fixed || p.kind === 'empty'
+          ? p
+          : { ...p, rotation: ([0, 90, 180, 270] as const)[Math.floor(rng() * 4)] }
+      )
+    )
+    let scrambled: CircuitLevel = { ...solved, pieces: scrambledPieces }
+    if (isCircuitComplete(scrambled)) {
+      const rotatableCells: MazeCoord[] = []
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const p = scrambledPieces[r][c]
+          if (!p.fixed && p.kind !== 'empty') rotatableCells.push({ row: r, col: c })
+        }
+      }
+      if (rotatableCells.length > 0) {
+        const pick = rotatableCells[Math.floor(rng() * rotatableCells.length)]
+        scrambledPieces = scrambledPieces.map((row, r) =>
+          row.map((p, c) =>
+            r === pick.row && c === pick.col
+              ? { ...p, rotation: ((p.rotation + 90) % 360) as 0 | 90 | 180 | 270 }
+              : p
+          )
+        )
+        scrambled = { ...solved, pieces: scrambledPieces }
+      }
+    }
+    return scrambled
   }
 
-  const solved: CircuitLevel = {
+  const rows = 7
+  const cols = 7
+  const source: MazeCoord = { row: 3, col: 0 }
+  const target: MazeCoord = { row: 3, col: cols - 1 }
+  const pieces: CircuitPiece[][] = Array.from({ length: rows }, (_, r) =>
+    Array.from({ length: cols }, (_, c) => {
+      if (r === 3 && c === 0) return { row: r, col: c, kind: 'source' as CircuitPieceKind, rotation: 0 as const, fixed: true }
+      if (r === 3 && c === cols - 1) return { row: r, col: c, kind: 'target' as CircuitPieceKind, rotation: 0 as const, fixed: true }
+      if (r === 3) return { row: r, col: c, kind: 'straight' as CircuitPieceKind, rotation: 90 as const, fixed: false }
+      return { row: r, col: c, kind: 'empty' as CircuitPieceKind, rotation: 0 as const, fixed: true }
+    })
+  )
+  return {
     level: lv,
     rows,
     cols,
     pieces,
     source,
-    target: clampedTarget,
-    moveLimit: d.moveLimit,
-    targetSeconds: d.targetSeconds,
+    target,
+    moveLimit: 0,
+    targetSeconds: 60,
     goal: 'Gira las piezas para conectar la fuente con el objetivo.',
-    seed,
+    seed: levelSeed(lv, 14999),
   }
-
-  let scrambledPieces = pieces.map((r) =>
-    r.map((p) => (p.fixed || p.kind === 'empty' ? p : { ...p, rotation: ([0, 90, 180, 270] as const)[Math.floor(rng() * 4)] }))
-  )
-  let scrambled: CircuitLevel = { ...solved, pieces: scrambledPieces }
-  if (isCircuitComplete(scrambled)) {
-    const rotatableCells: MazeCoord[] = []
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const p = scrambledPieces[r][c]
-        if (!p.fixed && p.kind !== 'empty') rotatableCells.push({ row: r, col: c })
-      }
-    }
-    if (rotatableCells.length > 0) {
-      const pick = rotatableCells[Math.floor(rng() * rotatableCells.length)]
-      scrambledPieces = scrambledPieces.map((row, r) =>
-        row.map((p, c) =>
-          r === pick.row && c === pick.col
-            ? { ...p, rotation: ((p.rotation + 90) % 360) as 0 | 90 | 180 | 270 }
-            : p
-        )
-      )
-      scrambled = { ...solved, pieces: scrambledPieces }
-    }
-  }
-  return scrambled
 }
 
 export function calcCircuitStars(timeMs: number, targetSeconds: number, rotations: number, pieceCount: number): 0 | 1 | 2 | 3 {
@@ -2940,5 +3106,224 @@ export function calcCircuitStars(timeMs: number, targetSeconds: number, rotation
   let stars: 0 | 1 | 2 | 3 = 1
   if (targetSeconds > 0 && timeMs <= targetSeconds * 1000) stars = 2
   if (stars >= 2 && rotations <= pieceCount * 2) stars = 3
+  return stars
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   5) Personaje — piel/género configurable durante la partida
+   ═══════════════════════════════════════════════════════════════════════════
+ */
+
+export const PLAYER_SKINS: string[] = [
+  '🧑',
+  '👨',
+  '👩',
+  '👨🏻',
+  '👨🏼',
+  '👨🏽',
+  '👨🏾',
+  '👨🏿',
+  '👩🏻',
+  '👩🏼',
+  '👩🏽',
+  '👩🏾',
+  '👩🏿',
+]
+
+const PLAYER_SKIN_KEY = 'gco:despejes-player-skin'
+
+export function loadPlayerSkin(): string {
+  try {
+    const raw = localStorage.getItem(PLAYER_SKIN_KEY)
+    if (raw && PLAYER_SKINS.includes(raw)) return raw
+  } catch {
+    /* localStorage no disponible: se usa el valor por defecto */
+  }
+  return PLAYER_SKINS[0]
+}
+
+export function savePlayerSkin(skin: string): void {
+  try {
+    if (PLAYER_SKINS.includes(skin)) localStorage.setItem(PLAYER_SKIN_KEY, skin)
+  } catch {
+    /* se ignora: la selección queda solo en memoria para esta sesión */
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   6) CAMINO ÚNICO — Hamiltonian Path Puzzle
+   ═══════════════════════════════════════════════════════════════════════════
+ *
+ * El jugador debe recorrer cada casilla transitable exactamente una vez y
+ * terminar en la meta. El generador construye directamente una ruta que
+ * cubre el tablero completo (variantes de recorrido en zigzag / serpiente
+ * sembradas por semilla), lo que garantiza matemáticamente que el nivel
+ * siempre tiene solución sin depender de reintentos aleatorios.
+ */
+
+export type PathUniqueCellType = 'wall' | 'floor'
+
+export interface PathUniqueLevel {
+  level: number
+  rows: number
+  cols: number
+  grid: PathUniqueCellType[][]
+  start: MazeCoord
+  target: MazeCoord
+  totalWalkable: number
+  moveLimit: number
+  targetSeconds: number
+  goal: string
+  seed: number
+}
+
+export function getPathUniqueDifficulty(level: number) {
+  const lv = Math.max(1, Math.floor(level))
+  const base =
+    lv <= 2 ? 3 : lv <= 5 ? 4 : lv <= 9 ? 5 : lv <= 14 ? 6 : lv <= 20 ? 7 : lv <= 27 ? 8 : lv <= 35 ? 9 : 10
+  const rows = Math.min(base, 11)
+  const cols = Math.min(base + (lv % 2 === 0 ? 1 : 0), 12)
+  const moveLimit = 0
+  const targetSeconds = Math.max(15, Math.round(rows * cols * 1.7))
+  return { rows, cols, moveLimit, targetSeconds }
+}
+
+function buildSnakePath(rows: number, cols: number, rowMajor: boolean, reverseAlt: boolean, reverseMain: boolean): MazeCoord[] {
+  const path: MazeCoord[] = []
+  if (rowMajor) {
+    for (let r = 0; r < rows; r++) {
+      const flip = r % 2 === 0 !== reverseAlt
+      if (flip) {
+        for (let c = 0; c < cols; c++) path.push({ row: r, col: c })
+      } else {
+        for (let c = cols - 1; c >= 0; c--) path.push({ row: r, col: c })
+      }
+    }
+  } else {
+    for (let c = 0; c < cols; c++) {
+      const flip = c % 2 === 0 !== reverseAlt
+      if (flip) {
+        for (let r = 0; r < rows; r++) path.push({ row: r, col: c })
+      } else {
+        for (let r = rows - 1; r >= 0; r--) path.push({ row: r, col: c })
+      }
+    }
+  }
+  return reverseMain ? path.slice().reverse() : path
+}
+
+/**
+ * Verificador genérico de solvencia (búsqueda con backtracking acotada).
+ * No se usa en la generación normal -porque la construcción ya garantiza
+ * una solución- pero queda disponible como validación matemática real,
+ * tal como en el resto de los generadores del motor.
+ */
+export function isPathUniqueSolvable(level: PathUniqueLevel, maxNodes = 300000): boolean {
+  const rows = level.rows
+  const cols = level.cols
+  const total = level.totalWalkable
+  const visited: boolean[][] = Array.from({ length: rows }, () => Array<boolean>(cols).fill(false))
+  let nodes = 0
+  const dirs: [number, number][] = [
+    [0, 1],
+    [0, -1],
+    [1, 0],
+    [-1, 0],
+  ]
+  function dfs(r: number, c: number, count: number): boolean {
+    nodes++
+    if (nodes > maxNodes) return false
+    if (count === total) return r === level.target.row && c === level.target.col
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr
+      const nc = c + dc
+      if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue
+      if (level.grid[nr][nc] === 'wall') continue
+      if (visited[nr][nc]) continue
+      visited[nr][nc] = true
+      if (dfs(nr, nc, count + 1)) return true
+      visited[nr][nc] = false
+    }
+    return false
+  }
+  visited[level.start.row][level.start.col] = true
+  return dfs(level.start.row, level.start.col, 1)
+}
+
+export function generatePathUniqueLevel(level: number, opts?: { seedSalt?: number }): PathUniqueLevel {
+  const lv = Math.max(1, Math.floor(level))
+  const seed = levelSeed(lv, 16100 + (opts?.seedSalt ?? 0))
+  const rng = mulberry32(seed)
+  const d = getPathUniqueDifficulty(lv)
+  const rows = d.rows
+  const cols = d.cols
+
+  const rowMajor = rng() < 0.5
+  const reverseAlt = rng() < 0.5
+  const reverseMain = rng() < 0.5
+  const finalPath = buildSnakePath(rows, cols, rowMajor, reverseAlt, reverseMain)
+
+  const grid: PathUniqueCellType[][] = Array.from({ length: rows }, () => Array<PathUniqueCellType>(cols).fill('floor'))
+  const start = finalPath[0]
+  const target = finalPath[finalPath.length - 1]
+
+  return {
+    level: lv,
+    rows,
+    cols,
+    grid,
+    start,
+    target,
+    totalWalkable: rows * cols,
+    moveLimit: d.moveLimit,
+    targetSeconds: d.targetSeconds,
+    goal: 'Recorre cada casilla una sola vez y termina en la meta.',
+    seed,
+  }
+}
+
+export function pathUniqueStep(
+  level: PathUniqueLevel,
+  visited: Set<number>,
+  player: MazeCoord,
+  dir: Direction
+): { player: MazeCoord; visited: Set<number>; moved: boolean } {
+  const { dr, dc } = DIRECTION_DELTA[dir]
+  const nr = player.row + dr
+  const nc = player.col + dc
+  const noMove = { player, visited, moved: false }
+  if (nr < 0 || nr >= level.rows || nc < 0 || nc >= level.cols) return noMove
+  if (level.grid[nr][nc] === 'wall') return noMove
+  const key = nr * level.cols + nc
+  if (visited.has(key)) return noMove
+  const isTarget = nr === level.target.row && nc === level.target.col
+  if (isTarget && visited.size < level.totalWalkable - 1) return noMove
+  const nextVisited = new Set(visited)
+  nextVisited.add(key)
+  return { player: { row: nr, col: nc }, visited: nextVisited, moved: true }
+}
+
+export function pathUniqueInitialVisited(level: PathUniqueLevel): Set<number> {
+  return new Set<number>([level.start.row * level.cols + level.start.col])
+}
+
+export function pathUniqueIsComplete(level: PathUniqueLevel, player: MazeCoord, visited: Set<number>): boolean {
+  return (
+    player.row === level.target.row &&
+    player.col === level.target.col &&
+    visited.size === level.totalWalkable
+  )
+}
+
+export function calcPathUniqueStars(
+  moves: number,
+  timeMs: number,
+  targetSeconds: number,
+  totalWalkable: number
+): 0 | 1 | 2 | 3 {
+  if (moves <= 0) return 0
+  let stars: 0 | 1 | 2 | 3 = 1
+  if (targetSeconds > 0 && timeMs <= targetSeconds * 1000) stars = 2
+  if (stars >= 2 && moves <= totalWalkable * 1.05) stars = 3
   return stars
 }

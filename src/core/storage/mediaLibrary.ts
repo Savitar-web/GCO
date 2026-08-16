@@ -1,4 +1,8 @@
-/** Biblioteca de audiolibros (texto) y música (blobs) en IndexedDB */
+/** Biblioteca de audiolibros (texto) y música (blobs) en IndexedDB
+ * Compatibilidad: Chrome/Edge/Firefox/Safari modernos y antiguos,
+ * Android WebView, iOS Safari, Windows LTSC, macOS, Linux.
+ * No modifica la lógica de pistas/música más allá de defensas de IDB.
+ */
 
 const DB_NAME = 'gco-media-library'
 const DB_VERSION = 2
@@ -52,6 +56,8 @@ export interface ReaderAppearance {
   brightness: number
   autoAdvance: boolean
   pageAnim: boolean
+  /** vertical continuo | horizontal paginado (máx. 4 párrafos/hoja) */
+  layout?: 'vertical' | 'horizontal'
 }
 
 export interface BookItem {
@@ -68,13 +74,9 @@ export interface BookItem {
   highlightColor?: string
   spokenColor?: string
   lang?: string
-  /** Capítulos detectados o creados a mano */
   chapters?: ChapterMark[]
-  /** Marcadores / separadores ilimitados */
   bookmarks?: Bookmark[]
-  /** Comentarios por párrafo */
   comments?: ParagraphComment[]
-  /** Preferencias de apariencia del lector */
   appearance?: ReaderAppearance
   updatedAt: string
   createdAt: string
@@ -110,27 +112,38 @@ function uid() {
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION)
-    req.onupgradeneeded = () => {
-      const db = req.result
-      if (!db.objectStoreNames.contains(STORE_BOOKS)) {
-        db.createObjectStore(STORE_BOOKS, { keyPath: 'id' })
-      }
-      if (!db.objectStoreNames.contains(STORE_TRACKS)) {
-        db.createObjectStore(STORE_TRACKS, { keyPath: 'id' })
-      }
-      if (!db.objectStoreNames.contains(STORE_PLAYLISTS)) {
-        db.createObjectStore(STORE_PLAYLISTS, { keyPath: 'id' })
-      }
-      if (!db.objectStoreNames.contains(STORE_BLOBS)) {
-        db.createObjectStore(STORE_BLOBS)
-      }
-      if (!db.objectStoreNames.contains(STORE_FOLDERS)) {
-        db.createObjectStore(STORE_FOLDERS, { keyPath: 'id' })
-      }
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('IndexedDB no disponible (modo privado o navegador antiguo)'))
+      return
     }
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
+    try {
+      const req = indexedDB.open(DB_NAME, DB_VERSION)
+      req.onupgradeneeded = () => {
+        const db = req.result
+        if (!db.objectStoreNames.contains(STORE_BOOKS)) {
+          db.createObjectStore(STORE_BOOKS, { keyPath: 'id' })
+        }
+        if (!db.objectStoreNames.contains(STORE_TRACKS)) {
+          db.createObjectStore(STORE_TRACKS, { keyPath: 'id' })
+        }
+        if (!db.objectStoreNames.contains(STORE_PLAYLISTS)) {
+          db.createObjectStore(STORE_PLAYLISTS, { keyPath: 'id' })
+        }
+        if (!db.objectStoreNames.contains(STORE_BLOBS)) {
+          db.createObjectStore(STORE_BLOBS)
+        }
+        if (!db.objectStoreNames.contains(STORE_FOLDERS)) {
+          db.createObjectStore(STORE_FOLDERS, { keyPath: 'id' })
+        }
+      }
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error || new Error('IDB open error'))
+      req.onblocked = () => {
+        /* otra pestaña mantiene versión antigua; el caller puede reintentar */
+      }
+    } catch (e) {
+      reject(e)
+    }
   })
 }
 
@@ -143,29 +156,39 @@ function txDone(tx: IDBTransaction) {
 }
 
 function emit() {
-  window.dispatchEvent(new CustomEvent('gco:library'))
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('gco:library'))
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 /* ───────────────────────── Folders ───────────────────────── */
 
 export async function listFolders(): Promise<BookFolder[]> {
-  const db = await openDb()
-  return new Promise((resolve, reject) => {
-    if (!db.objectStoreNames.contains(STORE_FOLDERS)) {
-      resolve([])
-      return
-    }
-    const req = db
-      .transaction(STORE_FOLDERS, 'readonly')
-      .objectStore(STORE_FOLDERS)
-      .getAll()
-    req.onsuccess = () => {
-      const rows = (req.result as BookFolder[]) ?? []
-      rows.sort((a, b) => a.name.localeCompare(b.name, 'es'))
-      resolve(rows)
-    }
-    req.onerror = () => reject(req.error)
-  })
+  try {
+    const db = await openDb()
+    return new Promise((resolve, reject) => {
+      if (!db.objectStoreNames.contains(STORE_FOLDERS)) {
+        resolve([])
+        return
+      }
+      const req = db
+        .transaction(STORE_FOLDERS, 'readonly')
+        .objectStore(STORE_FOLDERS)
+        .getAll()
+      req.onsuccess = () => {
+        const rows = (req.result as BookFolder[]) ?? []
+        rows.sort((a, b) => a.name.localeCompare(b.name, 'es'))
+        resolve(rows)
+      }
+      req.onerror = () => reject(req.error)
+    })
+  } catch {
+    return []
+  }
 }
 
 export async function saveFolder(f: BookFolder) {
@@ -219,31 +242,39 @@ export async function deleteFolder(id: string) {
 /* ───────────────────────── Books ───────────────────────── */
 
 export async function listBooks(): Promise<BookItem[]> {
-  const db = await openDb()
-  return new Promise((resolve, reject) => {
-    const req = db
-      .transaction(STORE_BOOKS, 'readonly')
-      .objectStore(STORE_BOOKS)
-      .getAll()
-    req.onsuccess = () => {
-      const rows = (req.result as BookItem[]) ?? []
-      rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-      resolve(rows)
-    }
-    req.onerror = () => reject(req.error)
-  })
+  try {
+    const db = await openDb()
+    return new Promise((resolve, reject) => {
+      const req = db
+        .transaction(STORE_BOOKS, 'readonly')
+        .objectStore(STORE_BOOKS)
+        .getAll()
+      req.onsuccess = () => {
+        const rows = (req.result as BookItem[]) ?? []
+        rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+        resolve(rows)
+      }
+      req.onerror = () => reject(req.error)
+    })
+  } catch {
+    return []
+  }
 }
 
 export async function getBook(id: string): Promise<BookItem | null> {
-  const db = await openDb()
-  return new Promise((resolve, reject) => {
-    const req = db
-      .transaction(STORE_BOOKS, 'readonly')
-      .objectStore(STORE_BOOKS)
-      .get(id)
-    req.onsuccess = () => resolve((req.result as BookItem) ?? null)
-    req.onerror = () => reject(req.error)
-  })
+  try {
+    const db = await openDb()
+    return new Promise((resolve, reject) => {
+      const req = db
+        .transaction(STORE_BOOKS, 'readonly')
+        .objectStore(STORE_BOOKS)
+        .get(id)
+      req.onsuccess = () => resolve((req.result as BookItem) ?? null)
+      req.onerror = () => reject(req.error)
+    })
+  } catch {
+    return null
+  }
 }
 
 export async function saveBook(
@@ -280,7 +311,6 @@ export async function saveBook(
         : existing?.spokenColor,
     lang: input.lang !== undefined ? input.lang : existing?.lang,
 
-    // ── extras del lector ──
     chapters:
       input.chapters !== undefined ? input.chapters : existing?.chapters,
     bookmarks:
@@ -361,63 +391,85 @@ export async function deleteBook(id: string) {
   emit()
 }
 
-/* ───────────────────────── Tracks ───────────────────────── */
+/* ───────────────────────── Tracks (sin cambios de lógica musical) ───────────────────────── */
 
 export async function listTracks(): Promise<TrackItem[]> {
-  const db = await openDb()
-  return new Promise((resolve, reject) => {
-    const req = db
-      .transaction(STORE_TRACKS, 'readonly')
-      .objectStore(STORE_TRACKS)
-      .getAll()
-    req.onsuccess = () => {
-      const rows = (req.result as TrackItem[]) ?? []
-      rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      resolve(rows)
-    }
-    req.onerror = () => reject(req.error)
-  })
+  try {
+    const db = await openDb()
+    return new Promise((resolve, reject) => {
+      const req = db
+        .transaction(STORE_TRACKS, 'readonly')
+        .objectStore(STORE_TRACKS)
+        .getAll()
+      req.onsuccess = () => {
+        const rows = (req.result as TrackItem[]) ?? []
+        rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        resolve(rows)
+      }
+      req.onerror = () => reject(req.error)
+    })
+  } catch {
+    return []
+  }
 }
 
 export async function getTrack(id: string): Promise<TrackItem | null> {
-  const db = await openDb()
-  return new Promise((resolve, reject) => {
-    const req = db
-      .transaction(STORE_TRACKS, 'readonly')
-      .objectStore(STORE_TRACKS)
-      .get(id)
-    req.onsuccess = () => resolve((req.result as TrackItem) ?? null)
-    req.onerror = () => reject(req.error)
-  })
+  try {
+    const db = await openDb()
+    return new Promise((resolve, reject) => {
+      const req = db
+        .transaction(STORE_TRACKS, 'readonly')
+        .objectStore(STORE_TRACKS)
+        .get(id)
+      req.onsuccess = () => resolve((req.result as TrackItem) ?? null)
+      req.onerror = () => reject(req.error)
+    })
+  } catch {
+    return null
+  }
 }
 
 export async function getTrackBlob(blobKey: string): Promise<Blob | null> {
-  const db = await openDb()
-  return new Promise((resolve, reject) => {
-    const req = db
-      .transaction(STORE_BLOBS, 'readonly')
-      .objectStore(STORE_BLOBS)
-      .get(blobKey)
-    req.onsuccess = () => resolve((req.result as Blob) ?? null)
-    req.onerror = () => reject(req.error)
-  })
+  try {
+    const db = await openDb()
+    return new Promise((resolve, reject) => {
+      const req = db
+        .transaction(STORE_BLOBS, 'readonly')
+        .objectStore(STORE_BLOBS)
+        .get(blobKey)
+      req.onsuccess = () => resolve((req.result as Blob) ?? null)
+      req.onerror = () => reject(req.error)
+    })
+  } catch {
+    return null
+  }
 }
 
 function measureDuration(file: File): Promise<number> {
   return new Promise((resolve) => {
-    const url = URL.createObjectURL(file)
-    const audio = new Audio()
-    audio.preload = 'metadata'
-    audio.onloadedmetadata = () => {
-      const d = Number.isFinite(audio.duration) ? audio.duration * 1000 : 0
-      URL.revokeObjectURL(url)
-      resolve(Math.round(d))
-    }
-    audio.onerror = () => {
-      URL.revokeObjectURL(url)
+    try {
+      const url = URL.createObjectURL(file)
+      const audio = new Audio()
+      audio.preload = 'metadata'
+      const done = (ms: number) => {
+        try {
+          URL.revokeObjectURL(url)
+        } catch {
+          /* */
+        }
+        resolve(Math.round(ms))
+      }
+      audio.onloadedmetadata = () => {
+        const d = Number.isFinite(audio.duration) ? audio.duration * 1000 : 0
+        done(d)
+      }
+      audio.onerror = () => done(0)
+      // timeout de seguridad (Android/WebView lentos)
+      setTimeout(() => done(0), 8000)
+      audio.src = url
+    } catch {
       resolve(0)
     }
-    audio.src = url
   })
 }
 
@@ -503,19 +555,23 @@ export async function deleteTrack(id: string) {
 /* ───────────────────────── Playlists ───────────────────────── */
 
 export async function listPlaylists(): Promise<Playlist[]> {
-  const db = await openDb()
-  return new Promise((resolve, reject) => {
-    const req = db
-      .transaction(STORE_PLAYLISTS, 'readonly')
-      .objectStore(STORE_PLAYLISTS)
-      .getAll()
-    req.onsuccess = () => {
-      const rows = (req.result as Playlist[]) ?? []
-      rows.sort((a, b) => a.name.localeCompare(b.name, 'es'))
-      resolve(rows)
-    }
-    req.onerror = () => reject(req.error)
-  })
+  try {
+    const db = await openDb()
+    return new Promise((resolve, reject) => {
+      const req = db
+        .transaction(STORE_PLAYLISTS, 'readonly')
+        .objectStore(STORE_PLAYLISTS)
+        .getAll()
+      req.onsuccess = () => {
+        const rows = (req.result as Playlist[]) ?? []
+        rows.sort((a, b) => a.name.localeCompare(b.name, 'es'))
+        resolve(rows)
+      }
+      req.onerror = () => reject(req.error)
+    })
+  } catch {
+    return []
+  }
 }
 
 export async function savePlaylist(pl: Playlist) {

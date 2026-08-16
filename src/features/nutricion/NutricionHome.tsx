@@ -18,8 +18,6 @@ import { extractTextFromFile } from '@/core/storage/textExtract'
 import { soundClick, soundSuccess, soundFail } from '@/core/audio/uiSounds'
 import { useReaderPlayer } from '@/core/reader/ReaderPlayerContext.tsx'
 
-/* ───────────────────────── Iconos ───────────────────────── */
-
 function IconHeadphones() {
   return (
     <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -160,8 +158,6 @@ function IconChevronRight() {
   )
 }
 
-/* ───────────────────────── Navegación ───────────────────────── */
-
 type NavId = 'inicio' | 'biblioteca' | 'listas' | 'reproduciendo' | 'importar' | 'mas' | 'buscar'
 type SortOrder = 'recientes' | 'titulo' | 'autor'
 type GridDensity = 'comoda' | 'compacta'
@@ -186,6 +182,24 @@ function fileToDataUrl(file: File): Promise<string> {
   })
 }
 
+function readImageSize(src: string): Promise<{ w: number; h: number }> {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image()
+      img.onload = () => resolve({ w: img.naturalWidth || 0, h: img.naturalHeight || 0 })
+      img.onerror = () => resolve({ w: 0, h: 0 })
+      img.src = src
+    } catch {
+      resolve({ w: 0, h: 0 })
+    }
+  })
+}
+
+function imageMarkdown(name: string, dataUrl: string, widthPx?: number, align: 'left' | 'center' | 'right' = 'center') {
+  const w = widthPx && widthPx > 0 ? Math.min(widthPx, 640) : 640
+  return `![${name}](${dataUrl}){width=${w}px align=${align}}`
+}
+
 function AppSwitcher({ current }: { current: AppId }) {
   const navigate = useNavigate()
   return (
@@ -206,8 +220,6 @@ function AppSwitcher({ current }: { current: AppId }) {
     </div>
   )
 }
-
-/* ───────────────────────── Componente principal ───────────────────────── */
 
 export function NutricionHome() {
   const navigate = useNavigate()
@@ -242,8 +254,13 @@ export function NutricionHome() {
   useEffect(() => localStorage.setItem(LS_VOLUME, String(volumeBoost)), [volumeBoost])
 
   const refresh = async () => {
-    setBooks(await listBooks())
-    setFolders(await listFolders())
+    try {
+      setBooks(await listBooks())
+      setFolders(await listFolders())
+    } catch {
+      setBooks([])
+      setFolders([])
+    }
   }
 
   useEffect(() => {
@@ -272,7 +289,7 @@ export function NutricionHome() {
     const arr = [...filtered]
     if (sortOrder === 'titulo') arr.sort((a, b) => a.title.localeCompare(b.title, 'es'))
     else if (sortOrder === 'autor') arr.sort((a, b) => (a.author || '').localeCompare(b.author || '', 'es'))
-    return arr // 'recientes' respeta el orden que ya entrega listBooks()
+    return arr
   }, [filtered, sortOrder])
 
   const byFolder = (id: string | null) => sorted.filter((b) => b.folderId === id)
@@ -302,7 +319,6 @@ export function NutricionHome() {
     }
   }
 
-  // Atajo de teclado para buscar en escritorio (el header ya no tiene botón de lupa)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -314,7 +330,6 @@ export function NutricionHome() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // Carrusel "Continuar": paginación con flechas (escritorio) y puntos (móvil)
   const continueScrollRef = useRef<HTMLDivElement>(null)
   const [continueIndex, setContinueIndex] = useState(0)
 
@@ -350,8 +365,7 @@ export function NutricionHome() {
   ]
 
   return (
-    <div className="app-layout">
-      {/* ───── Sidebar (desktop) ───── */}
+    <div className="app-layout nutricion-layout">
       <aside className="app-sidebar">
         {NAV_ITEMS.map((item) => (
           <button
@@ -372,8 +386,8 @@ export function NutricionHome() {
       </aside>
 
       <div className="app-main">
-        <div className="app-shell app-shell-pro">
-          <header style={{ marginBottom: '1.25rem' }}>
+        <div className="app-shell app-shell-pro nutricion-shell">
+          <header className="nutricion-header" style={{ marginBottom: '1.25rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.65rem' }}>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <h1 style={{ fontSize: 'clamp(1.35rem, 4.5vw, 1.85rem)', lineHeight: 1.2 }}>🍎 Nutrición</h1>
@@ -422,27 +436,16 @@ export function NutricionHome() {
             )}
           </header>
 
-          {/* ───── Continuar ───── */}
           {continuing.length > 0 && !query && (
             <section style={{ marginBottom: '1.6rem' }}>
               <div className="folder-row-header" style={{ marginTop: 0 }}>
                 <h2 style={{ fontSize: '1rem' }}>Continuar</h2>
                 {continuing.length > 1 && (
                   <div className="hscroll-nav">
-                    <button
-                      type="button"
-                      className="hscroll-nav-btn"
-                      aria-label="Anterior"
-                      onClick={() => scrollContinueBy(-1)}
-                    >
+                    <button type="button" className="hscroll-nav-btn" aria-label="Anterior" onClick={() => scrollContinueBy(-1)}>
                       <IconChevronLeft />
                     </button>
-                    <button
-                      type="button"
-                      className="hscroll-nav-btn"
-                      aria-label="Siguiente"
-                      onClick={() => scrollContinueBy(1)}
-                    >
+                    <button type="button" className="hscroll-nav-btn" aria-label="Siguiente" onClick={() => scrollContinueBy(1)}>
                       <IconChevronRight />
                     </button>
                   </div>
@@ -523,7 +526,6 @@ export function NutricionHome() {
             </section>
           )}
 
-          {/* ───── Añadir carpeta ───── */}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: '1.4rem' }}>
             <button
               type="button"
@@ -540,7 +542,6 @@ export function NutricionHome() {
             </button>
           </div>
 
-          {/* ───── Carpetas ───── */}
           {folders.map((f) => {
             const items = byFolder(f.id)
             if (query && items.length === 0) return null
@@ -624,35 +625,35 @@ export function NutricionHome() {
                       )}
                     </div>
                   ) : (
-                  <div className="hscroll">
-                    {items.map((b) => (
-                      <BookCard
-                        key={b.id}
-                        book={b}
-                        variant="shelf"
-                        menuOpen={menuFor === b.id}
-                        onOpen={() => openBook(b)}
-                        onMenuToggle={() => setMenuFor(menuFor === b.id ? null : b.id)}
-                        onEdit={() => {
-                          setMenuFor(null)
-                          setEditingBook(b)
-                        }}
-                        onDelete={() => {
-                          setMenuFor(null)
-                          soundClick()
-                          void deleteBook(b.id).then(refresh)
-                        }}
-                        folders={folders}
-                        onMove={(fid) => {
-                          setMenuFor(null)
-                          void moveBookToFolder(b.id, fid).then(refresh)
-                        }}
-                      />
-                    ))}
-                    {items.length === 0 && (
-                      <p style={{ color: 'var(--gco-ink-faint)', fontSize: '0.85rem' }}>Carpeta vacía.</p>
-                    )}
-                  </div>
+                    <div className="hscroll">
+                      {items.map((b) => (
+                        <BookCard
+                          key={b.id}
+                          book={b}
+                          variant="shelf"
+                          menuOpen={menuFor === b.id}
+                          onOpen={() => openBook(b)}
+                          onMenuToggle={() => setMenuFor(menuFor === b.id ? null : b.id)}
+                          onEdit={() => {
+                            setMenuFor(null)
+                            setEditingBook(b)
+                          }}
+                          onDelete={() => {
+                            setMenuFor(null)
+                            soundClick()
+                            void deleteBook(b.id).then(refresh)
+                          }}
+                          folders={folders}
+                          onMove={(fid) => {
+                            setMenuFor(null)
+                            void moveBookToFolder(b.id, fid).then(refresh)
+                          }}
+                        />
+                      ))}
+                      {items.length === 0 && (
+                        <p style={{ color: 'var(--gco-ink-faint)', fontSize: '0.85rem' }}>Carpeta vacía.</p>
+                      )}
+                    </div>
                   )
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -671,7 +672,6 @@ export function NutricionHome() {
             )
           })}
 
-          {/* ───── Sin carpeta ───── */}
           <section style={{ marginBottom: '2rem' }}>
             <div className="folder-row-header">
               <h3 style={{ fontSize: '1rem' }}>
@@ -730,7 +730,6 @@ export function NutricionHome() {
         </div>
       </div>
 
-      {/* ───── Bottom nav (móvil) ───── */}
       <nav className="bottom-nav" aria-label="Navegación">
         {MOBILE_NAV.map((item) => (
           <button
@@ -793,11 +792,39 @@ export function NutricionHome() {
           }}
         />
       )}
+
+      <style>{`
+        .app-sidebar {
+          position: sticky;
+          top: 0;
+          align-self: start;
+          height: 100vh;
+          height: 100dvh;
+          max-height: 100dvh;
+          overflow-y: auto;
+          z-index: 20;
+          -webkit-overflow-scrolling: touch;
+        }
+        .nutricion-header {
+          position: static;
+          background: transparent;
+          backdrop-filter: none;
+          -webkit-backdrop-filter: none;
+          box-shadow: none;
+          padding-top: 0.35rem;
+          padding-bottom: 0.35rem;
+        }
+        .nutricion-shell {
+          width: 100%;
+          max-width: none;
+        }
+        @media (max-width: 899px) {
+          .app-sidebar { display: none; }
+        }
+      `}</style>
     </div>
   )
 }
-
-/* ───────────────────────── Tarjeta de libro (con menú) ───────────────────────── */
 
 function BookCard({
   book,
@@ -941,7 +968,8 @@ function BookRow({
           {book.title}
         </p>
         <p style={{ fontSize: '0.75rem', color: 'var(--gco-ink-muted)' }}>
-          {book.author || 'Autor desconocido'}{book.year ? ` · ${book.year}` : ''}
+          {book.author || 'Autor desconocido'}
+          {book.year ? ` · ${book.year}` : ''}
         </p>
       </div>
       <button type="button" className="icon-btn" aria-label="Editar" onClick={onEdit}>
@@ -954,9 +982,7 @@ function BookRow({
   )
 }
 
-/* ───────────────────────── Modal: Importar (multi-paso) ───────────────────────── */
-
-type ImportSource = 'texto' | 'archivo' | 'portapapeles' | null
+type ImportSource = 'texto' | 'archivo' | 'portapapeles' | 'imagen' | null
 
 function ImportModal({
   folders,
@@ -983,16 +1009,22 @@ function ImportModal({
   const [folderId, setFolderId] = useState<string | null>(defaultFolderId)
   const [dragActive, setDragActive] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
+  const [chapterDraft, setChapterDraft] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const coverRef = useRef<HTMLInputElement>(null)
+  const imageRef = useRef<HTMLInputElement>(null)
+  const insertImgRef = useRef<HTMLInputElement>(null)
 
-  const ACCEPTED_EXT = ['.txt', '.pdf', '.docx', '.epub']
+  const ACCEPTED_EXT = ['.txt', '.pdf', '.docx', '.epub', '.jpg', '.jpeg', '.png', '.webp', '.gif']
   const ACCEPT_ATTR =
-    '.txt,.pdf,.docx,.epub,text/plain,application/pdf,application/epub+zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    '.txt,.pdf,.docx,.epub,.jpg,.jpeg,.png,.webp,.gif,text/plain,application/pdf,application/epub+zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*'
+
+  const isImageFile = (file: File) =>
+    /\.(jpe?g|png|webp|gif)$/i.test(file.name) || (file.type || '').startsWith('image/')
 
   const isAcceptedFile = (file: File) => {
     const name = file.name.toLowerCase()
-    return ACCEPTED_EXT.some((ext) => name.endsWith(ext))
+    return ACCEPTED_EXT.some((ext) => name.endsWith(ext)) || (file.type || '').startsWith('image/')
   }
 
   const pickSource = async (s: ImportSource) => {
@@ -1001,6 +1033,10 @@ function ImportModal({
     setSource(s)
     if (s === 'archivo') {
       fileRef.current?.click()
+      return
+    }
+    if (s === 'imagen') {
+      imageRef.current?.click()
       return
     }
     if (s === 'portapapeles') {
@@ -1020,7 +1056,6 @@ function ImportModal({
       }
       return
     }
-    // texto libre
     setStep(2)
   }
 
@@ -1028,7 +1063,25 @@ function ImportModal({
     setImportError(null)
     if (!isAcceptedFile(file)) {
       soundFail()
-      setImportError('Formato no compatible. Usa TXT, PDF, DOCX o EPUB.')
+      setImportError('Formato no compatible. Usa TXT, PDF, DOCX, EPUB o imagen.')
+      return
+    }
+    if (isImageFile(file)) {
+      setBusy(true)
+      try {
+        const dataUrl = await fileToDataUrl(file)
+        const dims = await readImageSize(dataUrl)
+        const block = imageMarkdown(file.name, dataUrl, dims.w || 640, 'center')
+        setText((prev) => (prev ? `${prev}\n\n${block}` : block))
+        if (!title) setTitle(file.name.replace(/\.[^.]+$/, ''))
+        soundSuccess()
+        setStep(2)
+      } catch {
+        soundFail()
+        setImportError('No se pudo cargar la imagen.')
+      } finally {
+        setBusy(false)
+      }
       return
     }
     setBusy(true)
@@ -1046,7 +1099,7 @@ function ImportModal({
     } catch (e) {
       console.error(e)
       soundFail()
-      setImportError('Ocurrió un error al importar el archivo. Inténtalo de nuevo.')
+      setImportError(e instanceof Error ? e.message : 'Ocurrió un error al importar el archivo. Inténtalo de nuevo.')
     } finally {
       setBusy(false)
     }
@@ -1084,9 +1137,29 @@ function ImportModal({
     }
   }
 
+  const insertImageIntoText = async (file: File) => {
+    try {
+      const dataUrl = await fileToDataUrl(file)
+      const dims = await readImageSize(dataUrl)
+      const block = imageMarkdown(file.name, dataUrl, dims.w || 640, 'center')
+      setText((prev) => `${prev}\n\n${block}\n\n`)
+      soundSuccess()
+    } catch {
+      soundFail()
+    }
+  }
+
+  const insertChapterMarker = () => {
+    const name = chapterDraft.trim() || 'Capítulo'
+    setText((prev) => `${prev}\n\n${name.toUpperCase()}\n\n`)
+    setChapterDraft('')
+    soundClick()
+  }
+
   const save = async () => {
     if (!text.trim()) {
       soundFail()
+      setImportError('Escribe o pega texto, o añade una imagen.')
       return
     }
     soundSuccess()
@@ -1105,7 +1178,9 @@ function ImportModal({
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-panel glass-card" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2 style={{ fontSize: '1.1rem' }}>Nuevo libro</h2>
+          <h2 style={{ fontSize: '1.1rem' }}>
+            {step === 1 ? 'Nuevo libro' : step === 2 ? 'Editor del libro' : 'Detalles'}
+          </h2>
           <button type="button" className="icon-btn" aria-label="Cerrar" onClick={onClose}>
             <IconClose />
           </button>
@@ -1114,6 +1189,7 @@ function ImportModal({
         <div className="modal-steps">
           <div className={`modal-step-dot ${step >= 1 ? 'active' : ''}`} />
           <div className={`modal-step-dot ${step >= 2 ? 'active' : ''}`} />
+          <div className={`modal-step-dot ${step >= 3 ? 'active' : ''}`} />
         </div>
 
         {step === 1 && (
@@ -1128,7 +1204,7 @@ function ImportModal({
               onClick={() => !busy && pickSource('archivo')}
               role="button"
               tabIndex={0}
-              aria-label="Subir archivo TXT, PDF, DOCX o EPUB"
+              aria-label="Subir archivo TXT, PDF, DOCX, EPUB o imagen"
               onKeyDown={(e) => {
                 if ((e.key === 'Enter' || e.key === ' ') && !busy) {
                   e.preventDefault()
@@ -1143,7 +1219,7 @@ function ImportModal({
                 {busy ? 'Extrayendo texto…' : 'Arrastra un archivo aquí'}
               </span>
               <span className="import-dropzone-sub">
-                {busy ? 'Esto puede tardar unos segundos' : 'o toca para elegir · TXT, PDF, DOCX o EPUB'}
+                {busy ? 'Esto puede tardar unos segundos' : 'o toca · TXT, PDF, DOCX, EPUB o imagen'}
               </span>
             </div>
 
@@ -1151,6 +1227,17 @@ function ImportModal({
               ref={fileRef}
               type="file"
               accept={ACCEPT_ATTR}
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) void onFile(f)
+                e.target.value = ''
+              }}
+            />
+            <input
+              ref={imageRef}
+              type="file"
+              accept="image/*"
               hidden
               onChange={(e) => {
                 const f = e.target.files?.[0]
@@ -1177,58 +1264,115 @@ function ImportModal({
                 className={`source-option compact ${source === 'texto' ? 'selected' : ''}`}
                 onClick={() => pickSource('texto')}
               >
-                <span className="source-icon"><IconType /></span>
+                <span className="source-icon">
+                  <IconType />
+                </span>
                 <span>
-                  <span className="source-label" style={{ display: 'block' }}>Escribir o pegar texto</span>
-                  <span className="source-sub">Redacta el contenido manualmente</span>
+                  <span className="source-label" style={{ display: 'block' }}>
+                    Escribir o pegar texto
+                  </span>
+                  <span className="source-sub">Abre el editor directamente</span>
                 </span>
               </button>
-              <button
-                type="button"
-                className="source-option compact"
-                onClick={() => pickSource('portapapeles')}
-              >
-                <span className="source-icon"><IconPaste /></span>
+              <button type="button" className="source-option compact" onClick={() => pickSource('portapapeles')}>
+                <span className="source-icon">
+                  <IconPaste />
+                </span>
                 <span>
-                  <span className="source-label" style={{ display: 'block' }}>Desde el portapapeles</span>
+                  <span className="source-label" style={{ display: 'block' }}>
+                    Desde el portapapeles
+                  </span>
                   <span className="source-sub">Usa lo último que copiaste</span>
                 </span>
               </button>
+              <button type="button" className="source-option compact" onClick={() => pickSource('imagen')}>
+                <span className="source-icon">
+                  <IconImage />
+                </span>
+                <span>
+                  <span className="source-label" style={{ display: 'block' }}>
+                    Importar imagen
+                  </span>
+                  <span className="source-sub">JPG, PNG, WEBP o GIF · se conserva tamaño</span>
+                </span>
+              </button>
             </div>
-
-            {source === 'texto' && (
-              <textarea
-                autoFocus
-                className="glass-input"
-                placeholder="Pega o escribe el texto…"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                rows={6}
-                style={{ marginTop: 12, resize: 'vertical' }}
-              />
-            )}
-
-            {source === 'texto' && (
-              <GlassButton
-                onClick={() => {
-                  if (!text.trim()) {
-                    soundFail()
-                    setImportError('Escribe o pega algo de texto para continuar.')
-                    return
-                  }
-                  soundClick()
-                  setImportError(null)
-                  setStep(2)
-                }}
-                style={{ marginTop: 10, width: '100%' }}
-              >
-                Continuar
-              </GlassButton>
-            )}
           </>
         )}
 
         {step === 2 && (
+          <>
+            <p className="import-intro" style={{ marginBottom: 8 }}>
+              Escribe, pega o inserta imágenes (con tamaño). Después pondrás título y portada.
+            </p>
+            <textarea
+              autoFocus
+              className="glass-input"
+              placeholder="Escribe o pega el texto del libro aquí…"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              rows={12}
+              style={{ resize: 'vertical', minHeight: '40vh', fontSize: 16 }}
+            />
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+              <button type="button" className="glass-button secondary" onClick={() => insertImgRef.current?.click()}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <IconImage /> Insertar imagen
+                </span>
+              </button>
+              <input
+                ref={insertImgRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f) void insertImageIntoText(f)
+                  e.target.value = ''
+                }}
+              />
+              <div style={{ display: 'flex', gap: 6, flex: 1, minWidth: 160 }}>
+                <input
+                  className="glass-input"
+                  placeholder="Nombre de capítulo"
+                  value={chapterDraft}
+                  onChange={(e) => setChapterDraft(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                <button type="button" className="glass-button secondary" onClick={insertChapterMarker}>
+                  + Capítulo
+                </button>
+              </div>
+            </div>
+            {importError && (
+              <div className="import-error" role="alert" style={{ marginTop: 8 }}>
+                {importError}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+              <button type="button" className="glass-button secondary" onClick={() => setStep(1)} style={{ flex: 1 }}>
+                Atrás
+              </button>
+              <GlassButton
+                onClick={() => {
+                  if (!text.trim()) {
+                    soundFail()
+                    setImportError('Escribe o pega algo de texto, o añade una imagen.')
+                    return
+                  }
+                  setImportError(null)
+                  soundClick()
+                  setStep(3)
+                }}
+                style={{ flex: 2 }}
+              >
+                Continuar
+              </GlassButton>
+            </div>
+          </>
+        )}
+
+        {step === 3 && (
           <>
             <div className="cover-picker">
               <div
@@ -1266,12 +1410,7 @@ function ImportModal({
               style={{ marginBottom: 8 }}
             />
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-              <input
-                className="glass-input"
-                placeholder="Autor"
-                value={author}
-                onChange={(e) => setAuthor(e.target.value)}
-              />
+              <input className="glass-input" placeholder="Autor" value={author} onChange={(e) => setAuthor(e.target.value)} />
               <input
                 className="glass-input"
                 placeholder="Año"
@@ -1295,7 +1434,7 @@ function ImportModal({
             </select>
 
             <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" className="glass-button secondary" onClick={() => setStep(1)} style={{ flex: 1 }}>
+              <button type="button" className="glass-button secondary" onClick={() => setStep(2)} style={{ flex: 1 }}>
                 Atrás
               </button>
               <GlassButton onClick={() => void save()} style={{ flex: 2 }}>
@@ -1308,8 +1447,6 @@ function ImportModal({
     </div>
   )
 }
-
-/* ───────────────────────── Modal: Editar libro ───────────────────────── */
 
 function EditBookModal({
   book,
@@ -1442,7 +1579,6 @@ function EditBookModal({
     </div>
   )
 }
-/* ───────────────────────── Panel: Más ───────────────────────── */
 
 function MoreSheet({
   sortOrder,
@@ -1466,7 +1602,7 @@ function MoreSheet({
   const GUIDE: { icon: ReactNode; title: string; text: string }[] = [
     { icon: <IconList />, title: 'Listas', text: 'Cambia entre estantería con portadas y una lista compacta con más detalle por libro.' },
     { icon: <IconPlayCircle />, title: 'Reproduciendo', text: 'Vuelve de un toque al audiolibro que tienes activo en este momento.' },
-    { icon: <IconDownload />, title: 'Importar', text: 'Sube un TXT o PDF, o pega texto directamente para crear un nuevo audiolibro.' },
+    { icon: <IconDownload />, title: 'Importar', text: 'Sube un TXT o PDF, o pega texto. Las imágenes conservan tamaño y alineación.' },
     { icon: <IconDots />, title: 'Más', text: 'Esta pantalla: orden de la biblioteca, densidad de portadas y volumen de lectura.' },
   ]
 
@@ -1546,8 +1682,8 @@ function MoreSheet({
             aria-label="Refuerzo de volumen de lectura"
           />
           <p className="guide-text" style={{ marginTop: 8 }}>
-            Se aplica al reproducir tus audiolibros. Por encima del 100% algunos dispositivos pueden distorsionar
-            el sonido.
+            Se aplica al reproducir tus audiolibros. Por encima del 100% algunos dispositivos pueden distorsionar el
+            sonido.
           </p>
         </section>
 
