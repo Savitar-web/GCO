@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type DragEvent as ReactDragEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { LibraryBig } from 'lucide-react'
+
 import { GlassButton } from '@/components/ui/GlassButton'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
+
 import {
   listBooks,
   listFolders,
@@ -14,18 +17,10 @@ import {
   type BookItem,
   type BookFolder,
 } from '@/core/storage/mediaLibrary'
+
 import { extractTextFromFile } from '@/core/storage/textExtract'
 import { soundClick, soundSuccess, soundFail } from '@/core/audio/uiSounds'
 import { useReaderPlayer } from '@/core/reader/ReaderPlayerContext.tsx'
-
-function IconHeadphones() {
-  return (
-    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M3 13a9 9 0 0 1 18 0v5a2 2 0 0 1-2 2h-1v-7h3M3 13v7h3v-7H3m0 0v-1a9 9 0 0 1 .5-3" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M18 20a2 2 0 0 1-2 2h-1a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1h3v5Z" />
-    </svg>
-  )
-}
 function IconList() {
   return (
     <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
@@ -350,7 +345,7 @@ export function NutricionHome() {
   }
 
   const NAV_ITEMS: { id: NavId; label: string; icon: ReactNode }[] = [
-    { id: 'biblioteca', label: 'Biblioteca', icon: <IconHeadphones /> },
+    { id: 'biblioteca', label: 'Biblioteca', icon: <LibraryBig /> },
     { id: 'listas', label: 'Listas', icon: <IconList /> },
     { id: 'reproduciendo', label: 'Reproduciendo', icon: <IconPlayCircle /> },
     { id: 'importar', label: 'Importar', icon: <IconDownload /> },
@@ -359,7 +354,7 @@ export function NutricionHome() {
 
   const MOBILE_NAV: { id: NavId; label: string; icon: ReactNode }[] = [
     { id: 'inicio', label: 'Nutrición', icon: <span aria-hidden style={{ fontSize: 18 }}>🍎</span> },
-    { id: 'biblioteca', label: 'Biblioteca', icon: <IconHeadphones /> },
+    { id: 'biblioteca', label: 'Biblioteca', icon: <LibraryBig /> },
     { id: 'importar', label: 'Importar', icon: <IconDownload /> },
     { id: 'buscar', label: 'Buscar', icon: <IconSearch /> },
   ]

@@ -47,6 +47,13 @@ export interface ParagraphComment {
   createdAt: string
 }
 
+export interface Highlight {
+  id: string
+  paraIndex: number
+  color: string
+  createdAt: string
+}
+
 type ReadingMode = 'day' | 'night' | 'sepia'
 type FontFamily = 'lora' | 'inter' | 'merriweather' | 'source-serif' | 'system'
 type LayoutMode = 'vertical' | 'horizontal'
@@ -88,6 +95,21 @@ const DESKTOP_MQ = '(min-width: 900px)'
 const WORD_PAGE = {
   targetChars: 2200,
   maxParasSoft: 12,
+}
+
+const HIGHLIGHT_COLORS: { id: string; label: string; color: string }[] = [
+  { id: 'yellow', label: 'Amarillo', color: '#FDE68A' },
+  { id: 'green', label: 'Verde', color: '#BBF7D0' },
+  { id: 'blue', label: 'Azul', color: '#BFDBFE' },
+  { id: 'pink', label: 'Rosa', color: '#FBCFE8' },
+  { id: 'orange', label: 'Naranja', color: '#FED7AA' },
+]
+
+const AUTHOR_HEADING_RE = /^[ \t]*palabras del autor[ \t]*:?[ \t]*$/gim
+
+function stripAuthorWordsHeading(raw: string): string {
+  if (!raw) return raw
+  return raw.replace(AUTHOR_HEADING_RE, '').replace(/\n{3,}/g, '\n\n')
 }
 
 /* ───────────────────────── matchMedia legacy ───────────────────────── */
@@ -444,6 +466,39 @@ function IconLayoutH() {
     </svg>
   )
 }
+function IconImageGallery() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="8.5" cy="9.5" r="1.5" />
+      <path d="M21 16l-5.5-5.5a2 2 0 0 0-2.8 0L4 19" />
+    </svg>
+  )
+}
+function IconMarker() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 11 15 5l4 4-6 6" />
+      <path d="M4 20l3.5-1 6-6-2.5-2.5-6 6z" />
+      <path d="M13 7l4 4" />
+    </svg>
+  )
+}
+function IconExpand() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" />
+    </svg>
+  )
+}
+function IconSwipeHint() {
+  return (
+    <svg className="swipe-hint-icon" width="20" height="14" viewBox="0 0 24 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 8h14M11 3l5 5-5 5" />
+      <path d="M18.5 8h3" opacity="0.4" />
+    </svg>
+  )
+}
 
 /* ───────────────────────── Paginación horizontal ───────────────────────── */
 
@@ -525,6 +580,7 @@ export function BookReader() {
   const [chapters, setChapters] = useState<ChapterMark[]>([])
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [comments, setComments] = useState<ParagraphComment[]>([])
+  const [highlights, setHighlights] = useState<Highlight[]>([])
   const [appearance, setAppearance] = useState<Appearance>(DEFAULT_APPEARANCE)
   const [skipSec, setSkipSec] = useState<SkipSeconds>(10)
   const [sleepMin, setSleepMin] = useState(0)
@@ -535,12 +591,16 @@ export function BookReader() {
   const [showAppearance, setShowAppearance] = useState(false)
   const [showBookmarks, setShowBookmarks] = useState(false)
   const [showComments, setShowComments] = useState(false)
+  const [showImageGallery, setShowImageGallery] = useState(false)
   const [editingChapter, setEditingChapter] = useState<ChapterMark | null>(null)
   const [newChapterTitle, setNewChapterTitle] = useState('')
   const [commentDraft, setCommentDraft] = useState('')
   const [commentPara, setCommentPara] = useState<number | null>(null)
   const [bookmarkNote, setBookmarkNote] = useState('')
   const [showBookmarkForm, setShowBookmarkForm] = useState(false)
+  const [highlightPickerFor, setHighlightPickerFor] = useState<number | null>(null)
+  const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
+  const [transportVisible, setTransportVisible] = useState(true)
 
   const [pageIndex, setPageIndex] = useState(0)
   const [pages, setPages] = useState<PageSlice[]>([])
@@ -550,6 +610,7 @@ export function BookReader() {
   const pageAreaRef = useRef<HTMLDivElement>(null)
   const saveTimer = useRef<number | null>(null)
   const pageCalcTimer = useRef<number | null>(null)
+  const idleTimer = useRef<number | null>(null)
 
   /* ── Carga ── */
   useEffect(() => {
@@ -586,12 +647,14 @@ export function BookReader() {
       if (cancelled) return
       setTitle(b.title)
       setAuthor(b.author || '')
-      setText(b.text || '')
+      setText(stripAuthorWordsHeading(b.text || ''))
       setCover(b.coverDataUrl || null)
       if (b.chapters?.length) setChapters(b.chapters as ChapterMark[])
-      else setChapters(detectChapters(b.text || ''))
+      else setChapters(detectChapters(stripAuthorWordsHeading(b.text || '')))
       if (b.bookmarks) setBookmarks(b.bookmarks as Bookmark[])
       if (b.comments) setComments(b.comments as ParagraphComment[])
+      const rawHighlights = (b as unknown as { highlights?: Highlight[] }).highlights
+      if (rawHighlights) setHighlights(rawHighlights)
       if (b.appearance) {
         setAppearance(normalizeAppearance(b.appearance as unknown as Record<string, unknown>))
       }
@@ -653,6 +716,37 @@ export function BookReader() {
     return () => clearTimeout(t)
   }, [sleepMin]) // eslint-disable-line
 
+  useEffect(() => {
+    if (!lightbox) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightbox(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [lightbox])
+
+  useEffect(() => {
+    const show = () => {
+      setTransportVisible(true)
+      if (idleTimer.current) window.clearTimeout(idleTimer.current)
+      idleTimer.current = window.setTimeout(() => setTransportVisible(false), 3200)
+    }
+    show()
+    window.addEventListener('mousemove', show)
+    window.addEventListener('mousedown', show)
+    window.addEventListener('touchstart', show)
+    window.addEventListener('scroll', show, true)
+    window.addEventListener('keydown', show)
+    return () => {
+      window.removeEventListener('mousemove', show)
+      window.removeEventListener('mousedown', show)
+      window.removeEventListener('touchstart', show)
+      window.removeEventListener('scroll', show, true)
+      window.removeEventListener('keydown', show)
+      if (idleTimer.current) window.clearTimeout(idleTimer.current)
+    }
+  }, [])
+
   const appearancePayload = useCallback(
     () => ({
       mode: appearance.mode,
@@ -673,7 +767,7 @@ export function BookReader() {
     saveTimer.current = window.setTimeout(async () => {
       if (!id || !text) return
       try {
-        await saveBook({
+        const payload = {
           id,
           title,
           text,
@@ -683,19 +777,26 @@ export function BookReader() {
           chapters,
           bookmarks,
           comments,
+          highlights,
           appearance: appearancePayload(),
-        })
+        }
+        await saveBook(payload as unknown as Parameters<typeof saveBook>[0])
       } catch {
         /* ignore */
       }
     }, 800)
-  }, [id, title, text, reader.charIndex, reader.rate, reader.voiceURI, chapters, bookmarks, comments, appearancePayload])
+  }, [id, title, text, reader.charIndex, reader.rate, reader.voiceURI, chapters, bookmarks, comments, highlights, appearancePayload])
 
   useEffect(() => {
     schedulePersist()
-  }, [reader.charIndex, chapters, bookmarks, comments, appearance]) // eslint-disable-line
+  }, [reader.charIndex, chapters, bookmarks, comments, highlights, appearance]) // eslint-disable-line
 
   const paragraphs = useMemo(() => splitParagraphs(text), [text])
+
+  const imageParas = useMemo(
+    () => paragraphs.map((p, i) => ({ p, i })).filter((x) => x.p.isImage),
+    [paragraphs]
+  )
 
   const currentChapterIdx = useMemo(() => {
     let idx = 0
@@ -734,6 +835,7 @@ export function BookReader() {
   )
 
   const isBookmarkedHere = bookmarks.some((b) => Math.abs(b.charIndex - reader.charIndex) < 40)
+  const isPlaying = reader.speaking && !reader.paused
 
   /* ── Páginas horizontales ── */
   const recalcPages = useCallback(() => {
@@ -798,7 +900,7 @@ export function BookReader() {
     setPageIndex(next)
     const slice = pages[next]
     if (slice) reader.setCharIndex(slice.startChar)
-    window.setTimeout(() => setPageAnimDir(0), 360)
+    window.setTimeout(() => setPageAnimDir(0), 620)
   }
 
   const goToChar = (pos: number) => {
@@ -893,6 +995,24 @@ export function BookReader() {
     soundSuccess()
   }
 
+  const toggleHighlight = (paraIndex: number, color: string | null) => {
+    soundClick()
+    setHighlights((prev) => {
+      const existing = prev.find((h) => h.paraIndex === paraIndex)
+      if (color === null) {
+        return prev.filter((h) => h.paraIndex !== paraIndex)
+      }
+      if (existing && existing.color === color) {
+        return prev.filter((h) => h.paraIndex !== paraIndex)
+      }
+      if (existing) {
+        return prev.map((h) => (h.paraIndex === paraIndex ? { ...h, color } : h))
+      }
+      return [...prev, { id: `hl-${Date.now()}`, paraIndex, color, createdAt: new Date().toISOString() }]
+    })
+    setHighlightPickerFor(null)
+  }
+
   const saveChapterEdit = () => {
     const t = newChapterTitle.trim() || `Capítulo ${chapters.length + 1}`
     if (editingChapter?.id) {
@@ -925,26 +1045,61 @@ export function BookReader() {
     setChapters((prev) => prev.filter((c) => c.id !== cid))
   }
 
+  const toggleReaderPlayback = useCallback(() => {
+    soundClick()
+    const anyReader = reader as unknown as {
+      pause?: () => void
+      resume?: () => void
+    }
+    if (reader.speaking && !reader.paused) {
+      if (typeof anyReader.pause === 'function') {
+        anyReader.pause()
+      } else {
+        reader.stop()
+      }
+      return
+    }
+    if (reader.paused && typeof anyReader.resume === 'function') {
+      anyReader.resume()
+      return
+    }
+    reader.speakFrom(text, reader.charIndex, reader.rate, reader.voiceURI)
+  }, [reader, text])
+
   /* ── Render de párrafo fiel ── */
   const renderParagraph = (p: ReturnType<typeof splitParagraphs>[number], idx: number, isFirst: boolean) => {
     if (p.isImage && p.imageSrc) {
       const meta = parseImageMeta(p.text)
-      const style: CSSProperties = {
-        maxWidth: meta?.width || '100%',
+      const imgStyle: CSSProperties = {
+        maxWidth: '100%',
+        width: meta?.width && meta.width.includes('%') ? meta.width : undefined,
         height: 'auto',
         display: 'block',
         margin: meta?.align === 'left' ? '0.5em 0' : meta?.align === 'right' ? '0.5em 0 0.5em auto' : '0.5em auto',
       }
       return (
         <div key={idx} className="reader-para reader-para-image" data-para={idx}>
-          <img
-            src={p.imageSrc}
-            alt={meta?.alt || ''}
-            style={style}
-            loading="lazy"
-            decoding="async"
-            className="reader-inline-image"
-          />
+          <button
+            type="button"
+            className="reader-image-btn"
+            aria-label="Ampliar imagen"
+            onClick={() => {
+              soundClick()
+              setLightbox({ src: p.imageSrc as string, alt: meta?.alt || '' })
+            }}
+          >
+            <img
+              src={p.imageSrc}
+              alt={meta?.alt || ''}
+              style={imgStyle}
+              loading="lazy"
+              decoding="async"
+              className="reader-inline-image"
+            />
+            <span className="image-expand-hint" aria-hidden="true">
+              <IconExpand />
+            </span>
+          </button>
         </div>
       )
     }
@@ -953,13 +1108,57 @@ export function BookReader() {
     const clean = stripAlignMarkers(p.text)
     const indentStyle: CSSProperties = p.indent && p.indent > 0 ? { paddingLeft: `${Math.min(p.indent * 0.6, 4)}em` } : {}
     const alignStyle: CSSProperties = align !== 'left' ? { textAlign: align } : {}
+    const hl = highlights.find((h) => h.paraIndex === idx)
+    const highlightStyle: CSSProperties = hl
+      ? { backgroundColor: hl.color, borderRadius: 6, paddingTop: 4, paddingBottom: 4, paddingLeft: 8, paddingRight: 8, marginLeft: -8, marginRight: -8 }
+      : {}
 
     return (
-      <div key={idx} className="reader-para" data-para={idx} style={{ ...indentStyle, ...alignStyle }}>
+      <div
+        key={idx}
+        className={`reader-para ${hl ? 'has-highlight' : ''}`}
+        data-para={idx}
+        style={{ ...indentStyle, ...alignStyle, ...highlightStyle }}
+      >
         <div className="para-row">
           <p className={isFirst ? 'drop-cap' : undefined}>
             {renderRichInline(clean)}
           </p>
+          <div className="para-highlight-wrap">
+            <button
+              type="button"
+              className="para-highlight-btn"
+              aria-label="Marcar párrafo"
+              onClick={() => {
+                soundClick()
+                setHighlightPickerFor(highlightPickerFor === idx ? null : idx)
+              }}
+            >
+              <IconMarker />
+            </button>
+            {highlightPickerFor === idx && (
+              <div className="para-highlight-picker" onClick={(e) => e.stopPropagation()}>
+                {HIGHLIGHT_COLORS.map((hc) => (
+                  <button
+                    key={hc.id}
+                    type="button"
+                    className="hl-swatch"
+                    style={{ background: hc.color }}
+                    aria-label={hc.label}
+                    onClick={() => toggleHighlight(idx, hc.color)}
+                  />
+                ))}
+                <button
+                  type="button"
+                  className="hl-swatch hl-clear"
+                  aria-label="Quitar marca"
+                  onClick={() => toggleHighlight(idx, null)}
+                >
+                  ×
+                </button>
+              </div>
+            )}
+          </div>
           <button
             type="button"
             className="para-comment-btn"
@@ -1002,8 +1201,8 @@ export function BookReader() {
   /* ── Controles de apariencia ── */
   const appearanceControls = (
     <>
-      <div className="appearance-section">
-        <label>Modo de lectura</label>
+      <div className="appearance-group">
+        <h4 className="appearance-group-title">Modo de lectura</h4>
         <div className="mode-presets">
           {(['day', 'night', 'sepia'] as ReadingMode[]).map((m) => (
             <button
@@ -1021,193 +1220,201 @@ export function BookReader() {
         </div>
       </div>
 
-      <div className="appearance-section">
-        <label>Fuente</label>
-        <select
-          className="glass-input"
-          value={appearance.font}
-          onChange={(e) => setAppearance((a) => ({ ...a, font: e.target.value as FontFamily }))}
-        >
-          <option value="lora">Lora</option>
-          <option value="inter">Inter</option>
-          <option value="merriweather">Merriweather</option>
-          <option value="source-serif">Source Serif</option>
-          <option value="system">Sistema</option>
-        </select>
-      </div>
-
-      <div className="appearance-section">
-        <label>Tamaño · {appearance.fontSize}px</label>
-        <input
-          type="range"
-          className="reader-slider"
-          min={14}
-          max={28}
-          step={1}
-          value={appearance.fontSize}
-          onChange={(e) => setAppearance((a) => ({ ...a, fontSize: Number(e.target.value) }))}
-          style={{ ['--fill' as string]: `${((appearance.fontSize - 14) / 14) * 100}%` }}
-        />
-      </div>
-
-      <div className="appearance-section">
-        <label>Interlineado · {appearance.lineHeight.toFixed(1)}</label>
-        <input
-          type="range"
-          className="reader-slider"
-          min={1.3}
-          max={2.2}
-          step={0.1}
-          value={appearance.lineHeight}
-          onChange={(e) => setAppearance((a) => ({ ...a, lineHeight: Number(e.target.value) }))}
-          style={{ ['--fill' as string]: `${((appearance.lineHeight - 1.3) / 0.9) * 100}%` }}
-        />
-      </div>
-
-      <div className="appearance-section">
-        <label>Espaciado de letras</label>
-        <input
-          type="range"
-          className="reader-slider"
-          min={-0.5}
-          max={2}
-          step={0.1}
-          value={appearance.letterSpacing}
-          onChange={(e) => setAppearance((a) => ({ ...a, letterSpacing: Number(e.target.value) }))}
-          style={{ ['--fill' as string]: `${((appearance.letterSpacing + 0.5) / 2.5) * 100}%` }}
-        />
-      </div>
-
-      <div className="appearance-section">
-        <label>Brillo · {Math.round(appearance.brightness * 100)}%</label>
-        <input
-          type="range"
-          className="reader-slider"
-          min={0.7}
-          max={1.15}
-          step={0.05}
-          value={appearance.brightness}
-          onChange={(e) => setAppearance((a) => ({ ...a, brightness: Number(e.target.value) }))}
-          style={{ ['--fill' as string]: `${((appearance.brightness - 0.7) / 0.45) * 100}%` }}
-        />
-      </div>
-
-      <div className="appearance-section row">
-        <label>Layout</label>
-        <div className="spacing-presets">
-          <button
-            type="button"
-            className={`preset-btn ${appearance.layout === 'vertical' ? 'active' : ''}`}
-            onClick={() => setAppearance((a) => ({ ...a, layout: 'vertical' }))}
-            aria-label="Vertical continuo"
+      <div className="appearance-group">
+        <h4 className="appearance-group-title">Tipografía</h4>
+        <div className="appearance-section">
+          <label>Fuente</label>
+          <select
+            className="glass-input"
+            value={appearance.font}
+            onChange={(e) => setAppearance((a) => ({ ...a, font: e.target.value as FontFamily }))}
           >
-            <IconLayoutV />
-          </button>
-          <button
-            type="button"
-            className={`preset-btn ${appearance.layout === 'horizontal' ? 'active' : ''}`}
-            onClick={() => setAppearance((a) => ({ ...a, layout: 'horizontal' }))}
-            aria-label="Horizontal paginado"
-          >
-            <IconLayoutH />
-          </button>
+            <option value="lora">Lora</option>
+            <option value="inter">Inter</option>
+            <option value="merriweather">Merriweather</option>
+            <option value="source-serif">Source Serif</option>
+            <option value="system">Sistema</option>
+          </select>
         </div>
-      </div>
 
-      <div className="appearance-section row">
-        <label>Animación de página</label>
-        <label className="gco-switch">
+        <div className="appearance-section">
+          <label>Tamaño · {appearance.fontSize}px</label>
           <input
-            type="checkbox"
-            checked={appearance.pageAnim}
-            onChange={(e) => setAppearance((a) => ({ ...a, pageAnim: e.target.checked }))}
+            type="range"
+            className="reader-slider"
+            min={14}
+            max={28}
+            step={1}
+            value={appearance.fontSize}
+            onChange={(e) => setAppearance((a) => ({ ...a, fontSize: Number(e.target.value) }))}
+            style={{ ['--fill' as string]: `${((appearance.fontSize - 14) / 14) * 100}%` }}
           />
-          <span />
-        </label>
-      </div>
+        </div>
 
-      <div className="appearance-section">
-        <label>Voz</label>
-        <select
-          className="glass-input"
-          value={reader.voiceURI || ''}
-          onChange={(e) => {
-            // Corregido: setVoiceURI espera string (no null)
-            reader.setVoiceURI(e.target.value || '')
-            soundClick()
-          }}
-        >
-          <optgroup label="Español">
-            {esVoices.map((v) => (
-              <option key={v.voiceURI} value={v.voiceURI}>
-                {v.name} ({v.lang})
-              </option>
-            ))}
-          </optgroup>
-          <optgroup label="Otras">
-            {otherVoices.map((v) => (
-              <option key={v.voiceURI} value={v.voiceURI}>
-                {v.name} ({v.lang})
-              </option>
-            ))}
-          </optgroup>
-        </select>
-        {!esVoices.length && (
-          <p className="voice-hint warn">
-            <IconWarning /> No se detectaron voces en español. El sistema usará la voz por defecto.
-          </p>
-        )}
-      </div>
+        <div className="appearance-section">
+          <label>Interlineado · {appearance.lineHeight.toFixed(1)}</label>
+          <input
+            type="range"
+            className="reader-slider"
+            min={1.3}
+            max={2.2}
+            step={0.1}
+            value={appearance.lineHeight}
+            onChange={(e) => setAppearance((a) => ({ ...a, lineHeight: Number(e.target.value) }))}
+            style={{ ['--fill' as string]: `${((appearance.lineHeight - 1.3) / 0.9) * 100}%` }}
+          />
+        </div>
 
-      <div className="appearance-section">
-        <label>Velocidad · {reader.rate.toFixed(1)}×</label>
-        <input
-          type="range"
-          className="reader-slider"
-          min={0.5}
-          max={2.5}
-          step={0.1}
-          value={reader.rate}
-          onChange={(e) => reader.setRate(Number(e.target.value))}
-          style={{ ['--fill' as string]: `${((reader.rate - 0.5) / 2) * 100}%` }}
-        />
-      </div>
-
-      <div className="appearance-section">
-        <label>Saltar</label>
-        <div className="skip-row">
-          {SKIP.map((s) => (
-            <button
-              key={s}
-              type="button"
-              className={`preset-btn ${skipSec === s ? 'active' : ''}`}
-              onClick={() => {
-                setSkipSec(s)
-                soundClick()
-              }}
-            >
-              {s}s
-            </button>
-          ))}
+        <div className="appearance-section">
+          <label>Espaciado de letras</label>
+          <input
+            type="range"
+            className="reader-slider"
+            min={-0.5}
+            max={2}
+            step={0.1}
+            value={appearance.letterSpacing}
+            onChange={(e) => setAppearance((a) => ({ ...a, letterSpacing: Number(e.target.value) }))}
+            style={{ ['--fill' as string]: `${((appearance.letterSpacing + 0.5) / 2.5) * 100}%` }}
+          />
         </div>
       </div>
 
-      <div className="appearance-section">
-        <label>Temporizador de sueño</label>
-        <div className="skip-row">
-          {[0, 15, 30, 45, 60].map((m) => (
+      <div className="appearance-group">
+        <h4 className="appearance-group-title">Página</h4>
+        <div className="appearance-section">
+          <label>Brillo · {Math.round(appearance.brightness * 100)}%</label>
+          <input
+            type="range"
+            className="reader-slider"
+            min={0.7}
+            max={1.15}
+            step={0.05}
+            value={appearance.brightness}
+            onChange={(e) => setAppearance((a) => ({ ...a, brightness: Number(e.target.value) }))}
+            style={{ ['--fill' as string]: `${((appearance.brightness - 0.7) / 0.45) * 100}%` }}
+          />
+        </div>
+
+        <div className="appearance-section row">
+          <label>Layout</label>
+          <div className="spacing-presets">
             <button
-              key={m}
               type="button"
-              className={`preset-btn ${sleepMin === m ? 'active' : ''}`}
-              onClick={() => {
-                setSleepMin(m)
-                soundClick()
-              }}
+              className={`preset-btn ${appearance.layout === 'vertical' ? 'active' : ''}`}
+              onClick={() => setAppearance((a) => ({ ...a, layout: 'vertical' }))}
+              aria-label="Vertical continuo"
             >
-              {m === 0 ? 'Off' : `${m}m`}
+              <IconLayoutV />
             </button>
-          ))}
+            <button
+              type="button"
+              className={`preset-btn ${appearance.layout === 'horizontal' ? 'active' : ''}`}
+              onClick={() => setAppearance((a) => ({ ...a, layout: 'horizontal' }))}
+              aria-label="Horizontal paginado"
+            >
+              <IconLayoutH />
+            </button>
+          </div>
+        </div>
+
+        <div className="appearance-section row">
+          <label>Animación de página</label>
+          <label className="gco-switch">
+            <input
+              type="checkbox"
+              checked={appearance.pageAnim}
+              onChange={(e) => setAppearance((a) => ({ ...a, pageAnim: e.target.checked }))}
+            />
+            <span />
+          </label>
+        </div>
+      </div>
+
+      <div className="appearance-group">
+        <h4 className="appearance-group-title">Narración</h4>
+        <div className="appearance-section">
+          <label>Voz</label>
+          <select
+            className="glass-input"
+            value={reader.voiceURI || ''}
+            onChange={(e) => {
+              reader.setVoiceURI(e.target.value || '')
+              soundClick()
+            }}
+          >
+            <optgroup label="Español">
+              {esVoices.map((v) => (
+                <option key={v.voiceURI} value={v.voiceURI}>
+                  {v.name} ({v.lang})
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Otras">
+              {otherVoices.map((v) => (
+                <option key={v.voiceURI} value={v.voiceURI}>
+                  {v.name} ({v.lang})
+                </option>
+              ))}
+            </optgroup>
+          </select>
+          {!esVoices.length && (
+            <p className="voice-hint warn">
+              <IconWarning /> No se detectaron voces en español. El sistema usará la voz por defecto.
+            </p>
+          )}
+        </div>
+
+        <div className="appearance-section">
+          <label>Velocidad · {reader.rate.toFixed(1)}×</label>
+          <input
+            type="range"
+            className="reader-slider"
+            min={0.5}
+            max={2.5}
+            step={0.1}
+            value={reader.rate}
+            onChange={(e) => reader.setRate(Number(e.target.value))}
+            style={{ ['--fill' as string]: `${((reader.rate - 0.5) / 2) * 100}%` }}
+          />
+        </div>
+
+        <div className="appearance-section">
+          <label>Saltar</label>
+          <div className="skip-row">
+            {SKIP.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className={`preset-btn ${skipSec === s ? 'active' : ''}`}
+                onClick={() => {
+                  setSkipSec(s)
+                  soundClick()
+                }}
+              >
+                {s}s
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="appearance-section">
+          <label>Temporizador de sueño</label>
+          <div className="skip-row">
+            {[0, 15, 30, 45, 60].map((m) => (
+              <button
+                key={m}
+                type="button"
+                className={`preset-btn ${sleepMin === m ? 'active' : ''}`}
+                onClick={() => {
+                  setSleepMin(m)
+                  soundClick()
+                }}
+              >
+                {m === 0 ? 'Off' : `${m}m`}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </>
@@ -1352,6 +1559,9 @@ export function BookReader() {
             <button type="button" className="reader-icon-btn" aria-label="Comentarios" onClick={() => { soundClick(); setShowComments(true) }}>
               <IconComment />
             </button>
+            <button type="button" className="reader-icon-btn" aria-label="Imágenes del libro" onClick={() => { soundClick(); setShowImageGallery(true) }}>
+              <IconImageGallery />
+            </button>
             <button type="button" className="reader-icon-btn" aria-label="Apariencia" onClick={() => { soundClick(); setShowAppearance(true) }}>
               <IconSun />
             </button>
@@ -1388,6 +1598,10 @@ export function BookReader() {
             </div>
             <div className="h-page-indicator">
               Página {safePageIndex + 1} / {totalPages}
+            </div>
+            <div className="swipe-hint" aria-hidden="true">
+              <IconSwipeHint />
+              <span>Desliza la hoja</span>
             </div>
           </div>
         ) : (
@@ -1435,11 +1649,11 @@ export function BookReader() {
       )}
 
       {/* Transporte flotante */}
-      <div className={`reader-transport-float ${isDesktop ? 'is-desktop' : 'is-mobile'}`}>
+      <div className={`reader-transport-float ${isDesktop ? 'is-desktop' : 'is-mobile'} ${transportVisible ? '' : 'is-idle'}`}>
         <button
           type="button"
           className="transport-btn"
-          aria-label="Anterior"
+          aria-label="Capítulo anterior"
           onClick={() => {
             soundClick()
             const prev = chapters[currentChapterIdx - 1]
@@ -1458,7 +1672,15 @@ export function BookReader() {
             goToChar(Math.max(0, reader.charIndex - skipSec * 40))
           }}
         >
-          {reader.speaking && !reader.paused ? <IconPause /> : <IconPlay />}
+          -{skipSec}
+        </button>
+        <button
+          type="button"
+          className="transport-btn transport-play"
+          aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
+          onClick={toggleReaderPlayback}
+        >
+          {isPlaying ? <IconPause /> : <IconPlay />}
         </button>
         <button
           type="button"
@@ -1474,7 +1696,7 @@ export function BookReader() {
         <button
           type="button"
           className="transport-btn"
-          aria-label="Siguiente"
+          aria-label="Capítulo siguiente"
           onClick={() => {
             soundClick()
             if (nextChapter) goToChar(nextChapter.start)
@@ -1600,6 +1822,32 @@ export function BookReader() {
         </div>
       )}
 
+      {showImageGallery && (
+        <div className="sheet-overlay" onClick={() => setShowImageGallery(false)}>
+          <div className="sheet glass-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-handle" />
+            <h3>Imágenes del libro ({imageParas.length})</h3>
+            {imageParas.length === 0 && <p className="empty-hint">Este libro no tiene imágenes.</p>}
+            <div className="image-gallery-grid">
+              {imageParas.map(({ p, i }) => (
+                <button
+                  key={i}
+                  type="button"
+                  className="image-gallery-item"
+                  aria-label={`Ir a imagen en párrafo ${i + 1}`}
+                  onClick={() => {
+                    goToChar(p.start)
+                    setShowImageGallery(false)
+                  }}
+                >
+                  <img src={p.imageSrc} alt="" loading="lazy" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showBookmarkForm && (
         <div className="sheet-overlay" onClick={() => setShowBookmarkForm(false)}>
           <div className="sheet glass-panel" onClick={(e) => e.stopPropagation()}>
@@ -1690,6 +1938,20 @@ export function BookReader() {
         </div>
       )}
 
+      {lightbox && (
+        <div className="lightbox-overlay" onClick={() => setLightbox(null)}>
+          <button type="button" className="lightbox-close" aria-label="Cerrar" onClick={() => setLightbox(null)}>
+            <IconClose />
+          </button>
+          <img
+            src={lightbox.src}
+            alt={lightbox.alt}
+            className="lightbox-img"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=Merriweather:wght@400;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap');
 
@@ -1721,23 +1983,23 @@ export function BookReader() {
           --reader-spoken: color-mix(in srgb, var(--reader-hl) 18%, transparent);
         }
         [data-reader-mode="sepia"] {
-          --reader-bg: #F4ECD8;
-          --reader-ink: #3D2B1F;
-          --reader-muted: #7A6548;
-          --reader-hl: #B45309;
-          --reader-border: rgba(61,43,31,0.12);
-          --reader-glass: rgba(255,250,240,0.75);
-          --reader-spoken: color-mix(in srgb, var(--reader-hl) 20%, transparent);
+          --reader-bg: #EFE1C3;
+          --reader-ink: #3B2A18;
+          --reader-muted: #8A7150;
+          --reader-hl: #A8631B;
+          --reader-border: rgba(59,42,24,0.18);
+          --reader-glass: rgba(250,240,220,0.8);
+          --reader-spoken: color-mix(in srgb, var(--reader-hl) 22%, transparent);
         }
         .reader-root *, .reader-root *::before, .reader-root *::after { box-sizing: border-box; }
 
         .reader-desktop {
           display: grid;
           grid-template-columns: 260px 1fr;
-          height: 100vh;
-          height: 100dvh;
           width: 100%;
-          overflow: hidden;
+          min-height: 100vh;
+          min-height: 100dvh;
+          align-items: start;
         }
         .reader-desktop.with-appearance {
           grid-template-columns: 260px 1fr 300px;
@@ -1830,12 +2092,10 @@ export function BookReader() {
           display: flex; flex-direction: column;
           max-width: 720px; margin: 0 auto; width: 100%;
           padding: 0 1.5rem 7.5rem;
-          height: 100%;
-          min-height: 0;
           position: relative;
           overflow-x: hidden;
-          overflow-y: auto;
-          -webkit-overflow-scrolling: touch;
+          min-height: 100vh;
+          min-height: 100dvh;
         }
         .reader-topbar, .mobile-topbar {
           display: flex; justify-content: space-between; align-items: center;
@@ -1849,9 +2109,9 @@ export function BookReader() {
           font-size: 0.72rem; letter-spacing: 0.08em; font-weight: 600;
           color: var(--reader-muted);
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-          max-width: 40vw;
+          max-width: 34vw;
         }
-        .reader-topbar-actions, .mobile-top-actions { display: flex; gap: 2px; }
+        .reader-topbar-actions, .mobile-top-actions { display: flex; gap: 2px; flex-wrap: nowrap; }
 
         .reader-progress-line {
           height: 3px; background: var(--reader-border); border-radius: 3px;
@@ -1875,6 +2135,7 @@ export function BookReader() {
 
         .reader-body { cursor: text; }
         .reader-para { margin-bottom: 1em; }
+        .reader-para.has-highlight { transition: background-color 0.2s ease; }
         .para-row {
           display: flex;
           align-items: flex-start;
@@ -1891,7 +2152,7 @@ export function BookReader() {
           color: var(--reader-hl); font-family: "Lora", Georgia, serif;
         }
 
-        .para-comment-btn {
+        .para-comment-btn, .para-highlight-btn {
           flex-shrink: 0;
           display: inline-flex;
           align-items: center;
@@ -1909,10 +2170,19 @@ export function BookReader() {
           -webkit-tap-highlight-color: transparent;
           touch-action: manipulation;
         }
+        .para-highlight-btn {
+          background: rgba(255,193,7,0.14);
+        }
         .para-comment-btn:hover,
         .para-comment-btn:focus-visible {
           background: rgba(34,230,197,0.22);
           color: var(--reader-hl);
+          outline: none;
+        }
+        .para-highlight-btn:hover,
+        .para-highlight-btn:focus-visible {
+          background: rgba(255,193,7,0.28);
+          color: #B45309;
           outline: none;
         }
         .para-comment-count { font-size: 0.7rem; font-weight: 700; }
@@ -1929,6 +2199,34 @@ export function BookReader() {
           cursor: pointer; font-size: 1.1rem; line-height: 1; padding: 0 4px;
         }
 
+        .para-highlight-wrap { position: relative; flex-shrink: 0; }
+        .para-highlight-picker {
+          position: absolute; right: 0; top: 110%; z-index: 15;
+          display: flex; gap: 6px; padding: 8px; border-radius: 12px;
+          background: var(--reader-glass); border: 1px solid var(--reader-border);
+          -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+          box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }
+        .hl-swatch {
+          width: 22px; height: 22px; border-radius: 50%;
+          border: 2px solid rgba(255,255,255,0.55); cursor: pointer; padding: 0;
+        }
+        .hl-clear {
+          background: transparent !important; border: 1px solid var(--reader-border) !important;
+          color: var(--reader-muted); font-size: 0.85rem;
+          display: flex; align-items: center; justify-content: center;
+        }
+
+        .reader-image-btn {
+          position: relative;
+          display: block;
+          width: 100%;
+          max-width: 100%;
+          border: none;
+          background: none;
+          padding: 0;
+          cursor: zoom-in;
+        }
         .reader-inline-image {
           max-width: 100%;
           max-height: min(65vh, 480px);
@@ -1938,7 +2236,55 @@ export function BookReader() {
           margin: 0.4rem auto;
           display: block;
         }
+        .image-expand-hint {
+          position: absolute; top: 12px; right: 12px;
+          width: 30px; height: 30px; border-radius: 50%;
+          background: rgba(0,0,0,0.45); color: #fff;
+          display: flex; align-items: center; justify-content: center;
+          opacity: 0; transition: opacity 0.2s ease;
+        }
+        .reader-image-btn:hover .image-expand-hint,
+        .reader-image-btn:focus-visible .image-expand-hint {
+          opacity: 1;
+        }
         .reader-para-image { text-align: center; }
+
+        .lightbox-overlay {
+          position: fixed; inset: 0; z-index: 300;
+          background: rgba(0,0,0,0.92);
+          display: flex; align-items: center; justify-content: center;
+          cursor: zoom-out;
+          padding: 2rem;
+        }
+        .lightbox-img {
+          max-width: 95vw; max-height: 92vh;
+          width: auto; height: auto;
+          object-fit: contain;
+          border-radius: 10px;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+          cursor: default;
+        }
+        .lightbox-close {
+          position: fixed;
+          top: max(1rem, env(safe-area-inset-top, 0px));
+          right: max(1rem, env(safe-area-inset-right, 0px));
+          width: 44px; height: 44px; border-radius: 50%;
+          border: none; background: rgba(255,255,255,0.12); color: #fff;
+          display: flex; align-items: center; justify-content: center;
+          cursor: pointer; z-index: 301;
+        }
+
+        .image-gallery-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+          gap: 10px;
+        }
+        .image-gallery-item {
+          border: none; background: rgba(255,255,255,0.05);
+          border-radius: 10px; overflow: hidden; cursor: pointer;
+          padding: 0; aspect-ratio: 1;
+        }
+        .image-gallery-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
         .reader-transport-float {
           position: fixed;
@@ -1958,6 +2304,13 @@ export function BookReader() {
           backdrop-filter: blur(18px) saturate(1.35);
           box-shadow: 0 8px 32px rgba(0,0,0,0.28);
           max-width: calc(100vw - 1.25rem);
+          transition: opacity 0.35s ease, transform 0.35s ease;
+        }
+        .reader-transport-float.is-idle {
+          opacity: 0;
+          pointer-events: none;
+          -webkit-transform: translateX(-50%) translateY(14px);
+          transform: translateX(-50%) translateY(14px);
         }
         .reader-transport-float.is-desktop {
           bottom: max(1.35rem, env(safe-area-inset-bottom, 0px));
@@ -1978,6 +2331,7 @@ export function BookReader() {
           cursor: pointer;
           box-shadow: 0 4px 16px rgba(34,230,197,0.4);
           flex-shrink: 0;
+          min-width: 52px;
         }
 
         .reader-bottom-progress {
@@ -2036,11 +2390,22 @@ export function BookReader() {
           display: flex; flex-direction: column; gap: 0.85rem;
         }
         .appearance-scroll-desk {
-          display: flex; flex-direction: column; gap: 0.95rem;
+          display: flex; flex-direction: column; gap: 1.1rem;
           overflow-y: auto; flex: 1;
         }
         .appearance-header { display: flex; justify-content: space-between; align-items: center; }
-        .appearance-header h3 { font-size: 1rem; margin: 0; }
+        .appearance-header h3 { font-size: 1rem; margin: 0; font-weight: 700; letter-spacing: 0.01em; }
+        .appearance-group {
+          display: flex; flex-direction: column; gap: 0.85rem;
+          padding-bottom: 0.95rem;
+          border-bottom: 1px solid var(--reader-border);
+        }
+        .appearance-group:last-child { border-bottom: none; padding-bottom: 0; }
+        .appearance-group-title {
+          font-size: 0.66rem; font-weight: 700; letter-spacing: 0.09em;
+          text-transform: uppercase; color: var(--reader-hl);
+          margin: 0 0 0.1rem;
+        }
         .appearance-section { display: flex; flex-direction: column; gap: 6px; }
         .appearance-section.row { flex-direction: row; align-items: center; justify-content: space-between; }
         .appearance-section label { font-size: 0.8rem; color: var(--reader-muted); }
@@ -2052,6 +2417,7 @@ export function BookReader() {
           border-radius: 10px; border: 1px solid var(--reader-border);
           background: transparent; color: var(--reader-ink); cursor: pointer;
           font-size: 0.85rem;
+          transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
         }
         .preset-btn.active, .mode-btn.active {
           background: rgba(34,230,197,0.22);
@@ -2063,6 +2429,7 @@ export function BookReader() {
           border: 1px solid var(--reader-border); background: transparent;
           color: var(--reader-ink); font-size: 0.72rem; cursor: pointer;
           min-height: 48px;
+          transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
         }
         .voice-hint { font-size: 0.68rem; color: var(--reader-muted); margin-top: 4px; }
         .voice-hint.warn {
@@ -2092,6 +2459,8 @@ export function BookReader() {
           overflow: hidden;
           display: flex;
           flex-direction: column;
+          perspective: 1800px;
+          -webkit-perspective: 1800px;
         }
         .h-page-area.mobile {
           min-height: calc(100vh - 13rem);
@@ -2100,28 +2469,34 @@ export function BookReader() {
         .h-page-stage {
           flex: 1;
           overflow: hidden;
-          padding: 0.4rem 0.15rem 0.75rem;
+          padding: 0.4rem 0.15rem 0.4rem;
           transform-style: preserve-3d;
           -webkit-transform-style: preserve-3d;
+        }
+        .h-page-stage.slide-next {
+          animation: pageFlipNext 0.62s cubic-bezier(0.45, 0, 0.2, 1);
           transform-origin: left center;
         }
-        .h-page-area { perspective: 1800px; -webkit-perspective: 1800px; }
-        .h-page-stage.slide-next {
-          animation: bookFlipNext 0.55s cubic-bezier(0.22, 0.61, 0.36, 1);
-        }
         .h-page-stage.slide-prev {
-          animation: bookFlipPrev 0.55s cubic-bezier(0.22, 0.61, 0.36, 1);
+          animation: pageFlipPrev 0.62s cubic-bezier(0.45, 0, 0.2, 1);
+          transform-origin: right center;
         }
         .h-page-stage.no-anim { animation: none !important; }
-        @keyframes bookFlipNext {
-          0% { transform: rotateY(0deg); opacity: 1; }
-          45% { transform: rotateY(-88deg); opacity: 0.88; box-shadow: -12px 0 28px rgba(0,0,0,0.25); }
-          100% { transform: rotateY(0deg); opacity: 1; }
+        @keyframes pageFlipNext {
+          0% { transform: rotateY(0deg) translateZ(0); filter: brightness(1); }
+          22% { transform: rotateY(-16deg) translateZ(-10px); filter: brightness(0.96); }
+          48% { transform: rotateY(-82deg) translateZ(-46px); filter: brightness(0.78); }
+          52% { transform: rotateY(-88deg) translateZ(-50px); filter: brightness(1.06); }
+          78% { transform: rotateY(-28deg) translateZ(-14px); filter: brightness(0.94); }
+          100% { transform: rotateY(0deg) translateZ(0); filter: brightness(1); }
         }
-        @keyframes bookFlipPrev {
-          0% { transform: rotateY(0deg); opacity: 1; }
-          45% { transform: rotateY(88deg); opacity: 0.88; box-shadow: 12px 0 28px rgba(0,0,0,0.25); }
-          100% { transform: rotateY(0deg); opacity: 1; }
+        @keyframes pageFlipPrev {
+          0% { transform: rotateY(0deg) translateZ(0); filter: brightness(1); }
+          22% { transform: rotateY(16deg) translateZ(-10px); filter: brightness(0.96); }
+          48% { transform: rotateY(82deg) translateZ(-46px); filter: brightness(0.78); }
+          52% { transform: rotateY(88deg) translateZ(-50px); filter: brightness(1.06); }
+          78% { transform: rotateY(28deg) translateZ(-14px); filter: brightness(0.94); }
+          100% { transform: rotateY(0deg) translateZ(0); filter: brightness(1); }
         }
         @media (prefers-reduced-motion: reduce) {
           .h-page-stage.slide-next, .h-page-stage.slide-prev { animation: none; }
@@ -2135,10 +2510,19 @@ export function BookReader() {
           background: color-mix(in srgb, var(--reader-bg) 92%, #fff 8%);
           box-shadow: 0 10px 40px rgba(0,0,0,0.22), 0 0 0 1px var(--reader-border);
           border-radius: 2px 10px 10px 2px;
+          overflow: hidden;
         }
-        [data-reader-mode="day"] .h-page-inner.word-sheet,
-        [data-reader-mode="sepia"] .h-page-inner.word-sheet {
+        [data-reader-mode="day"] .h-page-inner.word-sheet {
           background: #fffef9;
+        }
+        [data-reader-mode="sepia"] .h-page-inner.word-sheet {
+          background: radial-gradient(ellipse at top left, #FBF3DE, #F3E5C1 55%, #ECDBB0 100%);
+          box-shadow: 0 10px 40px rgba(59,42,24,0.28), inset 0 0 70px rgba(168,99,27,0.08), 0 0 0 1px rgba(59,42,24,0.16);
+          border-radius: 4px 14px 14px 4px;
+        }
+        [data-reader-mode="sepia"] .reader-chapter-title,
+        [data-reader-mode="sepia"] .drop-cap::first-letter {
+          font-family: "Merriweather", Georgia, serif;
         }
         .reader-para em { font-style: italic; }
         .reader-para strong { font-weight: 700; }
@@ -2154,8 +2538,18 @@ export function BookReader() {
           font-size: 0.72rem;
           color: var(--reader-muted);
           letter-spacing: 0.06em;
-          padding: 0.3rem 0;
+          padding: 0.3rem 0 0.1rem;
           flex-shrink: 0;
+        }
+        .swipe-hint {
+          display: flex; align-items: center; justify-content: center; gap: 6px;
+          font-size: 0.7rem; color: var(--reader-muted); letter-spacing: 0.04em;
+          padding-bottom: 0.4rem; opacity: 0.85; flex-shrink: 0;
+        }
+        .swipe-hint-icon { animation: swipeHintMove 1.6s ease-in-out infinite; }
+        @keyframes swipeHintMove {
+          0%, 100% { transform: translateX(0); opacity: 0.5; }
+          50% { transform: translateX(6px); opacity: 1; }
         }
 
         .reader-mobile {
@@ -2176,14 +2570,14 @@ export function BookReader() {
           margin-bottom: 0;
           position: sticky;
           top: 52px;
-          z-index: 29;
+          z-index: 19;
           background: var(--reader-bg);
           padding: 4px 0 2px;
         }
         .reader-mobile > .reader-progress-line {
           position: sticky;
           top: 74px;
-          z-index: 28;
+          z-index: 18;
           background: var(--reader-bg);
           margin-bottom: 0.75rem;
         }
@@ -2252,7 +2646,7 @@ export function BookReader() {
         }
         .appearance-scroll {
           flex: 1; overflow-y: auto;
-          display: flex; flex-direction: column; gap: 1rem;
+          display: flex; flex-direction: column; gap: 1.1rem;
           -webkit-overflow-scrolling: touch;
           padding-bottom: 0.5rem;
         }
