@@ -50,6 +50,11 @@ export interface ParagraphComment {
 export interface Highlight {
   id: string
   paraIndex: number
+  /** Offset dentro del texto "visible" del párrafo (sin marcado markdown) */
+  startOffset: number
+  endOffset: number
+  /** Copia del fragmento resaltado, para robustez visual */
+  text: string
   color: string
   createdAt: string
 }
@@ -276,9 +281,25 @@ function stripAlignMarkers(raw: string): string {
     .replace(/^centered:\s*/i, '')
 }
 
-/** Renderizado robusto de formato rico (negrita, cursiva, subrayado, tachado, color) */
-function renderRichInline(text: string): React.ReactNode[] {
-  // Normalizar HTML residual a markdown
+/** Un "run" de texto plano con su formato (negrita/cursiva/subrayado/tachado/color) */
+interface InlineRun {
+  text: string
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  strike?: boolean
+  color?: string
+}
+
+/**
+ * Convierte el markdown/HTML residual del párrafo en una lista de "runs" de
+ * texto plano + formato. A diferencia del render directo a nodos React, esto
+ * permite conocer la posición exacta (offset) de cada carácter *visible*
+ * dentro del párrafo — necesario para poder superponer subrayados sobre
+ * cualquier fragmento que el usuario seleccione, sin que el marcado
+ * markdown (**, *, ~~…) descuadre los índices.
+ */
+function buildInlineRuns(text: string): InlineRun[] {
   let s = text
   s = s.replace(/<b>([\s\S]*?)<\/b>/gi, '**$1**')
   s = s.replace(/<strong>([\s\S]*?)<\/strong>/gi, '**$1**')
@@ -287,7 +308,6 @@ function renderRichInline(text: string): React.ReactNode[] {
   s = s.replace(/<u>([\s\S]*?)<\/u>/gi, '§u§$1§/u§')
   s = s.replace(/<(s|strike|del)>([\s\S]*?)<\/\1>/gi, '~~$2~~')
 
-  // Extraer spans de color
   type Seg = { t: string; color?: string }
   const segs: Seg[] = []
   const colorRe = /<span\s+style=["'][^"']*color:\s*([^;"']+)[^"']*["']>([\s\S]*?)<\/span>/gi
@@ -301,34 +321,146 @@ function renderRichInline(text: string): React.ReactNode[] {
   if (last < s.length) segs.push({ t: s.slice(last) })
   if (!segs.length) segs.push({ t: s })
 
-  const nodes: React.ReactNode[] = []
-  let key = 0
+  const runs: InlineRun[] = []
 
   const pushMarkdown = (chunk: string, color?: string) => {
-    // Regex que captura **negrita**, *cursiva*, ~~tachado~~, §u§subrayado§/u§
-    // Orden importante: primero dobles, luego simples
     const parts = chunk.split(/(\*\*[\s\S]+?\*\*|~~[\s\S]+?~~|§u§[\s\S]+?§\/u§|\*[^*\n]+?\*)/g)
     for (const p of parts) {
       if (!p) continue
-      const style: React.CSSProperties = color ? { color } : {}
       if (p.startsWith('**') && p.endsWith('**') && p.length >= 4) {
-        nodes.push(<strong key={key++} style={style}>{p.slice(2, -2)}</strong>)
+        runs.push({ text: p.slice(2, -2), bold: true, color })
       } else if (p.startsWith('~~') && p.endsWith('~~') && p.length >= 4) {
-        nodes.push(<s key={key++} style={style}>{p.slice(2, -2)}</s>)
+        runs.push({ text: p.slice(2, -2), strike: true, color })
       } else if (p.startsWith('§u§') && p.endsWith('§/u§') && p.length >= 7) {
-        nodes.push(<u key={key++} style={style}>{p.slice(3, -4)}</u>)
+        runs.push({ text: p.slice(3, -4), underline: true, color })
       } else if (p.startsWith('*') && p.endsWith('*') && p.length >= 3 && !p.startsWith('**')) {
-        nodes.push(<em key={key++} style={style}>{p.slice(1, -1)}</em>)
-      } else if (color) {
-        nodes.push(<span key={key++} style={style}>{p}</span>)
+        runs.push({ text: p.slice(1, -1), italic: true, color })
       } else {
-        nodes.push(<React.Fragment key={key++}>{p}</React.Fragment>)
+        runs.push({ text: p, color })
       }
     }
   }
 
   for (const seg of segs) pushMarkdown(seg.t, seg.color)
+  return runs.filter((r) => r.text.length > 0)
+}
+
+/** Texto plano equivalente a una lista de runs (lo que el usuario realmente ve/selecciona) */
+function plainTextOfRuns(runs: InlineRun[]): string {
+  return runs.map((r) => r.text).join('')
+}
+
+interface HighlightRange {
+  id: string
+  start: number
+  end: number
+  color: string
+}
+
+/**
+ * Renderiza los runs aplicando el formato normal (negrita/cursiva/…) y, por
+ * encima, cualquier subrayado (`<mark>`) cuyo rango se solape con cada run,
+ * partiéndolo en los trozos necesarios para no perder ni el formato ni la
+ * fidelidad del resaltado.
+ */
+function renderRunsWithHighlights(
+  runs: InlineRun[],
+  ranges: HighlightRange[],
+  onMarkClick?: (id: string, e: React.MouseEvent<HTMLElement>) => void
+): React.ReactNode[] {
+  const nodes: React.ReactNode[] = []
+  let key = 0
+  let cursor = 0
+
+  const wrap = (run: InlineRun, slice: string, node: React.ReactNode = slice): React.ReactNode => {
+    let n = node
+    const style: React.CSSProperties = run.color ? { color: run.color } : {}
+    if (run.bold) n = <strong>{n}</strong>
+    if (Object.keys(style).length) n = <span style={style}>{n}</span>
+    if (run.italic) n = <em>{n}</em>
+    if (run.underline) n = <u>{n}</u>
+    if (run.strike) n = <s>{n}</s>
+    return n
+  }
+
+  for (const run of runs) {
+    const runStart = cursor
+    const runEnd = cursor + run.text.length
+    cursor = runEnd
+
+    const overlaps = ranges
+      .filter((r) => r.start < runEnd && r.end > runStart)
+      .sort((a, b) => a.start - b.start)
+
+    if (!overlaps.length) {
+      nodes.push(<React.Fragment key={key++}>{wrap(run, run.text)}</React.Fragment>)
+      continue
+    }
+
+    let pos = runStart
+    for (const r of overlaps) {
+      const segStart = Math.max(pos, r.start)
+      const segEnd = Math.min(runEnd, r.end)
+      if (segStart > pos) {
+        const plain = run.text.slice(pos - runStart, segStart - runStart)
+        nodes.push(<React.Fragment key={key++}>{wrap(run, plain)}</React.Fragment>)
+      }
+      const hlText = run.text.slice(segStart - runStart, segEnd - runStart)
+      nodes.push(
+        <mark
+          key={key++}
+          className="reader-highlight-mark"
+          style={{ backgroundColor: r.color }}
+          onClick={(e) => onMarkClick?.(r.id, e)}
+        >
+          {wrap(run, hlText)}
+        </mark>
+      )
+      pos = segEnd
+    }
+    if (pos < runEnd) {
+      const plain = run.text.slice(pos - runStart)
+      nodes.push(<React.Fragment key={key++}>{wrap(run, plain)}</React.Fragment>)
+    }
+  }
   return nodes
+}
+
+/**
+ * Recorre los nodos de texto de `root` para hallar el offset "plano"
+ * (sin marcado) correspondiente a un punto (node, offset) de un Range de
+ * selección del navegador. Es estable frente a negrita/cursiva/subrayado
+ * porque camina exactamente sobre lo que el usuario ve y selecciona.
+ */
+function getPlainOffsetInElement(root: HTMLElement, targetNode: Node, targetOffset: number): number {
+  if (targetNode.nodeType !== Node.TEXT_NODE) {
+    // El navegador puede referenciar un elemento contenedor (p.ej. al
+    // seleccionar hasta el final del párrafo). Aproximamos sumando el
+    // texto de los hijos anteriores al índice indicado.
+    let acc = 0
+    const children = targetNode.childNodes
+    for (let i = 0; i < Math.min(targetOffset, children.length); i++) {
+      acc += (children[i].textContent || '').length
+    }
+    if (targetNode === root) return acc
+    // Si el nodo no es la raíz, camina hasta él y suma su longitud interna
+    let offset = 0
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+    let node: Node | null
+    while ((node = walker.nextNode())) {
+      if (targetNode.contains(node)) return offset + acc
+      offset += (node.textContent || '').length
+    }
+    return offset
+  }
+  let offset = 0
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  let node: Node | null
+  while ((node = walker.nextNode())) {
+    if (node === targetNode) return offset + targetOffset
+    offset += (node.textContent || '').length
+  }
+  return offset
 }
 
 function parseImageMeta(srcLine: string): { src: string; width?: string; align?: ParaAlign; alt: string } | null {
@@ -598,9 +730,18 @@ export function BookReader() {
   const [commentPara, setCommentPara] = useState<number | null>(null)
   const [bookmarkNote, setBookmarkNote] = useState('')
   const [showBookmarkForm, setShowBookmarkForm] = useState(false)
-  const [highlightPickerFor, setHighlightPickerFor] = useState<number | null>(null)
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
   const [transportVisible, setTransportVisible] = useState(true)
+  const [highlightMode, setHighlightMode] = useState(false)
+  const [selectionPopup, setSelectionPopup] = useState<{
+    paraIndex: number
+    startOffset: number
+    endOffset: number
+    text: string
+    x: number
+    y: number
+    editingId?: string
+  } | null>(null)
 
   const [pageIndex, setPageIndex] = useState(0)
   const [pages, setPages] = useState<PageSlice[]>([])
@@ -653,8 +794,18 @@ export function BookReader() {
       else setChapters(detectChapters(stripAuthorWordsHeading(b.text || '')))
       if (b.bookmarks) setBookmarks(b.bookmarks as Bookmark[])
       if (b.comments) setComments(b.comments as ParagraphComment[])
-      const rawHighlights = (b as unknown as { highlights?: Highlight[] }).highlights
-      if (rawHighlights) setHighlights(rawHighlights)
+      if (b.highlights?.length) {
+        // Migra marcadores antiguos (párrafo completo, sin offsets) a rangos.
+        const migrated = (b.highlights as Highlight[]).map((h) => ({
+          ...h,
+          startOffset: typeof h.startOffset === 'number' ? h.startOffset : 0,
+          endOffset: typeof h.endOffset === 'number' ? h.endOffset : Number.MAX_SAFE_INTEGER,
+          text: h.text || '',
+        }))
+        setHighlights(migrated)
+      } else {
+        setHighlights([])
+      }
       if (b.appearance) {
         setAppearance(normalizeAppearance(b.appearance as unknown as Record<string, unknown>))
       }
@@ -792,6 +943,7 @@ export function BookReader() {
   }, [reader.charIndex, chapters, bookmarks, comments, highlights, appearance]) // eslint-disable-line
 
   const paragraphs = useMemo(() => splitParagraphs(text), [text])
+
 
   const imageParas = useMemo(
     () => paragraphs.map((p, i) => ({ p, i })).filter((x) => x.p.isImage),
@@ -995,22 +1147,136 @@ export function BookReader() {
     soundSuccess()
   }
 
-  const toggleHighlight = (paraIndex: number, color: string | null) => {
+  /** Halla el offset "plano" (post-markdown) de un punto de selección dentro de un párrafo */
+  const captureSelectionHighlight = useCallback(() => {
+    if (!highlightMode) return
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
+    const range = sel.getRangeAt(0)
+    const asElement = (n: Node): Element | null => (n.nodeType === Node.TEXT_NODE ? n.parentElement : (n as Element))
+    const startHost = asElement(range.startContainer)?.closest('[data-para]') as HTMLElement | null
+    const endHost = asElement(range.endContainer)?.closest('[data-para]') as HTMLElement | null
+    if (!startHost || !endHost) return
+    const paraIndex = Number(startHost.getAttribute('data-para'))
+    const endParaIndex = Number(endHost.getAttribute('data-para'))
+    if (Number.isNaN(paraIndex)) return
+    const pEl = startHost.querySelector('p')
+    if (!pEl) return
+
+    let endContainer: Node = range.endContainer
+    let endOffsetRaw = range.endOffset
+    if (endParaIndex !== paraIndex) {
+      // Selección multi-párrafo: recortamos al final del primer párrafo.
+      endContainer = pEl
+      endOffsetRaw = pEl.childNodes.length
+    }
+
+    const a = getPlainOffsetInElement(pEl, range.startContainer, range.startOffset)
+    const b = getPlainOffsetInElement(pEl, endContainer, endOffsetRaw)
+    const from = Math.max(0, Math.min(a, b))
+    const to = Math.max(a, b)
+    if (to - from < 1) return
+
+    const rect = range.getBoundingClientRect()
+    const plainLen = plainTextOfRuns(buildInlineRuns(stripAlignMarkers(paragraphs[paraIndex]?.text || '')))
+      .length
+    const clampedTo = Math.min(to, plainLen)
+    const text = (pEl.textContent || '').slice(from, clampedTo)
+    if (!text.trim()) return
+
+    setSelectionPopup({
+      paraIndex,
+      startOffset: from,
+      endOffset: clampedTo,
+      text,
+      x: Math.round(rect.left + rect.width / 2),
+      y: Math.round(rect.top),
+    })
+  }, [highlightMode, paragraphs])
+
+  useEffect(() => {
+    if (!highlightMode) return
+    let t: number | null = null
+    const onChange = () => {
+      if (t) window.clearTimeout(t)
+      t = window.setTimeout(captureSelectionHighlight, 60)
+    }
+    document.addEventListener('selectionchange', onChange)
+    return () => {
+      document.removeEventListener('selectionchange', onChange)
+      if (t) window.clearTimeout(t)
+    }
+  }, [highlightMode, captureSelectionHighlight])
+
+  const openHighlightEditor = useCallback(
+    (hid: string, e: React.MouseEvent<HTMLElement>) => {
+      e.stopPropagation()
+      soundClick()
+      const h = highlights.find((x) => x.id === hid)
+      if (!h) return
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      setSelectionPopup({
+        paraIndex: h.paraIndex,
+        startOffset: h.startOffset,
+        endOffset: h.endOffset,
+        text: h.text,
+        x: Math.round(rect.left + rect.width / 2),
+        y: Math.round(rect.top),
+        editingId: h.id,
+      })
+    },
+    [highlights]
+  )
+
+  const applySelectionColor = (color: string) => {
+    if (!selectionPopup) return
     soundClick()
     setHighlights((prev) => {
-      const existing = prev.find((h) => h.paraIndex === paraIndex)
-      if (color === null) {
-        return prev.filter((h) => h.paraIndex !== paraIndex)
+      if (selectionPopup.editingId) {
+        return prev.map((h) => (h.id === selectionPopup.editingId ? { ...h, color } : h))
       }
-      if (existing && existing.color === color) {
-        return prev.filter((h) => h.paraIndex !== paraIndex)
-      }
-      if (existing) {
-        return prev.map((h) => (h.paraIndex === paraIndex ? { ...h, color } : h))
-      }
-      return [...prev, { id: `hl-${Date.now()}`, paraIndex, color, createdAt: new Date().toISOString() }]
+      return [
+        ...prev,
+        {
+          id: `hl-${Date.now()}`,
+          paraIndex: selectionPopup.paraIndex,
+          startOffset: selectionPopup.startOffset,
+          endOffset: selectionPopup.endOffset,
+          text: selectionPopup.text,
+          color,
+          createdAt: new Date().toISOString(),
+        },
+      ]
     })
-    setHighlightPickerFor(null)
+    try {
+      window.getSelection()?.removeAllRanges()
+    } catch {
+      /* */
+    }
+    setSelectionPopup(null)
+  }
+
+  const removeSelectionHighlight = () => {
+    if (!selectionPopup?.editingId) return
+    soundClick()
+    setHighlights((prev) => prev.filter((h) => h.id !== selectionPopup.editingId))
+    setSelectionPopup(null)
+  }
+
+  const toggleHighlightMode = () => {
+    soundClick()
+    setHighlightMode((v) => {
+      const next = !v
+      if (!next) {
+        try {
+          window.getSelection()?.removeAllRanges()
+        } catch {
+          /* */
+        }
+        setSelectionPopup(null)
+      }
+      return next
+    })
   }
 
   const saveChapterEdit = () => {
@@ -1066,6 +1332,53 @@ export function BookReader() {
     reader.speakFrom(text, reader.charIndex, reader.rate, reader.voiceURI)
   }, [reader, text])
 
+  /* ── MediaSession: metadatos (portada/título/autor) para lockscreen y notificación ── */
+  useEffect(() => {
+    const anyReader = reader as unknown as {
+      setMediaMetadata?: (m: { title: string; artist?: string; album?: string; artwork?: string }) => void
+    }
+    anyReader.setMediaMetadata?.({
+      title: currentChapter?.title || title || 'Audiolibro',
+      artist: author || undefined,
+      album: title || undefined,
+      artwork: cover || undefined,
+    })
+  }, [reader, title, author, cover, currentChapter])
+
+  /* ── MediaSession: capítulo anterior/siguiente desde controles del sistema ── */
+  useEffect(() => {
+    const anyReader = reader as unknown as {
+      setChapterHandlers?: (h: { onPrevChapter?: () => void; onNextChapter?: () => void }) => void
+    }
+    anyReader.setChapterHandlers?.({
+      onPrevChapter: () => {
+        const prev = chapters[currentChapterIdx - 1]
+        if (prev) goToChar(prev.start)
+        else goToChar(Math.max(0, reader.charIndex - 800))
+      },
+      onNextChapter: () => {
+        if (nextChapter) goToChar(nextChapter.start)
+        else goToChar(Math.min(text.length, reader.charIndex + 800))
+      },
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reader, chapters, currentChapterIdx, nextChapter, text.length])
+
+  /* ── Cierra el selector de color de marcatextos al tocar fuera ── */
+  useEffect(() => {
+    if (!selectionPopup) return
+    let bound = false
+    const onDocClick = () => setSelectionPopup(null)
+    const t = window.setTimeout(() => {
+      document.addEventListener('click', onDocClick, { once: true })
+      bound = true
+    }, 80)
+    return () => {
+      window.clearTimeout(t)
+      if (bound) document.removeEventListener('click', onDocClick)
+    }
+  }, [selectionPopup])
+
   /* ── Render de párrafo fiel ── */
   const renderParagraph = (p: ReturnType<typeof splitParagraphs>[number], idx: number, isFirst: boolean) => {
     if (p.isImage && p.imageSrc) {
@@ -1108,57 +1421,19 @@ export function BookReader() {
     const clean = stripAlignMarkers(p.text)
     const indentStyle: CSSProperties = p.indent && p.indent > 0 ? { paddingLeft: `${Math.min(p.indent * 0.6, 4)}em` } : {}
     const alignStyle: CSSProperties = align !== 'left' ? { textAlign: align } : {}
-    const hl = highlights.find((h) => h.paraIndex === idx)
-    const highlightStyle: CSSProperties = hl
-      ? { backgroundColor: hl.color, borderRadius: 6, paddingTop: 4, paddingBottom: 4, paddingLeft: 8, paddingRight: 8, marginLeft: -8, marginRight: -8 }
-      : {}
+    const runs = buildInlineRuns(clean)
+    const plainLen = plainTextOfRuns(runs).length
+    const paraHighlights: HighlightRange[] = highlights
+      .filter((h) => h.paraIndex === idx)
+      .map((h) => ({ id: h.id, start: h.startOffset, end: Math.min(h.endOffset, plainLen), color: h.color }))
+      .filter((r) => r.end > r.start)
 
     return (
-      <div
-        key={idx}
-        className={`reader-para ${hl ? 'has-highlight' : ''}`}
-        data-para={idx}
-        style={{ ...indentStyle, ...alignStyle, ...highlightStyle }}
-      >
+      <div key={idx} className="reader-para" data-para={idx} style={{ ...indentStyle, ...alignStyle }}>
         <div className="para-row">
           <p className={isFirst ? 'drop-cap' : undefined}>
-            {renderRichInline(clean)}
+            {renderRunsWithHighlights(runs, paraHighlights, openHighlightEditor)}
           </p>
-          <div className="para-highlight-wrap">
-            <button
-              type="button"
-              className="para-highlight-btn"
-              aria-label="Marcar párrafo"
-              onClick={() => {
-                soundClick()
-                setHighlightPickerFor(highlightPickerFor === idx ? null : idx)
-              }}
-            >
-              <IconMarker />
-            </button>
-            {highlightPickerFor === idx && (
-              <div className="para-highlight-picker" onClick={(e) => e.stopPropagation()}>
-                {HIGHLIGHT_COLORS.map((hc) => (
-                  <button
-                    key={hc.id}
-                    type="button"
-                    className="hl-swatch"
-                    style={{ background: hc.color }}
-                    aria-label={hc.label}
-                    onClick={() => toggleHighlight(idx, hc.color)}
-                  />
-                ))}
-                <button
-                  type="button"
-                  className="hl-swatch hl-clear"
-                  aria-label="Quitar marca"
-                  onClick={() => toggleHighlight(idx, null)}
-                >
-                  ×
-                </button>
-              </div>
-            )}
-          </div>
           <button
             type="button"
             className="para-comment-btn"
@@ -1550,6 +1825,15 @@ export function BookReader() {
           )}
           <span className="reader-chapter-label">{currentChapter?.title || title}</span>
           <div className={isDesktop ? 'reader-topbar-actions' : 'mobile-top-actions'}>
+            <button
+              type="button"
+              className={`reader-icon-btn ${highlightMode ? 'active' : ''}`}
+              aria-label={highlightMode ? 'Salir del modo marcatextos' : 'Marcatextos: selecciona texto para resaltarlo'}
+              aria-pressed={highlightMode}
+              onClick={toggleHighlightMode}
+            >
+              <IconMarker />
+            </button>
             <button type="button" className="reader-icon-btn" aria-label="Índice" onClick={() => { soundClick(); setShowToc(true) }}>
               <IconList />
             </button>
@@ -1567,6 +1851,17 @@ export function BookReader() {
             </button>
           </div>
         </div>
+
+        {highlightMode && (
+          <div className="highlight-mode-banner" role="status">
+            <IconMarker />
+            <span>Selecciona un fragmento de texto para marcarlo y elige un color.</span>
+            <button type="button" className="hl-popup-close" aria-label="Salir del modo marcatextos" onClick={toggleHighlightMode}>
+              <IconClose />
+            </button>
+          </div>
+        )}
+
 
         {!isDesktop && (
           <>
@@ -1952,6 +2247,47 @@ export function BookReader() {
         </div>
       )}
 
+      {selectionPopup && (
+        <div
+          className="highlight-popup"
+          style={{ left: selectionPopup.x, top: Math.max(64, selectionPopup.y) }}
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-label="Elegir color de marcatextos"
+        >
+          {HIGHLIGHT_COLORS.map((hc) => (
+            <button
+              key={hc.id}
+              type="button"
+              className="hl-swatch"
+              style={{ background: hc.color }}
+              aria-label={hc.label}
+              onClick={() => applySelectionColor(hc.color)}
+            />
+          ))}
+          {selectionPopup.editingId && (
+            <button type="button" className="hl-swatch hl-clear" aria-label="Quitar marca" onClick={removeSelectionHighlight}>
+              ×
+            </button>
+          )}
+          <button
+            type="button"
+            className="hl-popup-close"
+            aria-label="Cerrar"
+            onClick={() => {
+              setSelectionPopup(null)
+              try {
+                window.getSelection()?.removeAllRanges()
+              } catch {
+                /* */
+              }
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=Merriweather:wght@400;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap');
 
@@ -2134,8 +2470,8 @@ export function BookReader() {
         }
 
         .reader-body { cursor: text; }
+        .reader-body.highlight-mode { cursor: text; }
         .reader-para { margin-bottom: 1em; }
-        .reader-para.has-highlight { transition: background-color 0.2s ease; }
         .para-row {
           display: flex;
           align-items: flex-start;
@@ -2152,7 +2488,7 @@ export function BookReader() {
           color: var(--reader-hl); font-family: "Lora", Georgia, serif;
         }
 
-        .para-comment-btn, .para-highlight-btn {
+        .para-comment-btn {
           flex-shrink: 0;
           display: inline-flex;
           align-items: center;
@@ -2170,19 +2506,10 @@ export function BookReader() {
           -webkit-tap-highlight-color: transparent;
           touch-action: manipulation;
         }
-        .para-highlight-btn {
-          background: rgba(255,193,7,0.14);
-        }
         .para-comment-btn:hover,
         .para-comment-btn:focus-visible {
           background: rgba(34,230,197,0.22);
           color: var(--reader-hl);
-          outline: none;
-        }
-        .para-highlight-btn:hover,
-        .para-highlight-btn:focus-visible {
-          background: rgba(255,193,7,0.28);
-          color: #B45309;
           outline: none;
         }
         .para-comment-count { font-size: 0.7rem; font-weight: 700; }
@@ -2199,21 +2526,57 @@ export function BookReader() {
           cursor: pointer; font-size: 1.1rem; line-height: 1; padding: 0 4px;
         }
 
-        .para-highlight-wrap { position: relative; flex-shrink: 0; }
-        .para-highlight-picker {
-          position: absolute; right: 0; top: 110%; z-index: 15;
-          display: flex; gap: 6px; padding: 8px; border-radius: 12px;
+        /* Subrayados de texto (selección libre, no todo el párrafo) */
+        .reader-highlight-mark {
+          border-radius: 3px;
+          padding: 0.02em 0.08em;
+          margin: 0 -0.08em;
+          box-decoration-break: clone;
+          -webkit-box-decoration-break: clone;
+          cursor: pointer;
+          color: #1a1a1a;
+        }
+        [data-reader-mode="night"] .reader-highlight-mark { color: #14181f; }
+
+        .highlight-mode-banner {
+          display: flex; align-items: center; gap: 8px;
+          font-size: 0.76rem; color: var(--reader-hl);
+          background: color-mix(in srgb, var(--reader-hl) 12%, transparent);
+          border: 1px solid color-mix(in srgb, var(--reader-hl) 30%, transparent);
+          border-radius: 10px;
+          padding: 0.45rem 0.7rem;
+          margin-bottom: 0.75rem;
+        }
+        @supports not (background: color-mix(in srgb, red 50%, blue)) {
+          .highlight-mode-banner { background: rgba(34,230,197,0.12); border-color: rgba(34,230,197,0.3); }
+        }
+
+        .highlight-popup {
+          position: fixed;
+          transform: translate(-50%, -100%) translateY(-10px);
+          z-index: 140;
+          display: flex; align-items: center; gap: 6px;
+          padding: 8px; border-radius: 14px;
           background: var(--reader-glass); border: 1px solid var(--reader-border);
-          -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-          box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+          -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+          box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+          max-width: min(92vw, 340px);
         }
         .hl-swatch {
-          width: 22px; height: 22px; border-radius: 50%;
+          width: 24px; height: 24px; border-radius: 50%;
           border: 2px solid rgba(255,255,255,0.55); cursor: pointer; padding: 0;
+          flex-shrink: 0;
         }
+        .hl-swatch:hover, .hl-swatch:focus-visible { transform: scale(1.12); outline: none; }
         .hl-clear {
           background: transparent !important; border: 1px solid var(--reader-border) !important;
           color: var(--reader-muted); font-size: 0.85rem;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .hl-popup-close {
+          width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+          border: none; background: rgba(255,255,255,0.08); color: var(--reader-muted);
+          cursor: pointer; font-size: 0.85rem; line-height: 1;
           display: flex; align-items: center; justify-content: center;
         }
 
@@ -2451,6 +2814,11 @@ export function BookReader() {
           outline: 2px solid var(--reader-hl);
           outline-offset: 2px;
         }
+        .reader-icon-btn.active {
+          background: rgba(255,193,7,0.2);
+          color: #F59E0B;
+        }
+        .reader-icon-btn.active:hover { background: rgba(255,193,7,0.3); }
 
         .h-page-area {
           position: relative;

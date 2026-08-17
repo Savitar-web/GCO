@@ -1010,9 +1010,24 @@ function ImportModal({
   const imageRef = useRef<HTMLInputElement>(null)
   const insertImgRef = useRef<HTMLInputElement>(null)
 
-  const ACCEPTED_EXT = ['.txt', '.pdf', '.docx', '.epub', '.jpg', '.jpeg', '.png', '.webp', '.gif']
+  const ACCEPTED_EXT = [
+    '.txt',
+    '.md',
+    '.markdown',
+    '.html',
+    '.htm',
+    '.rtf',
+    '.pdf',
+    '.docx',
+    '.epub',
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.webp',
+    '.gif',
+  ]
   const ACCEPT_ATTR =
-    '.txt,.pdf,.docx,.epub,.jpg,.jpeg,.png,.webp,.gif,text/plain,application/pdf,application/epub+zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*'
+    '.txt,.md,.markdown,.html,.htm,.rtf,.pdf,.docx,.epub,.jpg,.jpeg,.png,.webp,.gif,text/plain,text/markdown,text/html,application/rtf,application/pdf,application/epub+zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*'
 
   const isImageFile = (file: File) =>
     /\.(jpe?g|png|webp|gif)$/i.test(file.name) || (file.type || '').startsWith('image/')
@@ -1058,7 +1073,7 @@ function ImportModal({
     setImportError(null)
     if (!isAcceptedFile(file)) {
       soundFail()
-      setImportError('Formato no compatible. Usa TXT, PDF, DOCX, EPUB o imagen.')
+      setImportError('Formato no compatible. Usa TXT, MD, HTML, RTF, PDF, DOCX, EPUB o imagen.')
       return
     }
     if (isImageFile(file)) {

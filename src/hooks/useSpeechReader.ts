@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 export type SkipSeconds = 5 | 10 | 15
 
-/** ~13 caracteres/s a rate 1 (aproximación para “segundos” en TTS) */
+/** ~13 caracteres/s a rate 1 (aproximación para "segundos" en TTS) */
 function charsForSeconds(sec: number, rate: number) {
   return Math.round(sec * 13 * Math.max(0.5, rate || 1))
 }
@@ -42,7 +42,8 @@ export function pickHumanVoice(voices: SpeechSynthesisVoice[], currentURI?: stri
   return ranked[0]?.voiceURI || ''
 }
 
-const WATCHDOG_MS = 11_000 // Chrome/Android cortan ~15s; pause/resume refresca la cola
+const WATCHDOG_MS = 10_000 // Chrome/Android cortan ~15s; pause/resume refresca la cola
+const BG_NUDGE_MS = 4_000 // en segundo plano conviene refrescar con más frecuencia
 
 /** Fragmenta textos largos para evitar cortes de Chrome/Android y límites de Safari */
 function chunkText(text: string, maxLen = 220): string[] {
@@ -70,6 +71,32 @@ function chunkText(text: string, maxLen = 220): string[] {
   return chunks.length ? chunks : [text]
 }
 
+/**
+ * WAV de silencio (0.25s, 4kHz, 8-bit mono) codificado en base64.
+ * Se reproduce en loop, con volumen casi inaudible, mientras se habla.
+ * Mantiene "viva" una sesión de audio real del sistema operativo para que
+ * la lectura continúe con la pantalla apagada / el dispositivo suspendido,
+ * y habilita los controles multimedia del bloqueo de pantalla (MediaSession).
+ */
+const SILENT_LOOP_SRC = 'data:audio/wav;base64,UklGRgwEAABXQVZFZm10IBAAAAABAAEAoA8AAKAPAAABAAgAZGF0YegDAACAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCB'
+
+export interface ReaderMediaMeta {
+  title: string
+  artist?: string
+  album?: string
+  /** Data URL o URL absoluta de la portada */
+  artwork?: string
+}
+
+export interface ChapterNavHandlers {
+  onPrevChapter?: () => void
+  onNextChapter?: () => void
+}
+
+function hasMediaSession(): boolean {
+  return typeof navigator !== 'undefined' && 'mediaSession' in navigator
+}
+
 export function useSpeechReader() {
   const [speaking, setSpeaking] = useState(false)
   const [paused, setPaused] = useState(false)
@@ -79,6 +106,7 @@ export function useSpeechReader() {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([])
   const [voicesReady, setVoicesReady] = useState(false)
   const [noVoicesAvailable, setNoVoicesAvailable] = useState(false)
+  const [backgroundSupported] = useState(() => hasMediaSession())
 
   const textRef = useRef('')
   const baseOffsetRef = useRef(0)
@@ -90,11 +118,62 @@ export function useSpeechReader() {
   const queueOffsetRef = useRef<number[]>([])
   const queueIdxRef = useRef(0)
   const cancelledRef = useRef(false)
+  const keepAliveRef = useRef<HTMLAudioElement | null>(null)
+  const chapterHandlersRef = useRef<ChapterNavHandlers>({})
+  const mediaMetaRef = useRef<ReaderMediaMeta | null>(null)
+  const hiddenSinceRef = useRef<number | null>(null)
 
   const supported =
     typeof window !== 'undefined' &&
     typeof window.speechSynthesis !== 'undefined' &&
     typeof SpeechSynthesisUtterance !== 'undefined'
+
+  /* ── Audio de "keep-alive" para reproducción real en segundo plano ── */
+  useEffect(() => {
+    if (typeof Audio === 'undefined') return
+    try {
+      const a = new Audio(SILENT_LOOP_SRC)
+      a.loop = true
+      a.preload = 'auto'
+      a.volume = 0.01
+      // @ts-ignore — atributo válido en iOS Safari, no tipado en algunos lib.dom
+      a.playsInline = true
+      a.setAttribute('playsinline', 'true')
+      keepAliveRef.current = a
+    } catch {
+      keepAliveRef.current = null
+    }
+    return () => {
+      try {
+        keepAliveRef.current?.pause()
+      } catch {
+        /* */
+      }
+      keepAliveRef.current = null
+    }
+  }, [])
+
+  const startKeepAlive = useCallback(() => {
+    const a = keepAliveRef.current
+    if (!a) return
+    try {
+      const p = a.play()
+      if (p && typeof p.catch === 'function') p.catch(() => {})
+    } catch {
+      /* */
+    }
+  }, [])
+
+  const stopKeepAlive = useCallback(() => {
+    const a = keepAliveRef.current
+    if (!a) return
+    try {
+      a.pause()
+      a.currentTime = 0
+    } catch {
+      /* */
+    }
+  }, [])
 
   const loadVoices = useCallback(() => {
     if (!supported) return []
@@ -163,13 +242,13 @@ export function useSpeechReader() {
         /* */
       }
       if (voicePollRef.current) window.clearInterval(voicePollRef.current)
-      if (watchdogRef.current) window.clearInterval(watchdogRef.current)
+      if (watchdogRef.current) window.clearTimeout(watchdogRef.current)
     }
   }, [supported, loadVoices])
 
   const clearWatchdog = useCallback(() => {
     if (watchdogRef.current) {
-      window.clearInterval(watchdogRef.current)
+      window.clearTimeout(watchdogRef.current)
       watchdogRef.current = null
     }
   }, [])
@@ -177,17 +256,69 @@ export function useSpeechReader() {
   const startWatchdog = useCallback(() => {
     clearWatchdog()
     if (!supported) return
-    watchdogRef.current = window.setInterval(() => {
+    const tick = () => {
       try {
         if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
           window.speechSynthesis.pause()
           window.speechSynthesis.resume()
         }
+        // Reasegura el audio de fondo si el sistema lo detuvo (algunos Android
+        // suspenden <audio> silencioso tras un rato; lo reactivamos).
+        const a = keepAliveRef.current
+        if (a && a.paused && window.speechSynthesis.speaking) {
+          startKeepAlive()
+        }
       } catch {
         /* */
       }
-    }, WATCHDOG_MS)
-  }, [clearWatchdog, supported])
+      const interval = document.hidden ? BG_NUDGE_MS : WATCHDOG_MS
+      watchdogRef.current = window.setTimeout(tick, interval) as unknown as number
+    }
+    watchdogRef.current = window.setTimeout(tick, WATCHDOG_MS) as unknown as number
+  }, [clearWatchdog, supported, startKeepAlive])
+
+  /* ── MediaSession: metadatos y controles de bloqueo de pantalla ── */
+  const applyMediaMetadata = useCallback((meta: ReaderMediaMeta | null) => {
+    mediaMetaRef.current = meta
+    if (!hasMediaSession() || !meta) return
+    if (typeof MediaMetadata === 'undefined') return
+    try {
+      const artwork = meta.artwork
+        ? [
+            { src: meta.artwork, sizes: '512x512', type: 'image/png' },
+            { src: meta.artwork, sizes: '192x192', type: 'image/png' },
+          ]
+        : []
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: meta.title || 'Audiolibro',
+        artist: meta.artist || '',
+        album: meta.album || 'GCO Nutrición · Lector',
+        artwork,
+      })
+    } catch {
+      /* */
+    }
+  }, [])
+
+  const setMediaMetadata = useCallback(
+    (meta: ReaderMediaMeta) => {
+      applyMediaMetadata(meta)
+    },
+    [applyMediaMetadata]
+  )
+
+  const setChapterHandlers = useCallback((handlers: ChapterNavHandlers) => {
+    chapterHandlersRef.current = handlers || {}
+  }, [])
+
+  const updatePlaybackState = useCallback((state: 'playing' | 'paused' | 'none') => {
+    if (!hasMediaSession()) return
+    try {
+      navigator.mediaSession.playbackState = state
+    } catch {
+      /* */
+    }
+  }, [])
 
   const stop = useCallback(() => {
     cancelledRef.current = true
@@ -203,9 +334,11 @@ export function useSpeechReader() {
     }
     utteranceRef.current = null
     clearWatchdog()
+    stopKeepAlive()
+    updatePlaybackState('none')
     setSpeaking(false)
     setPaused(false)
-  }, [supported, clearWatchdog])
+  }, [supported, clearWatchdog, stopKeepAlive, updatePlaybackState])
 
   const speakChunk = useCallback(
     (chunk: string, absoluteStart: number, r: number, vURI: string) => {
@@ -236,6 +369,8 @@ export function useSpeechReader() {
         setSpeaking(true)
         setPaused(false)
         startWatchdog()
+        startKeepAlive()
+        updatePlaybackState('playing')
       }
       u.onend = () => {
         if (cancelledRef.current) return
@@ -251,6 +386,8 @@ export function useSpeechReader() {
           setPaused(false)
           setCharIndex(textRef.current.length)
           clearWatchdog()
+          stopKeepAlive()
+          updatePlaybackState('none')
         }
       }
       u.onerror = () => {
@@ -266,10 +403,18 @@ export function useSpeechReader() {
           setSpeaking(false)
           setPaused(false)
           clearWatchdog()
+          stopKeepAlive()
+          updatePlaybackState('none')
         }
       }
-      u.onpause = () => setPaused(true)
-      u.onresume = () => setPaused(false)
+      u.onpause = () => {
+        setPaused(true)
+        updatePlaybackState('paused')
+      }
+      u.onresume = () => {
+        setPaused(false)
+        updatePlaybackState('playing')
+      }
 
       utteranceRef.current = u
       try {
@@ -277,9 +422,10 @@ export function useSpeechReader() {
       } catch {
         setSpeaking(false)
         clearWatchdog()
+        stopKeepAlive()
       }
     },
-    [supported, voices, startWatchdog, clearWatchdog]
+    [supported, voices, startWatchdog, clearWatchdog, startKeepAlive, stopKeepAlive, updatePlaybackState]
   )
 
   const speakFrom = useCallback(
@@ -322,7 +468,8 @@ export function useSpeechReader() {
     }
     setPaused(true)
     clearWatchdog()
-  }, [speaking, supported, clearWatchdog])
+    updatePlaybackState('paused')
+  }, [speaking, supported, clearWatchdog, updatePlaybackState])
 
   const resume = useCallback(() => {
     if (!paused || !supported) return
@@ -333,7 +480,9 @@ export function useSpeechReader() {
     }
     setPaused(false)
     startWatchdog()
-  }, [paused, supported, startWatchdog])
+    startKeepAlive()
+    updatePlaybackState('playing')
+  }, [paused, supported, startWatchdog, startKeepAlive, updatePlaybackState])
 
   const skipBack = useCallback(
     (sec: SkipSeconds) => {
@@ -353,6 +502,57 @@ export function useSpeechReader() {
     [charIndex, rate, voiceURI, speakFrom]
   )
 
+  /* ── Handlers de MediaSession (play/pause/seek/capítulos) ── */
+  useEffect(() => {
+    if (!hasMediaSession()) return
+    const ms = navigator.mediaSession
+    const safeSet = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+      try {
+        ms.setActionHandler(action, handler)
+      } catch {
+        /* acción no soportada en este navegador */
+      }
+    }
+    safeSet('play', () => resume())
+    safeSet('pause', () => pause())
+    safeSet('stop', () => stop())
+    safeSet('seekbackward', () => skipBack(10))
+    safeSet('seekforward', () => skipForward(10))
+    safeSet('previoustrack', () => chapterHandlersRef.current.onPrevChapter?.())
+    safeSet('nexttrack', () => chapterHandlersRef.current.onNextChapter?.())
+    return () => {
+      safeSet('play', null)
+      safeSet('pause', null)
+      safeSet('stop', null)
+      safeSet('seekbackward', null)
+      safeSet('seekforward', null)
+      safeSet('previoustrack', null)
+      safeSet('nexttrack', null)
+    }
+  }, [resume, pause, stop, skipBack, skipForward])
+
+  /* ── Reanudar si el navegador suspende la síntesis al volver a primer plano ── */
+  useEffect(() => {
+    if (!supported) return
+    const onVisibility = () => {
+      if (document.hidden) {
+        hiddenSinceRef.current = Date.now()
+        return
+      }
+      hiddenSinceRef.current = null
+      try {
+        if (window.speechSynthesis.speaking && window.speechSynthesis.paused && !paused) {
+          window.speechSynthesis.resume()
+        }
+      } catch {
+        /* */
+      }
+      if (speaking) startKeepAlive()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [supported, speaking, paused, startKeepAlive])
+
   return {
     speaking,
     paused,
@@ -364,6 +564,7 @@ export function useSpeechReader() {
     voicesReady,
     noVoicesAvailable,
     supported,
+    backgroundSupported,
     charIndex,
     setCharIndex,
     speakFrom,
@@ -372,5 +573,7 @@ export function useSpeechReader() {
     stop,
     skipBack,
     skipForward,
+    setMediaMetadata,
+    setChapterHandlers,
   }
 }

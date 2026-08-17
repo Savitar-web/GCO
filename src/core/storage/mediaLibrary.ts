@@ -47,6 +47,24 @@ export interface ParagraphComment {
   createdAt: string
 }
 
+/**
+ * Subrayado sobre un fragmento de texto seleccionado por el usuario
+ * (no necesariamente el párrafo completo). `startOffset`/`endOffset`
+ * son posiciones dentro del texto "visible" del párrafo (sin marcado
+ * markdown), de modo que el resaltado sea estable frente a negrita,
+ * cursiva, etc. `text` guarda una copia del fragmento por robustez
+ * (permite recuperar/mostrar el marcador aunque el texto cambie).
+ */
+export interface Highlight {
+  id: string
+  paraIndex: number
+  startOffset: number
+  endOffset: number
+  text: string
+  color: string
+  createdAt: string
+}
+
 export interface ReaderAppearance {
   mode: 'day' | 'night' | 'sepia'
   font: string
@@ -77,7 +95,10 @@ export interface BookItem {
   chapters?: ChapterMark[]
   bookmarks?: Bookmark[]
   comments?: ParagraphComment[]
+  highlights?: Highlight[]
   appearance?: ReaderAppearance
+  /** Formato de origen del archivo importado (para diagnóstico/reimportación) */
+  sourceFormat?: 'txt' | 'pdf' | 'docx' | 'epub' | 'html' | 'rtf' | 'markdown' | 'clipboard' | 'manual'
   updatedAt: string
   createdAt: string
 }
@@ -317,10 +338,14 @@ export async function saveBook(
       input.bookmarks !== undefined ? input.bookmarks : existing?.bookmarks,
     comments:
       input.comments !== undefined ? input.comments : existing?.comments,
+    highlights:
+      input.highlights !== undefined ? input.highlights : existing?.highlights,
     appearance:
       input.appearance !== undefined
         ? input.appearance
         : existing?.appearance,
+    sourceFormat:
+      input.sourceFormat !== undefined ? input.sourceFormat : existing?.sourceFormat,
 
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
@@ -372,6 +397,7 @@ export async function updateBookReaderState(
       | 'chapters'
       | 'bookmarks'
       | 'comments'
+      | 'highlights'
       | 'appearance'
       | 'highlightColor'
       | 'spokenColor'

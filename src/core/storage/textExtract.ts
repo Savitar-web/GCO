@@ -1,366 +1,382 @@
 /**
- * textExtract.ts — Extracción de texto + formato + imágenes para audiolibros.
- * Formatos: TXT, HTML, Markdown, DOCX (OOXML), imágenes sueltas.
- * PDF: intento básico; si no hay motor PDF, se indica al usuario.
+ * textExtract.ts
+ * ───────────────────────────────────────────────────────────────────────
+ * Extrae texto legible desde múltiples formatos de archivo para importarlo
+ * al editor/lector de la app. Pensado para ser rápido incluso en equipos
+ * modestos: usa las APIs nativas del navegador cuando es posible (texto
+ * plano, HTML) y solo recurre a librerías pesadas (pdfjs-dist, mammoth,
+ * jszip) mediante `import()` dinámico, así el bundle inicial no crece y
+ * esas dependencias solo se cargan cuando el usuario realmente importa un
+ * PDF/DOCX/EPUB.
  *
- * Salida orientada a BookReader:
- * - Párrafos separados por líneas en blanco
- * - **negrita**, *cursiva*, <u>subrayado</u>, ~~tachado~~
- * - <span style="color:#RRGGBB">texto</span>
- * - ::center:: / ::right:: al inicio de párrafo
- * - ![alt](data:image/...;base64,...){width=NNpx align=center}
+ * Formatos soportados: .txt, .md/.markdown, .html/.htm, .rtf, .pdf, .docx, .epub
+ *
+ * Dependencias opcionales (instalar solo si vas a importar esos formatos):
+ *   npm i pdfjs-dist mammoth jszip
+ *
+ * La salida siempre es un string en el "markdown ligero" que ya entiende
+ * el lector (negrita **, cursiva *, subrayado <u>, tachado ~~, imágenes
+ * embebidas como ![alt](dataURL) y separación de párrafos por línea en
+ * blanco), de modo que formatee igual sin importar el origen del archivo.
  */
 
-function extOf(name: string) {
-  const i = name.lastIndexOf('.')
-  return i >= 0 ? name.slice(i).toLowerCase() : ''
+export type SupportedImportExt =
+  | 'txt'
+  | 'md'
+  | 'markdown'
+  | 'html'
+  | 'htm'
+  | 'rtf'
+  | 'pdf'
+  | 'docx'
+  | 'epub'
+
+const MAX_INLINE_IMAGE_BYTES = 900_000 // evita inflar el documento con imágenes gigantes embebidas
+
+export function getFileExt(filename: string): string {
+  const m = /\.([a-z0-9]+)$/i.exec(filename.trim())
+  return (m?.[1] || '').toLowerCase()
 }
 
-function fileToArrayBuffer(file: File): Promise<ArrayBuffer> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader()
-    r.onload = () => resolve(r.result as ArrayBuffer)
-    r.onerror = () => reject(r.error || new Error('read failed'))
-    r.readAsArrayBuffer(file)
-  })
+export function isSupportedImportFile(filename: string): boolean {
+  const ext = getFileExt(filename)
+  return ['txt', 'md', 'markdown', 'html', 'htm', 'rtf', 'pdf', 'docx', 'epub'].includes(ext)
 }
 
-function fileToText(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader()
-    r.onload = () => resolve(String(r.result || ''))
-    r.onerror = () => reject(r.error || new Error('read failed'))
-    r.readAsText(file)
-  })
-}
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader()
-    r.onload = () => resolve(String(r.result || ''))
-    r.onerror = () => reject(r.error || new Error('read failed'))
-    r.readAsDataURL(file)
-  })
-}
-
-function uint8ToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  const chunk = 0x8000
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
-  }
-  return btoa(binary)
-}
-
-function mimeFromImagePath(path: string): string {
-  const p = path.toLowerCase()
-  if (p.endsWith('.png')) return 'image/png'
-  if (p.endsWith('.jpg') || p.endsWith('.jpeg')) return 'image/jpeg'
-  if (p.endsWith('.gif')) return 'image/gif'
-  if (p.endsWith('.webp')) return 'image/webp'
-  if (p.endsWith('.bmp')) return 'image/bmp'
-  if (p.endsWith('.svg')) return 'image/svg+xml'
-  return 'application/octet-stream'
-}
-
-function decodeXmlEntities(s: string): string {
-  return s
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
-    .replace(/&amp;/g, '&')
-}
-
-function parseDocxDocumentXml(
-  xml: string,
-  rels: Map<string, string>,
-  media: Map<string, { dataUrl: string; name: string }>
-): string {
-  const paragraphs: string[] = []
-  const pBlocks = xml.split(/<w:p[\s>]/i).slice(1)
-  for (const block of pBlocks) {
-    const pXml = block.split(/<\/w:p>/i)[0] || block
-    let alignPrefix = ''
-    const jc = pXml.match(/<w:jc\s+[^>]*w:val="(center|right|both|left)"/i)
-    if (jc) {
-      const v = jc[1].toLowerCase()
-      if (v === 'center') alignPrefix = '::center:: '
-      else if (v === 'right') alignPrefix = '::right:: '
-      else if (v === 'both') alignPrefix = '::justify:: '
-    }
-
-    const imgParts: string[] = []
-    const blipRe = /(?:r:embed|r:id)="(rId[^"]+)"/gi
-    let bm: RegExpExecArray | null
-    const seen = new Set<string>()
-    while ((bm = blipRe.exec(pXml))) {
-      const rid = bm[1]
-      if (seen.has(rid)) continue
-      seen.add(rid)
-      const target = rels.get(rid)
-      if (!target) continue
-      const key = target.replace(/^\//, '').replace(/^\.\.\//, '')
-      const med =
-        media.get(key) ||
-        media.get('word/' + key.replace(/^word\//, '')) ||
-        media.get(key.replace(/^word\//, ''))
-      if (med) {
-        imgParts.push(`\n\n![${med.name}](${med.dataUrl}){width=640px align=center}\n\n`)
-      }
-    }
-
-    let line = ''
-    const runRe = /<w:r[\s>][\s\S]*?<\/w:r>/gi
-    const runs = pXml.match(runRe) || []
-    for (const run of runs) {
-      const bold = /<w:b\b[^/]*\/>|<w:b\s[^>]*w:val="(?!0|false)/i.test(run)
-      const italic = /<w:i\b[^/]*\/>|<w:i\s[^>]*w:val="(?!0|false)/i.test(run)
-      const underline = /<w:u\b[^/]*\/>|<w:u\s[^>]*w:val="(?!none)/i.test(run)
-      const strike = /<w:strike\b|<w:dstrike\b/i.test(run)
-      const colorM = run.match(/<w:color\s+[^>]*w:val="([0-9A-Fa-f]{3,8})"/i)
-      let color: string | null = null
-      if (colorM && colorM[1].toLowerCase() !== 'auto') {
-        color = '#' + colorM[1].replace(/^FF/i, '').slice(-6)
-      }
-      let text = ''
-      const tRe = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/gi
-      let tm: RegExpExecArray | null
-      while ((tm = tRe.exec(run))) {
-        text += decodeXmlEntities(tm[1])
-      }
-      if (/<w:br\b|<w:cr\b/i.test(run)) text += '\n'
-      if (/<w:tab\b/i.test(run)) text += '\t'
-      if (!text) continue
-      let chunk = text
-      if (bold) chunk = `**${chunk}**`
-      if (italic) chunk = `*${chunk}*`
-      if (underline) chunk = `<u>${chunk}</u>`
-      if (strike) chunk = `~~${chunk}~~`
-      if (color) chunk = `<span style="color:${color}">${chunk}</span>`
-      line += chunk
-    }
-    const combined = (alignPrefix + line).trim()
-    if (combined) paragraphs.push(combined)
-    if (imgParts.length) paragraphs.push(...imgParts.map((s) => s.trim()).filter(Boolean))
-  }
-  if (!paragraphs.length && media.size) {
-    for (const med of media.values()) {
-      paragraphs.push(`![${med.name}](${med.dataUrl}){width=640px align=center}`)
-    }
-  }
-  return paragraphs.join('\n\n').replace(/\n{3,}/g, '\n\n').trim()
-}
-
-function parseRels(xml: string): Map<string, string> {
-  const map = new Map<string, string>()
-  const re = /Id="(rId[^"]+)"[^>]*Target="([^"]+)"/gi
-  let m: RegExpExecArray | null
-  while ((m = re.exec(xml))) {
-    map.set(m[1], m[2].replace(/\\/g, '/'))
-  }
-  const re2 = /Target="([^"]+)"[^>]*Id="(rId[^"]+)"/gi
-  while ((m = re2.exec(xml))) {
-    if (!map.has(m[2])) map.set(m[2], m[1].replace(/\\/g, '/'))
-  }
-  return map
-}
-
-async function extractDocx(file: File): Promise<string> {
-  const buf = await fileToArrayBuffer(file)
-  const files = await unzipMinimal(new Uint8Array(buf))
-  const docXml =
-    files.get('word/document.xml') ||
-    files.get('word\\document.xml')
-  if (!docXml) {
-    throw new Error('DOCX sin word/document.xml')
-  }
-  const relsXml =
-    files.get('word/_rels/document.xml.rels') ||
-    files.get('word/_rels/document.xml.rels'.replace(/\//g, '\\')) ||
-    ''
-  const rels = relsXml ? parseRels(relsXml) : new Map<string, string>()
-  const media = new Map<string, { dataUrl: string; name: string }>()
-  for (const [path, content] of files.entries()) {
-    const norm = path.replace(/\\/g, '/')
-    if (!norm.startsWith('word/media/')) continue
-    const name = norm.split('/').pop() || 'image'
-    const mime = mimeFromImagePath(name)
-    if (!mime.startsWith('image/')) continue
-    if (content.startsWith('__BIN_B64__:')) {
-      const b64 = content.slice('__BIN_B64__:'.length)
-      media.set(norm, { dataUrl: `data:${mime};base64,${b64}`, name })
-      media.set(norm.replace(/^word\//, ''), { dataUrl: `data:${mime};base64,${b64}`, name })
-    }
-  }
-  return parseDocxDocumentXml(docXml, rels, media)
-}
-
-async function unzipMinimal(data: Uint8Array): Promise<Map<string, string>> {
-  const out = new Map<string, string>()
-  const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
-  let offset = 0
-  const u16 = (o: number) => view.getUint16(o, true)
-  const u32 = (o: number) => view.getUint32(o, true)
-  while (offset + 30 <= data.length) {
-    const sig = u32(offset)
-    if (sig !== 0x04034b50) break
-    const method = u16(offset + 8)
-    const compSize = u32(offset + 18)
-    const uncompSize = u32(offset + 22)
-    const nameLen = u16(offset + 26)
-    const extraLen = u16(offset + 28)
-    const nameBytes = data.subarray(offset + 30, offset + 30 + nameLen)
-    const name = new TextDecoder('utf-8').decode(nameBytes)
-    const dataStart = offset + 30 + nameLen + extraLen
-    let dataEnd = dataStart + compSize
-    if (dataEnd > data.length) dataEnd = data.length
-    const payload = data.subarray(dataStart, dataEnd)
-    offset = dataEnd
-    if (name.endsWith('/')) continue
-    let raw: Uint8Array
-    if (method === 0) {
-      raw = payload
-    } else if (method === 8) {
-      try {
-        raw = await inflateRaw(payload, uncompSize)
-      } catch {
-        continue
-      }
-    } else {
-      continue
-    }
-    const isBinary =
-      /^word\/media\//i.test(name) ||
-      /\.(png|jpe?g|gif|webp|bmp|emf|wmf)$/i.test(name)
-    if (isBinary) {
-      out.set(name.replace(/\\/g, '/'), '__BIN_B64__:' + uint8ToBase64(raw))
-    } else {
-      out.set(name.replace(/\\/g, '/'), new TextDecoder('utf-8').decode(raw))
-    }
-  }
-  return out
-}
-
-async function inflateRaw(payload: Uint8Array, _hint = 0): Promise<Uint8Array> {
-  if (typeof DecompressionStream === 'undefined') {
-    throw new Error('Deflate no soportado en este navegador')
-  }
-  for (const format of ['deflate-raw', 'deflate'] as const) {
-    try {
-      const ds = new DecompressionStream(format)
-      const blob = new Blob([payload as unknown as BlobPart])
-      const stream = blob.stream().pipeThrough(ds)
-      const ab = await new Response(stream).arrayBuffer()
-      return new Uint8Array(ab)
-    } catch {
-      /* try next */
-    }
-  }
-  throw new Error('inflate failed')
-}
-
-function htmlToReaderMarkdown(html: string): string {
-  let s = html
-  s = s.replace(/<script[\s\S]*?<\/script>/gi, '')
-  s = s.replace(/<style[\s\S]*?<\/style>/gi, '')
-  s = s.replace(/<br\s*\/?>/gi, '\n')
-  s = s.replace(/<\/p>/gi, '\n\n')
-  s = s.replace(/<\/div>/gi, '\n')
-  s = s.replace(/<\/h[1-6]>/gi, '\n\n')
-  s = s.replace(/<b>([\s\S]*?)<\/b>/gi, '**$1**')
-  s = s.replace(/<strong>([\s\S]*?)<\/strong>/gi, '**$1**')
-  s = s.replace(/<i>([\s\S]*?)<\/i>/gi, '*$1*')
-  s = s.replace(/<em>([\s\S]*?)<\/em>/gi, '*$1*')
-  s = s.replace(/<u>([\s\S]*?)<\/u>/gi, '<u>$1</u>')
-  s = s.replace(/<(s|strike|del)>([\s\S]*?)<\/\1>/gi, '~~$2~~')
-  s = s.replace(
-    /<span[^>]*style="[^"]*color:\s*([^";]+)"[^>]*>([\s\S]*?)<\/span>/gi,
-    '<span style="color:$1">$2</span>'
-  )
-  s = s.replace(
-    /<img[^>]+src=["']([^"']+)["'][^>]*>/gi,
-    (_m, src) => `\n\n![imagen](${src}){width=640px align=center}\n\n`
-  )
-  s = s.replace(/<[^>]+>/g, '')
-  s = decodeXmlEntities(s)
-  return s.replace(/\n{3,}/g, '\n\n').trim()
-}
-
+/** Punto de entrada único: detecta el formato por extensión y delega */
 export async function extractTextFromFile(file: File): Promise<string> {
-  const name = file.name || 'archivo'
-  const ext = extOf(name)
-  const type = (file.type || '').toLowerCase()
+  const ext = getFileExt(file.name) as SupportedImportExt
 
-  if (type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(name)) {
-    const dataUrl = await fileToDataUrl(file)
-    return `![${name}](${dataUrl}){width=640px align=center}`
+  switch (ext) {
+    case 'txt':
+    case 'md':
+    case 'markdown':
+      return extractPlainText(file)
+    case 'html':
+    case 'htm':
+      return extractHtmlFile(file)
+    case 'rtf':
+      return extractRtf(file)
+    case 'pdf':
+      return extractPdf(file)
+    case 'docx':
+      return extractDocx(file)
+    case 'epub':
+      return extractEpub(file)
+    default:
+      throw new Error(
+        `Formato ".${ext || '?'}" no compatible. Formatos admitidos: TXT, MD, HTML, RTF, PDF, DOCX, EPUB.`
+      )
+  }
+}
+
+/* ────────────────────────────── TXT / Markdown ────────────────────────────── */
+
+async function extractPlainText(file: File): Promise<string> {
+  // file.text() usa streaming interno del navegador: es la vía más rápida
+  // para archivos de texto, incluso de varios MB.
+  const raw = await file.text()
+  return normalizeParagraphs(raw)
+}
+
+/* ─────────────────────────────────── HTML ─────────────────────────────────── */
+
+async function extractHtmlFile(file: File): Promise<string> {
+  const raw = await file.text()
+  return htmlToLightMarkdown(raw)
+}
+
+/**
+ * Convierte HTML a nuestro markdown ligero preservando negrita, cursiva,
+ * subrayado, tachado, encabezados (como líneas independientes) e imágenes
+ * pequeñas (embebidas como data URL). Usa DOMParser nativo → muy rápido.
+ */
+function htmlToLightMarkdown(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  // Elimina elementos que no aportan contenido legible
+  doc.querySelectorAll('script,style,noscript,template,svg,head').forEach((n) => n.remove())
+
+  const lines: string[] = []
+
+  const inlineOf = (el: Node): string => {
+    let out = ''
+    el.childNodes.forEach((child) => {
+      if (child.nodeType === Node.TEXT_NODE) {
+        out += (child.textContent || '').replace(/\s+/g, ' ')
+        return
+      }
+      if (child.nodeType !== Node.ELEMENT_NODE) return
+      const e = child as HTMLElement
+      const tag = e.tagName.toLowerCase()
+      const inner = inlineOf(e)
+      if (!inner.trim() && tag !== 'br' && tag !== 'img') return
+      switch (tag) {
+        case 'strong':
+        case 'b':
+          out += `**${inner}**`
+          break
+        case 'em':
+        case 'i':
+          out += `*${inner}*`
+          break
+        case 'u':
+          out += `<u>${inner}</u>`
+          break
+        case 's':
+        case 'strike':
+        case 'del':
+          out += `~~${inner}~~`
+          break
+        case 'br':
+          out += '\n'
+          break
+        case 'a':
+          out += inner
+          break
+        default:
+          out += inner
+      }
+    })
+    return out
   }
 
-  if (
-    ext === '.txt' ||
-    ext === '.md' ||
-    ext === '.markdown' ||
-    type === 'text/plain' ||
-    type === 'text/markdown'
-  ) {
-    return (await fileToText(file)).replace(/\r\n/g, '\n')
+  const blockTags = new Set(['p', 'div', 'section', 'article', 'li', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+
+  const walk = (node: Node) => {
+    node.childNodes.forEach((child) => {
+      if (child.nodeType === Node.ELEMENT_NODE) {
+        const e = child as HTMLElement
+        const tag = e.tagName.toLowerCase()
+        if (tag === 'img') {
+          const src = e.getAttribute('src') || ''
+          const alt = e.getAttribute('alt') || 'imagen'
+          if (src.startsWith('data:image/')) lines.push(`![${alt}](${src})`)
+          return
+        }
+        if (/^h[1-6]$/.test(tag)) {
+          const level = Number(tag[1])
+          const text = inlineOf(e).trim()
+          if (text) lines.push(`${'#'.repeat(level)} ${text}`)
+          return
+        }
+        if (blockTags.has(tag)) {
+          const text = inlineOf(e).trim()
+          if (text) lines.push(text)
+          if (tag !== 'li') return
+          return
+        }
+        // Elemento no-bloque en el nivel raíz: seguir bajando
+        walk(e)
+      }
+    })
   }
 
-  if (ext === '.html' || ext === '.htm' || type === 'text/html') {
-    return htmlToReaderMarkdown(await fileToText(file))
-  }
+  walk(doc.body || doc)
 
-  if (
-    ext === '.docx' ||
-    type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-  ) {
-    return extractDocx(file)
-  }
+  const joined = lines.filter(Boolean).join('\n\n')
+  return normalizeParagraphs(joined)
+}
 
-  if (ext === '.doc') {
-    throw new Error(
-      'Los .doc antiguos no se pueden leer en el navegador. Guarda como .docx o .txt e inténtalo de nuevo.'
-    )
-  }
+/* ──────────────────────────────────── RTF ─────────────────────────────────── */
 
-  if (ext === '.epub' || type === 'application/epub+zip') {
-    const buf = await fileToArrayBuffer(file)
-    const files = await unzipMinimal(new Uint8Array(buf))
-    const htmlParts: string[] = []
-    const sorted = [...files.keys()].filter((k) => /\.(xhtml|html|htm)$/i.test(k)).sort()
-    for (const k of sorted) {
-      const html = files.get(k) || ''
-      if (html.startsWith('__BIN_B64__:')) continue
-      const md = htmlToReaderMarkdown(html)
-      if (md.trim()) htmlParts.push(md)
+/**
+ * Extractor RTF ligero (sin dependencias): elimina la sintaxis de control
+ * `\comando`, grupos `{}` y tablas de fuentes/colores, dejando el texto
+ * plano. Cubre bien los RTF simples exportados por Word/Notas/WordPad.
+ */
+async function extractRtf(file: File): Promise<string> {
+  const raw = await file.text()
+  let s = raw
+
+  // Quita tablas de fuente y color (bloques {\fonttbl...} {\colortbl...})
+  s = s.replace(/\{\\fonttbl[\s\S]*?\}\}/g, '')
+  s = s.replace(/\{\\colortbl[\s\S]*?\}/g, '')
+  s = s.replace(/\{\\\*\\[a-z]+[\s\S]*?\}/g, '')
+
+  // Saltos de párrafo / línea
+  s = s.replace(/\\par[d]?/g, '\n\n')
+  s = s.replace(/\\line/g, '\n')
+  s = s.replace(/\\tab/g, '\t')
+
+  // Negrita/cursiva/subrayado básicos → markdown ligero (heurística simple
+  // por apertura/cierre de \b, \i, \ul en el mismo grupo)
+  s = s.replace(/\{\\b\s+([\s\S]*?)\}/g, '**$1**')
+  s = s.replace(/\{\\i\s+([\s\S]*?)\}/g, '*$1*')
+  s = s.replace(/\{\\ul\s+([\s\S]*?)\}/g, '<u>$1</u>')
+
+  // Caracteres especiales de RTF (\'e9 = é, etc.) — decodifica los más comunes
+  s = s.replace(/\\'([0-9a-fA-F]{2})/g, (_m, hex) => {
+    try {
+      return String.fromCharCode(parseInt(hex, 16))
+    } catch {
+      return ''
     }
-    for (const [k, v] of files) {
-      if (!/^.*\.(png|jpe?g|gif|webp)$/i.test(k) || !v.startsWith('__BIN_B64__:')) continue
-      const b64 = v.slice('__BIN_B64__:'.length)
-      const mime = mimeFromImagePath(k)
-      const base = k.split('/').pop() || 'img'
-      htmlParts.push(`![${base}](data:${mime};base64,${b64}){width=640px align=center}`)
-    }
-    if (htmlParts.length) return htmlParts.join('\n\n')
-    throw new Error('No se pudo leer el contenido del EPUB.')
-  }
+  })
 
-  if (ext === '.pdf' || type === 'application/pdf') {
+  // Elimina el resto de comandos de control y llaves de grupo
+  s = s.replace(/\\[a-zA-Z]+-?\d* ?/g, '')
+  s = s.replace(/[{}]/g, '')
+  s = s.replace(/\\\r?\n/g, '\n')
+
+  return normalizeParagraphs(s)
+}
+
+/* ──────────────────────────────────── PDF ─────────────────────────────────── */
+
+async function extractPdf(file: File): Promise<string> {
+  let pdfjsLib: typeof import('pdfjs-dist')
+  try {
+    pdfjsLib = await import('pdfjs-dist')
+  } catch {
     throw new Error(
-      'La extracción de PDF con imágenes y formato requiere un motor PDF. Exporta a DOCX o TXT, o pega el texto.'
+      'Falta la dependencia "pdfjs-dist" para importar PDF. Instálala con: npm i pdfjs-dist'
     )
   }
 
   try {
-    const t = await fileToText(file)
-    if (t && t.replace(/\0/g, '').trim().length > 0) return t.replace(/\r\n/g, '\n')
+    // Worker vía URL relativa al paquete: funciona con Vite/Webpack modernos
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      'pdfjs-dist/build/pdf.worker.min.mjs',
+      import.meta.url
+    ).toString()
   } catch {
-    /* */
+    /* algunos bundlers resuelven el worker automáticamente; se ignora si falla */
   }
-  throw new Error('Formato no soportado o archivo ilegible.')
+
+  const buf = await file.arrayBuffer()
+  const loadingTask = pdfjsLib.getDocument({ data: buf })
+  const pdf = await loadingTask.promise
+
+  const pageTexts: string[] = []
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i)
+    const content = await page.getTextContent()
+
+    let lastY: number | null = null
+    let line = ''
+    const lines: string[] = []
+    for (const item of content.items as Array<{ str: string; transform: number[] }>) {
+      const y = item.transform?.[5] ?? 0
+      if (lastY !== null && Math.abs(y - lastY) > 2) {
+        if (line.trim()) lines.push(line.trim())
+        line = ''
+      }
+      line += item.str
+      lastY = y
+    }
+    if (line.trim()) lines.push(line.trim())
+
+    pageTexts.push(lines.join('\n'))
+
+    // Cede el hilo cada pocas páginas para no congelar la UI en libros largos
+    if (i % 8 === 0) await new Promise((r) => setTimeout(r, 0))
+  }
+
+  const joined = pageTexts.join('\n\n')
+  return normalizeParagraphs(joined)
 }
 
-export default extractTextFromFile
+/* ──────────────────────────────────── DOCX ────────────────────────────────── */
+
+async function extractDocx(file: File): Promise<string> {
+  let mammoth: typeof import('mammoth')
+  try {
+    mammoth = await import('mammoth')
+  } catch {
+    throw new Error('Falta la dependencia "mammoth" para importar DOCX. Instálala con: npm i mammoth')
+  }
+
+  const buf = await file.arrayBuffer()
+
+  // Para archivos grandes priorizamos velocidad: solo texto plano, sin
+  // convertir a HTML (evita el costo de re-serializar estilos que luego
+  // tendríamos que volver a parsear).
+  const isLarge = buf.byteLength > 4 * 1024 * 1024 // 4 MB
+
+  if (isLarge) {
+    const { value } = await mammoth.extractRawText({ arrayBuffer: buf })
+    return normalizeParagraphs(value)
+  }
+
+  const { value: html } = await mammoth.convertToHtml(
+    { arrayBuffer: buf },
+    {
+      convertImage: mammoth.images.imgElement(async (image) => {
+        if (image.contentType && (await image.readAsBase64String()).length * 0.75 > MAX_INLINE_IMAGE_BYTES) {
+          return { src: '' }
+        }
+        const base64 = await image.readAsBase64String()
+        return { src: `data:${image.contentType};base64,${base64}` }
+      }),
+    }
+  )
+  return htmlToLightMarkdown(html)
+}
+
+/* ──────────────────────────────────── EPUB ────────────────────────────────── */
+
+async function extractEpub(file: File): Promise<string> {
+  let JSZip: typeof import('jszip')
+  try {
+    JSZip = (await import('jszip')).default as unknown as typeof import('jszip')
+  } catch {
+    throw new Error('Falta la dependencia "jszip" para importar EPUB. Instálala con: npm i jszip')
+  }
+
+  const buf = await file.arrayBuffer()
+  const zip = await JSZip.loadAsync(buf)
+
+  // 1) Ubicar el .opf a través de META-INF/container.xml
+  const containerXml = await zip.file('META-INF/container.xml')?.async('text')
+  if (!containerXml) throw new Error('EPUB inválido: falta META-INF/container.xml')
+  const containerDoc = new DOMParser().parseFromString(containerXml, 'application/xml')
+  const opfPath = containerDoc.querySelector('rootfile')?.getAttribute('full-path')
+  if (!opfPath) throw new Error('EPUB inválido: no se encontró el archivo .opf')
+
+  const opfDir = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : ''
+  const opfXml = await zip.file(opfPath)?.async('text')
+  if (!opfXml) throw new Error('EPUB inválido: no se pudo leer el .opf')
+  const opfDoc = new DOMParser().parseFromString(opfXml, 'application/xml')
+
+  // 2) Manifest: id → href
+  const manifest: Record<string, string> = {}
+  opfDoc.querySelectorAll('manifest > item').forEach((item) => {
+    const id = item.getAttribute('id')
+    const href = item.getAttribute('href')
+    if (id && href) manifest[id] = opfDir + href
+  })
+
+  // 3) Spine: orden real de lectura
+  const spineIds = Array.from(opfDoc.querySelectorAll('spine > itemref'))
+    .map((n) => n.getAttribute('idref'))
+    .filter((x): x is string => !!x)
+
+  const chapterPaths = spineIds.map((id) => manifest[id]).filter(Boolean)
+  if (!chapterPaths.length) throw new Error('EPUB inválido: el spine no contiene capítulos')
+
+  const parts: string[] = []
+  for (let i = 0; i < chapterPaths.length; i++) {
+    const path = decodeURIComponent(chapterPaths[i])
+    const entry = zip.file(path)
+    if (!entry) continue
+    const xhtml = await entry.async('text')
+    const md = htmlToLightMarkdown(xhtml)
+    if (md.trim()) parts.push(md.trim())
+
+    // Cede el hilo cada pocos capítulos para mantener la UI fluida
+    if (i % 6 === 0) await new Promise((r) => setTimeout(r, 0))
+  }
+
+  return normalizeParagraphs(parts.join('\n\n'))
+}
+
+/* ────────────────────────────────── Utilidades ────────────────────────────── */
+
+/** Normaliza finales de línea, colapsa saltos excesivos y recorta espacios sobrantes */
+function normalizeParagraphs(raw: string): string {
+  return raw
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
