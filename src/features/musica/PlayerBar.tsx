@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { createRoot, type Root } from 'react-dom/client'
 import { formatTrackTime, getTrackBlob, type TrackItem } from '@/core/storage/mediaLibrary'
-import type { MediaPlayerApi } from '@/hooks/useMediaPlayer'
+import { useMediaPlayer, type MediaPlayerApi } from '@/hooks/useMediaPlayer'
 import { soundClick } from '@/core/audio/uiSounds'
 
 const PREF_KEY = 'gco:player-bar-prefs'
@@ -9,6 +10,51 @@ const HEATMAP_KEY = 'gco:player-heatmap'
 const HEATMAP_BINS = 40
 /** Milisegundos de inactividad antes de ocultar overlays de controles (diálogo y vídeo nativo). */
 const CONTROLS_IDLE_MS = 3200
+
+const FLOAT_POS_KEY = 'gco:player-bar-float'
+const EDGE_SNAP_PX = 36
+const COLLAPSED_SIZE = 48
+/** Píxeles de movimiento antes de considerar arrastre (vs click). */
+const DRAG_THRESHOLD_PX = 10
+
+type FloatEdge = 'left' | 'right' | 'top' | 'bottom' | null
+type FloatPos = { x: number; y: number; edge: FloatEdge }
+
+function loadFloatPos(): FloatPos {
+  // Siempre centrada abajo al cargar (la barra “correcta”).
+  // El usuario puede arrastrar después; no restauramos posiciones raras
+  // que aparecían junto al click de la canción.
+  if (typeof window !== 'undefined') {
+    const w = Math.min(560, window.innerWidth - 24)
+    return {
+      x: Math.max(12, (window.innerWidth - w) / 2),
+      y: Math.max(12, window.innerHeight - 120),
+      edge: null,
+    }
+  }
+  return { x: 24, y: 24, edge: null }
+}
+
+function saveFloatPos(p: FloatPos) {
+  try { localStorage.setItem(FLOAT_POS_KEY, JSON.stringify(p)) } catch { /* */ }
+}
+
+function nearestEdge(x: number, y: number, w: number, h: number): FloatEdge {
+  if (typeof window === 'undefined') return null
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const dist: Record<Exclude<FloatEdge, null>, number> = {
+    left: x, right: vw - (x + w), top: y, bottom: vh - (y + h),
+  }
+  const entries = Object.entries(dist) as [Exclude<FloatEdge, null>, number][]
+  entries.sort((a, b) => a[1] - b[1])
+  return entries[0][1] <= EDGE_SNAP_PX ? entries[0][0] : null
+}
+
+let globalBarMounted = false
+let globalRoot: Root | null = null
+export function isGlobalPlayerBarMounted() { return globalBarMounted }
+
 
 export function getBarPrefs() {
   try {
@@ -48,6 +94,7 @@ function clamp(v: number, min: number, max: number) {
 type Props = {
   player: MediaPlayerApi
   compact?: boolean
+  floating?: boolean
 }
 
 type FsTab = 'queue' | 'now' | 'lyrics'
@@ -213,7 +260,7 @@ const GLOBAL_CSS = `
 }
 `
 
-export function PlayerBar({ player, compact }: Props) {
+export function PlayerBar({ player, compact, floating }: Props) {
   const progressColor = getBarPrefs().progressColor
   const t = player.track
   const [fullscreen, setFullscreen] = useState(false)
@@ -240,6 +287,13 @@ export function PlayerBar({ player, compact }: Props) {
   const [nativeFsActive, setNativeFsActive] = useState(false)
   const [nativeOverlayVisible, setNativeOverlayVisible] = useState(true)
   const nativeIdleTimerRef = useRef<number | null>(null)
+
+  const [floatPos, setFloatPos] = useState<FloatPos>(() => loadFloatPos())
+  const [dragging, setDragging] = useState(false)
+  const dragMovedRef = useRef(false)
+  const dragOffsetRef = useRef({ x: 0, y: 0 })
+  const barSizeRef = useRef({ w: 360, h: 56 })
+  const floatRootRef = useRef<HTMLDivElement | null>(null)
 
   // ── Picture-in-Picture: ver el vídeo flotando en segundo plano mientras el audio sigue sonando ──
   const [pipActive, setPipActive] = useState(false)
@@ -382,11 +436,24 @@ export function PlayerBar({ player, compact }: Props) {
   // ── Detecta si el área de medios está en pantalla completa nativa del navegador ──
   useEffect(() => {
     const onFsChange = () => {
-      setNativeFsActive(document.fullscreenElement === mediaAreaRef.current)
+      const anyDoc = document as Document & { webkitFullscreenElement?: Element | null }
+      const fs = document.fullscreenElement || anyDoc.webkitFullscreenElement || null
+      const videoFs = !!(
+        videoRef.current &&
+        (videoRef.current as HTMLVideoElement & { webkitDisplayingFullscreen?: boolean })
+          .webkitDisplayingFullscreen
+      )
+      setNativeFsActive(
+        fs === mediaAreaRef.current || fs === videoRef.current || videoFs
+      )
     }
     document.addEventListener('fullscreenchange', onFsChange)
-    return () => document.removeEventListener('fullscreenchange', onFsChange)
-  }, [])
+    document.addEventListener('webkitfullscreenchange', onFsChange as EventListener)
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange)
+      document.removeEventListener('webkitfullscreenchange', onFsChange as EventListener)
+    }
+  }, [videoUrl, showVideo])
 
   // ── Overlay "Netflix-style" sobre el vídeo/portada en pantalla completa nativa: progreso, brillo, volumen ──
   useEffect(() => {
@@ -542,16 +609,54 @@ export function PlayerBar({ player, compact }: Props) {
   }, [player])
 
   const toggleNativeFullscreen = async () => {
+    const video = videoRef.current
     const el = mediaAreaRef.current
-    if (!el) return
     try {
-      if (!document.fullscreenElement) {
-        await el.requestFullscreen()
-      } else {
-        await document.exitFullscreen()
+      const anyDoc = document as Document & {
+        webkitFullscreenElement?: Element | null
+        webkitExitFullscreen?: () => Promise<void> | void
+      }
+      const fsEl =
+        document.fullscreenElement ||
+        anyDoc.webkitFullscreenElement ||
+        null
+      const videoFs = !!(
+        video &&
+        (video as HTMLVideoElement & { webkitDisplayingFullscreen?: boolean }).webkitDisplayingFullscreen
+      )
+      if (fsEl || videoFs) {
+        if (document.exitFullscreen) await document.exitFullscreen()
+        else if (anyDoc.webkitExitFullscreen) await anyDoc.webkitExitFullscreen()
+        else if (video) {
+          ;(video as HTMLVideoElement & { webkitExitFullscreen?: () => void }).webkitExitFullscreen?.()
+        }
+        return
+      }
+      // iOS / Capacitor: fullscreen del <video>
+      if (video && showVideo) {
+        const v = video as HTMLVideoElement & {
+          webkitEnterFullscreen?: () => void
+          requestFullscreen?: () => Promise<void>
+        }
+        if (typeof v.webkitEnterFullscreen === 'function') {
+          try { v.webkitEnterFullscreen(); return } catch { /* */ }
+        }
+        if (v.requestFullscreen) {
+          await v.requestFullscreen()
+          return
+        }
+      }
+      if (el) {
+        const anyEl = el as HTMLElement & {
+          webkitRequestFullscreen?: () => void
+          webkitRequestFullScreen?: () => void
+        }
+        if (el.requestFullscreen) await el.requestFullscreen()
+        else if (anyEl.webkitRequestFullscreen) anyEl.webkitRequestFullscreen()
+        else if (anyEl.webkitRequestFullScreen) anyEl.webkitRequestFullScreen()
       }
     } catch {
-      /* el navegador puede bloquear el permiso; se ignora silenciosamente */
+      /* permiso denegado */
     }
   }
 
@@ -643,157 +748,257 @@ export function PlayerBar({ player, compact }: Props) {
   )
 
   /* Mini barra pastilla — permanece montada mientras exista una pista, independiente de la pestaña interna */
+  const expandFromEdge = () => {
+    soundClick()
+    setFloatPos((prev) => {
+      const margin = 12
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      const w = barSizeRef.current.w || Math.min(560, vw - 24)
+      const h = barSizeRef.current.h || 56
+      const next: FloatPos = {
+        x: Math.max(margin, (vw - w) / 2),
+        y: Math.max(margin, vh - h - 24 - 8),
+        edge: null,
+      }
+      // Preferir expandir hacia el centro inferior (única barra deseada)
+      if (prev.edge === 'left') next.x = margin
+      if (prev.edge === 'right') next.x = Math.max(margin, vw - w - margin)
+      if (prev.edge === 'top') next.y = margin + 8
+      if (prev.edge === 'bottom') next.y = Math.max(margin, vh - h - margin - 8)
+      saveFloatPos(next)
+      return next
+    })
+  }
+
+  const onFloatPointerDown = (e: React.PointerEvent) => {
+    const target = e.target as HTMLElement
+    if (target.closest('[data-no-drag]')) return
+    dragMovedRef.current = false
+    const root = floatRootRef.current
+    if (root) {
+      const rect = root.getBoundingClientRect()
+      barSizeRef.current = { w: rect.width, h: rect.height }
+      dragOffsetRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+    }
+    // Guardar origen para umbral click vs drag
+    ;(dragOffsetRef as { current: { x: number; y: number; ox?: number; oy?: number } }).current.ox = e.clientX
+    ;(dragOffsetRef as { current: { x: number; y: number; ox?: number; oy?: number } }).current.oy = e.clientY
+    setDragging(true)
+    try {
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    } catch { /* */ }
+  }
+
+  const onFloatPointerMove = (e: React.PointerEvent) => {
+    if (!dragging) return
+    const ox = (dragOffsetRef.current as { ox?: number }).ox ?? e.clientX
+    const oy = (dragOffsetRef.current as { oy?: number }).oy ?? e.clientY
+    const dist = Math.hypot(e.clientX - ox, e.clientY - oy)
+    if (!dragMovedRef.current && dist < DRAG_THRESHOLD_PX) {
+      // Aún es un click potencial: no mover la barra
+      return
+    }
+    dragMovedRef.current = true
+    const w = barSizeRef.current.w
+    let x = e.clientX - dragOffsetRef.current.x
+    let y = e.clientY - dragOffsetRef.current.y
+    x = clamp(x, -w + 56, window.innerWidth - 56)
+    y = clamp(y, 0, window.innerHeight - 40)
+    setFloatPos({ x, y, edge: null })
+  }
+
+  const onFloatPointerUp = (e: React.PointerEvent) => {
+    if (!dragging) return
+    setDragging(false)
+    try {
+      ;(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId)
+    } catch { /* */ }
+
+    // Click corto sin movimiento → abrir pantalla del reproductor
+    if (!dragMovedRef.current) {
+      onBarActivate()
+      return
+    }
+
+    setFloatPos((prev) => {
+      const root = floatRootRef.current
+      const w = root?.offsetWidth ?? barSizeRef.current.w
+      const h = root?.offsetHeight ?? barSizeRef.current.h
+      const edge = nearestEdge(prev.x, prev.y, w, h)
+      let x = prev.x
+      let y = prev.y
+      if (edge === 'left') x = -w + COLLAPSED_SIZE
+      if (edge === 'right') x = window.innerWidth - COLLAPSED_SIZE
+      if (edge === 'top') y = -h + COLLAPSED_SIZE
+      if (edge === 'bottom') y = window.innerHeight - COLLAPSED_SIZE
+      const next = { x, y, edge }
+      saveFloatPos(next)
+      return next
+    })
+  }
+
+  const onBarActivate = () => {
+    openFs()
+  }
+
+  /**
+   * UNA sola barra visible:
+   *  - floating (global): posición fija libre / centrada abajo por defecto
+   *  - compact (MusicaHome): dock inferior centrado, SIN position fixed libre
+   * Nunca usamos layout flotante en compact salvo acoplado explícito del usuario
+   * en la instancia floating.
+   */
+  const useFloatingLayout = !!floating
+  const collapsed = useFloatingLayout && floatPos.edge != null
+
+  const floatWrapStyle: React.CSSProperties = useFloatingLayout
+    ? {
+        position: 'fixed',
+        left: collapsed ? floatPos.x : floatPos.x,
+        top: collapsed ? floatPos.y : floatPos.y,
+        zIndex: 121,
+        width: collapsed ? COLLAPSED_SIZE : 'min(560px, calc(100vw - 24px))',
+        maxWidth: 'calc(100vw - 16px)',
+        pointerEvents: 'auto',
+        touchAction: 'none',
+        transition: dragging && dragMovedRef.current ? 'none' : 'left 0.2s ease, top 0.2s ease, width 0.2s ease',
+        cursor: dragging && dragMovedRef.current ? 'grabbing' : 'grab',
+      }
+    : {
+        // compact / default: centrada abajo, una sola pastilla
+        position: 'relative',
+        width: '100%',
+        display: 'flex',
+        justifyContent: 'center',
+        padding: '0 12px',
+        pointerEvents: 'none',
+        zIndex: 45,
+      }
+
   const miniBar = (
     <div
-      className={`gco-player-bar-wrap${compact ? ' is-compact' : ''}`}
-      style={
-        compact
-          ? {
-              width: '100%',
-              display: 'flex',
-              justifyContent: 'center',
-              padding: '0 12px',
-              pointerEvents: 'none',
-            }
-          : {
-              position: 'fixed',
-              left: 0,
-              right: 0,
-              bottom: 'calc(4.15rem + env(safe-area-inset-bottom, 0px))',
-              zIndex: 45,
-              display: 'flex',
-              justifyContent: 'center',
-              padding: '0 12px',
-              pointerEvents: 'none',
-            }
-      }
+      ref={floatRootRef}
+      className={`gco-player-bar-wrap${compact ? ' is-compact' : ''}${useFloatingLayout ? ' is-floating' : ''}${collapsed ? ' is-collapsed' : ''}`}
+      style={floatWrapStyle}
+      onPointerDown={onFloatPointerDown}
+      onPointerMove={onFloatPointerMove}
+      onPointerUp={onFloatPointerUp}
+      onPointerCancel={onFloatPointerUp}
     >
-      <button
-        type="button"
-        onClick={openFs}
-        className="gco-player-bar-inner"
-        style={{
-          pointerEvents: 'auto',
-          width: '100%',
-          maxWidth: 560,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '0.42rem 0.5rem 0.42rem 0.42rem',
-          borderRadius: 999,
-          border: '1px solid var(--gco-glass-border)',
-          background:
-            'color-mix(in srgb, var(--gco-bg, #0B1220) 58%, transparent)',
-          backdropFilter: 'blur(18px) saturate(1.2)',
-          WebkitBackdropFilter: 'blur(18px) saturate(1.2)',
-          boxShadow: '0 6px 24px rgba(0,0,0,0.28)',
-          cursor: 'pointer',
-          color: 'inherit',
-          font: 'inherit',
-          textAlign: 'left',
-          margin: 0,
-        }}
-      >
-        <div
+      {collapsed ? (
+        <button
+          type="button"
+          aria-label="Mostrar reproductor"
+          title="Toca o arrastra para mostrar"
+          onClick={(e) => {
+            e.stopPropagation()
+            expandFromEdge()
+          }}
           style={{
-            width: 40,
-            height: 40,
-            borderRadius: '50%',
-            overflow: 'hidden',
-            flexShrink: 0,
-            background: 'var(--gco-glass-bg)',
+            width: COLLAPSED_SIZE,
+            height: COLLAPSED_SIZE,
+            borderRadius: 999,
+            border: '1px solid var(--gco-glass-border)',
+            background: 'color-mix(in srgb, var(--gco-bg, #0B1220) 78%, transparent)',
+            backdropFilter: 'blur(18px) saturate(1.2)',
+            WebkitBackdropFilter: 'blur(18px) saturate(1.2)',
+            boxShadow: '0 6px 24px rgba(0,0,0,0.35)',
+            color: 'var(--gco-primary)',
             display: 'grid',
             placeItems: 'center',
+            cursor: 'pointer',
+            padding: 0,
+            pointerEvents: 'auto',
           }}
         >
-          {t.coverDataUrl ? (
-            <img
-              src={t.coverDataUrl}
-              alt=""
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            />
-          ) : (
-            <span style={{ fontSize: '0.95rem' }}>♪</span>
-          )}
-        </div>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <p
-            style={{
-              margin: 0,
-              fontWeight: 600,
-              fontSize: '0.84rem',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              color: 'var(--gco-ink)',
-            }}
-          >
-            {t.title}
-          </p>
-          <p
-            style={{
-              margin: '1px 0 0',
-              fontSize: '0.72rem',
-              color: 'var(--gco-ink-muted)',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {t.artist}
-          </p>
-        </div>
-        <div
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            {floatPos.edge === 'left' && <path d="M9 6l6 6-6 6" />}
+            {floatPos.edge === 'right' && <path d="M15 6l-6 6 6 6" />}
+            {floatPos.edge === 'top' && <path d="M6 9l6 6 6-6" />}
+            {floatPos.edge === 'bottom' && <path d="M6 15l6-6 6 6" />}
+            {!floatPos.edge && <path d="M9 6l6 6-6 6" />}
+          </svg>
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="gco-player-bar-inner"
           style={{
+            pointerEvents: 'auto',
+            width: '100%',
+            maxWidth: useFloatingLayout ? 'none' : 560,
             display: 'flex',
             alignItems: 'center',
-            gap: 2,
-            flexShrink: 0,
-            paddingRight: 4,
+            gap: 10,
+            padding: '0.42rem 0.5rem 0.42rem 0.42rem',
+            borderRadius: 999,
+            border: '1px solid var(--gco-glass-border)',
+            background: 'color-mix(in srgb, var(--gco-bg, #0B1220) 58%, transparent)',
+            backdropFilter: 'blur(18px) saturate(1.2)',
+            WebkitBackdropFilter: 'blur(18px) saturate(1.2)',
+            boxShadow: '0 6px 24px rgba(0,0,0,0.28)',
+            cursor: dragging ? 'grabbing' : 'grab',
+            color: 'inherit',
+            font: 'inherit',
+            textAlign: 'left',
+            margin: 0,
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
           }}
         >
-          {ctrlBtn(
-            () => {
-              soundClick()
-              void player.prev()
-            },
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z" />
-            </svg>
-          )}
-          {ctrlBtn(
-            () => {
-              soundClick()
-              void player.toggle()
-            },
-            player.playing ? (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M6 5h4v14H6V5zm8 0h4v14h-4V5z" />
-              </svg>
-            ) : (
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M8 5v14l11-7L8 5z" />
-              </svg>
-            ),
-            {
-              width: 36,
-              height: 36,
-              background: ACCENT,
-              color: ON_ACCENT,
+          <div
+            style={{
+              width: 40,
+              height: 40,
               borderRadius: '50%',
-            }
-          )}
-          {ctrlBtn(
-            () => {
-              soundClick()
-              void player.next()
-            },
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M16 6h2v12h-2V6zM6 6l8.5 6L6 18V6z" />
-            </svg>
-          )}
-        </div>
-      </button>
+              overflow: 'hidden',
+              flexShrink: 0,
+              background: 'var(--gco-glass-bg)',
+              display: 'grid',
+              placeItems: 'center',
+            }}
+          >
+            {t.coverDataUrl ? (
+              <img src={t.coverDataUrl} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <span style={{ fontSize: '0.95rem' }}>♪</span>
+            )}
+          </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <p style={{ margin: 0, fontWeight: 600, fontSize: '0.84rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--gco-ink)' }}>
+              {t.title}
+            </p>
+            <p style={{ margin: '1px 0 0', fontSize: '0.72rem', color: 'var(--gco-ink-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {t.artist}
+            </p>
+          </div>
+          <div
+            data-no-drag
+            style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0, paddingRight: 4 }}
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            {ctrlBtn(
+              () => { soundClick(); void player.prev() },
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z" /></svg>
+            )}
+            {ctrlBtn(
+              () => { soundClick(); void player.toggle() },
+              player.playing ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6V5zm8 0h4v14h-4V5z" /></svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7L8 5z" /></svg>
+              ),
+              { width: 36, height: 36, background: ACCENT, color: ON_ACCENT, borderRadius: '50%' }
+            )}
+            {ctrlBtn(
+              () => { soundClick(); void player.next() },
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2V6zM6 6l8.5 6L6 18V6z" /></svg>
+            )}
+          </div>
+        </button>
+      )}
     </div>
   )
 
@@ -1657,10 +1862,69 @@ export function PlayerBar({ player, compact }: Props) {
     </div>
   )
 
+  // Evitar DOBLE barra: si el host global ya está montado, la instancia
+  // compact de MusicaHome no pinta miniBar (la global es la única visible).
+  const hideBecauseGlobal =
+    !floating && globalBarMounted && typeof document !== 'undefined' &&
+    !!document.getElementById('gco-global-player-host')
+
   return (
     <>
-      {miniBar}
+      {hideBecauseGlobal ? null : miniBar}
       {fullscreen && typeof document !== 'undefined' ? createPortal(fullscreenContent, document.body) : null}
     </>
   )
+}
+
+/** Única pastilla global — centrada abajo por defecto. */
+export function ensureGlobalPlayerBar() {
+  if (typeof document === 'undefined') return
+  if (globalRoot && globalBarMounted) return
+
+  let host = document.getElementById('gco-global-player-host')
+  if (!host) {
+    host = document.createElement('div')
+    host.id = 'gco-global-player-host'
+    host.setAttribute('data-gco', 'global-player')
+    host.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:120;'
+    document.body.appendChild(host)
+  }
+
+  function Bridge() {
+    const player = useMediaPlayer()
+    if (!player.track) return null
+    return (
+      <div style={{ pointerEvents: 'auto' }}>
+        <PlayerBar player={player} floating />
+      </div>
+    )
+  }
+
+  try {
+    if (!globalRoot) globalRoot = createRoot(host)
+    globalBarMounted = true
+    globalRoot.render(<Bridge />)
+  } catch (err) {
+    console.warn('[gco] ensureGlobalPlayerBar:', err)
+    try {
+      host.innerHTML = ''
+      globalRoot = createRoot(host)
+      globalBarMounted = true
+      globalRoot.render(<Bridge />)
+    } catch (err2) {
+      console.warn('[gco] ensureGlobalPlayerBar retry:', err2)
+      globalBarMounted = false
+      globalRoot = null
+    }
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('gco:need-player-bar', () => ensureGlobalPlayerBar())
+  void import('@/hooks/useMediaPlayer')
+    .then((mod: { registerFloatingBarMounter?: (fn: () => void) => void; api?: { track: unknown } }) => {
+      mod.registerFloatingBarMounter?.(ensureGlobalPlayerBar)
+      if (mod.api?.track) requestAnimationFrame(() => ensureGlobalPlayerBar())
+    })
+    .catch(() => {})
 }
