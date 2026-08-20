@@ -6,6 +6,8 @@ export type CredentialTheme = 'dark' | 'light' | 'rainbow'
 export type CredentialOptions = {
   hideAge?: boolean
   theme?: CredentialTheme
+  /** Si false, no se dibuja el marco del avatar en la credencial */
+  showFrame?: boolean
   showFavoriteGame?: boolean
   favoriteGameLabel?: string
   showFavoriteBook?: boolean
@@ -13,6 +15,13 @@ export type CredentialOptions = {
   showFavoriteTrack?: boolean
   favoriteTrackLabel?: string
 }
+
+type FrameId =
+  | AvatarFrame
+  | 'gold'
+  | 'holographic'
+  | 'cyber'
+  | 'frutiger-aero'
 
 function roundRect(
   ctx: CanvasRenderingContext2D,
@@ -84,7 +93,7 @@ function drawFrame(
   cx: number,
   cy: number,
   r: number,
-  frame: AvatarFrame,
+  frame: FrameId,
   primary: string
 ) {
   if (frame === 'none') {
@@ -126,7 +135,94 @@ function drawFrame(
     ctx.stroke()
     return
   }
-  // glass
+  if (frame === 'gold') {
+    const g = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r)
+    g.addColorStop(0, '#FFF6C8')
+    g.addColorStop(0.35, '#E8C547')
+    g.addColorStop(0.65, '#B8860B')
+    g.addColorStop(1, '#F5E6A3')
+    ctx.strokeStyle = g
+    ctx.lineWidth = 5
+    ctx.beginPath()
+    ctx.arc(cx, cy, r + 4, 0, Math.PI * 2)
+    ctx.stroke()
+    return
+  }
+  if (frame === 'holographic') {
+    // Anillo multi-stop aproximando conic
+    const stops: [number, string][] = [
+      [0, '#FF6BCB'],
+      [0.2, '#7EC8FF'],
+      [0.4, '#22E6C5'],
+      [0.6, '#8B7CF6'],
+      [0.8, '#FF8EC8'],
+      [1, '#FF6BCB'],
+    ]
+    const segs = 48
+    for (let i = 0; i < segs; i++) {
+      const t0 = i / segs
+      const t1 = (i + 1) / segs
+      const a0 = t0 * Math.PI * 2 - Math.PI / 2
+      const a1 = t1 * Math.PI * 2 - Math.PI / 2
+      const stop = stops.find((s, idx) => t0 <= s[0] || idx === stops.length - 1)!
+      ctx.strokeStyle = stop[1]
+      ctx.lineWidth = 4
+      ctx.beginPath()
+      ctx.arc(cx, cy, r + 4, a0, a1)
+      ctx.stroke()
+    }
+    ctx.shadowColor = 'rgba(139,124,246,0.5)'
+    ctx.shadowBlur = 10
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.arc(cx, cy, r + 6, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.shadowBlur = 0
+    return
+  }
+  if (frame === 'cyber') {
+    ctx.strokeStyle = primary
+    ctx.lineWidth = 2.5
+    ctx.beginPath()
+    ctx.arc(cx, cy, r + 3, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.strokeStyle = '#8B7CF6'
+    ctx.lineWidth = 2
+    ctx.setLineDash([6, 5])
+    ctx.beginPath()
+    ctx.arc(cx, cy, r + 7, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.setLineDash([])
+    ctx.shadowColor = primary
+    ctx.shadowBlur = 8
+    ctx.strokeStyle = primary
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.arc(cx, cy, r + 5, 0.15, Math.PI * 0.55)
+    ctx.stroke()
+    ctx.shadowBlur = 0
+    return
+  }
+  if (frame === 'frutiger-aero') {
+    const g = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r)
+    g.addColorStop(0, 'rgba(200,240,255,0.95)')
+    g.addColorStop(0.4, 'rgba(120,200,240,0.75)')
+    g.addColorStop(1, 'rgba(60,140,200,0.55)')
+    ctx.strokeStyle = g
+    ctx.lineWidth = 6
+    ctx.beginPath()
+    ctx.arc(cx, cy, r + 5, 0, Math.PI * 2)
+    ctx.stroke()
+    // highlight superior (glass bubble)
+    ctx.strokeStyle = 'rgba(255,255,255,0.75)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.arc(cx, cy, r + 2, -Math.PI * 0.85, -Math.PI * 0.15)
+    ctx.stroke()
+    return
+  }
+  // glass (default)
   ctx.strokeStyle = 'rgba(255,255,255,0.45)'
   ctx.lineWidth = 3
   ctx.beginPath()
@@ -139,7 +235,38 @@ function drawFrame(
   ctx.stroke()
 }
 
-/** Descarga robusta: blob + <a download> + Share API + fallback ventana */
+function isCapacitorNative(): boolean {
+  try {
+    const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string } }).Capacitor
+    if (cap?.isNativePlatform?.()) return true
+    const p = cap?.getPlatform?.()
+    return p === 'android' || p === 'ios'
+  } catch {
+    return false
+  }
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      const b64 = result.includes(',') ? result.split(',')[1]! : result
+      resolve(b64)
+    }
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+}
+
+/**
+ * Descarga robusta multiplataforma:
+ * 1) Capacitor Filesystem + Share (APK / iOS nativo)
+ * 2) Web Share API con File
+ * 3) <a download> + object URL
+ * 4) dataURL download
+ * 5) Abrir blob en pestaña / location
+ */
 export async function saveCanvasPng(
   canvas: HTMLCanvasElement,
   filename: string
@@ -151,7 +278,64 @@ export async function saveCanvasPng(
 
   const file = new File([blob], filename, { type: 'image/png' })
 
-  // 1) Web Share con archivos (iOS PWA / Android)
+  // ── 1) Capacitor nativo (APK / iOS) ──────────────────────────────────────
+  if (isCapacitorNative()) {
+    try {
+      // Dynamic imports: no rompen web/Electron si los plugins no están
+      const [{ Filesystem, Directory }, { Share }] = await Promise.all([
+        import('@capacitor/filesystem'),
+        import('@capacitor/share'),
+      ])
+
+      const base64 = await blobToBase64(blob)
+      const path = filename
+
+      // Cache es compartible por FileProvider en Android por defecto
+      const written = await Filesystem.writeFile({
+        path,
+        data: base64,
+        directory: Directory.Cache,
+      })
+
+      // Share con URI nativa (Android FileProvider / iOS)
+      const uri =
+        written.uri ||
+        (
+          await Filesystem.getUri({
+            path,
+            directory: Directory.Cache,
+          })
+        ).uri
+
+      await Share.share({
+        title: 'Credencial GCO',
+        text: filename,
+        url: uri,
+        dialogTitle: 'Guardar o compartir credencial',
+      })
+      return 'share'
+    } catch (err) {
+      // Plugin no instalado o usuario canceló → seguir con fallbacks
+      console.warn('[saveCanvasPng] Capacitor path failed', err)
+    }
+
+    // Fallback Capacitor: solo Share con data URL (algunos WebViews)
+    try {
+      const { Share } = await import('@capacitor/share')
+      const dataUrl = canvas.toDataURL('image/png')
+      await Share.share({
+        title: 'Credencial GCO',
+        text: filename,
+        url: dataUrl,
+        dialogTitle: 'Guardar o compartir credencial',
+      })
+      return 'share'
+    } catch {
+      /* continue */
+    }
+  }
+
+  // ── 2) Web Share con archivos (PWA / Android Chrome / iOS Safari) ───────
   try {
     const nav = navigator as Navigator & {
       canShare?: (data: ShareData) => boolean
@@ -166,10 +350,10 @@ export async function saveCanvasPng(
       return 'share'
     }
   } catch {
-    /* usuario canceló o no soportado → seguir */
+    /* usuario canceló o no soportado */
   }
 
-  // 2) <a download> + object URL
+  // ── 3) <a download> + object URL (web, Electron, PWA) ───────────────────
   try {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -180,7 +364,11 @@ export async function saveCanvasPng(
     document.body.appendChild(a)
     a.click()
     window.setTimeout(() => {
-      document.body.removeChild(a)
+      try {
+        document.body.removeChild(a)
+      } catch {
+        /* */
+      }
       URL.revokeObjectURL(url)
     }, 2500)
     return 'download'
@@ -188,13 +376,14 @@ export async function saveCanvasPng(
     /* */
   }
 
-  // 3) dataURL click (algunos WebViews)
+  // ── 4) dataURL click ────────────────────────────────────────────────────
   try {
     const dataUrl = canvas.toDataURL('image/png')
     const a = document.createElement('a')
     a.href = dataUrl
     a.download = filename
     a.rel = 'noopener'
+    a.style.display = 'none'
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -203,12 +392,12 @@ export async function saveCanvasPng(
     /* */
   }
 
-  // 4) Abrir en pestaña para “Guardar imagen”
+  // ── 5) Abrir en pestaña / location (último recurso en WebView) ──────────
   try {
     const url = URL.createObjectURL(blob)
     const w = window.open(url, '_blank')
     if (!w) {
-      // último recurso: location
+      // En muchos WebViews Android open() está bloqueado
       window.location.href = url
     }
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
@@ -224,6 +413,7 @@ export async function downloadCredential(
   const {
     hideAge = false,
     theme = 'dark',
+    showFrame = true,
     showFavoriteGame = false,
     favoriteGameLabel,
     showFavoriteBook = false,
@@ -236,7 +426,7 @@ export async function downloadCredential(
   const total = getTotalProgress()
   const name = profile?.name?.trim() || 'Atleta GCO'
   const age = hideAge ? undefined : profile?.age
-  const frame = (profile?.avatarFrame ?? 'none') as AvatarFrame
+  const frame = (profile?.avatarFrame ?? 'none') as FrameId
   const c = palette(theme)
 
   const W = 900
@@ -267,7 +457,10 @@ export async function downloadCredential(
     ctx.fillRect(0, 0, W, H)
   } else {
     const glow = ctx.createRadialGradient(160, 200, 20, 160, 200, 220)
-    glow.addColorStop(0, theme === 'light' ? 'rgba(13,148,136,0.12)' : 'rgba(34,230,197,0.12)')
+    glow.addColorStop(
+      0,
+      theme === 'light' ? 'rgba(13,148,136,0.12)' : 'rgba(34,230,197,0.12)'
+    )
     glow.addColorStop(1, 'transparent')
     ctx.fillStyle = glow
     ctx.fillRect(0, 0, W, H)
@@ -278,7 +471,8 @@ export async function downloadCredential(
   roundRect(ctx, 22, 22, W - 44, H - 44, 22)
   ctx.stroke()
 
-  ctx.strokeStyle = theme === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)'
+  ctx.strokeStyle =
+    theme === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)'
   ctx.lineWidth = 1
   roundRect(ctx, 32, 32, W - 64, H - 64, 16)
   ctx.stroke()
@@ -295,7 +489,8 @@ export async function downloadCredential(
   ctx.font = '400 14px system-ui, sans-serif'
   ctx.fillText('Gimnasio cognitivo · Registro personal', 56, 122)
 
-  ctx.strokeStyle = theme === 'light' ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)'
+  ctx.strokeStyle =
+    theme === 'light' ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)'
   ctx.beginPath()
   ctx.moveTo(56, 140)
   ctx.lineTo(W - 56, 140)
@@ -334,7 +529,16 @@ export async function downloadCredential(
     ctx.textAlign = 'left'
   }
 
-  drawFrame(ctx, avatarCx, avatarCy, avatarR, frame, c.primary)
+  if (showFrame) {
+    drawFrame(ctx, avatarCx, avatarCy, avatarR, frame, c.primary)
+  } else {
+    // Borde sutil mínimo si se oculta el marco
+    ctx.strokeStyle = c.border
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.arc(avatarCx, avatarCy, avatarR + 2, 0, Math.PI * 2)
+    ctx.stroke()
+  }
 
   ctx.fillStyle = c.ink
   ctx.font = '600 30px system-ui, sans-serif'
@@ -355,12 +559,12 @@ export async function downloadCredential(
   ctx.font = '400 15px system-ui, sans-serif'
   ctx.fillText(meta, 210, 252)
 
-  // Favoritos
   let favY = 278
   const favs: string[] = []
   if (showFavoriteGame && favoriteGameLabel) favs.push(`🎮 ${favoriteGameLabel}`)
   if (showFavoriteBook && favoriteBookLabel) favs.push(`📖 ${favoriteBookLabel}`)
-  if (showFavoriteTrack && favoriteTrackLabel) favs.push(`🎵 ${favoriteTrackLabel}`)
+  if (showFavoriteTrack && favoriteTrackLabel)
+    favs.push(`🎵 ${favoriteTrackLabel}`)
   if (favs.length) {
     ctx.fillStyle = c.faint
     ctx.font = '400 13px system-ui, sans-serif'
@@ -402,7 +606,11 @@ export async function downloadCredential(
   ctx.fillText(`Emitida · ${issued}`, 56, H - 40)
   ctx.fillText('Desarrollado por Savitar Xeno', W - 250, H - 40)
 
-  const safeName = name.replace(/[^\w\-áéíóúñÁÉÍÓÚÑ ]+/gi, '').replace(/\s+/g, '-').toLowerCase() || 'atleta'
+  const safeName =
+    name
+      .replace(/[^\w\-áéíóúñÁÉÍÓÚÑ ]+/gi, '')
+      .replace(/\s+/g, '-')
+      .toLowerCase() || 'atleta'
   const filename = `gco-credencial-${safeName}.png`
   return saveCanvasPng(canvas, filename)
 }

@@ -12,12 +12,24 @@ import {
 import { soundClick, soundSuccess, soundFail } from '@/core/audio/uiSounds'
 import { listBooks, listTracks } from '@/core/storage/mediaLibrary'
 
-const FRAMES: { id: AvatarFrame; label: string; emoji: string }[] = [
+/** Marcos extendidos (incluir estos ids en AvatarFrame del storage) */
+type FrameId =
+  | AvatarFrame
+  | 'gold'
+  | 'holographic'
+  | 'cyber'
+  | 'frutiger-aero'
+
+const FRAMES: { id: FrameId; label: string; emoji: string }[] = [
   { id: 'none', label: 'Ninguno', emoji: '○' },
   { id: 'metal', label: 'Metálico', emoji: '⚙️' },
   { id: 'neon', label: 'Neón', emoji: '✦' },
   { id: 'matte', label: 'Mate', emoji: '●' },
   { id: 'glass', label: 'Liquid glass', emoji: '◌' },
+  { id: 'gold', label: 'Oro', emoji: '✦' },
+  { id: 'holographic', label: 'Holográfico', emoji: '◇' },
+  { id: 'cyber', label: 'Cyber', emoji: '▣' },
+  { id: 'frutiger-aero', label: 'Frutiger Aero', emoji: '💧' },
 ]
 
 const GAMES = [
@@ -34,47 +46,98 @@ const GAMES = [
 const TARGET_PX = 512
 const PREVIEW = 240
 const STEP = 8
+/** Tamaño fijo del avatar en UI (siempre cuadrado → círculo perfecto) */
+const AVATAR_UI = 96
 
-function framePreviewStyle(frame: AvatarFrame): React.CSSProperties {
+/**
+ * Estilos de marco. NO usamos border de distinto grosor sobre el mismo box
+ * que tiene width/height fijos con content-box inconsistente en Android WebView.
+ * El anillo exterior es un wrapper con padding simétrico; el interior es
+ * siempre un círculo perfecto (aspect-ratio 1 + border-radius 50%).
+ */
+function frameRingStyle(frame: FrameId): React.CSSProperties {
   const base: React.CSSProperties = {
     borderRadius: '50%',
-    transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
+    transition:
+      'box-shadow 0.35s cubic-bezier(0.25, 0.1, 0.25, 1), border-color 0.25s ease, background 0.35s ease, transform 0.2s ease',
   }
   if (frame === 'neon')
     return {
       ...base,
-      border: '2px solid var(--gco-primary)',
+      padding: 3,
+      background: 'var(--gco-primary)',
       boxShadow:
-        '0 0 12px var(--gco-primary), 0 0 28px rgba(34,230,197,0.35), inset 0 0 8px rgba(34,230,197,0.2)',
+        '0 0 0 1px var(--gco-primary), 0 0 14px var(--gco-primary), 0 0 28px rgba(34,230,197,0.35), inset 0 0 8px rgba(34,230,197,0.25)',
     }
   if (frame === 'metal')
     return {
       ...base,
-      border: '3px solid transparent',
-      backgroundImage:
-        'linear-gradient(var(--gco-bg-elevated, #121A2B), var(--gco-bg-elevated, #121A2B)), linear-gradient(135deg, #f0f2f5 0%, #8b93a7 40%, #3a4154 70%, #cfd5e0 100%)',
-      backgroundOrigin: 'border-box',
-      backgroundClip: 'padding-box, border-box',
+      padding: 4,
+      background:
+        'linear-gradient(135deg, #f0f2f5 0%, #8b93a7 40%, #3a4154 70%, #cfd5e0 100%)',
       boxShadow:
-        'inset 0 1px 1px rgba(255,255,255,0.5), 0 4px 12px rgba(0,0,0,0.35)',
+        'inset 0 1px 1px rgba(255,255,255,0.55), 0 4px 14px rgba(0,0,0,0.35)',
     }
   if (frame === 'matte')
     return {
       ...base,
-      border: '5px solid rgba(255,255,255,0.18)',
-      boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.25)',
+      padding: 5,
+      background: 'rgba(255,255,255,0.18)',
+      boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.28)',
     }
   if (frame === 'glass')
     return {
       ...base,
-      border: '1.5px solid rgba(255,255,255,0.45)',
+      padding: 3,
+      background:
+        'linear-gradient(145deg, rgba(255,255,255,0.55), rgba(255,255,255,0.12) 40%, rgba(34,230,197,0.25))',
       boxShadow:
-        '0 0 0 3px rgba(34,230,197,0.25), inset 0 1px 0 rgba(255,255,255,0.35), 0 8px 20px rgba(0,0,0,0.25)',
-      backdropFilter: 'blur(4px)',
+        '0 0 0 1px rgba(255,255,255,0.35), 0 0 0 4px rgba(34,230,197,0.22), inset 0 1px 0 rgba(255,255,255,0.45), 0 10px 24px rgba(0,0,0,0.28)',
+      backdropFilter: 'blur(6px)',
+      WebkitBackdropFilter: 'blur(6px)',
     }
+  if (frame === 'gold')
+    return {
+      ...base,
+      padding: 4,
+      background:
+        'linear-gradient(145deg, #fff6c8 0%, #e8c547 25%, #b8860b 55%, #f5e6a3 80%, #c9a227 100%)',
+      boxShadow:
+        '0 0 0 1px rgba(184,134,11,0.5), inset 0 1px 1px rgba(255,255,255,0.7), 0 6px 18px rgba(184,134,11,0.35)',
+    }
+  if (frame === 'holographic')
+    return {
+      ...base,
+      padding: 3,
+      background:
+        'conic-gradient(from 210deg, #ff6bcb, #7ec8ff, #22e6c5, #8b7cf6, #ff8ec8, #ff6bcb)',
+      boxShadow:
+        '0 0 0 1px rgba(255,255,255,0.4), 0 0 20px rgba(139,124,246,0.45), inset 0 1px 0 rgba(255,255,255,0.5)',
+    }
+  if (frame === 'cyber')
+    return {
+      ...base,
+      padding: 3,
+      background:
+        'linear-gradient(90deg, #22e6c5 0%, #0B1220 35%, #0B1220 65%, #8b7cf6 100%)',
+      boxShadow:
+        '0 0 0 2px #22e6c5, 0 0 12px rgba(34,230,197,0.5), 0 0 2px #8b7cf6 inset',
+    }
+  if (frame === 'frutiger-aero')
+    return {
+      ...base,
+      padding: 4,
+      background:
+        'linear-gradient(160deg, rgba(180,230,255,0.95) 0%, rgba(120,200,240,0.7) 35%, rgba(90,180,220,0.55) 70%, rgba(200,240,255,0.85) 100%)',
+      boxShadow:
+        '0 0 0 1px rgba(255,255,255,0.75), inset 0 2px 6px rgba(255,255,255,0.85), inset 0 -2px 8px rgba(40,120,180,0.25), 0 8px 22px rgba(60,140,200,0.35)',
+    }
+  // none
   return {
     ...base,
-    border: '2px solid var(--gco-glass-border)',
+    padding: 2,
+    background: 'var(--gco-glass-border)',
+    boxShadow: 'none',
   }
 }
 
@@ -111,9 +174,10 @@ function SwitchRow({
           borderRadius: 999,
           border: 'none',
           cursor: 'pointer',
-          background: checked ? 'var(--gco-primary)' : 'rgba(255,255,255,0.12)',
+          background: checked ? 'var(--gco-primary)' : 'rgba(128,128,128,0.35)',
           position: 'relative',
           flexShrink: 0,
+          transition: 'background 0.25s cubic-bezier(0.25, 0.1, 0.25, 1)',
         }}
       >
         <span
@@ -125,7 +189,8 @@ function SwitchRow({
             height: 22,
             borderRadius: '50%',
             background: '#fff',
-            transition: 'left 0.2s ease',
+            transition: 'left 0.25s cubic-bezier(0.25, 0.1, 0.25, 1)',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
           }}
         />
       </button>
@@ -163,14 +228,119 @@ function PadBtn({
   )
 }
 
+/** Avatar siempre circular: wrapper + inner con aspect-ratio 1 y border-radius 50% */
+function CircularAvatar({
+  src,
+  frame,
+  size = AVATAR_UI,
+  onClick,
+  showPlaceholder,
+}: {
+  src: string | null
+  frame: FrameId
+  size?: number
+  onClick?: () => void
+  showPlaceholder?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Cambiar foto de perfil"
+      style={{
+        // Caja exterior fija y cuadrada (evita óvalo en Android WebView)
+        width: size,
+        height: size,
+        minWidth: size,
+        minHeight: size,
+        maxWidth: size,
+        maxHeight: size,
+        aspectRatio: '1 / 1',
+        padding: 0,
+        margin: 0,
+        border: 'none',
+        background: 'transparent',
+        cursor: onClick ? 'pointer' : 'default',
+        flexShrink: 0,
+        display: 'block',
+        lineHeight: 0,
+        overflow: 'visible',
+        WebkitTapHighlightColor: 'transparent',
+      }}
+    >
+      <span
+        style={{
+          display: 'block',
+          width: '100%',
+          height: '100%',
+          aspectRatio: '1 / 1',
+          boxSizing: 'border-box',
+          ...frameRingStyle(frame),
+        }}
+      >
+        <span
+          style={{
+            display: 'block',
+            width: '100%',
+            height: '100%',
+            aspectRatio: '1 / 1',
+            borderRadius: '50%',
+            overflow: 'hidden',
+            background: 'var(--gco-glass-bg)',
+            // fondo sólido bajo el padding del anillo
+            boxSizing: 'border-box',
+          }}
+        >
+          {src ? (
+            <img
+              src={src}
+              alt=""
+              draggable={false}
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                objectPosition: 'center',
+                display: 'block',
+                borderRadius: '50%',
+                // evita stretch en WebViews Android
+                maxWidth: '100%',
+                maxHeight: '100%',
+                aspectRatio: '1 / 1',
+              }}
+            />
+          ) : showPlaceholder !== false ? (
+            <span
+              style={{
+                display: 'grid',
+                placeItems: 'center',
+                width: '100%',
+                height: '100%',
+                fontSize: '0.75rem',
+                color: 'var(--gco-ink-muted)',
+                borderRadius: '50%',
+              }}
+            >
+              Foto
+            </span>
+          ) : null}
+        </span>
+      </span>
+    </button>
+  )
+}
+
 export function PerfilSettings() {
   const profile = getProfile()
   const [name, setName] = useState(profile?.name ?? '')
   const [age, setAge] = useState(String(profile?.age ?? ''))
   const [avatar, setAvatar] = useState(profile?.avatarDataUrl ?? null)
-  const [frame, setFrame] = useState<AvatarFrame>(profile?.avatarFrame ?? 'none')
+  const [frame, setFrame] = useState<FrameId>(
+    (profile?.avatarFrame as FrameId) ?? 'none'
+  )
   const [msg, setMsg] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+  const frameScrollRef = useRef<HTMLDivElement>(null)
 
   // Crop state
   const [cropSrc, setCropSrc] = useState<string | null>(null)
@@ -183,6 +353,7 @@ export function PerfilSettings() {
   // Credential modal
   const [credOpen, setCredOpen] = useState(false)
   const [hideAge, setHideAge] = useState(false)
+  const [showFrameOnCred, setShowFrameOnCred] = useState(true)
   const [credTheme, setCredTheme] = useState<CredentialTheme>('dark')
   const [showGame, setShowGame] = useState(false)
   const [showBook, setShowBook] = useState(false)
@@ -223,7 +394,7 @@ export function PerfilSettings() {
       name: name.trim(),
       age: ageNum,
       avatarDataUrl: avatar,
-      avatarFrame: frame,
+      avatarFrame: frame as AvatarFrame,
       favoriteGameId: favGame,
       favoriteBookId: favBook || null,
       favoriteTrackId: favTrack || null,
@@ -247,24 +418,20 @@ export function PerfilSettings() {
   const onImgLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget
     setImgNat({ w: img.naturalWidth, h: img.naturalHeight })
-    // Escala mínima para cubrir el círculo de preview
-    const minCover = Math.max(PREVIEW / img.naturalWidth, PREVIEW / img.naturalHeight)
+    const minCover = Math.max(
+      PREVIEW / img.naturalWidth,
+      PREVIEW / img.naturalHeight
+    )
     setScale(Math.max(1, minCover * (img.naturalWidth / PREVIEW)))
   }
 
   const autoResize = () => {
-    // Centrar y cubrir el área de recorte al 100%
     if (!imgNat.w || !imgNat.h) return
     soundClick()
     setOffset({ x: 0, y: 0 })
     setOutSize(TARGET_PX)
-    // scale 1 = imagen natural; ajustamos visualmente centrando cover
-    const cover = Math.max(PREVIEW / imgNat.w, PREVIEW / imgNat.h)
-    setScale(cover * (imgNat.w / PREVIEW) * (imgNat.w > imgNat.h ? imgNat.h / imgNat.w : 1) || 1)
-    // Más simple: scale para que el lado corto llene PREVIEW
     const side = Math.min(imgNat.w, imgNat.h)
     setScale(PREVIEW / side)
-    setOffset({ x: 0, y: 0 })
   }
 
   const applyCrop = () => {
@@ -278,14 +445,11 @@ export function PerfilSettings() {
       const ctx = canvas.getContext('2d')
       if (!ctx) throw new Error('ctx')
 
-      // Displayed size of image in preview
       const dispW = imgNat.w * scale
       const dispH = imgNat.h * scale
-      // Image top-left in preview coords (centered + offset)
       const imgLeft = PREVIEW / 2 - dispW / 2 + offset.x
       const imgTop = PREVIEW / 2 - dispH / 2 + offset.y
 
-      // Source rect corresponding to the circular preview (square PREVIEW×PREVIEW)
       const sx = ((0 - imgLeft) / dispW) * imgNat.w
       const sy = ((0 - imgTop) / dispH) * imgNat.h
       const sw = (PREVIEW / dispW) * imgNat.w
@@ -314,11 +478,12 @@ export function PerfilSettings() {
         favoriteGameId: favGame,
         favoriteBookId: favBook || null,
         favoriteTrackId: favTrack || null,
-        avatarFrame: frame,
+        avatarFrame: frame as AvatarFrame,
       })
       const result = await downloadCredential({
         hideAge,
         theme: credTheme,
+        showFrame: showFrameOnCred,
         showFavoriteGame: showGame,
         favoriteGameLabel: GAMES.find((g) => g.id === favGame)?.label,
         showFavoriteBook: showBook,
@@ -349,6 +514,12 @@ export function PerfilSettings() {
     }
   }
 
+  const scrollFrames = (dir: -1 | 1) => {
+    const el = frameScrollRef.current
+    if (!el) return
+    el.scrollBy({ left: dir * 120, behavior: 'smooth' })
+  }
+
   return (
     <div
       className="glass-card"
@@ -368,35 +539,15 @@ export function PerfilSettings() {
           flexWrap: 'wrap',
         }}
       >
-        <button
-          type="button"
+        <CircularAvatar
+          src={avatar}
+          frame={frame}
+          size={AVATAR_UI}
           onClick={() => {
             soundClick()
             fileRef.current?.click()
           }}
-          style={{
-            width: 96,
-            height: 96,
-            overflow: 'hidden',
-            padding: 0,
-            cursor: 'pointer',
-            background: 'var(--gco-glass-bg)',
-            flexShrink: 0,
-            ...framePreviewStyle(frame),
-          }}
-        >
-          {avatar ? (
-            <img
-              src={avatar}
-              alt=""
-              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-            />
-          ) : (
-            <span style={{ fontSize: '0.75rem', color: 'var(--gco-ink-muted)' }}>
-              Foto
-            </span>
-          )}
-        </button>
+        />
         <div style={{ minWidth: 0, flex: 1 }}>
           <p style={{ fontWeight: 600, margin: 0 }}>Foto de perfil</p>
           <p
@@ -408,7 +559,9 @@ export function PerfilSettings() {
             }}
           >
             Toca para elegir, recortar y redimensionar. Recomendado:{' '}
-            <span className="mono">{TARGET_PX}×{TARGET_PX}px</span>
+            <span className="mono">
+              {TARGET_PX}×{TARGET_PX}px
+            </span>
           </p>
         </div>
         <input
@@ -420,24 +573,62 @@ export function PerfilSettings() {
         />
       </div>
 
+      {/* Marco — slider horizontal con animación */}
       <div>
-        <p
-          style={{
-            fontSize: '0.78rem',
-            color: 'var(--gco-ink-muted)',
-            marginBottom: 10,
-            fontWeight: 600,
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-          }}
-        >
-          Marco
-        </p>
         <div
           style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 10,
             gap: 8,
+          }}
+        >
+          <p
+            style={{
+              fontSize: '0.78rem',
+              color: 'var(--gco-ink-muted)',
+              margin: 0,
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+            }}
+          >
+            Marco
+          </p>
+          <div className="hscroll-nav" style={{ display: 'flex', gap: 6 }}>
+            <button
+              type="button"
+              className="hscroll-nav-btn"
+              aria-label="Anterior"
+              onClick={() => {
+                soundClick()
+                scrollFrames(-1)
+              }}
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              className="hscroll-nav-btn"
+              aria-label="Siguiente"
+              onClick={() => {
+                soundClick()
+                scrollFrames(1)
+              }}
+            >
+              ›
+            </button>
+          </div>
+        </div>
+
+        <div
+          ref={frameScrollRef}
+          className="hscroll"
+          style={{
+            gap: '0.65rem',
+            paddingBottom: 6,
+            scrollSnapType: 'x mandatory',
           }}
         >
           {FRAMES.map((f) => {
@@ -455,32 +646,63 @@ export function PerfilSettings() {
                   flexDirection: 'column',
                   alignItems: 'center',
                   gap: 8,
-                  padding: '0.75rem 0.4rem',
-                  borderRadius: 14,
+                  padding: '0.85rem 0.55rem',
+                  minWidth: 92,
+                  flex: '0 0 auto',
+                  scrollSnapAlign: 'start',
+                  borderRadius: 16,
                   cursor: 'pointer',
                   border: on
-                    ? '1px solid var(--gco-primary)'
+                    ? '1.5px solid var(--gco-primary)'
                     : '1px solid var(--gco-glass-border)',
                   background: on
                     ? 'var(--gco-primary-dim)'
                     : 'var(--gco-glass-bg)',
                   color: 'inherit',
+                  transform: on ? 'scale(1.04)' : 'scale(1)',
+                  boxShadow: on
+                    ? '0 6px 20px var(--gco-primary-dim)'
+                    : 'none',
+                  transition:
+                    'transform 0.28s cubic-bezier(0.25, 0.1, 0.25, 1), box-shadow 0.28s ease, background 0.25s ease, border-color 0.25s ease',
+                  WebkitTapHighlightColor: 'transparent',
                 }}
               >
                 <span
                   style={{
-                    width: 36,
-                    height: 36,
-                    ...framePreviewStyle(f.id),
-                    background: 'var(--gco-bg-elevated)',
+                    width: 44,
+                    height: 44,
+                    minWidth: 44,
+                    minHeight: 44,
+                    aspectRatio: '1 / 1',
+                    boxSizing: 'border-box',
+                    ...frameRingStyle(f.id),
                     display: 'grid',
                     placeItems: 'center',
-                    fontSize: '0.85rem',
                   }}
                 >
-                  {f.emoji}
+                  <span
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      borderRadius: '50%',
+                      background: 'var(--gco-bg-elevated)',
+                      display: 'grid',
+                      placeItems: 'center',
+                      fontSize: '0.9rem',
+                      fontFamily: 'var(--font-emoji)',
+                    }}
+                  >
+                    {f.emoji}
+                  </span>
                 </span>
-                <span style={{ fontSize: '0.72rem', fontWeight: on ? 700 : 500 }}>
+                <span
+                  style={{
+                    fontSize: '0.72rem',
+                    fontWeight: on ? 700 : 500,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   {f.label}
                 </span>
               </button>
@@ -519,7 +741,13 @@ export function PerfilSettings() {
       </div>
 
       {msg && (
-        <p style={{ fontSize: '0.9rem', color: 'var(--gco-primary)', margin: 0 }}>
+        <p
+          style={{
+            fontSize: '0.9rem',
+            color: 'var(--gco-primary)',
+            margin: 0,
+          }}
+        >
           {msg}
         </p>
       )}
@@ -549,6 +777,7 @@ export function PerfilSettings() {
             zIndex: 200,
             background: 'rgba(0,0,0,0.7)',
             backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
             display: 'grid',
             placeItems: 'center',
             padding: 16,
@@ -573,6 +802,7 @@ export function PerfilSettings() {
                 width: PREVIEW,
                 height: PREVIEW,
                 maxWidth: '100%',
+                aspectRatio: '1 / 1',
                 margin: '0 auto',
                 borderRadius: '50%',
                 overflow: 'hidden',
@@ -580,6 +810,9 @@ export function PerfilSettings() {
                 border: '2px solid var(--gco-glass-border)',
                 background: '#0a0a0a',
                 touchAction: 'none',
+                // fuerza círculo en Android
+                minWidth: 0,
+                flexShrink: 0,
               }}
             >
               <img
@@ -602,7 +835,6 @@ export function PerfilSettings() {
               />
             </div>
 
-            {/* Dimensiones */}
             <div
               style={{
                 display: 'grid',
@@ -611,22 +843,28 @@ export function PerfilSettings() {
                 fontSize: '0.8rem',
               }}
             >
-              <div
-                className="glass-card"
-                style={{ padding: '0.55rem 0.7rem' }}
-              >
-                <p style={{ margin: 0, color: 'var(--gco-ink-muted)', fontSize: '0.7rem' }}>
+              <div className="glass-card" style={{ padding: '0.55rem 0.7rem' }}>
+                <p
+                  style={{
+                    margin: 0,
+                    color: 'var(--gco-ink-muted)',
+                    fontSize: '0.7rem',
+                  }}
+                >
                   Original
                 </p>
                 <p className="mono" style={{ margin: 0, fontWeight: 600 }}>
                   {imgNat.w || '—'}×{imgNat.h || '—'}px
                 </p>
               </div>
-              <div
-                className="glass-card"
-                style={{ padding: '0.55rem 0.7rem' }}
-              >
-                <p style={{ margin: 0, color: 'var(--gco-ink-muted)', fontSize: '0.7rem' }}>
+              <div className="glass-card" style={{ padding: '0.55rem 0.7rem' }}>
+                <p
+                  style={{
+                    margin: 0,
+                    color: 'var(--gco-ink-muted)',
+                    fontSize: '0.7rem',
+                  }}
+                >
                   Salida (recomendado {TARGET_PX})
                 </p>
                 <p className="mono" style={{ margin: 0, fontWeight: 600 }}>
@@ -635,7 +873,6 @@ export function PerfilSettings() {
               </div>
             </div>
 
-            {/* Cruceta */}
             <div>
               <p
                 style={{
@@ -667,7 +904,6 @@ export function PerfilSettings() {
               </div>
             </div>
 
-            {/* Zoom */}
             <div>
               <div
                 style={{
@@ -688,11 +924,16 @@ export function PerfilSettings() {
                 step={0.02}
                 value={scale}
                 onChange={(e) => setScale(parseFloat(e.target.value))}
-                style={{ width: '100%', accentColor: 'var(--gco-primary)' }}
+                className="pref-slider"
+                style={
+                  {
+                    width: '100%',
+                    '--fill': `${((scale - 0.3) / (3 - 0.3)) * 100}%`,
+                  } as React.CSSProperties
+                }
               />
             </div>
 
-            {/* Output size */}
             <div>
               <div
                 style={{
@@ -713,7 +954,13 @@ export function PerfilSettings() {
                 step={16}
                 value={outSize}
                 onChange={(e) => setOutSize(parseInt(e.target.value, 10))}
-                style={{ width: '100%', accentColor: 'var(--gco-primary)' }}
+                className="pref-slider"
+                style={
+                  {
+                    width: '100%',
+                    '--fill': `${((outSize - 128) / (1024 - 128)) * 100}%`,
+                  } as React.CSSProperties
+                }
               />
             </div>
 
@@ -752,8 +999,9 @@ export function PerfilSettings() {
             position: 'fixed',
             inset: 0,
             zIndex: 200,
-            background: 'rgba(0,0,0,0.55)',
+            background: 'var(--gco-overlay)',
             backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
             display: 'grid',
             placeItems: 'center',
             padding: 16,
@@ -774,11 +1022,26 @@ export function PerfilSettings() {
             <p style={{ fontWeight: 700, fontSize: '1.05rem', margin: 0 }}>
               Credencial
             </p>
-            <p style={{ fontSize: '0.8rem', color: 'var(--gco-ink-muted)', margin: 0 }}>
+            <p
+              style={{
+                fontSize: '0.8rem',
+                color: 'var(--gco-ink-muted)',
+                margin: 0,
+              }}
+            >
               Incluye victorias, derrotas e índice de victoria.
             </p>
 
-            <SwitchRow label="Ocultar edad" checked={hideAge} onChange={setHideAge} />
+            <SwitchRow
+              label="Ocultar edad"
+              checked={hideAge}
+              onChange={setHideAge}
+            />
+            <SwitchRow
+              label="Mostrar marco del avatar"
+              checked={showFrameOnCred}
+              onChange={setShowFrameOnCred}
+            />
 
             <div>
               <p
@@ -790,7 +1053,7 @@ export function PerfilSettings() {
               >
                 Diseño
               </p>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <div className="segmented" style={{ width: '100%' }}>
                 {(
                   [
                     { id: 'dark' as const, label: 'Oscuro' },
@@ -801,8 +1064,7 @@ export function PerfilSettings() {
                   <button
                     key={t.id}
                     type="button"
-                    className={`glass-button ${credTheme === t.id ? '' : 'secondary'}`}
-                    style={{ fontSize: '0.78rem', padding: '0.4rem 0.75rem' }}
+                    className={credTheme === t.id ? 'active' : ''}
                     onClick={() => {
                       soundClick()
                       setCredTheme(t.id)
@@ -874,7 +1136,11 @@ export function PerfilSettings() {
             )}
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <GlassButton type="button" onClick={() => void doDownload()}>
+              <GlassButton
+                type="button"
+                onClick={() => void doDownload()}
+                disabled={credBusy}
+              >
                 {credBusy ? 'Generando…' : 'Descargar'}
               </GlassButton>
               <button

@@ -15,11 +15,774 @@ import React, {
   type TouchEvent as ReactTouchEvent,
   type CSSProperties,
 } from 'react'
+import { createPortal } from 'react-dom'
+import { createRoot, type Root } from 'react-dom/client'
 import { useNavigate, useParams } from 'react-router-dom'
 import { getBook, saveBook, type BookItem } from '@/core/storage/mediaLibrary'
 import { soundClick, soundSuccess } from '@/core/audio/uiSounds'
 import { useReaderPlayer } from '@/core/reader/ReaderPlayerContext.tsx'
 import { pickHumanVoice, scoreVoiceHumanness, type SkipSeconds } from '@/hooks/useSpeechReader'
+
+/* ─── Mini-player global fuera; floating persistente en body ─── */
+const GCO_KILL_STYLE_ID = 'gco-kill-mini-player-style'
+const GCO_FP_HOST_ID = 'gco-floating-player-host'
+const GCO_FP_STYLE_ID = 'gco-floating-player-style'
+const PLAYER_W_PX = 272
+const PLAYER_H_PX = 88
+
+function ensureFloatingStyles() {
+  if (typeof document === 'undefined') return
+  if (!document.getElementById(GCO_KILL_STYLE_ID)) {
+    const kill = document.createElement('style')
+    kill.id = GCO_KILL_STYLE_ID
+    kill.textContent = `
+      .mini-player.glass-card {
+        display: none !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+        opacity: 0 !important;
+      }
+    `
+    document.head.appendChild(kill)
+  }
+  // Siempre refrescar estilos del floating para respetar tema (dark/light/rainbow)
+  let s = document.getElementById(GCO_FP_STYLE_ID) as HTMLStyleElement | null
+  if (!s) {
+    s = document.createElement('style')
+    s.id = GCO_FP_STYLE_ID
+    document.head.appendChild(s)
+  }
+  s.textContent = `
+    /* Tokens del tema global (theme.css) — dark / light / rainbow */
+    .gco-fp-root .floating-player,
+    body .floating-player {
+      --fp-glass: var(--gco-glass-bg, rgba(255,255,255,0.07));
+      --fp-glass-hover: var(--gco-glass-bg-hover, rgba(255,255,255,0.12));
+      --fp-border: var(--gco-glass-border, rgba(255,255,255,0.16));
+      --fp-highlight: var(--gco-glass-highlight, rgba(255,255,255,0.22));
+      --fp-ink: var(--gco-ink, #F3F5FA);
+      --fp-muted: var(--gco-ink-muted, rgba(243,245,250,0.64));
+      --fp-primary: var(--gco-primary, #22E6C5);
+      --fp-primary-dim: var(--gco-primary-dim, rgba(34,230,197,0.18));
+      --fp-btn-text: var(--gco-button-text, #0B1220);
+      --fp-shadow: var(--gco-shadow, 0 8px 32px rgba(0,0,0,0.38));
+      --fp-blur: var(--gco-glass-blur, 20px);
+      --fp-sat: var(--gco-glass-saturate, 1.35);
+      position: fixed !important;
+      z-index: 2147483000 !important;
+      width: ${PLAYER_W_PX}px;
+      border-radius: 22px;
+      background: var(--fp-glass);
+      border: 1px solid var(--fp-border);
+      -webkit-backdrop-filter: blur(var(--fp-blur)) saturate(var(--fp-sat));
+      backdrop-filter: blur(var(--fp-blur)) saturate(var(--fp-sat));
+      box-shadow: var(--fp-shadow), inset 0 1px 0 var(--fp-highlight);
+      overflow: hidden;
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+      color: var(--fp-ink);
+      opacity: 1 !important;
+      pointer-events: auto !important;
+      display: block !important;
+      visibility: visible !important;
+      isolation: isolate;
+      transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    }
+    .gco-fp-root .floating-player::before,
+    body .floating-player::before {
+      content: '';
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 42%;
+      background: linear-gradient(180deg, var(--fp-highlight) 0%, transparent 100%);
+      opacity: 0.35;
+      pointer-events: none;
+      border-radius: inherit;
+      z-index: 0;
+    }
+    .gco-fp-root .floating-player > *,
+    body .floating-player > * { position: relative; z-index: 1; }
+    .gco-fp-root .floating-player.is-dragging { cursor: grabbing; }
+    .gco-fp-root .floating-player-main,
+    body .floating-player-main {
+      display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    }
+    .gco-fp-root .floating-player-cover,
+    body .floating-player-cover {
+      width: 48px; height: 48px; border-radius: 12px; flex-shrink: 0;
+      background: linear-gradient(145deg, var(--fp-primary-dim), var(--gco-accent, #8B7CF6));
+      background-size: cover; background-position: center;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 1.1rem; color: var(--fp-ink);
+      box-shadow: inset 0 0 0 1px var(--fp-border);
+    }
+    .gco-fp-root .floating-player-info,
+    body .floating-player-info {
+      flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;
+    }
+    .gco-fp-root .floating-player-title,
+    body .floating-player-title {
+      font-size: 0.86rem; font-weight: 700; letter-spacing: -0.01em;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fp-ink);
+    }
+    .gco-fp-root .floating-player-author,
+    body .floating-player-author {
+      font-size: 0.72rem; color: var(--fp-muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .gco-fp-root .floating-player-controls,
+    body .floating-player-controls {
+      display: flex; align-items: center; gap: 2px; flex-shrink: 0;
+      position: relative; z-index: 5;
+      pointer-events: auto !important;
+      touch-action: manipulation;
+    }
+    .gco-fp-root .fp-btn,
+    body .floating-player .fp-btn {
+      display: flex; align-items: center; justify-content: center;
+      background: transparent; border: none; color: var(--fp-ink);
+      cursor: pointer; padding: 6px; border-radius: 10px;
+      min-width: 40px; min-height: 40px;
+      position: relative; z-index: 6;
+      pointer-events: auto !important;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      transition: background 0.15s ease, transform 0.1s ease;
+    }
+    .gco-fp-root .fp-btn:hover,
+    body .floating-player .fp-btn:hover { background: var(--fp-glass-hover); }
+    .gco-fp-root .fp-btn:active,
+    body .floating-player .fp-btn:active { transform: scale(0.94); }
+    .gco-fp-root .fp-play,
+    body .floating-player .fp-play {
+      width: 44px; height: 44px; border-radius: 50%;
+      background: var(--fp-primary); color: var(--fp-btn-text);
+      box-shadow: 0 4px 16px var(--fp-primary-dim);
+      flex-shrink: 0; min-width: 44px; min-height: 44px;
+      pointer-events: auto !important;
+    }
+    .gco-fp-root .fp-play:hover,
+    body .floating-player .fp-play:hover { filter: brightness(1.06); }
+    .gco-fp-root .floating-player-progress,
+    body .floating-player-progress {
+      height: 3px; background: var(--fp-border); overflow: hidden;
+    }
+    .gco-fp-root .floating-player-progress-fill,
+    body .floating-player-progress-fill {
+      height: 100%; background: var(--fp-primary); border-radius: 2px;
+      transition: width 0.25s linear;
+    }
+    /* Pestaña al anclar a la pared */
+    .gco-fp-root .gco-fp-dock-tab,
+    body .gco-fp-dock-tab {
+      position: fixed !important;
+      z-index: 2147483000 !important;
+      display: flex !important;
+      align-items: center;
+      justify-content: center;
+      background: var(--gco-glass-bg, rgba(255,255,255,0.07));
+      border: 1px solid var(--gco-glass-border, rgba(255,255,255,0.16));
+      color: var(--gco-primary, #22E6C5);
+      -webkit-backdrop-filter: blur(var(--gco-glass-blur, 20px)) saturate(var(--gco-glass-saturate, 1.35));
+      backdrop-filter: blur(var(--gco-glass-blur, 20px)) saturate(var(--gco-glass-saturate, 1.35));
+      box-shadow: var(--gco-shadow, 0 8px 24px rgba(0,0,0,0.3)), inset 0 1px 0 var(--gco-glass-highlight, rgba(255,255,255,0.2));
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+    .gco-fp-root .gco-fp-dock-tab:hover { background: var(--gco-glass-bg-hover, rgba(255,255,255,0.12)); }
+    .gco-fp-root .gco-fp-dock-tab.dock-left {
+      width: 36px; height: 56px; left: 0; border-left: none;
+      border-radius: 0 16px 16px 0;
+    }
+    .gco-fp-root .gco-fp-dock-tab.dock-right {
+      width: 36px; height: 56px; right: 0; border-right: none;
+      border-radius: 16px 0 0 16px;
+    }
+    .gco-fp-root .gco-fp-dock-tab.dock-top {
+      width: 56px; height: 36px; top: 0; border-top: none;
+      border-radius: 0 0 16px 16px;
+    }
+    .gco-fp-root .gco-fp-dock-tab.dock-bottom {
+      width: 56px; height: 36px; bottom: 0; border-bottom: none;
+      border-radius: 16px 16px 0 0;
+    }
+    .gco-fp-root .gco-fp-dock-tab svg { width: 16px; height: 16px; }
+  `
+}
+
+function destroyMiniPlayerGlassCard() {
+  if (typeof document === 'undefined') return
+  ensureFloatingStyles()
+  document.querySelectorAll<HTMLElement>('.mini-player.glass-card').forEach((el) => {
+    if (el.classList.contains('floating-player') || el.closest('.floating-player') || el.closest('.gco-fp-root')) return
+    try {
+      el.setAttribute('hidden', 'true')
+      el.style.setProperty('display', 'none', 'important')
+    } catch {
+      /* */
+    }
+  })
+}
+
+/** Sesión de audio que sobrevive al desmontar BookReader (Biblioteca, etc.) */
+type FpReaderLike = {
+  speaking: boolean
+  paused: boolean
+  charIndex: number
+  rate: number
+  voiceURI: string
+  speakFrom: (text: string, from: number, rate?: number, voiceURI?: string) => void
+  stop: () => void
+  setCharIndex: (n: number) => void
+  pause?: () => void
+  resume?: () => void
+}
+
+const FP_POS_KEY = 'gco-fp-resume-char'
+
+const fpSession: {
+  text: string
+  title: string
+  author: string
+  cover: string | null
+  charIndex: number
+  rate: number
+  voiceURI: string
+  reader: FpReaderLike | null
+  wantPlaying: boolean
+  /** true si la última pausa fue pause() nativo (utterance sigue viva) */
+  softPaused: boolean
+} = {
+  text: '',
+  title: '',
+  author: '',
+  cover: null,
+  charIndex: 0,
+  rate: 1,
+  voiceURI: '',
+  reader: null,
+  wantPlaying: false,
+  softPaused: false,
+}
+
+function fpLoadSavedPos(): number {
+  try {
+    const v = sessionStorage.getItem(FP_POS_KEY)
+    if (v != null) {
+      const n = parseInt(v, 10)
+      if (Number.isFinite(n) && n >= 0) return n
+    }
+  } catch {
+    /* */
+  }
+  return fpSession.charIndex
+}
+
+function fpSavePos(pos: number) {
+  const p = Math.max(0, Math.floor(pos))
+  fpSession.charIndex = p
+  try {
+    sessionStorage.setItem(FP_POS_KEY, String(p))
+  } catch {
+    /* */
+  }
+}
+
+function fpNativeSpeaking(): boolean {
+  try {
+    const s = window.speechSynthesis
+    if (!s) return false
+    return (s.speaking || s.pending) && !s.paused
+  } catch {
+    return false
+  }
+}
+
+function fpNativePaused(): boolean {
+  try {
+    return !!window.speechSynthesis?.paused
+  } catch {
+    return false
+  }
+}
+
+/** Máximo entre sesión, reader y storage — nunca bajar a 0 si ya avanzamos */
+function fpCapturePosition() {
+  const r = fpSession.reader
+  const candidates = [fpSession.charIndex, fpLoadSavedPos()]
+  if (r && typeof r.charIndex === 'number' && Number.isFinite(r.charIndex) && r.charIndex > 0) {
+    candidates.push(Math.floor(r.charIndex))
+  }
+  const best = Math.max(0, ...candidates)
+  fpSavePos(best)
+  return best
+}
+
+/**
+ * PAUSA suave: speechSynthesis.pause() — NO cancel/stop.
+ * La utterance sigue viva y resume() puede continuar en el mismo punto.
+ */
+function fpSoftPause() {
+  const saved = fpCapturePosition()
+  fpSession.wantPlaying = false
+  fpSession.softPaused = true
+  try {
+    fpSession.reader?.pause?.()
+  } catch {
+    /* */
+  }
+  try {
+    window.speechSynthesis?.pause()
+  } catch {
+    /* */
+  }
+  fpSavePos(saved)
+  try {
+    fpSession.reader?.setCharIndex(saved)
+  } catch {
+    /* */
+  }
+}
+
+function fpSpeakFromSaved(explicit?: number) {
+  const r = fpSession.reader
+  const text = fpSession.text
+  if (!r || !text) return
+  const start = Math.max(0, Math.min(text.length, explicit ?? fpLoadSavedPos()))
+  fpSavePos(start)
+  fpSession.wantPlaying = true
+  fpSession.softPaused = false
+  try {
+    r.setCharIndex(start)
+  } catch {
+    /* */
+  }
+  try {
+    window.speechSynthesis?.cancel()
+  } catch {
+    /* */
+  }
+  try {
+    r.speakFrom(text, start, r.rate || fpSession.rate, r.voiceURI || fpSession.voiceURI)
+  } catch {
+    /* */
+  }
+}
+
+/**
+ * PLAY: 1) resume nativo si softPaused  2) si falla, speakFrom desde posición guardada.
+ */
+function fpHardPlay(from?: number) {
+  const r = fpSession.reader
+  const text = fpSession.text
+  if (!r || !text) return
+
+  const start = Math.max(
+    0,
+    Math.min(text.length, typeof from === 'number' ? from : fpCapturePosition())
+  )
+  fpSavePos(start)
+  fpSession.wantPlaying = true
+
+  if (fpSession.softPaused || fpNativePaused()) {
+    try {
+      r.resume?.()
+    } catch {
+      /* */
+    }
+    try {
+      window.speechSynthesis?.resume()
+    } catch {
+      /* */
+    }
+    fpSession.softPaused = false
+    window.setTimeout(() => {
+      if (!fpSession.wantPlaying) return
+      if (fpNativeSpeaking()) return
+      fpSpeakFromSaved(start)
+    }, 200)
+    return
+  }
+
+  fpSpeakFromSaved(start)
+}
+
+function fpTogglePlayback() {
+  try {
+    soundClick()
+  } catch {
+    /* */
+  }
+  if (fpSession.wantPlaying) {
+    fpSoftPause()
+  } else {
+    fpHardPlay()
+  }
+}
+
+/** Salto relativo: speakFrom con nueva posición */
+function fpGoRelative(deltaChars: number) {
+  const r = fpSession.reader
+  const text = fpSession.text
+  if (!r || !text) return
+  try {
+    soundClick()
+  } catch {
+    /* */
+  }
+  const base = fpCapturePosition()
+  const next = Math.max(0, Math.min(text.length, base + deltaChars))
+  fpSavePos(next)
+  fpSession.wantPlaying = true
+  fpSession.softPaused = false
+  try {
+    r.setCharIndex(next)
+  } catch {
+    /* */
+  }
+  try {
+    window.speechSynthesis?.cancel()
+  } catch {
+    /* */
+  }
+  r.speakFrom(text, next, r.rate || fpSession.rate, r.voiceURI || fpSession.voiceURI)
+}
+
+const fpApi = {
+  toggle: () => fpTogglePlayback(),
+  prev: () => fpGoRelative(-800),
+  next: () => fpGoRelative(800),
+  skipBack: () => fpGoRelative(-400),
+  skipFwd: () => fpGoRelative(400),
+}
+
+type FpSnap = {
+  title: string
+  author: string
+  cover: string | null
+  progress: number
+  isPlaying: boolean
+  x: number
+  y: number
+}
+
+const fpSnap: { current: FpSnap | null } = { current: null }
+let bgRoot: Root | null = null
+
+function clampPos(x: number, y: number) {
+  if (typeof window === 'undefined') return { x, y }
+  const maxX = Math.max(8, window.innerWidth - PLAYER_W_PX - 8)
+  const maxY = Math.max(8, window.innerHeight - PLAYER_H_PX - 8)
+  return {
+    x: Math.min(maxX, Math.max(8, x)),
+    y: Math.min(maxY, Math.max(8, y)),
+  }
+}
+
+const BG_DOCK_THRESHOLD = 56
+
+function DockChevron({ side }: { side: 'left' | 'right' | 'top' | 'bottom' }) {
+  const rot = side === 'left' ? 0 : side === 'right' ? 180 : side === 'top' ? 90 : -90
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ transform: `rotate(${rot}deg)` }} aria-hidden>
+      <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function isInteractiveTarget(el: EventTarget | null): boolean {
+  if (!(el instanceof Element)) return false
+  return !!el.closest('button, a, input, select, textarea, [data-no-drag], .floating-player-controls')
+}
+
+function BgFloatingPlayer({ snap }: { snap: FpSnap }) {
+  const [pos, setPos] = useState(() => clampPos(snap.x, snap.y))
+  const [playing, setPlaying] = useState(snap.isPlaying)
+  const [docked, setDocked] = useState<'left' | 'right' | 'top' | 'bottom' | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const dockedRef = useRef<'left' | 'right' | 'top' | 'bottom' | null>(null)
+  const posRef = useRef(pos)
+  const drag = useRef<{
+    id: number
+    sx: number
+    sy: number
+    ox: number
+    oy: number
+    moved: boolean
+  } | null>(null)
+
+  posRef.current = pos
+
+  useEffect(() => {
+    if (snap.isPlaying) fpSession.wantPlaying = true
+    setPlaying(fpSession.wantPlaying || snap.isPlaying)
+  }, [snap.isPlaying])
+
+  // Icono + seguimiento de posición mientras suena
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (fpSession.wantPlaying && fpSession.reader) {
+        const c = fpSession.reader.charIndex
+        if (typeof c === 'number' && c > 0) {
+          fpSavePos(Math.max(c, fpSession.charIndex))
+        }
+      }
+      setPlaying(fpSession.wantPlaying)
+    }, 400)
+    return () => window.clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    ensureFloatingStyles()
+    const onResize = () => setPos((p) => clampPos(p.x, p.y))
+    window.addEventListener('resize', onResize)
+    const mo = new MutationObserver(() => ensureFloatingStyles())
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    if (document.body) mo.observe(document.body, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => {
+      window.removeEventListener('resize', onResize)
+      mo.disconnect()
+    }
+  }, [])
+
+  const finishDock = useCallback((x: number, y: number) => {
+    const w = window.innerWidth
+    const h = window.innerHeight
+    let side: 'left' | 'right' | 'top' | 'bottom' | null = null
+    if (x <= BG_DOCK_THRESHOLD) side = 'left'
+    else if (x + PLAYER_W_PX >= w - BG_DOCK_THRESHOLD) side = 'right'
+    else if (y <= BG_DOCK_THRESHOLD) side = 'top'
+    else if (y + PLAYER_H_PX >= h - BG_DOCK_THRESHOLD) side = 'bottom'
+    dockedRef.current = side
+    if (side) {
+      setDocked(side)
+      const midY = Math.min(h - 70, Math.max(16, y + PLAYER_H_PX / 2 - 28))
+      const midX = Math.min(w - 70, Math.max(16, x + PLAYER_W_PX / 2 - 28))
+      if (side === 'left' || side === 'right') setPos({ x: side === 'left' ? 0 : w - 36, y: midY })
+      else setPos({ x: midX, y: side === 'top' ? 0 : h - 36 })
+    } else {
+      setDocked(null)
+      setPos(clampPos(x, y))
+    }
+  }, [])
+
+  // Listeners globales: fiables en desktop (mouse) y táctil
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const d = drag.current
+      if (!d || d.id !== e.pointerId) return
+      const dx = e.clientX - d.sx
+      const dy = e.clientY - d.sy
+      if (Math.abs(dx) + Math.abs(dy) > 5) d.moved = true
+      const side = dockedRef.current
+      if (side) {
+        if (Math.abs(dx) + Math.abs(dy) < 8) return
+        dockedRef.current = null
+        setDocked(null)
+        const free = clampPos(
+          side === 'left' ? 12 : side === 'right' ? window.innerWidth - PLAYER_W_PX - 12 : Math.max(8, e.clientX - PLAYER_W_PX / 2),
+          side === 'top' ? 12 : side === 'bottom' ? window.innerHeight - PLAYER_H_PX - 12 : Math.max(8, e.clientY - PLAYER_H_PX / 2)
+        )
+        d.ox = free.x
+        d.oy = free.y
+        d.sx = e.clientX
+        d.sy = e.clientY
+        setPos(free)
+        setDragging(true)
+        return
+      }
+      if (d.moved) setDragging(true)
+      setPos(clampPos(d.ox + dx, d.oy + dy))
+    }
+    const onUp = (e: PointerEvent) => {
+      const d = drag.current
+      if (!d || d.id !== e.pointerId) return
+      drag.current = null
+      setDragging(false)
+      try {
+        ;(e.target as Element)?.releasePointerCapture?.(e.pointerId)
+      } catch {
+        /* */
+      }
+      if (!dockedRef.current && d.moved) {
+        finishDock(d.ox + (e.clientX - d.sx), d.oy + (e.clientY - d.sy))
+      } else if (!dockedRef.current && !d.moved) {
+        setPos(clampPos(posRef.current.x, posRef.current.y))
+      }
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+    }
+  }, [finishDock])
+
+  const startDrag = (e: React.PointerEvent) => {
+    // No iniciar arrastre desde botones / controles
+    if (isInteractiveTarget(e.target)) return
+    e.preventDefault()
+    drag.current = {
+      id: e.pointerId,
+      sx: e.clientX,
+      sy: e.clientY,
+      ox: posRef.current.x,
+      oy: posRef.current.y,
+      moved: false,
+    }
+  }
+
+  const startDockDrag = (e: React.PointerEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    drag.current = {
+      id: e.pointerId,
+      sx: e.clientX,
+      sy: e.clientY,
+      ox: posRef.current.x,
+      oy: posRef.current.y,
+      moved: false,
+    }
+  }
+
+  const onBtn = (fn: () => void) => (e: React.MouseEvent | React.PointerEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    fn()
+  }
+
+  const dockTabStyle = (): React.CSSProperties => {
+    if (!docked) return {}
+    if (docked === 'left') return { left: 0, top: pos.y }
+    if (docked === 'right') return { right: 0, top: pos.y }
+    if (docked === 'top') return { top: 0, left: pos.x }
+    return { bottom: 0, left: pos.x }
+  }
+
+  if (docked) {
+    return (
+      <button
+        type="button"
+        className={`gco-fp-dock-tab dock-${docked}`}
+        style={dockTabStyle()}
+        aria-label="Mostrar reproductor (arrastrar para sacar)"
+        onPointerDown={startDockDrag}
+      >
+        <DockChevron side={docked} />
+      </button>
+    )
+  }
+
+  return (
+    <div
+      className={`floating-player${dragging ? ' is-dragging' : ''}`}
+      style={{ left: pos.x, top: pos.y }}
+      onPointerDown={startDrag}
+      role="region"
+      aria-label="Reproductor de audiolibro"
+    >
+      <div className="floating-player-main">
+        <div
+          className="floating-player-cover"
+          style={snap.cover ? { backgroundImage: `url(${snap.cover})` } : undefined}
+          data-drag-handle
+        >
+          {!snap.cover && (snap.title.charAt(0) || '·').toUpperCase()}
+        </div>
+        <div className="floating-player-info" data-drag-handle>
+          <strong className="floating-player-title">{snap.title}</strong>
+          <span className="floating-player-author">{snap.author || 'Lectura en voz alta'}</span>
+        </div>
+        <div
+          className="floating-player-controls"
+          data-no-drag
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="fp-btn"
+            aria-label="Capítulo anterior"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={onBtn(() => fpApi.prev())}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+              <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="fp-btn fp-play"
+            aria-label={playing ? 'Pausar' : 'Reproducir'}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={onBtn(() => {
+              fpApi.toggle()
+              // wantPlaying ya actualizado dentro de fpTogglePlayback
+              setPlaying(fpSession.wantPlaying)
+            })}
+          >
+
+            {playing ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                <path d="M6 5h4v14H6zM14 5h4v14h-4z" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
+          </button>
+          <button
+            type="button"
+            className="fp-btn"
+            aria-label="Capítulo siguiente"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={onBtn(() => fpApi.next())}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+              <path d="M16 6h2v12h-2zM6 6l8.5 6L6 18z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div className="floating-player-progress" data-drag-handle>
+        <div className="floating-player-progress-fill" style={{ width: `${Math.max(0, Math.min(100, snap.progress))}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function showBackgroundFloating(snap: FpSnap) {
+  if (typeof document === 'undefined') return
+  ensureFloatingStyles()
+  destroyMiniPlayerGlassCard()
+  let host = document.getElementById(GCO_FP_HOST_ID)
+  if (!host) {
+    host = document.createElement('div')
+    host.id = GCO_FP_HOST_ID
+    host.className = 'gco-fp-root'
+    document.body.appendChild(host)
+  }
+  if (!bgRoot) bgRoot = createRoot(host)
+  fpSnap.current = snap
+  if (snap.isPlaying) fpSession.wantPlaying = true
+  bgRoot.render(<BgFloatingPlayer snap={snap} />)
+}
+
+function hideBackgroundFloating() {
+  try {
+    bgRoot?.render(null)
+  } catch {
+    /* */
+  }
+}
+
+/* (mini-player global solo se oculta vía destroyMiniPlayerGlassCard) */
 
 /* ───────────────────────── Tipos ───────────────────────── */
 
@@ -102,6 +865,42 @@ const WORD_PAGE = {
   maxParasSoft: 12,
 }
 
+const PLAYER_POS_KEY = 'gco-reader-player-pos'
+const PLAYER_DOCK_KEY = 'gco-reader-player-dock'
+const DOCK_THRESHOLD = 64 // px de cercanía a un borde para anclar el reproductor
+const PLAYER_W = 272
+const PLAYER_H = 88
+
+/**
+ * Busca el rango [start, end) de la "palabra" que contiene `approxPos`
+ * dentro de un texto plano. Se usa tanto para resaltar la palabra que se
+ * está leyendo como para calcular el punto de reanudación al pausar.
+ */
+function findWordRangeInPlainText(plain: string, approxPos: number): { start: number; end: number } | null {
+  if (!plain.length) return null
+  const isWordChar = (c: string) => /[\p{L}\p{N}'’-]/u.test(c)
+  let pos = Math.max(0, Math.min(approxPos, plain.length - 1))
+
+  if (!isWordChar(plain[pos] || '')) {
+    let f = pos
+    while (f < plain.length && !isWordChar(plain[f])) f++
+    if (f < plain.length) {
+      pos = f
+    } else {
+      let b = pos
+      while (b >= 0 && !isWordChar(plain[b])) b--
+      if (b < 0) return null
+      pos = b
+    }
+  }
+
+  let start = pos
+  let end = pos
+  while (start > 0 && isWordChar(plain[start - 1])) start--
+  while (end < plain.length - 1 && isWordChar(plain[end + 1])) end++
+  return { start, end: end + 1 }
+}
+
 const HIGHLIGHT_COLORS: { id: string; label: string; color: string }[] = [
   { id: 'yellow', label: 'Amarillo', color: '#FDE68A' },
   { id: 'green', label: 'Verde', color: '#BBF7D0' },
@@ -169,10 +968,11 @@ function useIsDesktop() {
 /* ───────────────────────── Capítulos ───────────────────────── */
 
 const CHAPTER_RE =
-  /^(?:capítulo|capitulo|chapter|parte|part|sección|seccion|book|libro)\s+([\divxlcdm]+|[0-9]+|[ivxlcdm]+|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciséis|diecisiete|dieciocho|diecinueve|veinte)(?:\s*[:.\-–—]\s*(.+))?$/i
+  /^(?:capítulo|capitulo|chapter|parte|part|sección|seccion|book|libro|arco)\s+([\divxlcdm]+|[0-9]+|[ivxlcdm]+|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciséis|diecisiete|dieciocho|diecinueve|veinte)(?:\s*[:.\-–—]\s*(.+))?$/i
 
+/** Títulos especiales de libro: la marca apunta exactamente al inicio de esa línea (primera palabra de la hoja). */
 const SPECIAL_RE =
-  /^(prólogo|prologo|epílogo|epilogo|introducción|introduccion|prefacio|foreword|afterword|apéndice|apendice|dedicatoria|agradecimientos)\b/i
+  /^(epígrafe|epigrafe|índice|indice|prólogo|prologo|prefacio|preface|introducción|introduccion|epílogo|epilogo|foreword|afterword|apéndice|apendice|dedicatoria|agradecimientos|nota del autor|notas|glosario|bibliografía|bibliografia|anexo|tabla de contenidos|contents|colofón|colofon)\b/i
 
 function detectChapters(text: string): ChapterMark[] {
   const lines = text.split(/\n/)
@@ -201,11 +1001,14 @@ function detectChapters(text: string): ChapterMark[] {
         title = m[0].trim()
         if (m[2]) title = `${m[1] || m[0]} — ${m[2].trim()}`
       }
-      if (!marks.length || offset - marks[marks.length - 1].start > 40) {
+      // Inicio exacto del título: primer carácter no-espacio de la línea (no la línea siguiente).
+      const leadWs = raw.match(/^[\t ]*/)?.[0]?.length ?? 0
+      const titleStart = offset + leadWs
+      if (!marks.length || titleStart - marks[marks.length - 1].start > 40) {
         marks.push({
           id: `ch-auto-${marks.length + 1}`,
           title: title.length > 60 ? title.slice(0, 57) + '…' : title,
-          start: offset,
+          start: titleStart,
           source: 'auto',
         })
       }
@@ -406,12 +1209,13 @@ function renderRunsWithHighlights(
         nodes.push(<React.Fragment key={key++}>{wrap(run, plain)}</React.Fragment>)
       }
       const hlText = run.text.slice(segStart - runStart, segEnd - runStart)
+      const isSpoken = r.id === 'spoken'
       nodes.push(
         <mark
           key={key++}
-          className="reader-highlight-mark"
-          style={{ backgroundColor: r.color }}
-          onClick={(e) => onMarkClick?.(r.id, e)}
+          className={isSpoken ? 'reader-highlight-mark reader-spoken-mark' : 'reader-highlight-mark'}
+          style={isSpoken ? undefined : { backgroundColor: r.color }}
+          onClick={isSpoken ? undefined : (e) => onMarkClick?.(r.id, e)}
         >
           {wrap(run, hlText)}
         </mark>
@@ -511,6 +1315,14 @@ function IconNext() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
       <path d="M16 6h2v12h-2zM6 6l8.5 6L6 18z" />
+    </svg>
+  )
+}
+function DockArrow({ side }: { side: 'left' | 'right' | 'top' | 'bottom' }) {
+  const rotation = side === 'left' ? 0 : side === 'right' ? 180 : side === 'top' ? 90 : -90
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ transform: `rotate(${rotation}deg)` }}>
+      <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
@@ -642,13 +1454,18 @@ interface PageSlice {
 
 function buildPages(
   paragraphs: { text: string; start: number; end: number; isImage?: boolean }[],
-  charsBudget = WORD_PAGE.targetChars
+  charsBudget = WORD_PAGE.targetChars,
+  /** Offsets de inicio de capítulo: cada uno fuerza salto de página para que el título sea la 1ª línea de la hoja */
+  chapterStarts: number[] = []
 ): PageSlice[] {
   if (!paragraphs.length) return [{ paraIndices: [], startChar: 0, endChar: 0 }]
   const pages: PageSlice[] = []
   let cur: number[] = []
   let used = 0
   let pageStart = paragraphs[0].start
+
+  const isChapterHeading = (p: { start: number; end: number }) =>
+    chapterStarts.some((cs) => cs >= p.start && cs < p.end)
 
   const flush = (endChar: number) => {
     if (!cur.length) return
@@ -660,6 +1477,14 @@ function buildPages(
   for (let i = 0; i < paragraphs.length; i++) {
     const p = paragraphs[i]
     const cost = p.isImage ? Math.max(Math.floor(charsBudget * 0.45), 400) : Math.max(p.text.length, 40)
+    const chapterBreak = isChapterHeading(p)
+
+    // Nuevo capítulo → nueva hoja (el título queda como primera línea)
+    if (chapterBreak && cur.length > 0) {
+      const prev = paragraphs[cur[cur.length - 1]]
+      flush(prev.end)
+      pageStart = p.start
+    }
 
     if (p.isImage && cur.length > 0 && used > charsBudget * 0.15) {
       const prev = paragraphs[cur[cur.length - 1]]
@@ -667,7 +1492,12 @@ function buildPages(
       pageStart = p.start
     }
 
-    if (cur.length > 0 && !p.isImage && (used + cost > charsBudget || cur.length >= WORD_PAGE.maxParasSoft)) {
+    if (
+      cur.length > 0 &&
+      !p.isImage &&
+      !chapterBreak &&
+      (used + cost > charsBudget || cur.length >= WORD_PAGE.maxParasSoft)
+    ) {
       const prev = paragraphs[cur[cur.length - 1]]
       flush(prev.end)
       pageStart = p.start
@@ -731,7 +1561,8 @@ export function BookReader() {
   const [bookmarkNote, setBookmarkNote] = useState('')
   const [showBookmarkForm, setShowBookmarkForm] = useState(false)
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
-  const [transportVisible, setTransportVisible] = useState(true)
+  // Chrome auto-hide (reservado; el floating ya no depende de esto)
+  const [, setTransportVisible] = useState(true)
   const [highlightMode, setHighlightMode] = useState(false)
   const [selectionPopup, setSelectionPopup] = useState<{
     paraIndex: number
@@ -742,6 +1573,55 @@ export function BookReader() {
     y: number
     editingId?: string
   } | null>(null)
+
+  /** Punto donde el usuario tocó el texto mientras la lectura estaba en pausa,
+   *  para poder reanudarla desde otra palabra distinta a la última leída. */
+  const [resumeAnchor, setResumeAnchor] = useState<{
+    paraIndex: number
+    rawOffset: number
+    x: number
+    y: number
+  } | null>(null)
+
+  /** Posición y estado (libre / anclado a un borde) del reproductor flotante */
+  const [playerPos, setPlayerPos] = useState<{ x: number; y: number }>(() => {
+    if (typeof window === 'undefined') return { x: 24, y: 24 }
+    try {
+      const saved = window.localStorage.getItem(PLAYER_POS_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved) as { xPct: number; yPct: number }
+        return {
+          x: Math.round(parsed.xPct * window.innerWidth),
+          y: Math.round(parsed.yPct * window.innerHeight),
+        }
+      }
+    } catch {
+      /* */
+    }
+    return { x: window.innerWidth - 300, y: window.innerHeight - 150 }
+  })
+  const [playerDocked, setPlayerDocked] = useState<'left' | 'right' | 'top' | 'bottom' | null>(() => {
+    if (typeof window === 'undefined') return null
+    try {
+      return (window.localStorage.getItem(PLAYER_DOCK_KEY) as 'left' | 'right' | 'top' | 'bottom' | null) || null
+    } catch {
+      return null
+    }
+  })
+  const [playerDragging, setPlayerDragging] = useState(false)
+  const [playerExpanded, setPlayerExpanded] = useState(true)
+  const playerRef = useRef<HTMLDivElement>(null)
+  const playerDragState = useRef<{
+    pointerId: number
+    startClientX: number
+    startClientY: number
+    startX: number
+    startY: number
+    moved: boolean
+  } | null>(null)
+
+  const headerRef = useRef<HTMLDivElement>(null)
+  const [headerHeight, setHeaderHeight] = useState(64)
 
   const [pageIndex, setPageIndex] = useState(0)
   const [pages, setPages] = useState<PageSlice[]>([])
@@ -790,8 +1670,29 @@ export function BookReader() {
       setAuthor(b.author || '')
       setText(stripAuthorWordsHeading(b.text || ''))
       setCover(b.coverDataUrl || null)
-      if (b.chapters?.length) setChapters(b.chapters as ChapterMark[])
-      else setChapters(detectChapters(stripAuthorWordsHeading(b.text || '')))
+      {
+        const cleaned = stripAuthorWordsHeading(b.text || '')
+        const detected = detectChapters(cleaned)
+        const saved = (b.chapters || []) as ChapterMark[]
+        const hasManual = saved.some((c) => c.source === 'manual')
+        // Conserva manuales; re-detecta autos para que el offset coincida con el título real
+        if (hasManual && saved.length) {
+          const manual = saved.filter((c) => c.source === 'manual')
+          const merged = [...detected]
+          for (const m of manual) {
+            if (!merged.some((x) => Math.abs(x.start - m.start) < 8)) {
+              merged.push(m)
+            } else {
+              const idx = merged.findIndex((x) => Math.abs(x.start - m.start) < 8)
+              if (idx >= 0) merged[idx] = { ...merged[idx], title: m.title, source: 'manual' }
+            }
+          }
+          merged.sort((a, b) => a.start - b.start)
+          setChapters(merged)
+        } else {
+          setChapters(detected)
+        }
+      }
       if (b.bookmarks) setBookmarks(b.bookmarks as Bookmark[])
       if (b.comments) setComments(b.comments as ParagraphComment[])
       if (b.highlights?.length) {
@@ -849,6 +1750,37 @@ export function BookReader() {
       setChapters(detectChapters(text))
     }
   }, [text]) // eslint-disable-line
+
+  /* Ocultar mini-player.glass-card; al salir, dejar floating en segundo plano */
+  useEffect(() => {
+    ensureFloatingStyles()
+    hideBackgroundFloating()
+    destroyMiniPlayerGlassCard()
+    const mo = new MutationObserver(() => destroyMiniPlayerGlassCard())
+    mo.observe(document.body, { childList: true, subtree: true })
+    const interval = window.setInterval(destroyMiniPlayerGlassCard, 1200)
+    return () => {
+      mo.disconnect()
+      window.clearInterval(interval)
+      // Segundo plano: burbuja flotante al ir a Biblioteca u otra ruta
+      const snap = fpSnap.current
+      if (snap) {
+        const playingNow =
+          fpSession.wantPlaying || fpNativeSpeaking() || !!(fpSession.reader?.speaking && !fpSession.reader?.paused)
+        if (playingNow) fpSession.wantPlaying = true
+        showBackgroundFloating({ ...snap, isPlaying: playingNow || snap.isPlaying })
+      }
+      destroyMiniPlayerGlassCard()
+    }
+  }, [])
+
+  /* Posición segura del player (evita quedar fuera de pantalla en PC) */
+  useLayoutEffect(() => {
+    setPlayerPos((p) => clampPos(p.x, p.y))
+    const onResize = () => setPlayerPos((p) => clampPos(p.x, p.y))
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   useEffect(() => {
     if (!reader.voices.length) return
@@ -944,6 +1876,44 @@ export function BookReader() {
 
   const paragraphs = useMemo(() => splitParagraphs(text), [text])
 
+  /**
+   * Runs (formato) y texto plano de cada párrafo, calculados una sola vez
+   * por libro/edición — evita re-tokenizar markdown en cada "tick" de
+   * lectura (fundamental para que el resaltado de palabra en vivo no
+   * ralentice libros largos).
+   */
+  const paraRuns = useMemo(
+    () => paragraphs.map((p) => (p.isImage ? [] : buildInlineRuns(stripAlignMarkers(p.text)))),
+    [paragraphs]
+  )
+  const paraPlainTexts = useMemo(() => paraRuns.map((runs) => plainTextOfRuns(runs)), [paraRuns])
+
+  /** Índice del párrafo que corresponde a la posición actual de lectura (búsqueda binaria: O(log n)) */
+  const currentParaIndex = useMemo(() => {
+    if (!paragraphs.length) return -1
+    let lo = 0
+    let hi = paragraphs.length - 1
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1
+      if (paragraphs[mid].start <= reader.charIndex) lo = mid
+      else hi = mid - 1
+    }
+    return paragraphs[lo] && reader.charIndex < paragraphs[lo].end + 1 ? lo : lo
+  }, [paragraphs, reader.charIndex])
+
+  /** Rango [start,end) de la palabra actualmente hablada, en offsets "planos" del párrafo activo */
+  const spokenWordRange = useMemo(() => {
+    if (!reader.speaking || currentParaIndex < 0) return null
+    const p = paragraphs[currentParaIndex]
+    if (!p || p.isImage) return null
+    const plain = paraPlainTexts[currentParaIndex] || ''
+    if (!plain.length) return null
+    const rawLen = Math.max(1, p.end - p.start)
+    const rawOffsetInPara = Math.max(0, Math.min(reader.charIndex - p.start, rawLen))
+    const approx = Math.round((rawOffsetInPara / rawLen) * plain.length)
+    return findWordRangeInPlainText(plain, approx)
+  }, [reader.speaking, reader.charIndex, currentParaIndex, paragraphs, paraPlainTexts])
+
 
   const imageParas = useMemo(
     () => paragraphs.map((p, i) => ({ p, i })).filter((x) => x.p.isImage),
@@ -995,7 +1965,8 @@ export function BookReader() {
       setPages([])
       return
     }
-    const next = buildPages(paragraphs)
+    const chapterStarts = chapters.map((c) => c.start)
+    const next = buildPages(paragraphs, WORD_PAGE.targetChars, chapterStarts)
     setPages(next)
     let best = 0
     for (let i = 0; i < next.length; i++) {
@@ -1003,7 +1974,7 @@ export function BookReader() {
       else break
     }
     setPageIndex(best)
-  }, [appearance.layout, paragraphs, reader.charIndex])
+  }, [appearance.layout, paragraphs, reader.charIndex, chapters])
 
   useLayoutEffect(() => {
     if (appearance.layout !== 'horizontal') return
@@ -1056,22 +2027,32 @@ export function BookReader() {
   }
 
   const goToChar = (pos: number) => {
-    const p = Math.max(0, Math.min(pos, text.length))
+    // Si el destino es un capítulo, ancla exactamente en su título (primera palabra de la hoja)
+    let p = Math.max(0, Math.min(pos, text.length))
+    const chHit = chapters.find((c) => Math.abs(c.start - pos) <= 2)
+    if (chHit) p = chHit.start
     reader.setCharIndex(p)
     if (reader.speaking || reader.paused) {
       reader.speakFrom(text, p, reader.rate, reader.voiceURI)
     }
     if (appearance.layout === 'horizontal' && pages.length) {
+      // Preferir la página cuyo startChar coincide con el capítulo (título = 1ª línea)
       let best = 0
       for (let i = 0; i < pages.length; i++) {
         if (pages[i].startChar <= p) best = i
         else break
       }
+      // Si el capítulo abre página, saltar a esa hoja exacta
+      const exact = pages.findIndex((pg) => Math.abs(pg.startChar - p) <= 2)
+      if (exact >= 0) best = exact
       setPageIndex(best)
     } else {
       requestAnimationFrame(() => {
         try {
-          textRef.current?.querySelector('[data-spoken-end]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          const el =
+            textRef.current?.querySelector(`[data-para][data-start="${p}"]`) ||
+            textRef.current?.querySelector('[data-spoken-end]')
+          el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
         } catch {
           /* */
         }
@@ -1279,6 +2260,178 @@ export function BookReader() {
     })
   }
 
+  /** Reanuda la lectura desde la palabra que el usuario tocó mientras estaba en pausa */
+  const applyResumeAnchor = () => {
+    if (!resumeAnchor) return
+    soundClick()
+    const p = paragraphs[resumeAnchor.paraIndex]
+    if (!p) {
+      setResumeAnchor(null)
+      return
+    }
+    const pos = Math.max(0, Math.min(p.start + resumeAnchor.rawOffset, text.length))
+    setResumeAnchor(null)
+    reader.speakFrom(text, pos, reader.rate, reader.voiceURI)
+  }
+
+  // Descarta el selector de "reanudar aquí" si la reproducción cambia de estado
+  useEffect(() => {
+    if (!reader.paused) setResumeAnchor(null)
+  }, [reader.paused])
+
+  /* ══════════════════ Reproductor flotante: arrastre y anclaje ══════════════════ */
+
+  const clampPlayerPos = useCallback((x: number, y: number) => {
+    const w = typeof window !== 'undefined' ? window.innerWidth : 400
+    const h = typeof window !== 'undefined' ? window.innerHeight : 800
+    return {
+      x: Math.max(8, Math.min(x, w - PLAYER_W - 8)),
+      y: Math.max(8, Math.min(y, h - PLAYER_H - 8)),
+    }
+  }, [])
+
+  const savePlayerPos = useCallback((pos: { x: number; y: number }, docked: 'left' | 'right' | 'top' | 'bottom' | null) => {
+    if (typeof window === 'undefined') return
+    try {
+      const w = window.innerWidth
+      const h = window.innerHeight
+      window.localStorage.setItem(PLAYER_POS_KEY, JSON.stringify({ xPct: pos.x / w, yPct: pos.y / h }))
+      if (docked) window.localStorage.setItem(PLAYER_DOCK_KEY, docked)
+      else window.localStorage.removeItem(PLAYER_DOCK_KEY)
+    } catch {
+      /* */
+    }
+  }, [])
+
+  const pullOutFromDock = useCallback(
+    (side: 'left' | 'right' | 'top' | 'bottom'): { x: number; y: number } => {
+      const w = typeof window !== 'undefined' ? window.innerWidth : 400
+      const h = typeof window !== 'undefined' ? window.innerHeight : 800
+      switch (side) {
+        case 'left':
+          return clampPlayerPos(16, playerPos.y)
+        case 'right':
+          return clampPlayerPos(w - PLAYER_W - 16, playerPos.y)
+        case 'top':
+          return clampPlayerPos(playerPos.x, 16)
+        case 'bottom':
+        default:
+          return clampPlayerPos(playerPos.x, h - PLAYER_H - 16)
+      }
+    },
+    [clampPlayerPos, playerPos]
+  )
+
+  const onPlayerPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement | HTMLButtonElement>) => {
+    const target = e.target as HTMLElement
+    if (target.closest('button') && !target.closest('.player-dock-tab')) return
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      /* */
+    }
+    playerDragState.current = {
+      pointerId: e.pointerId,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startX: playerPos.x,
+      startY: playerPos.y,
+      moved: false,
+    }
+    setPlayerDragging(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playerPos])
+
+  const onPlayerPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement | HTMLButtonElement>) => {
+      const st = playerDragState.current
+      if (!st || st.pointerId !== e.pointerId) return
+      const dx = e.clientX - st.startClientX
+      const dy = e.clientY - st.startClientY
+      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) st.moved = true
+      if (!st.moved) return
+      if (playerDocked) setPlayerDocked(null)
+      const next = clampPlayerPos(st.startX + dx, st.startY + dy)
+      setPlayerPos(next)
+    },
+    [playerDocked, clampPlayerPos]
+  )
+
+  const onPlayerPointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement | HTMLButtonElement>) => {
+      const st = playerDragState.current
+      if (!st || st.pointerId !== e.pointerId) return
+      playerDragState.current = null
+      setPlayerDragging(false)
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId)
+      } catch {
+        /* */
+      }
+
+      if (!st.moved) {
+        // Fue un toque simple, no un arrastre
+        if (playerDocked) {
+          soundClick()
+          const pulled = pullOutFromDock(playerDocked)
+          setPlayerDocked(null)
+          setPlayerPos(pulled)
+          savePlayerPos(pulled, null)
+        } else {
+          setPlayerExpanded((v) => !v)
+        }
+        return
+      }
+
+      // Arrastre terminado: ¿queda cerca de algún borde? → anclar
+      const w = window.innerWidth
+      const h = window.innerHeight
+      const { x, y } = playerPos
+      let dock: 'left' | 'right' | 'top' | 'bottom' | null = null
+      if (x <= DOCK_THRESHOLD) dock = 'left'
+      else if (x + PLAYER_W >= w - DOCK_THRESHOLD) dock = 'right'
+      else if (y <= DOCK_THRESHOLD) dock = 'top'
+      else if (y + PLAYER_H >= h - DOCK_THRESHOLD) dock = 'bottom'
+
+      if (dock) {
+        soundClick()
+        setPlayerDocked(dock)
+      }
+      savePlayerPos(playerPos, dock)
+    },
+    [playerDocked, playerPos, pullOutFromDock, savePlayerPos]
+  )
+
+  /** Mantiene el reproductor dentro de la pantalla si el viewport cambia de tamaño (rotación, etc.) */
+  useEffect(() => {
+    const onResize = () => {
+      setPlayerPos((prev) => clampPlayerPos(prev.x, prev.y))
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [clampPlayerPos])
+
+  function getDockTabStyle(
+    side: 'left' | 'right' | 'top' | 'bottom',
+    pos: { x: number; y: number }
+  ): CSSProperties {
+    const w = typeof window !== 'undefined' ? window.innerWidth : 400
+    const h = typeof window !== 'undefined' ? window.innerHeight : 800
+    const clampedY = Math.max(8, Math.min(pos.y, h - 64))
+    const clampedX = Math.max(8, Math.min(pos.x, w - 64))
+    switch (side) {
+      case 'left':
+        return { left: 0, top: clampedY }
+      case 'right':
+        return { right: 0, top: clampedY }
+      case 'top':
+        return { top: 0, left: clampedX }
+      case 'bottom':
+      default:
+        return { bottom: 0, left: clampedX }
+    }
+  }
+
   const saveChapterEdit = () => {
     const t = newChapterTitle.trim() || `Capítulo ${chapters.length + 1}`
     if (editingChapter?.id) {
@@ -1312,25 +2465,91 @@ export function BookReader() {
   }
 
   const toggleReaderPlayback = useCallback(() => {
-    soundClick()
-    const anyReader = reader as unknown as {
-      pause?: () => void
-      resume?: () => void
+    fpSession.text = text || fpSession.text
+    fpSession.reader = reader as unknown as FpReaderLike
+    if (typeof reader.charIndex === 'number' && reader.charIndex > 0) {
+      fpSavePos(Math.max(reader.charIndex, fpSession.charIndex))
     }
-    if (reader.speaking && !reader.paused) {
-      if (typeof anyReader.pause === 'function') {
-        anyReader.pause()
-      } else {
-        reader.stop()
-      }
-      return
-    }
-    if (reader.paused && typeof anyReader.resume === 'function') {
-      anyReader.resume()
-      return
-    }
-    reader.speakFrom(text, reader.charIndex, reader.rate, reader.voiceURI)
+    fpSession.rate = reader.rate ?? fpSession.rate
+    fpSession.voiceURI = reader.voiceURI || fpSession.voiceURI
+    if (reader.speaking && !reader.paused) fpSession.wantPlaying = true
+    fpTogglePlayback()
   }, [reader, text])
+
+  /* Sesión + puente: sobreviven al ir a Biblioteca */
+  useEffect(() => {
+    fpSession.text = text || ''
+    fpSession.title = currentChapter?.title || title || 'Audiolibro'
+    fpSession.author = author || ''
+    fpSession.cover = cover
+    // Avanzar posición de sesión sin nunca bajar a 0 si ya habíamos progresado
+    if (typeof reader.charIndex === 'number' && reader.charIndex > 0) {
+      fpSavePos(Math.max(reader.charIndex, fpSession.charIndex))
+    }
+    fpSession.rate = reader.rate ?? 1
+    fpSession.voiceURI = reader.voiceURI || ''
+    fpSession.reader = reader as unknown as FpReaderLike
+    if (reader.speaking && !reader.paused) fpSession.wantPlaying = true
+
+    // Siempre usar API de sesión (funciona montado y desmontado)
+    fpApi.toggle = () => fpTogglePlayback()
+    fpApi.prev = () => {
+      const prev = chapters[currentChapterIdx - 1]
+      if (prev) {
+        soundClick()
+        fpSavePos(prev.start)
+        fpSession.wantPlaying = true
+        fpSession.softPaused = false
+        goToChar(prev.start)
+      } else {
+        fpGoRelative(-800)
+      }
+    }
+    fpApi.next = () => {
+      if (nextChapter) {
+        soundClick()
+        fpSavePos(nextChapter.start)
+        fpSession.wantPlaying = true
+        fpSession.softPaused = false
+        goToChar(nextChapter.start)
+      } else {
+        fpGoRelative(800)
+      }
+    }
+    fpApi.skipBack = () => {
+      goToChar(Math.max(0, reader.charIndex - skipSec * 40))
+      if (reader.speaking || reader.paused || fpSession.wantPlaying) {
+        fpHardPlay(Math.max(0, reader.charIndex - skipSec * 40))
+      }
+    }
+    fpApi.skipFwd = () => {
+      goToChar(Math.min(text.length, reader.charIndex + skipSec * 40))
+      if (reader.speaking || reader.paused || fpSession.wantPlaying) {
+        fpHardPlay(Math.min(text.length, reader.charIndex + skipSec * 40))
+      }
+    }
+
+    fpSnap.current = {
+      title: fpSession.title,
+      author: fpSession.author,
+      cover: fpSession.cover,
+      progress: progressPct,
+      isPlaying: fpSession.wantPlaying || !!(reader.speaking && !reader.paused),
+      x: playerPos.x,
+      y: playerPos.y,
+    }
+  })
+
+  // Al desmontar: API de segundo plano (ya es la misma fpTogglePlayback)
+  useEffect(() => {
+    return () => {
+      fpApi.toggle = () => fpTogglePlayback()
+      fpApi.prev = () => fpGoRelative(-800)
+      fpApi.next = () => fpGoRelative(800)
+      fpApi.skipBack = () => fpGoRelative(-(skipSec || 10) * 40)
+      fpApi.skipFwd = () => fpGoRelative((skipSec || 10) * 40)
+    }
+  }, [skipSec])
 
   /* ── MediaSession: metadatos (portada/título/autor) para lockscreen y notificación ── */
   useEffect(() => {
@@ -1363,6 +2582,20 @@ export function BookReader() {
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reader, chapters, currentChapterIdx, nextChapter, text.length])
+
+  /* ── Topbar fijo: mide su altura real (varía con el modo) para no tapar el contenido ── */
+  useEffect(() => {
+    const el = headerRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const h = Math.ceil(entry.contentRect.height)
+        if (h > 0) setHeaderHeight(h)
+      }
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   /* ── Cierra el selector de color de marcatextos al tocar fuera ── */
   useEffect(() => {
@@ -1418,20 +2651,65 @@ export function BookReader() {
     }
 
     const align = detectAlign(p.text)
-    const clean = stripAlignMarkers(p.text)
     const indentStyle: CSSProperties = p.indent && p.indent > 0 ? { paddingLeft: `${Math.min(p.indent * 0.6, 4)}em` } : {}
     const alignStyle: CSSProperties = align !== 'left' ? { textAlign: align } : {}
-    const runs = buildInlineRuns(clean)
-    const plainLen = plainTextOfRuns(runs).length
+    const runs = paraRuns[idx] || []
+    const plainLen = (paraPlainTexts[idx] || '').length
     const paraHighlights: HighlightRange[] = highlights
       .filter((h) => h.paraIndex === idx)
       .map((h) => ({ id: h.id, start: h.startOffset, end: Math.min(h.endOffset, plainLen), color: h.color }))
       .filter((r) => r.end > r.start)
 
+    // Palabra que se está leyendo en este preciso instante (solo en el párrafo activo)
+    if (idx === currentParaIndex && spokenWordRange) {
+      paraHighlights.push({
+        id: 'spoken',
+        start: spokenWordRange.start,
+        end: spokenWordRange.end,
+        color: 'var(--reader-spoken-word)',
+      })
+    }
+
+    const canPickResumePoint = reader.paused && !highlightMode
+
+    const handleParaClick = (e: React.MouseEvent<HTMLParagraphElement>) => {
+      if (!canPickResumePoint) return
+      let range: Range | null = null
+      const docWithCaret = document as Document & {
+        caretRangeFromPoint?: (x: number, y: number) => Range | null
+        caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null
+      }
+      if (typeof docWithCaret.caretRangeFromPoint === 'function') {
+        range = docWithCaret.caretRangeFromPoint(e.clientX, e.clientY)
+      } else if (typeof docWithCaret.caretPositionFromPoint === 'function') {
+        const pos = docWithCaret.caretPositionFromPoint(e.clientX, e.clientY)
+        if (pos) {
+          range = document.createRange()
+          range.setStart(pos.offsetNode, pos.offset)
+        }
+      }
+      if (!range) return
+      const pEl = e.currentTarget
+      const plainPos = getPlainOffsetInElement(pEl, range.startContainer, range.startOffset)
+      const plain = paraPlainTexts[idx] || ''
+      const rawLen = Math.max(1, p.end - p.start)
+      const rawOffset = plain.length ? Math.round((plainPos / plain.length) * rawLen) : 0
+      soundClick()
+      setResumeAnchor({
+        paraIndex: idx,
+        rawOffset: Math.max(0, Math.min(rawOffset, rawLen)),
+        x: Math.round(e.clientX),
+        y: Math.round(e.clientY),
+      })
+    }
+
     return (
       <div key={idx} className="reader-para" data-para={idx} style={{ ...indentStyle, ...alignStyle }}>
         <div className="para-row">
-          <p className={isFirst ? 'drop-cap' : undefined}>
+          <p
+            className={`${isFirst ? 'drop-cap' : ''} ${canPickResumePoint ? 'para-resumable' : ''}`.trim()}
+            onClick={canPickResumePoint ? handleParaClick : undefined}
+          >
             {renderRunsWithHighlights(runs, paraHighlights, openHighlightEditor)}
           </p>
           <button
@@ -1816,56 +3094,60 @@ export function BookReader() {
 
       {/* Main */}
       <div className={isDesktop ? 'reader-main' : undefined} style={isDesktop ? undefined : { flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        {/* Topbar sticky */}
-        <div className={isDesktop ? 'reader-topbar' : 'mobile-topbar'}>
-          {!isDesktop && (
-            <button type="button" className="reader-icon-btn" aria-label="Volver" onClick={() => navigate('/nutricion')}>
-              <IconBack />
-            </button>
-          )}
-          <span className="reader-chapter-label">{currentChapter?.title || title}</span>
-          <div className={isDesktop ? 'reader-topbar-actions' : 'mobile-top-actions'}>
-            <button
-              type="button"
-              className={`reader-icon-btn ${highlightMode ? 'active' : ''}`}
-              aria-label={highlightMode ? 'Salir del modo marcatextos' : 'Marcatextos: selecciona texto para resaltarlo'}
-              aria-pressed={highlightMode}
-              onClick={toggleHighlightMode}
-            >
-              <IconMarker />
-            </button>
-            <button type="button" className="reader-icon-btn" aria-label="Índice" onClick={() => { soundClick(); setShowToc(true) }}>
-              <IconList />
-            </button>
-            <button type="button" className="reader-icon-btn" aria-label="Marcadores" onClick={() => { soundClick(); setShowBookmarks(true) }}>
-              <IconBookmark filled={isBookmarkedHere} />
-            </button>
-            <button type="button" className="reader-icon-btn" aria-label="Comentarios" onClick={() => { soundClick(); setShowComments(true) }}>
-              <IconComment />
-            </button>
-            <button type="button" className="reader-icon-btn" aria-label="Imágenes del libro" onClick={() => { soundClick(); setShowImageGallery(true) }}>
-              <IconImageGallery />
-            </button>
-            <button type="button" className="reader-icon-btn" aria-label="Apariencia" onClick={() => { soundClick(); setShowAppearance(true) }}>
-              <IconSun />
-            </button>
+        {/* Topbar fijo: permanece visible al desplazarse hacia abajo */}
+        <div className="reader-header-fixed" ref={headerRef}>
+          <div className={isDesktop ? 'reader-topbar' : 'mobile-topbar'}>
+            {!isDesktop && (
+              <button type="button" className="reader-icon-btn" aria-label="Volver" onClick={() => navigate('/nutricion')}>
+                <IconBack />
+              </button>
+            )}
+            <span className="reader-chapter-label">{currentChapter?.title || title}</span>
+            <div className={isDesktop ? 'reader-topbar-actions' : 'mobile-top-actions'}>
+              <button
+                type="button"
+                className={`reader-icon-btn ${highlightMode ? 'active' : ''}`}
+                aria-label={highlightMode ? 'Salir del modo marcatextos' : 'Marcatextos: selecciona texto para resaltarlo'}
+                aria-pressed={highlightMode}
+                onClick={toggleHighlightMode}
+              >
+                <IconMarker />
+              </button>
+              <button type="button" className="reader-icon-btn" aria-label="Índice" onClick={() => { soundClick(); setShowToc(true) }}>
+                <IconList />
+              </button>
+              <button type="button" className="reader-icon-btn" aria-label="Marcadores" onClick={() => { soundClick(); setShowBookmarks(true) }}>
+                <IconBookmark filled={isBookmarkedHere} />
+              </button>
+              <button type="button" className="reader-icon-btn" aria-label="Comentarios" onClick={() => { soundClick(); setShowComments(true) }}>
+                <IconComment />
+              </button>
+              <button type="button" className="reader-icon-btn" aria-label="Imágenes del libro" onClick={() => { soundClick(); setShowImageGallery(true) }}>
+                <IconImageGallery />
+              </button>
+              <button type="button" className="reader-icon-btn" aria-label="Apariencia" onClick={() => { soundClick(); setShowAppearance(true) }}>
+                <IconSun />
+              </button>
+            </div>
           </div>
+
+          {highlightMode && (
+            <div className="highlight-mode-banner" role="status">
+              <IconMarker />
+              <span>Selecciona un fragmento de texto para marcarlo y elige un color.</span>
+              <button type="button" className="hl-popup-close" aria-label="Salir del modo marcatextos" onClick={toggleHighlightMode}>
+                <IconClose />
+              </button>
+            </div>
+          )}
         </div>
 
-        {highlightMode && (
-          <div className="highlight-mode-banner" role="status">
-            <IconMarker />
-            <span>Selecciona un fragmento de texto para marcarlo y elige un color.</span>
-            <button type="button" className="hl-popup-close" aria-label="Salir del modo marcatextos" onClick={toggleHighlightMode}>
-              <IconClose />
-            </button>
-          </div>
-        )}
-
+        {/* Compensa el espacio que ocupaba el topbar antes de volverse fijo */}
+        <div aria-hidden="true" style={{ height: headerHeight, flexShrink: 0 }} />
 
         {!isDesktop && (
           <>
-            <div className="mobile-progress-meta">
+            <div className="mobile-progress-meta" style={{ top: headerHeight }}>
               <span>{progressPct}%</span>
               <span>{currentChapter?.title || ''}</span>
             </div>
@@ -1897,6 +3179,38 @@ export function BookReader() {
             <div className="swipe-hint" aria-hidden="true">
               <IconSwipeHint />
               <span>Desliza la hoja</span>
+            </div>
+            <div className="h-page-nav" role="group" aria-label="Navegar hojas">
+              <button
+                type="button"
+                className="h-page-nav-btn"
+                aria-label="Hoja anterior"
+                disabled={safePageIndex <= 0}
+                onClick={() => {
+                  soundClick()
+                  goPage(safePageIndex - 1, -1)
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M15 18l-6-6 6-6" />
+                </svg>
+                <span>Anterior</span>
+              </button>
+              <button
+                type="button"
+                className="h-page-nav-btn"
+                aria-label="Hoja siguiente"
+                disabled={safePageIndex >= totalPages - 1}
+                onClick={() => {
+                  soundClick()
+                  goPage(safePageIndex + 1, 1)
+                }}
+              >
+                <span>Siguiente</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M9 18l6-6-6-6" />
+                </svg>
+              </button>
             </div>
           </div>
         ) : (
@@ -1943,72 +3257,121 @@ export function BookReader() {
         </aside>
       )}
 
-      {/* Transporte flotante */}
-      <div className={`reader-transport-float ${isDesktop ? 'is-desktop' : 'is-mobile'} ${transportVisible ? '' : 'is-idle'}`}>
-        <button
-          type="button"
-          className="transport-btn"
-          aria-label="Capítulo anterior"
-          onClick={() => {
-            soundClick()
-            const prev = chapters[currentChapterIdx - 1]
-            if (prev) goToChar(prev.start)
-            else goToChar(Math.max(0, reader.charIndex - 800))
-          }}
-        >
-          <IconPrev />
-        </button>
-        <button
-          type="button"
-          className="transport-btn"
-          aria-label={`Retroceder ${skipSec}s`}
-          onClick={() => {
-            soundClick()
-            goToChar(Math.max(0, reader.charIndex - skipSec * 40))
-          }}
-        >
-          -{skipSec}
-        </button>
-        <button
-          type="button"
-          className="transport-btn transport-play"
-          aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
-          onClick={toggleReaderPlayback}
-        >
-          {isPlaying ? <IconPause /> : <IconPlay />}
-        </button>
-        <button
-          type="button"
-          className="transport-btn"
-          aria-label={`Avanzar ${skipSec}s`}
-          onClick={() => {
-            soundClick()
-            goToChar(Math.min(text.length, reader.charIndex + skipSec * 40))
-          }}
-        >
-          +{skipSec}
-        </button>
-        <button
-          type="button"
-          className="transport-btn"
-          aria-label="Capítulo siguiente"
-          onClick={() => {
-            soundClick()
-            if (nextChapter) goToChar(nextChapter.start)
-            else goToChar(Math.min(text.length, reader.charIndex + 800))
-          }}
-        >
-          <IconNext />
-        </button>
-        <button
-          type="button"
-          className="transport-btn"
-          aria-label={isBookmarkedHere ? 'Quitar marcador' : 'Añadir marcador'}
-          onClick={toggleBookmark}
-        >
-          <IconBookmark filled={isBookmarkedHere} />
-        </button>
-      </div>
+      {/* Reproductor flotante arrastrable (único; mini-player.glass-card eliminado) */}
+      {!loading &&
+        !loadError &&
+        createPortal(
+          playerDocked ? (
+            <button
+              type="button"
+              className={`player-dock-tab dock-${playerDocked}`}
+              style={getDockTabStyle(playerDocked, playerPos)}
+              aria-label="Mostrar reproductor"
+              onPointerDown={onPlayerPointerDown}
+              onPointerMove={onPlayerPointerMove}
+              onPointerUp={onPlayerPointerUp}
+              onPointerCancel={onPlayerPointerUp}
+            >
+              <DockArrow side={playerDocked} />
+            </button>
+          ) : (
+            <div
+              ref={playerRef}
+              className={`floating-player ${playerDragging ? 'is-dragging' : ''}`}
+              style={{ left: playerPos.x, top: playerPos.y }}
+              onPointerDown={onPlayerPointerDown}
+              onPointerMove={onPlayerPointerMove}
+              onPointerUp={onPlayerPointerUp}
+              onPointerCancel={onPlayerPointerUp}
+            >
+              <div className="floating-player-main">
+                <div
+                  className="floating-player-cover"
+                  style={cover ? { backgroundImage: `url(${cover})` } : undefined}
+                >
+                  {!cover && (title.charAt(0) || '·').toUpperCase()}
+                </div>
+                <div className="floating-player-info">
+                  <strong className="floating-player-title">{currentChapter?.title || title}</strong>
+                  <span className="floating-player-author">{author || 'Lectura en voz alta'}</span>
+                </div>
+                <div className="floating-player-controls">
+                  <button
+                    type="button"
+                    className="fp-btn"
+                    aria-label="Capítulo anterior"
+                    onClick={() => {
+                      soundClick()
+                      const prev = chapters[currentChapterIdx - 1]
+                      if (prev) goToChar(prev.start)
+                      else goToChar(Math.max(0, reader.charIndex - 800))
+                    }}
+                  >
+                    <IconPrev />
+                  </button>
+                  <button
+                    type="button"
+                    className="fp-btn fp-play"
+                    aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
+                    onClick={toggleReaderPlayback}
+                  >
+                    {isPlaying ? <IconPause /> : <IconPlay />}
+                  </button>
+                  <button
+                    type="button"
+                    className="fp-btn"
+                    aria-label="Capítulo siguiente"
+                    onClick={() => {
+                      soundClick()
+                      if (nextChapter) goToChar(nextChapter.start)
+                      else goToChar(Math.min(text.length, reader.charIndex + 800))
+                    }}
+                  >
+                    <IconNext />
+                  </button>
+                </div>
+              </div>
+              <div className="floating-player-progress">
+                <div className="floating-player-progress-fill" style={{ width: `${progressPct}%` }} />
+              </div>
+              {playerExpanded && (
+                <div className="floating-player-extra">
+                  <button
+                    type="button"
+                    className="fp-btn sm"
+                    aria-label={`Retroceder ${skipSec}s`}
+                    onClick={() => {
+                      soundClick()
+                      goToChar(Math.max(0, reader.charIndex - skipSec * 40))
+                    }}
+                  >
+                    -{skipSec}s
+                  </button>
+                  <button
+                    type="button"
+                    className="fp-btn sm"
+                    aria-label={`Avanzar ${skipSec}s`}
+                    onClick={() => {
+                      soundClick()
+                      goToChar(Math.min(text.length, reader.charIndex + skipSec * 40))
+                    }}
+                  >
+                    +{skipSec}s
+                  </button>
+                  <button
+                    type="button"
+                    className="fp-btn sm"
+                    aria-label={isBookmarkedHere ? 'Quitar marcador' : 'Añadir marcador'}
+                    onClick={toggleBookmark}
+                  >
+                    <IconBookmark filled={isBookmarkedHere} />
+                  </button>
+                </div>
+              )}
+            </div>
+          ),
+          document.body
+        )}
 
       {/* Sheets */}
       {showToc && (
@@ -2288,6 +3651,18 @@ export function BookReader() {
         </div>
       )}
 
+      {resumeAnchor && (
+        <button
+          type="button"
+          className="resume-popup"
+          style={{ left: resumeAnchor.x, top: Math.max(64, resumeAnchor.y) }}
+          onClick={applyResumeAnchor}
+        >
+          <IconPlay />
+          Reanudar aquí
+        </button>
+      )}
+
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=Merriweather:wght@400;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap');
 
@@ -2433,13 +3808,62 @@ export function BookReader() {
           min-height: 100vh;
           min-height: 100dvh;
         }
-        .reader-topbar, .mobile-topbar {
-          display: flex; justify-content: space-between; align-items: center;
-          padding: 0.75rem 0 0.5rem; position: sticky; top: 0; z-index: 20;
+        .reader-header-fixed {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          z-index: 60;
+          width: 100%;
           background: var(--reader-bg);
           box-shadow: 0 1px 0 var(--reader-border);
           backdrop-filter: blur(12px);
           -webkit-backdrop-filter: blur(12px);
+        }
+        .reader-topbar,
+        .mobile-topbar {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 0.75rem 1.5rem 0.5rem;
+          width: 100%;
+          box-sizing: border-box;
+        }
+        .mobile-topbar {
+          padding:
+            max(0.6rem, env(safe-area-inset-top, 0px))
+            max(0.9rem, env(safe-area-inset-right, 0px))
+            0.5rem
+            max(0.9rem, env(safe-area-inset-left, 0px));
+        }
+        /* PC: topbar fija a la derecha del sidebar (260px), sin centrar */
+        @media (min-width: 900px) {
+          .reader-header-fixed {
+            left: 260px;
+            right: 0;
+            width: auto;
+            max-width: none;
+            margin: 0;
+          }
+          .reader-desktop.with-appearance .reader-header-fixed {
+            right: 300px;
+          }
+          .reader-topbar {
+            max-width: none;
+            margin: 0;
+            padding: 0.75rem 1.25rem 0.5rem 1.25rem;
+          }
+        }
+        .reader-header-fixed .highlight-mode-banner {
+          margin: 0 1.5rem 0.75rem;
+        }
+        .reader-header-fixed .mobile-topbar ~ .highlight-mode-banner {
+          margin: 0 0.9rem 0.75rem;
+        }
+        @media (min-width: 900px) {
+          .reader-header-fixed .highlight-mode-banner {
+            margin: 0 1.25rem 0.75rem;
+          }
         }
         .reader-chapter-label {
           font-size: 0.72rem; letter-spacing: 0.08em; font-weight: 600;
@@ -2447,7 +3871,14 @@ export function BookReader() {
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
           max-width: 34vw;
         }
-        .reader-topbar-actions, .mobile-top-actions { display: flex; gap: 2px; flex-wrap: nowrap; }
+        @media (min-width: 900px) {
+          .reader-chapter-label {
+            max-width: min(48vw, 520px);
+            flex: 1;
+            min-width: 0;
+          }
+        }
+        .reader-topbar-actions, .mobile-top-actions { display: flex; gap: 2px; flex-wrap: nowrap; flex-shrink: 0; }
 
         .reader-progress-line {
           height: 3px; background: var(--reader-border); border-radius: 3px;
@@ -2537,6 +3968,38 @@ export function BookReader() {
           color: #1a1a1a;
         }
         [data-reader-mode="night"] .reader-highlight-mark { color: #14181f; }
+
+        /* Palabra que se está leyendo en voz alta ahora mismo */
+        .reader-spoken-mark {
+          background: color-mix(in srgb, var(--reader-hl) 38%, transparent);
+          color: inherit !important;
+          cursor: default;
+          animation: spoken-pulse 1.4s ease-in-out infinite;
+        }
+        @supports not (background: color-mix(in srgb, red 50%, blue)) {
+          .reader-spoken-mark { background: rgba(34,230,197,0.35); }
+        }
+        @keyframes spoken-pulse {
+          0%, 100% { background-color: color-mix(in srgb, var(--reader-hl) 30%, transparent); }
+          50% { background-color: color-mix(in srgb, var(--reader-hl) 50%, transparent); }
+        }
+
+        .para-resumable { cursor: pointer; }
+        .para-resumable:hover { text-decoration: underline dotted color-mix(in srgb, var(--reader-hl) 60%, transparent) 1px; }
+
+        .resume-popup {
+          position: fixed;
+          transform: translate(-50%, -100%) translateY(-10px);
+          z-index: 140;
+          display: flex; align-items: center; gap: 8px;
+          padding: 8px 14px; border-radius: 999px;
+          background: var(--reader-hl); color: #06201c;
+          font-size: 0.82rem; font-weight: 700;
+          border: none; cursor: pointer;
+          box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+          -webkit-tap-highlight-color: transparent;
+        }
+        .resume-popup svg { width: 16px; height: 16px; }
 
         .highlight-mode-banner {
           display: flex; align-items: center; gap: 8px;
@@ -2649,53 +4112,121 @@ export function BookReader() {
         }
         .image-gallery-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-        .reader-transport-float {
+        /* Solo el mini-player global de la app (nunca .floating-player) */
+        .mini-player.glass-card {
+          display: none !important;
+          visibility: hidden !important;
+          pointer-events: none !important;
+          opacity: 0 !important;
+        }
+
+        /* ══════════════ Reproductor flotante — liquid glass (respeta data-theme) ══════════════ */
+        .floating-player {
+          --reader-glass: var(--gco-glass-bg, rgba(255,255,255,0.07));
+          --reader-border: var(--gco-glass-border, rgba(255,255,255,0.16));
+          --reader-ink: var(--gco-ink, #F3F5FA);
+          --reader-muted: var(--gco-ink-muted, rgba(243,245,250,0.64));
+          --reader-hl: var(--gco-primary, #22E6C5);
+          --reader-bg: var(--gco-bg, #0B1220);
           position: fixed;
-          left: 50%;
-          -webkit-transform: translateX(-50%);
-          transform: translateX(-50%);
-          z-index: 40;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 0.65rem;
-          padding: 0.5rem 0.95rem;
-          border-radius: 999px;
+          z-index: 9999;
+          width: ${PLAYER_W}px;
+          border-radius: 22px;
           background: var(--reader-glass);
           border: 1px solid var(--reader-border);
-          -webkit-backdrop-filter: blur(18px) saturate(1.35);
-          backdrop-filter: blur(18px) saturate(1.35);
-          box-shadow: 0 8px 32px rgba(0,0,0,0.28);
-          max-width: calc(100vw - 1.25rem);
-          transition: opacity 0.35s ease, transform 0.35s ease;
+          -webkit-backdrop-filter: blur(var(--gco-glass-blur, 20px)) saturate(var(--gco-glass-saturate, 1.35));
+          backdrop-filter: blur(var(--gco-glass-blur, 20px)) saturate(var(--gco-glass-saturate, 1.35));
+          box-shadow: var(--gco-shadow, 0 8px 32px rgba(0,0,0,0.38)), inset 0 1px 0 var(--gco-glass-highlight, rgba(255,255,255,0.22));
+          overflow: hidden;
+          cursor: grab;
+          touch-action: none;
+          -webkit-tap-highlight-color: transparent;
+          transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+          user-select: none;
+          isolation: isolate;
+          color: var(--reader-ink);
         }
-        .reader-transport-float.is-idle {
-          opacity: 0;
-          pointer-events: none;
-          -webkit-transform: translateX(-50%) translateY(14px);
-          transform: translateX(-50%) translateY(14px);
+        .floating-player.is-dragging {
+          cursor: grabbing;
+          transition: none;
+          box-shadow: var(--gco-shadow-lg, 0 18px 48px rgba(0,0,0,0.45)), inset 0 1px 0 var(--gco-glass-highlight, rgba(255,255,255,0.22));
         }
-        .reader-transport-float.is-desktop {
-          bottom: max(1.35rem, env(safe-area-inset-bottom, 0px));
+        .floating-player-main {
+          display: flex; align-items: center; gap: 10px;
+          padding: 10px 12px;
         }
-        .reader-transport-float.is-mobile {
-          bottom: calc(4.4rem + env(safe-area-inset-bottom, 0px));
-        }
-        .transport-btn {
-          display: flex; align-items: center; gap: 5px;
-          background: transparent; border: none; color: var(--reader-ink);
-          font-size: 0.85rem; cursor: pointer; padding: 0.35rem 0.5rem;
-          min-height: 42px; min-width: 42px; justify-content: center;
-        }
-        .transport-play {
-          width: 52px; height: 52px; border-radius: 50%;
-          background: var(--reader-hl); color: #0B1220; border: none;
+        .floating-player-cover {
+          width: 48px; height: 48px; border-radius: 12px; flex-shrink: 0;
+          background: linear-gradient(145deg, var(--gco-primary-dim, rgba(34,230,197,0.18)), var(--gco-accent, #8B7CF6));
+          background-size: cover; background-position: center;
           display: flex; align-items: center; justify-content: center;
-          cursor: pointer;
-          box-shadow: 0 4px 16px rgba(34,230,197,0.4);
-          flex-shrink: 0;
-          min-width: 52px;
+          font-weight: 800; font-size: 1.1rem; color: var(--reader-ink);
         }
+        .floating-player-info {
+          flex: 1; min-width: 0;
+          display: flex; flex-direction: column; gap: 1px;
+        }
+        .floating-player-title {
+          font-size: 0.86rem; font-weight: 700; color: var(--reader-ink);
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .floating-player-author {
+          font-size: 0.74rem; color: var(--reader-muted);
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .floating-player-controls {
+          display: flex; align-items: center; gap: 2px; flex-shrink: 0;
+        }
+        .fp-btn {
+          display: flex; align-items: center; justify-content: center;
+          background: transparent; border: none; color: var(--reader-ink);
+          cursor: pointer; padding: 6px; border-radius: 10px;
+          min-width: 32px; min-height: 32px;
+          -webkit-tap-highlight-color: transparent;
+        }
+        .fp-btn:hover { background: var(--gco-glass-bg-hover, rgba(255,255,255,0.08)); }
+        .fp-btn.sm { font-size: 0.72rem; font-weight: 700; min-width: 44px; }
+        .fp-play {
+          width: 44px; height: 44px; border-radius: 50%;
+          background: var(--gco-primary, var(--reader-hl));
+          color: var(--gco-button-text, #0B1220);
+          box-shadow: 0 4px 16px var(--gco-primary-dim, rgba(34,230,197,0.18));
+          flex-shrink: 0; min-width: 44px;
+        }
+        .fp-play:hover { filter: brightness(1.06); }
+        .floating-player-progress {
+          height: 3px; background: var(--reader-border); overflow: hidden;
+        }
+        .floating-player-progress-fill {
+          height: 100%; background: var(--gco-primary, var(--reader-hl));
+          transition: width 0.25s linear;
+        }
+        .floating-player-extra {
+          display: flex; align-items: center; justify-content: center; gap: 6px;
+          padding: 6px 10px 10px;
+          border-top: 1px solid var(--reader-border);
+        }
+
+        .player-dock-tab {
+          position: fixed;
+          z-index: 9999;
+          width: 36px; height: 56px;
+          display: flex; align-items: center; justify-content: center;
+          background: var(--gco-glass-bg, var(--reader-glass));
+          border: 1px solid var(--gco-glass-border, var(--reader-border));
+          color: var(--gco-primary, var(--reader-hl));
+          -webkit-backdrop-filter: blur(var(--gco-glass-blur, 16px)) saturate(var(--gco-glass-saturate, 1.3));
+          backdrop-filter: blur(var(--gco-glass-blur, 16px)) saturate(var(--gco-glass-saturate, 1.3));
+          box-shadow: var(--gco-shadow, 0 6px 20px rgba(0,0,0,0.3));
+          cursor: grab;
+          touch-action: none;
+          -webkit-tap-highlight-color: transparent;
+        }
+        .player-dock-tab.is-dragging { cursor: grabbing; }
+        .player-dock-tab.dock-left { border-radius: 0 16px 16px 0; border-left: none; }
+        .player-dock-tab.dock-right { border-radius: 16px 0 0 16px; border-right: none; }
+        .player-dock-tab.dock-top { width: 56px; height: 34px; border-radius: 0 0 16px 16px; border-top: none; }
+        .player-dock-tab.dock-bottom { width: 56px; height: 34px; border-radius: 16px 16px 0 0; border-bottom: none; }
 
         .reader-bottom-progress {
           display: flex; align-items: center; gap: 10px;
@@ -2912,13 +4443,61 @@ export function BookReader() {
         .swipe-hint {
           display: flex; align-items: center; justify-content: center; gap: 6px;
           font-size: 0.7rem; color: var(--reader-muted); letter-spacing: 0.04em;
-          padding-bottom: 0.4rem; opacity: 0.85; flex-shrink: 0;
+          padding-bottom: 0.25rem; opacity: 0.85; flex-shrink: 0;
         }
         .swipe-hint-icon { animation: swipeHintMove 1.6s ease-in-out infinite; }
         @keyframes swipeHintMove {
           0%, 100% { transform: translateX(0); opacity: 0.5; }
           50% { transform: translateX(6px); opacity: 1; }
         }
+
+        /* Botones hoja anterior / siguiente (liquid glass) — complementan el swipe */
+        .h-page-nav {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          padding: 0.15rem 0 0.55rem;
+          flex-shrink: 0;
+        }
+        .h-page-nav-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          min-height: 36px;
+          padding: 0.4rem 0.95rem;
+          border-radius: 999px;
+          border: 1px solid var(--reader-border);
+          background: var(--reader-glass);
+          color: var(--reader-ink);
+          font-size: 0.72rem;
+          font-weight: 600;
+          letter-spacing: 0.03em;
+          cursor: pointer;
+          -webkit-backdrop-filter: blur(16px) saturate(1.35);
+          backdrop-filter: blur(16px) saturate(1.35);
+          box-shadow: 0 4px 16px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.12);
+          -webkit-tap-highlight-color: transparent;
+          transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.15s ease, opacity 0.15s ease;
+        }
+        .h-page-nav-btn:hover:not(:disabled),
+        .h-page-nav-btn:focus-visible:not(:disabled) {
+          border-color: color-mix(in srgb, var(--reader-hl) 45%, var(--reader-border));
+          color: var(--reader-hl);
+          outline: none;
+          transform: translateY(-1px);
+        }
+        .h-page-nav-btn:active:not(:disabled) {
+          transform: translateY(0);
+          opacity: 0.9;
+        }
+        .h-page-nav-btn:disabled {
+          opacity: 0.38;
+          cursor: default;
+          box-shadow: none;
+        }
+        .h-page-nav-btn svg { flex-shrink: 0; }
 
         .reader-mobile {
           display: flex; flex-direction: column;
