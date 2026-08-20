@@ -6,8 +6,9 @@ export type CredentialTheme = 'dark' | 'light' | 'rainbow'
 export type CredentialOptions = {
   hideAge?: boolean
   theme?: CredentialTheme
-  /** Si false, no se dibuja el marco del avatar en la credencial */
   showFrame?: boolean
+  showBio?: boolean
+  bio?: string
   showFavoriteGame?: boolean
   favoriteGameLabel?: string
   showFavoriteBook?: boolean
@@ -57,11 +58,13 @@ function palette(theme: CredentialTheme) {
       bg0: '#F4F6FA',
       bg1: '#E8ECF4',
       ink: '#0B1220',
-      muted: 'rgba(11,18,32,0.55)',
-      faint: 'rgba(11,18,32,0.35)',
+      muted: 'rgba(11,18,32,0.58)',
+      faint: 'rgba(11,18,32,0.38)',
       primary: '#0D9488',
-      border: 'rgba(13,148,136,0.45)',
-      card: 'rgba(255,255,255,0.7)',
+      border: 'rgba(13,148,136,0.4)',
+      card: 'rgba(255,255,255,0.78)',
+      cardBorder: 'rgba(11,18,32,0.08)',
+      panel: 'rgba(255,255,255,0.55)',
     }
   }
   if (theme === 'rainbow') {
@@ -69,22 +72,26 @@ function palette(theme: CredentialTheme) {
       bg0: '#12081F',
       bg1: '#1A1030',
       ink: '#F8F7FF',
-      muted: 'rgba(248,247,255,0.6)',
-      faint: 'rgba(248,247,255,0.35)',
+      muted: 'rgba(248,247,255,0.62)',
+      faint: 'rgba(248,247,255,0.38)',
       primary: '#FF6BCB',
-      border: 'rgba(139,124,246,0.55)',
-      card: 'rgba(255,255,255,0.06)',
+      border: 'rgba(139,124,246,0.5)',
+      card: 'rgba(255,255,255,0.07)',
+      cardBorder: 'rgba(255,255,255,0.12)',
+      panel: 'rgba(255,255,255,0.05)',
     }
   }
   return {
     bg0: '#0B1220',
     bg1: '#15102A',
     ink: '#F3F5FA',
-    muted: 'rgba(243,245,250,0.6)',
-    faint: 'rgba(243,245,250,0.35)',
+    muted: 'rgba(243,245,250,0.62)',
+    faint: 'rgba(243,245,250,0.38)',
     primary: '#22E6C5',
-    border: 'rgba(34,230,197,0.45)',
-    card: 'rgba(255,255,255,0.05)',
+    border: 'rgba(34,230,197,0.42)',
+    card: 'rgba(255,255,255,0.06)',
+    cardBorder: 'rgba(255,255,255,0.1)',
+    panel: 'rgba(255,255,255,0.04)',
   }
 }
 
@@ -149,7 +156,6 @@ function drawFrame(
     return
   }
   if (frame === 'holographic') {
-    // Anillo multi-stop aproximando conic
     const stops: [number, string][] = [
       [0, '#FF6BCB'],
       [0.2, '#7EC8FF'],
@@ -214,7 +220,6 @@ function drawFrame(
     ctx.beginPath()
     ctx.arc(cx, cy, r + 5, 0, Math.PI * 2)
     ctx.stroke()
-    // highlight superior (glass bubble)
     ctx.strokeStyle = 'rgba(255,255,255,0.75)'
     ctx.lineWidth = 2
     ctx.beginPath()
@@ -222,7 +227,6 @@ function drawFrame(
     ctx.stroke()
     return
   }
-  // glass (default)
   ctx.strokeStyle = 'rgba(255,255,255,0.45)'
   ctx.lineWidth = 3
   ctx.beginPath()
@@ -235,9 +239,54 @@ function drawFrame(
   ctx.stroke()
 }
 
+function wrapText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  maxLines: number
+): string[] {
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  if (!words.length) return []
+  const lines: string[] = []
+  let current = ''
+  for (const word of words) {
+    const test = current ? `${current} ${word}` : word
+    if (ctx.measureText(test).width <= maxWidth) {
+      current = test
+    } else {
+      if (current) lines.push(current)
+      current = word
+      if (lines.length >= maxLines) break
+    }
+  }
+  if (current && lines.length < maxLines) lines.push(current)
+  if (
+    lines.length === maxLines &&
+    words.join(' ').length > lines.join(' ').length
+  ) {
+    const last = lines[maxLines - 1]!
+    let trimmed = last
+    while (
+      ctx.measureText(trimmed + '…').width > maxWidth &&
+      trimmed.length > 1
+    ) {
+      trimmed = trimmed.slice(0, -1)
+    }
+    lines[maxLines - 1] = trimmed + '…'
+  }
+  return lines
+}
+
 function isCapacitorNative(): boolean {
   try {
-    const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string } }).Capacitor
+    const cap = (
+      window as unknown as {
+        Capacitor?: {
+          isNativePlatform?: () => boolean
+          getPlatform?: () => string
+        }
+      }
+    ).Capacitor
     if (cap?.isNativePlatform?.()) return true
     const p = cap?.getPlatform?.()
     return p === 'android' || p === 'ios'
@@ -259,14 +308,6 @@ function blobToBase64(blob: Blob): Promise<string> {
   })
 }
 
-/**
- * Descarga robusta multiplataforma:
- * 1) Capacitor Filesystem + Share (APK / iOS nativo)
- * 2) Web Share API con File
- * 3) <a download> + object URL
- * 4) dataURL download
- * 5) Abrir blob en pestaña / location
- */
 export async function saveCanvasPng(
   canvas: HTMLCanvasElement,
   filename: string
@@ -278,26 +319,19 @@ export async function saveCanvasPng(
 
   const file = new File([blob], filename, { type: 'image/png' })
 
-  // ── 1) Capacitor nativo (APK / iOS) ──────────────────────────────────────
   if (isCapacitorNative()) {
     try {
-      // Dynamic imports: no rompen web/Electron si los plugins no están
       const [{ Filesystem, Directory }, { Share }] = await Promise.all([
         import('@capacitor/filesystem'),
         import('@capacitor/share'),
       ])
-
       const base64 = await blobToBase64(blob)
       const path = filename
-
-      // Cache es compartible por FileProvider en Android por defecto
       const written = await Filesystem.writeFile({
         path,
         data: base64,
         directory: Directory.Cache,
       })
-
-      // Share con URI nativa (Android FileProvider / iOS)
       const uri =
         written.uri ||
         (
@@ -306,7 +340,6 @@ export async function saveCanvasPng(
             directory: Directory.Cache,
           })
         ).uri
-
       await Share.share({
         title: 'Credencial GCO',
         text: filename,
@@ -315,11 +348,8 @@ export async function saveCanvasPng(
       })
       return 'share'
     } catch (err) {
-      // Plugin no instalado o usuario canceló → seguir con fallbacks
       console.warn('[saveCanvasPng] Capacitor path failed', err)
     }
-
-    // Fallback Capacitor: solo Share con data URL (algunos WebViews)
     try {
       const { Share } = await import('@capacitor/share')
       const dataUrl = canvas.toDataURL('image/png')
@@ -335,7 +365,6 @@ export async function saveCanvasPng(
     }
   }
 
-  // ── 2) Web Share con archivos (PWA / Android Chrome / iOS Safari) ───────
   try {
     const nav = navigator as Navigator & {
       canShare?: (data: ShareData) => boolean
@@ -350,10 +379,9 @@ export async function saveCanvasPng(
       return 'share'
     }
   } catch {
-    /* usuario canceló o no soportado */
+    /* */
   }
 
-  // ── 3) <a download> + object URL (web, Electron, PWA) ───────────────────
   try {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -376,7 +404,6 @@ export async function saveCanvasPng(
     /* */
   }
 
-  // ── 4) dataURL click ────────────────────────────────────────────────────
   try {
     const dataUrl = canvas.toDataURL('image/png')
     const a = document.createElement('a')
@@ -392,14 +419,10 @@ export async function saveCanvasPng(
     /* */
   }
 
-  // ── 5) Abrir en pestaña / location (último recurso en WebView) ──────────
   try {
     const url = URL.createObjectURL(blob)
     const w = window.open(url, '_blank')
-    if (!w) {
-      // En muchos WebViews Android open() está bloqueado
-      window.location.href = url
-    }
+    if (!w) window.location.href = url
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
     return 'open'
   } catch {
@@ -407,13 +430,16 @@ export async function saveCanvasPng(
   }
 }
 
-export async function downloadCredential(
+/** Genera el canvas de la credencial (para vista previa o descarga). */
+export async function renderCredentialCanvas(
   opts: CredentialOptions = {}
-): Promise<'download' | 'share' | 'open' | 'fail'> {
+): Promise<HTMLCanvasElement | null> {
   const {
     hideAge = false,
     theme = 'dark',
     showFrame = true,
+    showBio = true,
+    bio: bioOpt,
     showFavoriteGame = false,
     favoriteGameLabel,
     showFavoriteBook = false,
@@ -427,39 +453,42 @@ export async function downloadCredential(
   const name = profile?.name?.trim() || 'Atleta GCO'
   const age = hideAge ? undefined : profile?.age
   const frame = (profile?.avatarFrame ?? 'none') as FrameId
+  const storedBio =
+    bioOpt ?? (profile as { bio?: string | null } | null)?.bio ?? ''
+  const bioText = showBio ? String(storedBio || '').trim() : ''
   const c = palette(theme)
 
-  const W = 900
-  const H = 560
+  const W = 960
+  const H = 600
   const canvas = document.createElement('canvas')
   canvas.width = W
   canvas.height = H
   const ctx = canvas.getContext('2d')
-  if (!ctx) return 'fail'
+  if (!ctx) return null
 
   const grad = ctx.createLinearGradient(0, 0, W, H)
   grad.addColorStop(0, c.bg0)
-  grad.addColorStop(0.5, c.bg1)
+  grad.addColorStop(0.55, c.bg1)
   grad.addColorStop(1, c.bg0)
   ctx.fillStyle = grad
   ctx.fillRect(0, 0, W, H)
 
   if (theme === 'rainbow') {
-    const g2 = ctx.createRadialGradient(700, 120, 10, 700, 120, 280)
-    g2.addColorStop(0, 'rgba(255,107,203,0.18)')
+    const g2 = ctx.createRadialGradient(780, 100, 10, 780, 100, 300)
+    g2.addColorStop(0, 'rgba(255,107,203,0.16)')
     g2.addColorStop(1, 'transparent')
     ctx.fillStyle = g2
     ctx.fillRect(0, 0, W, H)
-    const g3 = ctx.createRadialGradient(120, 400, 10, 120, 400, 240)
-    g3.addColorStop(0, 'rgba(139,124,246,0.16)')
+    const g3 = ctx.createRadialGradient(100, 460, 10, 100, 460, 260)
+    g3.addColorStop(0, 'rgba(139,124,246,0.14)')
     g3.addColorStop(1, 'transparent')
     ctx.fillStyle = g3
     ctx.fillRect(0, 0, W, H)
   } else {
-    const glow = ctx.createRadialGradient(160, 200, 20, 160, 200, 220)
+    const glow = ctx.createRadialGradient(150, 180, 20, 150, 180, 240)
     glow.addColorStop(
       0,
-      theme === 'light' ? 'rgba(13,148,136,0.12)' : 'rgba(34,230,197,0.12)'
+      theme === 'light' ? 'rgba(13,148,136,0.1)' : 'rgba(34,230,197,0.1)'
     )
     glow.addColorStop(1, 'transparent')
     ctx.fillStyle = glow
@@ -467,38 +496,32 @@ export async function downloadCredential(
   }
 
   ctx.strokeStyle = c.border
-  ctx.lineWidth = 2.5
-  roundRect(ctx, 22, 22, W - 44, H - 44, 22)
-  ctx.stroke()
-
-  ctx.strokeStyle =
-    theme === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)'
-  ctx.lineWidth = 1
-  roundRect(ctx, 32, 32, W - 64, H - 64, 16)
+  ctx.lineWidth = 2
+  roundRect(ctx, 24, 24, W - 48, H - 48, 20)
   ctx.stroke()
 
   ctx.fillStyle = c.primary
-  ctx.font = '600 13px system-ui, sans-serif'
-  ctx.fillText('GYMCOGORIGINS', 56, 64)
+  ctx.font = '600 12px system-ui, -apple-system, sans-serif'
+  ctx.fillText('GYMCOGORIGINS', 52, 62)
 
   ctx.fillStyle = c.ink
-  ctx.font = '600 26px system-ui, sans-serif'
-  ctx.fillText('Credencial de progreso', 56, 98)
+  ctx.font = '600 28px system-ui, -apple-system, sans-serif'
+  ctx.fillText('Credencial de progreso', 52, 98)
 
   ctx.fillStyle = c.muted
-  ctx.font = '400 14px system-ui, sans-serif'
-  ctx.fillText('Gimnasio cognitivo · Registro personal', 56, 122)
+  ctx.font = '400 13px system-ui, -apple-system, sans-serif'
+  ctx.fillText('Registro personal · Gimnasio cognitivo', 52, 122)
 
-  ctx.strokeStyle =
-    theme === 'light' ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.08)'
+  ctx.strokeStyle = c.cardBorder
+  ctx.lineWidth = 1
   ctx.beginPath()
-  ctx.moveTo(56, 140)
-  ctx.lineTo(W - 56, 140)
+  ctx.moveTo(52, 140)
+  ctx.lineTo(W - 52, 140)
   ctx.stroke()
 
-  const avatarCx = 120
-  const avatarCy = 248
-  const avatarR = 58
+  const avatarCx = 118
+  const avatarCy = 236
+  const avatarR = 54
 
   if (profile?.avatarDataUrl) {
     const img = await loadImage(profile.avatarDataUrl)
@@ -523,16 +546,15 @@ export async function downloadCredential(
     ctx.arc(avatarCx, avatarCy, avatarR, 0, Math.PI * 2)
     ctx.fill()
     ctx.fillStyle = c.muted
-    ctx.font = '600 28px system-ui, sans-serif'
+    ctx.font = '600 26px system-ui, sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillText(name.charAt(0).toUpperCase(), avatarCx, avatarCy + 10)
+    ctx.fillText(name.charAt(0).toUpperCase(), avatarCx, avatarCy + 9)
     ctx.textAlign = 'left'
   }
 
   if (showFrame) {
     drawFrame(ctx, avatarCx, avatarCy, avatarR, frame, c.primary)
   } else {
-    // Borde sutil mínimo si se oculta el marco
     ctx.strokeStyle = c.border
     ctx.lineWidth = 2
     ctx.beginPath()
@@ -540,72 +562,141 @@ export async function downloadCredential(
     ctx.stroke()
   }
 
+  const textLeft = 198
   ctx.fillStyle = c.ink
-  ctx.font = '600 30px system-ui, sans-serif'
-  ctx.fillText(name, 210, 222)
+  ctx.font = '600 30px system-ui, -apple-system, sans-serif'
+  ctx.fillText(name, textLeft, 200)
 
   const defeats = Math.max(0, total.totalAttempts - total.totalCompleted)
-  const meta = [
-    age != null ? `${age} años` : null,
-    `Skill ${total.skillScore}%`,
-    `Índice ${total.winRate}%`,
-    `${total.totalCompleted}V · ${defeats}D`,
-    `${total.totalLevels} niveles`,
-  ]
-    .filter(Boolean)
-    .join('  ·  ')
+  const chips: string[] = []
+  if (age != null) chips.push(`${age} años`)
+  chips.push(`Skill ${total.skillScore}%`)
+  chips.push(`Índice ${total.winRate}%`)
+  chips.push(`${total.totalCompleted} victorias`)
+  chips.push(`${defeats} derrotas`)
+  chips.push(`${total.totalLevels} niveles`)
 
-  ctx.fillStyle = c.muted
-  ctx.font = '400 15px system-ui, sans-serif'
-  ctx.fillText(meta, 210, 252)
-
-  let favY = 278
-  const favs: string[] = []
-  if (showFavoriteGame && favoriteGameLabel) favs.push(`🎮 ${favoriteGameLabel}`)
-  if (showFavoriteBook && favoriteBookLabel) favs.push(`📖 ${favoriteBookLabel}`)
-  if (showFavoriteTrack && favoriteTrackLabel)
-    favs.push(`🎵 ${favoriteTrackLabel}`)
-  if (favs.length) {
-    ctx.fillStyle = c.faint
-    ctx.font = '400 13px system-ui, sans-serif'
-    ctx.fillText(favs.join('   '), 210, favY)
+  let chipX = textLeft
+  const chipY = 222
+  ctx.font = '500 12px system-ui, -apple-system, sans-serif'
+  for (const label of chips) {
+    const padX = 10
+    const tw = ctx.measureText(label).width
+    const cw = tw + padX * 2
+    if (chipX + cw > W - 52) break
+    ctx.fillStyle = c.panel
+    roundRect(ctx, chipX, chipY, cw, 24, 8)
+    ctx.fill()
+    ctx.strokeStyle = c.cardBorder
+    ctx.lineWidth = 1
+    roundRect(ctx, chipX, chipY, cw, 24, 8)
+    ctx.stroke()
+    ctx.fillStyle = c.muted
+    ctx.fillText(label, chipX + padX, chipY + 16)
+    chipX += cw + 8
   }
 
-  let y = 330
-  ctx.fillStyle = c.primary
-  ctx.font = '600 14px system-ui, sans-serif'
-  ctx.fillText('RÉCORDS', 56, y)
-  y += 26
-
-  ctx.font = '400 14px ui-monospace, SFMono-Regular, Menlo, monospace'
-  const lines = total.byGame.slice(0, 5)
-  if (lines.length === 0) {
+  let contentTop = 262
+  if (bioText) {
     ctx.fillStyle = c.faint
-    ctx.fillText('Aún sin partidas registradas', 56, y)
-  } else {
-    for (const g of lines) {
-      const label = `${g.categoryId} / ${g.gameId.replace(/-/g, ' ')}`
-      const losses = Math.max(0, g.totalAttempts - g.totalCompleted)
-      const stats = `Nv. ${g.highestLevel}  ·  ${g.totalCompleted}V/${losses}D  ·  ${g.winRate}%`
+    ctx.font = '400 13px system-ui, -apple-system, sans-serif'
+    const lines = wrapText(ctx, bioText, W - textLeft - 52, 2)
+    for (let i = 0; i < lines.length; i++) {
+      ctx.fillText(lines[i]!, textLeft, contentTop + i * 18)
+    }
+    contentTop += lines.length * 18 + 10
+  }
+
+  const favRows: { k: string; v: string }[] = []
+  if (showFavoriteGame && favoriteGameLabel)
+    favRows.push({ k: 'Juego', v: favoriteGameLabel })
+  if (showFavoriteBook && favoriteBookLabel)
+    favRows.push({ k: 'Libro', v: favoriteBookLabel })
+  if (showFavoriteTrack && favoriteTrackLabel)
+    favRows.push({ k: 'Canción', v: favoriteTrackLabel })
+
+  if (favRows.length) {
+    let fy = contentTop
+    ctx.font = '500 12px system-ui, -apple-system, sans-serif'
+    for (const row of favRows) {
       ctx.fillStyle = c.faint
-      ctx.fillText(label, 56, y)
+      ctx.fillText(row.k, textLeft, fy)
       ctx.fillStyle = c.ink
-      ctx.globalAlpha = 0.85
-      ctx.fillText(stats, 400, y)
+      ctx.globalAlpha = 0.9
+      ctx.fillText(row.v, textLeft + 72, fy)
       ctx.globalAlpha = 1
-      y += 22
+      fy += 18
+    }
+    contentTop = fy + 6
+  }
+
+  const panelY = Math.max(contentTop + 8, 318)
+  const panelH = H - panelY - 56
+  ctx.fillStyle = c.card
+  roundRect(ctx, 52, panelY, W - 104, panelH, 14)
+  ctx.fill()
+  ctx.strokeStyle = c.cardBorder
+  ctx.lineWidth = 1
+  roundRect(ctx, 52, panelY, W - 104, panelH, 14)
+  ctx.stroke()
+
+  ctx.fillStyle = c.primary
+  ctx.font = '600 12px system-ui, -apple-system, sans-serif'
+  ctx.fillText('RÉCORDS RECIENTES', 72, panelY + 28)
+
+  ctx.font = '400 13px ui-monospace, SFMono-Regular, Menlo, monospace'
+  const gameLines = total.byGame.slice(0, 5)
+  let y = panelY + 52
+  if (gameLines.length === 0) {
+    ctx.fillStyle = c.faint
+    ctx.font = '400 13px system-ui, sans-serif'
+    ctx.fillText('Aún no hay partidas registradas', 72, y)
+  } else {
+    for (const g of gameLines) {
+      const gameName = g.gameId.replace(/-/g, ' ')
+      const losses = Math.max(0, g.totalAttempts - g.totalCompleted)
+
+      ctx.fillStyle = c.muted
+      ctx.font = '500 13px system-ui, -apple-system, sans-serif'
+      const leftLabel = `${g.categoryId}`
+      ctx.fillText(leftLabel, 72, y)
+
+      ctx.fillStyle = c.ink
+      ctx.globalAlpha = 0.88
+      ctx.fillText(gameName, 72 + ctx.measureText(leftLabel).width + 10, y)
+      ctx.globalAlpha = 1
+
+      ctx.fillStyle = c.faint
+      ctx.font = '400 12px ui-monospace, SFMono-Regular, Menlo, monospace'
+      const stats = `Nivel ${g.highestLevel}    ${g.totalCompleted}V  ${losses}D    ${g.winRate}%`
+      const sw = ctx.measureText(stats).width
+      ctx.fillText(stats, W - 72 - sw, y)
+      y += 24
     }
   }
 
   ctx.fillStyle = c.faint
-  ctx.font = '400 11px system-ui, sans-serif'
+  ctx.font = '400 11px system-ui, -apple-system, sans-serif'
   const issued = new Date().toLocaleString('es-ES', {
     dateStyle: 'medium',
     timeStyle: 'short',
   })
-  ctx.fillText(`Emitida · ${issued}`, 56, H - 40)
-  ctx.fillText('Desarrollado por Savitar Xeno', W - 250, H - 40)
+  ctx.fillText(`Emitida  ${issued}`, 52, H - 36)
+  ctx.textAlign = 'right'
+  ctx.fillText('Desarrollado por Savitar Xeno', W - 52, H - 36)
+  ctx.textAlign = 'left'
 
+  return canvas
+}
+
+export async function downloadCredential(
+  opts: CredentialOptions = {}
+): Promise<'download' | 'share' | 'open' | 'fail'> {
+  const canvas = await renderCredentialCanvas(opts)
+  if (!canvas) return 'fail'
+
+  const profile = getProfile()
+  const name = profile?.name?.trim() || 'Atleta GCO'
   const safeName =
     name
       .replace(/[^\w\-áéíóúñÁÉÍÓÚÑ ]+/gi, '')

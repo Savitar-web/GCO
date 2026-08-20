@@ -10,6 +10,7 @@ export interface UserProfile {
   favoriteGameId?: string | null
   favoriteBookId?: string | null
   favoriteTrackId?: string | null
+  bio?: string | null
 }
 
 const PROFILE_KEY = 'gco:profile'

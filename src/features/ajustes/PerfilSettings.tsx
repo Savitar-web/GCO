@@ -7,12 +7,14 @@ import {
 import { GlassButton } from '@/components/ui/GlassButton'
 import {
   downloadCredential,
+  renderCredentialCanvas,
   type CredentialTheme,
+  type CredentialOptions,
 } from './downloadCredential'
 import { soundClick, soundSuccess, soundFail } from '@/core/audio/uiSounds'
 import { listBooks, listTracks } from '@/core/storage/mediaLibrary'
 
-/** Marcos extendidos (incluir estos ids en AvatarFrame del storage) */
+/** Marcos (añadir estos ids en AvatarFrame del storage) */
 type FrameId =
   | AvatarFrame
   | 'gold'
@@ -42,19 +44,12 @@ const GAMES = [
   { id: 'despejes', label: 'Despejes' },
 ]
 
-/** Tamaño recomendado del avatar final */
 const TARGET_PX = 512
 const PREVIEW = 240
 const STEP = 8
-/** Tamaño fijo del avatar en UI (siempre cuadrado → círculo perfecto) */
-const AVATAR_UI = 96
+const AVATAR_UI = 104
+const BIO_MAX = 160
 
-/**
- * Estilos de marco. NO usamos border de distinto grosor sobre el mismo box
- * que tiene width/height fijos con content-box inconsistente en Android WebView.
- * El anillo exterior es un wrapper con padding simétrico; el interior es
- * siempre un círculo perfecto (aspect-ratio 1 + border-radius 50%).
- */
 function frameRingStyle(frame: FrameId): React.CSSProperties {
   const base: React.CSSProperties = {
     borderRadius: '50%',
@@ -132,7 +127,6 @@ function frameRingStyle(frame: FrameId): React.CSSProperties {
       boxShadow:
         '0 0 0 1px rgba(255,255,255,0.75), inset 0 2px 6px rgba(255,255,255,0.85), inset 0 -2px 8px rgba(40,120,180,0.25), 0 8px 22px rgba(60,140,200,0.35)',
     }
-  // none
   return {
     ...base,
     padding: 2,
@@ -145,10 +139,12 @@ function SwitchRow({
   checked,
   onChange,
   label,
+  hint,
 }: {
   checked: boolean
   onChange: (v: boolean) => void
   label: string
+  hint?: string
 }) {
   return (
     <div
@@ -157,9 +153,24 @@ function SwitchRow({
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: 12,
+        padding: '0.35rem 0',
       }}
     >
-      <span style={{ fontSize: '0.9rem' }}>{label}</span>
+      <div style={{ minWidth: 0 }}>
+        <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{label}</span>
+        {hint ? (
+          <p
+            style={{
+              margin: '2px 0 0',
+              fontSize: '0.72rem',
+              color: 'var(--gco-ink-muted)',
+              lineHeight: 1.35,
+            }}
+          >
+            {hint}
+          </p>
+        ) : null}
+      </div>
       <button
         type="button"
         role="switch"
@@ -228,19 +239,49 @@ function PadBtn({
   )
 }
 
-/** Avatar siempre circular: wrapper + inner con aspect-ratio 1 y border-radius 50% */
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      style={{
+        fontSize: '0.72rem',
+        color: 'var(--gco-ink-muted)',
+        margin: '0 0 0.65rem',
+        fontWeight: 700,
+        letterSpacing: '0.06em',
+        textTransform: 'uppercase',
+      }}
+    >
+      {children}
+    </p>
+  )
+}
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <label
+      style={{
+        display: 'block',
+        marginBottom: '0.4rem',
+        fontWeight: 550,
+        fontSize: '0.88rem',
+      }}
+    >
+      {children}
+    </label>
+  )
+}
+
+/** Avatar siempre circular */
 function CircularAvatar({
   src,
   frame,
   size = AVATAR_UI,
   onClick,
-  showPlaceholder,
 }: {
   src: string | null
   frame: FrameId
   size?: number
   onClick?: () => void
-  showPlaceholder?: boolean
 }) {
   return (
     <button
@@ -248,7 +289,6 @@ function CircularAvatar({
       onClick={onClick}
       aria-label="Cambiar foto de perfil"
       style={{
-        // Caja exterior fija y cuadrada (evita óvalo en Android WebView)
         width: size,
         height: size,
         minWidth: size,
@@ -287,7 +327,6 @@ function CircularAvatar({
             borderRadius: '50%',
             overflow: 'hidden',
             background: 'var(--gco-glass-bg)',
-            // fondo sólido bajo el padding del anillo
             boxSizing: 'border-box',
           }}
         >
@@ -303,13 +342,12 @@ function CircularAvatar({
                 objectPosition: 'center',
                 display: 'block',
                 borderRadius: '50%',
-                // evita stretch en WebViews Android
                 maxWidth: '100%',
                 maxHeight: '100%',
                 aspectRatio: '1 / 1',
               }}
             />
-          ) : showPlaceholder !== false ? (
+          ) : (
             <span
               style={{
                 display: 'grid',
@@ -323,7 +361,7 @@ function CircularAvatar({
             >
               Foto
             </span>
-          ) : null}
+          )}
         </span>
       </span>
     </button>
@@ -334,6 +372,9 @@ export function PerfilSettings() {
   const profile = getProfile()
   const [name, setName] = useState(profile?.name ?? '')
   const [age, setAge] = useState(String(profile?.age ?? ''))
+  const [bio, setBio] = useState(
+    (profile as { bio?: string } | null)?.bio ?? ''
+  )
   const [avatar, setAvatar] = useState(profile?.avatarDataUrl ?? null)
   const [frame, setFrame] = useState<FrameId>(
     (profile?.avatarFrame as FrameId) ?? 'none'
@@ -342,7 +383,7 @@ export function PerfilSettings() {
   const fileRef = useRef<HTMLInputElement>(null)
   const frameScrollRef = useRef<HTMLDivElement>(null)
 
-  // Crop state
+  // Crop
   const [cropSrc, setCropSrc] = useState<string | null>(null)
   const [imgNat, setImgNat] = useState({ w: 0, h: 0 })
   const [offset, setOffset] = useState({ x: 0, y: 0 })
@@ -350,10 +391,13 @@ export function PerfilSettings() {
   const [outSize, setOutSize] = useState(TARGET_PX)
   const imgRef = useRef<HTMLImageElement | null>(null)
 
-  // Credential modal
+  // Credential viewer / options
   const [credOpen, setCredOpen] = useState(false)
+  const [credViewOpen, setCredViewOpen] = useState(false)
+  const [credPreviewUrl, setCredPreviewUrl] = useState<string | null>(null)
   const [hideAge, setHideAge] = useState(false)
   const [showFrameOnCred, setShowFrameOnCred] = useState(true)
+  const [showBioOnCred, setShowBioOnCred] = useState(true)
   const [credTheme, setCredTheme] = useState<CredentialTheme>('dark')
   const [showGame, setShowGame] = useState(false)
   const [showBook, setShowBook] = useState(false)
@@ -364,6 +408,7 @@ export function PerfilSettings() {
   const [books, setBooks] = useState<{ id: string; title: string }[]>([])
   const [tracks, setTracks] = useState<{ id: string; title: string }[]>([])
   const [credBusy, setCredBusy] = useState(false)
+  const [previewBusy, setPreviewBusy] = useState(false)
 
   useEffect(() => {
     void listBooks()
@@ -374,9 +419,57 @@ export function PerfilSettings() {
       .catch(() => setTracks([]))
   }, [])
 
+  useEffect(() => {
+    return () => {
+      if (credPreviewUrl) URL.revokeObjectURL(credPreviewUrl)
+    }
+  }, [credPreviewUrl])
+
   const nudge = useCallback((dx: number, dy: number) => {
     setOffset((o) => ({ x: o.x + dx, y: o.y + dy }))
   }, [])
+
+  const buildOpts = useCallback((): CredentialOptions => {
+    return {
+      hideAge,
+      theme: credTheme,
+      showFrame: showFrameOnCred,
+      showBio: showBioOnCred,
+      bio: bio.trim() || undefined,
+      showFavoriteGame: showGame,
+      favoriteGameLabel: GAMES.find((g) => g.id === favGame)?.label,
+      showFavoriteBook: showBook,
+      favoriteBookLabel: books.find((b) => b.id === favBook)?.title,
+      showFavoriteTrack: showTrack,
+      favoriteTrackLabel: tracks.find((t) => t.id === favTrack)?.title,
+    }
+  }, [
+    hideAge,
+    credTheme,
+    showFrameOnCred,
+    showBioOnCred,
+    bio,
+    showGame,
+    favGame,
+    showBook,
+    favBook,
+    books,
+    showTrack,
+    favTrack,
+    tracks,
+  ])
+
+  const persistPrefs = () => {
+    updateProfile({
+      favoriteGameId: favGame,
+      favoriteBookId: favBook || null,
+      favoriteTrackId: favTrack || null,
+      avatarFrame: frame as AvatarFrame,
+      ...(bio.trim()
+        ? ({ bio: bio.trim().slice(0, BIO_MAX) } as Record<string, unknown>)
+        : {}),
+    } as Parameters<typeof updateProfile>[0] & { bio?: string })
+  }
 
   const save = () => {
     const ageNum = parseInt(age, 10)
@@ -398,7 +491,8 @@ export function PerfilSettings() {
       favoriteGameId: favGame,
       favoriteBookId: favBook || null,
       favoriteTrackId: favTrack || null,
-    })
+      bio: bio.trim().slice(0, BIO_MAX) || null,
+    } as Parameters<typeof updateProfile>[0] & { bio?: string | null })
     soundSuccess()
     setMsg('Perfil guardado')
   }
@@ -471,26 +565,43 @@ export function PerfilSettings() {
     }
   }
 
+  const openCredentialViewer = async () => {
+    setPreviewBusy(true)
+    try {
+      persistPrefs()
+      const canvas = await renderCredentialCanvas(buildOpts())
+      if (!canvas) {
+        soundFail()
+        setMsg('No se pudo generar la vista previa')
+        return
+      }
+      const blob: Blob | null = await new Promise((resolve) =>
+        canvas.toBlob((b) => resolve(b), 'image/png', 1)
+      )
+      if (!blob) {
+        soundFail()
+        setMsg('No se pudo generar la vista previa')
+        return
+      }
+      if (credPreviewUrl) URL.revokeObjectURL(credPreviewUrl)
+      const url = URL.createObjectURL(blob)
+      setCredPreviewUrl(url)
+      setCredViewOpen(true)
+      setCredOpen(false)
+      soundSuccess()
+    } catch {
+      soundFail()
+      setMsg('Error al generar la credencial')
+    } finally {
+      setPreviewBusy(false)
+    }
+  }
+
   const doDownload = async () => {
     setCredBusy(true)
     try {
-      updateProfile({
-        favoriteGameId: favGame,
-        favoriteBookId: favBook || null,
-        favoriteTrackId: favTrack || null,
-        avatarFrame: frame as AvatarFrame,
-      })
-      const result = await downloadCredential({
-        hideAge,
-        theme: credTheme,
-        showFrame: showFrameOnCred,
-        showFavoriteGame: showGame,
-        favoriteGameLabel: GAMES.find((g) => g.id === favGame)?.label,
-        showFavoriteBook: showBook,
-        favoriteBookLabel: books.find((b) => b.id === favBook)?.title,
-        showFavoriteTrack: showTrack,
-        favoriteTrackLabel: tracks.find((t) => t.id === favTrack)?.title,
-      })
+      persistPrefs()
+      const result = await downloadCredential(buildOpts())
       if (result === 'fail') {
         soundFail()
         setMsg('No se pudo generar la descarga en este dispositivo')
@@ -505,7 +616,6 @@ export function PerfilSettings() {
             : 'Credencial lista'
         )
       }
-      setCredOpen(false)
     } catch {
       soundFail()
       setMsg('Error al generar la credencial')
@@ -520,17 +630,22 @@ export function PerfilSettings() {
     el.scrollBy({ left: dir * 120, behavior: 'smooth' })
   }
 
+  const closeViewer = () => {
+    soundClick()
+    setCredViewOpen(false)
+  }
+
   return (
     <div
       className="glass-card"
       style={{
-        padding: 'clamp(1rem, 3vw, 1.35rem)',
+        padding: 'clamp(1.1rem, 3vw, 1.5rem)',
         display: 'flex',
         flexDirection: 'column',
-        gap: '1.25rem',
+        gap: '1.35rem',
       }}
     >
-      {/* Avatar + frame */}
+      {/* Cabecera de perfil */}
       <div
         style={{
           display: 'flex',
@@ -549,18 +664,27 @@ export function PerfilSettings() {
           }}
         />
         <div style={{ minWidth: 0, flex: 1 }}>
-          <p style={{ fontWeight: 600, margin: 0 }}>Foto de perfil</p>
+          <p
+            style={{
+              fontWeight: 700,
+              margin: 0,
+              fontFamily: 'var(--font-display)',
+              fontSize: '1.05rem',
+            }}
+          >
+            {name.trim() || 'Tu perfil'}
+          </p>
           <p
             style={{
               fontSize: '0.8rem',
               color: 'var(--gco-ink-muted)',
               marginTop: 4,
-              lineHeight: 1.4,
+              lineHeight: 1.45,
             }}
           >
-            Toca para elegir, recortar y redimensionar. Recomendado:{' '}
+            Toca la foto para cambiarla. Recomendado{' '}
             <span className="mono">
-              {TARGET_PX}×{TARGET_PX}px
+              {TARGET_PX}×{TARGET_PX}
             </span>
           </p>
         </div>
@@ -573,7 +697,7 @@ export function PerfilSettings() {
         />
       </div>
 
-      {/* Marco — slider horizontal con animación */}
+      {/* Marcos */}
       <div>
         <div
           style={{
@@ -584,19 +708,8 @@ export function PerfilSettings() {
             gap: 8,
           }}
         >
-          <p
-            style={{
-              fontSize: '0.78rem',
-              color: 'var(--gco-ink-muted)',
-              margin: 0,
-              fontWeight: 600,
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase',
-            }}
-          >
-            Marco
-          </p>
-          <div className="hscroll-nav" style={{ display: 'flex', gap: 6 }}>
+          <SectionTitle>Marco del avatar</SectionTitle>
+          <div style={{ display: 'flex', gap: 6 }}>
             <button
               type="button"
               className="hscroll-nav-btn"
@@ -621,7 +734,6 @@ export function PerfilSettings() {
             </button>
           </div>
         </div>
-
         <div
           ref={frameScrollRef}
           className="hscroll"
@@ -711,48 +823,99 @@ export function PerfilSettings() {
         </div>
       </div>
 
+      {/* Datos personales */}
       <div>
-        <label
-          style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 500 }}
-        >
-          Nombre
-        </label>
-        <input
-          className="glass-input"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-      </div>
-
-      <div>
-        <label
-          style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 500 }}
-        >
-          Edad
-        </label>
-        <input
-          className="glass-input"
-          type="number"
-          inputMode="numeric"
-          value={age}
-          onChange={(e) => setAge(e.target.value)}
-          style={{ maxWidth: 120 }}
-        />
+        <SectionTitle>Identidad</SectionTitle>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+          <div>
+            <FieldLabel>Nombre</FieldLabel>
+            <input
+              className="glass-input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Cómo quieres aparecer"
+              maxLength={40}
+            />
+          </div>
+          <div>
+            <FieldLabel>Edad</FieldLabel>
+            <input
+              className="glass-input"
+              type="number"
+              inputMode="numeric"
+              value={age}
+              onChange={(e) => setAge(e.target.value)}
+              style={{ maxWidth: 128 }}
+              placeholder="—"
+            />
+          </div>
+          <div>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                gap: 8,
+              }}
+            >
+              <FieldLabel>Descripción</FieldLabel>
+              <span
+                className="mono"
+                style={{
+                  fontSize: '0.72rem',
+                  color: 'var(--gco-ink-faint)',
+                }}
+              >
+                {bio.length}/{BIO_MAX}
+              </span>
+            </div>
+            <textarea
+              className="glass-input"
+              value={bio}
+              onChange={(e) => setBio(e.target.value.slice(0, BIO_MAX))}
+              placeholder="Una línea sobre ti: enfoque, meta o estilo de entrenamiento…"
+              rows={3}
+              style={{
+                minHeight: 88,
+                resize: 'vertical',
+                lineHeight: 1.45,
+              }}
+            />
+            <p
+              style={{
+                margin: '6px 0 0',
+                fontSize: '0.72rem',
+                color: 'var(--gco-ink-muted)',
+                lineHeight: 1.4,
+              }}
+            >
+              Aparece en la credencial como nota personal, no como hashtag.
+            </p>
+          </div>
+        </div>
       </div>
 
       {msg && (
         <p
           style={{
-            fontSize: '0.9rem',
+            fontSize: '0.88rem',
             color: 'var(--gco-primary)',
             margin: 0,
+            fontWeight: 500,
           }}
         >
           {msg}
         </p>
       )}
 
-      <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+      {/* Acciones principales */}
+      <div
+        style={{
+          display: 'flex',
+          gap: '0.55rem',
+          flexWrap: 'wrap',
+        }}
+      >
         <GlassButton type="button" onClick={save}>
           Guardar perfil
         </GlassButton>
@@ -764,7 +927,7 @@ export function PerfilSettings() {
             setCredOpen(true)
           }}
         >
-          Descargar credencial
+          Credencial
         </button>
       </div>
 
@@ -775,9 +938,9 @@ export function PerfilSettings() {
             position: 'fixed',
             inset: 0,
             zIndex: 200,
-            background: 'rgba(0,0,0,0.7)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
+            background: 'rgba(0,0,0,0.72)',
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)',
             display: 'grid',
             placeItems: 'center',
             padding: 16,
@@ -810,7 +973,6 @@ export function PerfilSettings() {
                 border: '2px solid var(--gco-glass-border)',
                 background: '#0a0a0a',
                 touchAction: 'none',
-                // fuerza círculo en Android
                 minWidth: 0,
                 flexShrink: 0,
               }}
@@ -854,7 +1016,7 @@ export function PerfilSettings() {
                   Original
                 </p>
                 <p className="mono" style={{ margin: 0, fontWeight: 600 }}>
-                  {imgNat.w || '—'}×{imgNat.h || '—'}px
+                  {imgNat.w || '—'}×{imgNat.h || '—'}
                 </p>
               </div>
               <div className="glass-card" style={{ padding: '0.55rem 0.7rem' }}>
@@ -865,10 +1027,10 @@ export function PerfilSettings() {
                     fontSize: '0.7rem',
                   }}
                 >
-                  Salida (recomendado {TARGET_PX})
+                  Salida
                 </p>
                 <p className="mono" style={{ margin: 0, fontWeight: 600 }}>
-                  {outSize}×{outSize}px
+                  {outSize}×{outSize}
                 </p>
               </div>
             </div>
@@ -944,7 +1106,7 @@ export function PerfilSettings() {
                   color: 'var(--gco-ink-muted)',
                 }}
               >
-                <span>Redimensionar salida</span>
+                <span>Tamaño de salida</span>
                 <span className="mono">{outSize}px</span>
               </div>
               <input
@@ -992,7 +1154,7 @@ export function PerfilSettings() {
         </div>
       )}
 
-      {/* Credential modal */}
+      {/* ── Opciones de credencial ── */}
       {credOpen && (
         <div
           style={{
@@ -1000,8 +1162,8 @@ export function PerfilSettings() {
             inset: 0,
             zIndex: 200,
             background: 'var(--gco-overlay)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)',
             display: 'grid',
             placeItems: 'center',
             padding: 16,
@@ -1010,49 +1172,61 @@ export function PerfilSettings() {
           <div
             className="glass-card"
             style={{
-              width: 'min(440px, 100%)',
-              padding: '1.25rem',
+              width: 'min(460px, 100%)',
+              padding: '1.35rem 1.25rem',
               display: 'flex',
               flexDirection: 'column',
-              gap: 14,
-              maxHeight: '90dvh',
+              gap: 16,
+              maxHeight: '92dvh',
               overflowY: 'auto',
             }}
           >
-            <p style={{ fontWeight: 700, fontSize: '1.05rem', margin: 0 }}>
-              Credencial
-            </p>
-            <p
+            <div
               style={{
-                fontSize: '0.8rem',
-                color: 'var(--gco-ink-muted)',
-                margin: 0,
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'space-between',
+                gap: 12,
               }}
             >
-              Incluye victorias, derrotas e índice de victoria.
-            </p>
-
-            <SwitchRow
-              label="Ocultar edad"
-              checked={hideAge}
-              onChange={setHideAge}
-            />
-            <SwitchRow
-              label="Mostrar marco del avatar"
-              checked={showFrameOnCred}
-              onChange={setShowFrameOnCred}
-            />
+              <div>
+                <p
+                  style={{
+                    fontWeight: 700,
+                    fontSize: '1.08rem',
+                    margin: 0,
+                    fontFamily: 'var(--font-display)',
+                  }}
+                >
+                  Credencial
+                </p>
+                <p
+                  style={{
+                    fontSize: '0.8rem',
+                    color: 'var(--gco-ink-muted)',
+                    margin: '6px 0 0',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  Configura el diseño y previsualiza antes de guardar.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Cerrar"
+                onClick={() => {
+                  soundClick()
+                  setCredOpen(false)
+                }}
+                style={{ width: 36, height: 36 }}
+              >
+                ✕
+              </button>
+            </div>
 
             <div>
-              <p
-                style={{
-                  fontSize: '0.8rem',
-                  color: 'var(--gco-ink-muted)',
-                  marginBottom: 8,
-                }}
-              >
-                Diseño
-              </p>
+              <SectionTitle>Apariencia</SectionTitle>
               <div className="segmented" style={{ width: '100%' }}>
                 {(
                   [
@@ -1076,84 +1250,259 @@ export function PerfilSettings() {
               </div>
             </div>
 
-            <SwitchRow
-              label="Mostrar juego favorito"
-              checked={showGame}
-              onChange={setShowGame}
-            />
-            {showGame && (
-              <select
-                className="glass-input"
-                value={favGame}
-                onChange={(e) => setFavGame(e.target.value)}
-              >
-                {GAMES.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.label}
-                  </option>
-                ))}
-              </select>
-            )}
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+                padding: '0.35rem 0',
+              }}
+            >
+              <SectionTitle>Privacidad y detalles</SectionTitle>
+              <SwitchRow
+                label="Ocultar edad"
+                checked={hideAge}
+                onChange={setHideAge}
+              />
+              <SwitchRow
+                label="Mostrar marco del avatar"
+                checked={showFrameOnCred}
+                onChange={setShowFrameOnCred}
+              />
+              <SwitchRow
+                label="Incluir descripción"
+                checked={showBioOnCred}
+                onChange={setShowBioOnCred}
+                hint={
+                  bio.trim()
+                    ? undefined
+                    : 'Escribe una descripción en el perfil para usarla aquí'
+                }
+              />
+            </div>
 
-            <SwitchRow
-              label="Mostrar libro favorito"
-              checked={showBook}
-              onChange={setShowBook}
-            />
-            {showBook && (
-              <select
-                className="glass-input"
-                value={favBook}
-                onChange={(e) => setFavBook(e.target.value)}
+            <div>
+              <SectionTitle>Favoritos (opcional)</SectionTitle>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                }}
               >
-                <option value="">— Elegir —</option>
-                {books.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.title}
-                  </option>
-                ))}
-              </select>
-            )}
+                <SwitchRow
+                  label="Juego favorito"
+                  checked={showGame}
+                  onChange={setShowGame}
+                />
+                {showGame && (
+                  <select
+                    className="glass-input"
+                    value={favGame}
+                    onChange={(e) => setFavGame(e.target.value)}
+                  >
+                    {GAMES.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
 
-            <SwitchRow
-              label="Mostrar canción favorita"
-              checked={showTrack}
-              onChange={setShowTrack}
-            />
-            {showTrack && (
-              <select
-                className="glass-input"
-                value={favTrack}
-                onChange={(e) => setFavTrack(e.target.value)}
-              >
-                <option value="">— Elegir —</option>
-                {tracks.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.title}
-                  </option>
-                ))}
-              </select>
-            )}
+                <SwitchRow
+                  label="Libro favorito"
+                  checked={showBook}
+                  onChange={setShowBook}
+                />
+                {showBook && (
+                  <select
+                    className="glass-input"
+                    value={favBook}
+                    onChange={(e) => setFavBook(e.target.value)}
+                  >
+                    <option value="">Elegir libro</option>
+                    {books.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.title}
+                      </option>
+                    ))}
+                  </select>
+                )}
 
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <SwitchRow
+                  label="Canción favorita"
+                  checked={showTrack}
+                  onChange={setShowTrack}
+                />
+                {showTrack && (
+                  <select
+                    className="glass-input"
+                    value={favTrack}
+                    onChange={(e) => setFavTrack(e.target.value)}
+                  >
+                    <option value="">Elegir canción</option>
+                    {tracks.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.title}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                gap: 8,
+                flexWrap: 'wrap',
+                paddingTop: 4,
+              }}
+            >
               <GlassButton
                 type="button"
-                onClick={() => void doDownload()}
-                disabled={credBusy}
+                onClick={() => void openCredentialViewer()}
+                disabled={previewBusy}
               >
-                {credBusy ? 'Generando…' : 'Descargar'}
+                {previewBusy ? 'Generando…' : 'Ver credencial'}
               </GlassButton>
               <button
                 type="button"
                 className="glass-button secondary"
-                onClick={() => {
-                  soundClick()
-                  setCredOpen(false)
-                }}
+                disabled={credBusy}
+                onClick={() => void doDownload()}
               >
-                Cancelar
+                {credBusy ? 'Descargando…' : 'Descargar'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Visor de credencial ── */}
+      {credViewOpen && credPreviewUrl && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 210,
+            background: 'rgba(0,0,0,0.78)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding:
+              'max(12px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom))',
+            gap: 14,
+          }}
+        >
+          <div
+            style={{
+              width: 'min(520px, 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+            }}
+          >
+            <p
+              style={{
+                margin: 0,
+                fontWeight: 700,
+                fontSize: '1rem',
+                fontFamily: 'var(--font-display)',
+                color: '#fff',
+              }}
+            >
+              Vista previa
+            </p>
+            <button
+              type="button"
+              aria-label="Cerrar"
+              onClick={closeViewer}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: '50%',
+                border: '1px solid rgba(255,255,255,0.22)',
+                background: 'rgba(255,255,255,0.1)',
+                color: '#fff',
+                cursor: 'pointer',
+                fontSize: '1rem',
+                display: 'grid',
+                placeItems: 'center',
+                backdropFilter: 'blur(8px)',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              ✕
+            </button>
+          </div>
+
+          <div
+            style={{
+              width: 'min(520px, 100%)',
+              borderRadius: 18,
+              overflow: 'hidden',
+              boxShadow: '0 24px 64px rgba(0,0,0,0.45)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              background: '#0a0a0a',
+              maxHeight: 'min(70dvh, 420px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <img
+              src={credPreviewUrl}
+              alt="Credencial de progreso"
+              style={{
+                width: '100%',
+                height: 'auto',
+                display: 'block',
+                maxHeight: 'min(70dvh, 420px)',
+                objectFit: 'contain',
+              }}
+            />
+          </div>
+
+          <div
+            style={{
+              width: 'min(520px, 100%)',
+              display: 'flex',
+              gap: 8,
+              flexWrap: 'wrap',
+              justifyContent: 'center',
+            }}
+          >
+            <GlassButton
+              type="button"
+              onClick={() => void doDownload()}
+              disabled={credBusy}
+            >
+              {credBusy ? 'Descargando…' : 'Descargar'}
+            </GlassButton>
+            <button
+              type="button"
+              className="glass-button secondary"
+              onClick={() => {
+                soundClick()
+                setCredViewOpen(false)
+                setCredOpen(true)
+              }}
+            >
+              Ajustar opciones
+            </button>
+            <button
+              type="button"
+              className="glass-button ghost"
+              onClick={closeViewer}
+              style={{ color: 'rgba(255,255,255,0.85)' }}
+            >
+              Cerrar
+            </button>
           </div>
         </div>
       )}
