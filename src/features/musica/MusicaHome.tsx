@@ -922,6 +922,22 @@ const LAYOUT_CSS = `
   background: color-mix(in srgb, var(--gco-ink) 38%, transparent);
 }
 
+
+/* ========== FIX ANDROID / CAPACITOR: menús y popups no translúcidos ==========
+ * En Android WebView el backdrop-filter a menudo no se renderiza (o es muy débil).
+ * Usamos una base mucho más opaca con color-mix sobre --gco-bg-elevated.
+ * En iOS PWA / Electron el blur sigue aplicándose encima y se ve el liquid glass real.
+ */
+.gco-menu-glass,
+.gco-sort-panel.glass-card,
+.gco-music-context-menu {
+  background: color-mix(in srgb, var(--gco-bg-elevated) 90%, transparent) !important;
+  backdrop-filter: blur(var(--gco-glass-blur, 20px)) saturate(var(--gco-glass-saturate, 1.35)) !important;
+  -webkit-backdrop-filter: blur(var(--gco-glass-blur, 20px)) saturate(var(--gco-glass-saturate, 1.35)) !important;
+  border: 1px solid var(--gco-glass-border) !important;
+  box-shadow: var(--gco-shadow-lg) !important;
+}
+
 @media (min-width: 960px) {
   .gco-music-shell {
     width: 100%; max-width: 100%; margin: 0; padding: 0;
@@ -1067,7 +1083,7 @@ function SortDropdown({ value, onChange }: { value: SortMode; onChange: (v: Sort
         <Icon.chevronDown size={12} />
       </button>
       {open && (
-        <div role="listbox" className="glass-card gco-sort-panel">
+        <div role="listbox" className="glass-card gco-sort-panel gco-menu-glass">
           {SORT_OPTIONS.map((o) => (
             <button
               key={o.id}
@@ -1342,8 +1358,9 @@ function ImportPanelComponent({
     soundSuccess()
   }
 
+  // Base más opaca para que en Android no se vea vacío cuando falta el blur
   const liquidGlassStyle: React.CSSProperties = {
-    background: 'var(--gco-glass-bg, rgba(255,255,255,0.06))',
+    background: 'color-mix(in srgb, var(--gco-bg-elevated) 88%, transparent)',
     backdropFilter: 'blur(18px) saturate(1.3)',
     WebkitBackdropFilter: 'blur(18px) saturate(1.3)',
     border: '1px solid var(--gco-glass-border, rgba(255,255,255,0.1))',
@@ -1619,7 +1636,7 @@ function ImportPanelComponent({
           onClick={() => setSelectedYt(null)}
         >
           <div
-            className="glass-card"
+            className="glass-card gco-menu-glass"
             style={{
               ...liquidGlassStyle,
               width: 'min(90%, 400px)',
@@ -3192,7 +3209,7 @@ export function MusicaHome() {
       </p>
       {addToPlOpen && (
         <div
-          className="glass-card gco-scroll-y"
+          className="glass-card gco-scroll-y gco-menu-glass"
           style={{ padding: '0.75rem 1rem', maxHeight: 280, overflow: 'auto', marginBottom: 12, border: '1px solid var(--gco-glass-border)' }}
         >
           <p style={{ fontWeight: 600, marginBottom: 8 }}>Biblioteca completa</p>
@@ -3824,7 +3841,7 @@ export function MusicaHome() {
           />
           <div
             role="menu"
-            className="glass-card"
+            className="glass-card gco-music-context-menu gco-menu-glass"
             style={{
               position: 'fixed',
               left: menu.x,
@@ -3935,7 +3952,7 @@ export function MusicaHome() {
           onClick={() => setAssignTrack(null)}
         >
           <div
-            className="glass-card"
+            className="glass-card gco-menu-glass"
             style={{ width: 'min(400px, 100%)', padding: '1.2rem', border: '1px solid var(--gco-glass-border)' }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -4084,7 +4101,7 @@ export function MusicaHome() {
           onClick={() => setEditId(null)}
         >
           <div
-            className="glass-card gco-scroll-y"
+            className="glass-card gco-scroll-y gco-menu-glass"
             style={{
               width: 'min(460px, 100%)',
               padding: '1.25rem',

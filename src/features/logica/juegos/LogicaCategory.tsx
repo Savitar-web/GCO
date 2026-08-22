@@ -23,6 +23,12 @@ const GAMES = [
     emoji: '🧹',
     desc: 'Hielo, empuje, y laberintos. Despeja el camino.',
   },
+  {
+    id: 'blockcleaner',
+    title: 'Block Cleaner',
+    emoji: '🧱',
+    desc: 'Lógica espacial, planificación y resolución de problemas.',
+  },
 ] as const
 
 export function LogicaCategory() {

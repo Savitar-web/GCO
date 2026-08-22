@@ -31,6 +31,7 @@ import { DespejesGame } from './features/logica/juegos/despejes/DespejesGame'
 import { LogicaCategory } from './features/logica/juegos/LogicaCategory'
 import { Colocador } from './features/logica/juegos/numberpuzzle/colocador'
 import { RompecabezasGame } from '@/features/logica/juegos/rompecabezas/RompecabezasGame'
+import { BlockCleaner } from '@/features/logica/juegos/BlockCleaner/Blockcleaner'
 
 function App() {
   const [showSplash, setShowSplash] = useState(true)
@@ -109,6 +110,7 @@ function App() {
             />
 
             <Route path="/categoria/logica/despejes" element={<DespejesGame />} />
+            <Route path="/categoria/logica/blockcleaner" element={<BlockCleaner />} />
 
 
             {/* ── Nutrición ── */}
