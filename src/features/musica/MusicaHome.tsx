@@ -3695,7 +3695,7 @@ export function MusicaHome() {
         <p style={{ fontSize: '0.82rem', color: 'var(--gco-ink-muted)', lineHeight: 1.55, margin: 0 }}>
           El audio sigue sonando aunque cambies de modo en el selector superior (GymCog, Nutrición…) o
           bloquees la pantalla: el motor de audio vive fuera de esta vista, así que saltar entre
-          `CategoryMenu`, `NutricionHome` o cualquier otra pantalla no lo interrumpe. Este panel solo
+          `GymCog`, `Nutrición` o cualquier otra pantalla no lo interrumpe, incluidos los juegos. Este panel solo
           controla el bloqueo de pantalla y las señales nativas cuando la app está empaquetada.
         </p>
       </div>

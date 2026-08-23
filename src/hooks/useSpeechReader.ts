@@ -10,7 +10,6 @@ function charsForSeconds(sec: number, rate: number) {
 /**
  * Puntúa una voz para elegir la más "humana" disponible por defecto.
  * Prioriza voces neuronales/naturales de Google, Microsoft, Apple, etc.
- * sobre las robóticas "compact"/legacy que traen algunos Android/Electron.
  */
 export function scoreVoiceHumanness(v: SpeechSynthesisVoice, preferLang = 'es'): number {
   let s = 0
@@ -22,14 +21,19 @@ export function scoreVoiceHumanness(v: SpeechSynthesisVoice, preferLang = 'es'):
 
   if (/natural|neural|premium|enhanced|wavenet|studio|online|plus|eloquence/.test(name)) s += 60
   if (
-    /google|microsoft|apple|siri|samantha|alex|daniel|monica|jorge|paulina|sabina|elsa|helena|mónica|jorge/.test(
+    /google|microsoft|apple|siri|samantha|alex|daniel|monica|jorge|paulina|sabina|elsa|helena|mónica/.test(
       name
     )
-  )
+  ) {
     s += 30
+  }
   if (v.localService) s += 10
-  if (/compact|novelty|whisper|zarvox|trinoids|bad|robot|espeak|eloquence/.test(name) && !/premium|enhanced/.test(name))
+  if (
+    /compact|novelty|whisper|zarvox|trinoids|bad|robot|espeak/.test(name) &&
+    !/premium|enhanced/.test(name)
+  ) {
     s -= 40
+  }
   if (v.default) s += 5
   return s
 }
@@ -42,8 +46,8 @@ export function pickHumanVoice(voices: SpeechSynthesisVoice[], currentURI?: stri
   return ranked[0]?.voiceURI || ''
 }
 
-const WATCHDOG_MS = 10_000 // Chrome/Android cortan ~15s; pause/resume refresca la cola
-const BG_NUDGE_MS = 4_000 // en segundo plano conviene refrescar con más frecuencia
+const WATCHDOG_MS = 10_000
+const BG_NUDGE_MS = 4_000
 
 /** Fragmenta textos largos para evitar cortes de Chrome/Android y límites de Safari */
 function chunkText(text: string, maxLen = 220): string[] {
@@ -72,13 +76,12 @@ function chunkText(text: string, maxLen = 220): string[] {
 }
 
 /**
- * WAV de silencio (0.25s, 4kHz, 8-bit mono) codificado en base64.
- * Se reproduce en loop, con volumen casi inaudible, mientras se habla.
- * Mantiene "viva" una sesión de audio real del sistema operativo para que
- * la lectura continúe con la pantalla apagada / el dispositivo suspendido,
- * y habilita los controles multimedia del bloqueo de pantalla (MediaSession).
+ * WAV de silencio (~0.25s) en base64.
+ * Se reproduce en loop con volumen casi inaudible mientras se habla,
+ * para mantener viva una sesión de audio del SO (background + MediaSession).
  */
-const SILENT_LOOP_SRC = 'data:audio/wav;base64,UklGRgwEAABXQVZFZm10IBAAAAABAAEAoA8AAKAPAAABAAgAZGF0YegDAACAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCB'
+const SILENT_LOOP_SRC =
+  'data:audio/wav;base64,UklGRgwEAABXQVZFZm10IBAAAAABAAEAoA8AAKAPAAABAAgAZGF0YegDAACAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCB'
 
 export interface ReaderMediaMeta {
   title: string
@@ -93,9 +96,81 @@ export interface ChapterNavHandlers {
   onNextChapter?: () => void
 }
 
-function hasMediaSession(): boolean {
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Capgo Media Session — tipos propios + carga sin chocar con TS2322
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+type CapMsPlaybackState = 'none' | 'paused' | 'playing'
+
+type CapMsAction =
+  | 'play'
+  | 'pause'
+  | 'stop'
+  | 'seekbackward'
+  | 'seekforward'
+  | 'previoustrack'
+  | 'nexttrack'
+
+type CapMsActionHandler = (details?: {
+  seekOffset?: number
+  seekTime?: number
+}) => void
+
+type CapMediaSessionPlugin = {
+  setMetadata: (opts: {
+    title?: string
+    artist?: string
+    album?: string
+    artwork?: { src: string; sizes?: string; type?: string }[]
+  }) => Promise<void>
+  setPlaybackState: (opts: { playbackState: CapMsPlaybackState }) => Promise<void>
+  setActionHandler: (
+    opts: { action: CapMsAction },
+    handler: CapMsActionHandler | null
+  ) => Promise<void>
+}
+
+let capMs: CapMediaSessionPlugin | null = null
+let capMsTried = false
+
+/**
+ * Carga @capgo/capacitor-media-session sin anotar el módulo completo
+ * (así TypeScript no compara setActionHandler con ActionHandlerOptions del paquete).
+ */
+async function loadCapMediaSession(): Promise<CapMediaSessionPlugin | null> {
+  if (capMs) return capMs
+  if (capMsTried) return null
+  capMsTried = true
+  if (typeof window === 'undefined') return null
+
+  try {
+    const mod = await import('@capgo/capacitor-media-session')
+    const bag = mod as Record<string, unknown>
+    const raw = bag.MediaSession ?? bag.default ?? null
+
+    if (
+      raw &&
+      typeof raw === 'object' &&
+      typeof (raw as CapMediaSessionPlugin).setMetadata === 'function' &&
+      typeof (raw as CapMediaSessionPlugin).setPlaybackState === 'function' &&
+      typeof (raw as CapMediaSessionPlugin).setActionHandler === 'function'
+    ) {
+      capMs = raw as CapMediaSessionPlugin
+      return capMs
+    }
+  } catch (e) {
+    console.warn('[gco] reader: @capgo/capacitor-media-session no disponible:', e)
+  }
+  return null
+}
+
+function hasWebMediaSession(): boolean {
   return typeof navigator !== 'undefined' && 'mediaSession' in navigator
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Hook
+ * ═══════════════════════════════════════════════════════════════════════════ */
 
 export function useSpeechReader() {
   const [speaking, setSpeaking] = useState(false)
@@ -106,7 +181,9 @@ export function useSpeechReader() {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([])
   const [voicesReady, setVoicesReady] = useState(false)
   const [noVoicesAvailable, setNoVoicesAvailable] = useState(false)
-  const [backgroundSupported] = useState(() => hasMediaSession())
+  const [backgroundSupported] = useState(
+    () => hasWebMediaSession() || typeof window !== 'undefined'
+  )
 
   const textRef = useRef('')
   const baseOffsetRef = useRef(0)
@@ -123,12 +200,19 @@ export function useSpeechReader() {
   const mediaMetaRef = useRef<ReaderMediaMeta | null>(null)
   const hiddenSinceRef = useRef<number | null>(null)
 
+  // Refs estables para Media Session (no re-registrar en cada render)
+  const pauseRef = useRef<() => void>(() => {})
+  const resumeRef = useRef<() => void>(() => {})
+  const stopRef = useRef<() => void>(() => {})
+  const skipBackRef = useRef<(sec: SkipSeconds) => void>(() => {})
+  const skipForwardRef = useRef<(sec: SkipSeconds) => void>(() => {})
+
   const supported =
     typeof window !== 'undefined' &&
     typeof window.speechSynthesis !== 'undefined' &&
     typeof SpeechSynthesisUtterance !== 'undefined'
 
-  /* ── Audio de "keep-alive" para reproducción real en segundo plano ── */
+  /* ── Audio keep-alive ── */
   useEffect(() => {
     if (typeof Audio === 'undefined') return
     try {
@@ -136,8 +220,6 @@ export function useSpeechReader() {
       a.loop = true
       a.preload = 'auto'
       a.volume = 0.01
-      // @ts-ignore — atributo válido en iOS Safari, no tipado en algunos lib.dom
-      a.playsInline = true
       a.setAttribute('playsinline', 'true')
       keepAliveRef.current = a
     } catch {
@@ -206,9 +288,9 @@ export function useSpeechReader() {
     try {
       window.speechSynthesis.addEventListener('voiceschanged', onVoices)
     } catch {
-      // Safari antiguo: property assignment
       try {
-        ;(window.speechSynthesis as unknown as { onvoiceschanged: () => void }).onvoiceschanged = onVoices
+        ;(window.speechSynthesis as unknown as { onvoiceschanged: () => void }).onvoiceschanged =
+          onVoices
       } catch {
         /* */
       }
@@ -262,8 +344,6 @@ export function useSpeechReader() {
           window.speechSynthesis.pause()
           window.speechSynthesis.resume()
         }
-        // Reasegura el audio de fondo si el sistema lo detuvo (algunos Android
-        // suspenden <audio> silencioso tras un rato; lo reactivamos).
         const a = keepAliveRef.current
         if (a && a.paused && window.speechSynthesis.speaking) {
           startKeepAlive()
@@ -277,47 +357,79 @@ export function useSpeechReader() {
     watchdogRef.current = window.setTimeout(tick, WATCHDOG_MS) as unknown as number
   }, [clearWatchdog, supported, startKeepAlive])
 
-  /* ── MediaSession: metadatos y controles de bloqueo de pantalla ── */
-  const applyMediaMetadata = useCallback((meta: ReaderMediaMeta | null) => {
-    mediaMetaRef.current = meta
-    if (!hasMediaSession() || !meta) return
-    if (typeof MediaMetadata === 'undefined') return
+  /* ── Media Session (web + Capgo) ── */
+
+  const updatePlaybackState = useCallback(async (state: CapMsPlaybackState) => {
+    const plugin = await loadCapMediaSession()
+    if (plugin) {
+      try {
+        await plugin.setPlaybackState({ playbackState: state })
+      } catch {
+        /* */
+      }
+    }
+    if (!hasWebMediaSession()) return
     try {
-      const artwork = meta.artwork
-        ? [
-            { src: meta.artwork, sizes: '512x512', type: 'image/png' },
-            { src: meta.artwork, sizes: '192x192', type: 'image/png' },
-          ]
-        : []
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: meta.title || 'Audiolibro',
-        artist: meta.artist || '',
-        album: meta.album || 'GCO Nutrición · Lector',
-        artwork,
-      })
+      navigator.mediaSession.playbackState = state
     } catch {
       /* */
     }
   }, [])
 
+  const applyMediaMetadata = useCallback(
+    async (meta: ReaderMediaMeta | null) => {
+      mediaMetaRef.current = meta
+      if (!meta) {
+        await updatePlaybackState('none')
+        return
+      }
+
+      const artwork = meta.artwork
+        ? [
+            { src: meta.artwork, sizes: '512x512', type: 'image/png' },
+            { src: meta.artwork, sizes: '256x256', type: 'image/png' },
+            { src: meta.artwork, sizes: '192x192', type: 'image/png' },
+          ]
+        : []
+
+      const plugin = await loadCapMediaSession()
+      if (plugin) {
+        try {
+          await plugin.setMetadata({
+            title: meta.title || 'Audiolibro',
+            artist: meta.artist || '',
+            album: meta.album || 'GCO Nutrición · Lector',
+            artwork: artwork.length ? artwork : undefined,
+          })
+        } catch {
+          /* */
+        }
+      }
+
+      if (!hasWebMediaSession() || typeof MediaMetadata === 'undefined') return
+      try {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: meta.title || 'Audiolibro',
+          artist: meta.artist || '',
+          album: meta.album || 'GCO Nutrición · Lector',
+          artwork,
+        })
+      } catch {
+        /* */
+      }
+    },
+    [updatePlaybackState]
+  )
+
   const setMediaMetadata = useCallback(
     (meta: ReaderMediaMeta) => {
-      applyMediaMetadata(meta)
+      void applyMediaMetadata(meta)
     },
     [applyMediaMetadata]
   )
 
   const setChapterHandlers = useCallback((handlers: ChapterNavHandlers) => {
     chapterHandlersRef.current = handlers || {}
-  }, [])
-
-  const updatePlaybackState = useCallback((state: 'playing' | 'paused' | 'none') => {
-    if (!hasMediaSession()) return
-    try {
-      navigator.mediaSession.playbackState = state
-    } catch {
-      /* */
-    }
   }, [])
 
   const stop = useCallback(() => {
@@ -335,7 +447,7 @@ export function useSpeechReader() {
     utteranceRef.current = null
     clearWatchdog()
     stopKeepAlive()
-    updatePlaybackState('none')
+    void updatePlaybackState('none')
     setSpeaking(false)
     setPaused(false)
   }, [supported, clearWatchdog, stopKeepAlive, updatePlaybackState])
@@ -370,7 +482,8 @@ export function useSpeechReader() {
         setPaused(false)
         startWatchdog()
         startKeepAlive()
-        updatePlaybackState('playing')
+        void updatePlaybackState('playing')
+        if (mediaMetaRef.current) void applyMediaMetadata(mediaMetaRef.current)
       }
       u.onend = () => {
         if (cancelledRef.current) return
@@ -387,12 +500,11 @@ export function useSpeechReader() {
           setCharIndex(textRef.current.length)
           clearWatchdog()
           stopKeepAlive()
-          updatePlaybackState('none')
+          void updatePlaybackState('none')
         }
       }
       u.onerror = () => {
         if (cancelledRef.current) return
-        // Intentar siguiente chunk en lugar de morir
         const nextIdx = queueIdxRef.current + 1
         if (nextIdx < queueRef.current.length) {
           queueIdxRef.current = nextIdx
@@ -404,16 +516,16 @@ export function useSpeechReader() {
           setPaused(false)
           clearWatchdog()
           stopKeepAlive()
-          updatePlaybackState('none')
+          void updatePlaybackState('none')
         }
       }
       u.onpause = () => {
         setPaused(true)
-        updatePlaybackState('paused')
+        void updatePlaybackState('paused')
       }
       u.onresume = () => {
         setPaused(false)
-        updatePlaybackState('playing')
+        void updatePlaybackState('playing')
       }
 
       utteranceRef.current = u
@@ -425,7 +537,16 @@ export function useSpeechReader() {
         stopKeepAlive()
       }
     },
-    [supported, voices, startWatchdog, clearWatchdog, startKeepAlive, stopKeepAlive, updatePlaybackState]
+    [
+      supported,
+      voices,
+      startWatchdog,
+      clearWatchdog,
+      startKeepAlive,
+      stopKeepAlive,
+      updatePlaybackState,
+      applyMediaMetadata,
+    ]
   )
 
   const speakFrom = useCallback(
@@ -440,7 +561,6 @@ export function useSpeechReader() {
       const slice = text.slice(start)
       if (!slice.trim()) return
 
-      // Fragmentar para compatibilidad Chrome 15s / Safari / Android
       const chunks = chunkText(slice, 200)
       const offsets: number[] = []
       let cursor = start
@@ -468,7 +588,7 @@ export function useSpeechReader() {
     }
     setPaused(true)
     clearWatchdog()
-    updatePlaybackState('paused')
+    void updatePlaybackState('paused')
   }, [speaking, supported, clearWatchdog, updatePlaybackState])
 
   const resume = useCallback(() => {
@@ -481,7 +601,7 @@ export function useSpeechReader() {
     setPaused(false)
     startWatchdog()
     startKeepAlive()
-    updatePlaybackState('playing')
+    void updatePlaybackState('playing')
   }, [paused, supported, startWatchdog, startKeepAlive, updatePlaybackState])
 
   const skipBack = useCallback(
@@ -502,36 +622,105 @@ export function useSpeechReader() {
     [charIndex, rate, voiceURI, speakFrom]
   )
 
-  /* ── Handlers de MediaSession (play/pause/seek/capítulos) ── */
+  pauseRef.current = pause
+  resumeRef.current = resume
+  stopRef.current = stop
+  skipBackRef.current = skipBack
+  skipForwardRef.current = skipForward
+
+  /* ── Handlers Media Session una sola vez ── */
   useEffect(() => {
-    if (!hasMediaSession()) return
-    const ms = navigator.mediaSession
-    const safeSet = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
-      try {
-        ms.setActionHandler(action, handler)
-      } catch {
-        /* acción no soportada en este navegador */
+    let cancelled = false
+
+    const wire = async () => {
+      const plugin = await loadCapMediaSession()
+      if (cancelled) return
+
+      const onPlay = () => resumeRef.current()
+      const onPause = () => pauseRef.current()
+      const onStop = () => stopRef.current()
+      const onSeekBack = () => skipBackRef.current(10)
+      const onSeekFwd = () => skipForwardRef.current(10)
+      const onPrev = () => chapterHandlersRef.current.onPrevChapter?.()
+      const onNext = () => chapterHandlersRef.current.onNextChapter?.()
+
+      if (plugin) {
+        const actions: [CapMsAction, CapMsActionHandler][] = [
+          ['play', onPlay],
+          ['pause', onPause],
+          ['stop', onStop],
+          ['seekbackward', onSeekBack],
+          ['seekforward', onSeekFwd],
+          ['previoustrack', onPrev],
+          ['nexttrack', onNext],
+        ]
+        for (const [action, handler] of actions) {
+          void plugin.setActionHandler({ action }, handler).catch(() => {})
+        }
+      }
+
+      if (hasWebMediaSession()) {
+        const ms = navigator.mediaSession
+        const safeSet = (
+          action: MediaSessionAction,
+          handler: MediaSessionActionHandler | null
+        ) => {
+          try {
+            ms.setActionHandler(action, handler)
+          } catch {
+            /* */
+          }
+        }
+        safeSet('play', onPlay)
+        safeSet('pause', onPause)
+        safeSet('stop', onStop)
+        safeSet('seekbackward', onSeekBack)
+        safeSet('seekforward', onSeekFwd)
+        safeSet('previoustrack', onPrev)
+        safeSet('nexttrack', onNext)
       }
     }
-    safeSet('play', () => resume())
-    safeSet('pause', () => pause())
-    safeSet('stop', () => stop())
-    safeSet('seekbackward', () => skipBack(10))
-    safeSet('seekforward', () => skipForward(10))
-    safeSet('previoustrack', () => chapterHandlersRef.current.onPrevChapter?.())
-    safeSet('nexttrack', () => chapterHandlersRef.current.onNextChapter?.())
-    return () => {
-      safeSet('play', null)
-      safeSet('pause', null)
-      safeSet('stop', null)
-      safeSet('seekbackward', null)
-      safeSet('seekforward', null)
-      safeSet('previoustrack', null)
-      safeSet('nexttrack', null)
-    }
-  }, [resume, pause, stop, skipBack, skipForward])
 
-  /* ── Reanudar si el navegador suspende la síntesis al volver a primer plano ── */
+    void wire()
+
+    return () => {
+      cancelled = true
+      if (capMs) {
+        const clearActions: CapMsAction[] = [
+          'play',
+          'pause',
+          'stop',
+          'seekbackward',
+          'seekforward',
+          'previoustrack',
+          'nexttrack',
+        ]
+        for (const action of clearActions) {
+          void capMs.setActionHandler({ action }, null).catch(() => {})
+        }
+      }
+      if (hasWebMediaSession()) {
+        const ms = navigator.mediaSession
+        for (const action of [
+          'play',
+          'pause',
+          'stop',
+          'seekbackward',
+          'seekforward',
+          'previoustrack',
+          'nexttrack',
+        ] as MediaSessionAction[]) {
+          try {
+            ms.setActionHandler(action, null)
+          } catch {
+            /* */
+          }
+        }
+      }
+    }
+  }, [])
+
+  /* ── Visibilidad ── */
   useEffect(() => {
     if (!supported) return
     const onVisibility = () => {
@@ -552,6 +741,40 @@ export function useSpeechReader() {
     document.addEventListener('visibilitychange', onVisibility)
     return () => document.removeEventListener('visibilitychange', onVisibility)
   }, [supported, speaking, paused, startKeepAlive])
+
+  /* ── Capacitor App resume ── */
+  useEffect(() => {
+    let remove: (() => void) | undefined
+    void import('@capacitor/app')
+      .then((mod) => {
+        const App = (
+          mod as {
+            App?: {
+              addListener: (
+                e: string,
+                cb: (data?: { isActive?: boolean }) => void
+              ) => Promise<{ remove: () => void }>
+            }
+          }
+        ).App
+        if (!App?.addListener) return
+        return App.addListener('appStateChange', (state) => {
+          if (state?.isActive === false) return
+          if (speaking && !paused) {
+            try {
+              if (window.speechSynthesis.paused) window.speechSynthesis.resume()
+            } catch {
+              /* */
+            }
+            startKeepAlive()
+          }
+        }).then((h) => {
+          remove = () => h.remove()
+        })
+      })
+      .catch(() => {})
+    return () => remove?.()
+  }, [speaking, paused, startKeepAlive])
 
   return {
     speaking,

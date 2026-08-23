@@ -2,8 +2,23 @@
 include ':capacitor-android'
 project(':capacitor-android').projectDir = new File('../node_modules/@capacitor/android/capacitor')
 
+include ':capacitor-community-keep-awake'
+project(':capacitor-community-keep-awake').projectDir = new File('../node_modules/@capacitor-community/keep-awake/android')
+
+include ':capacitor-app'
+project(':capacitor-app').projectDir = new File('../node_modules/@capacitor/app/android')
+
 include ':capacitor-filesystem'
 project(':capacitor-filesystem').projectDir = new File('../node_modules/@capacitor/filesystem/android')
 
 include ':capacitor-share'
 project(':capacitor-share').projectDir = new File('../node_modules/@capacitor/share/android')
+
+include ':capgo-capacitor-media-session'
+project(':capgo-capacitor-media-session').projectDir = new File('../node_modules/@capgo/capacitor-media-session/android')
+
+include ':capgo-capacitor-native-audio'
+project(':capgo-capacitor-native-audio').projectDir = new File('../node_modules/@capgo/capacitor-native-audio/android')
+
+include ':capgo-capacitor-video-player'
+project(':capgo-capacitor-video-player').projectDir = new File('../node_modules/@capgo/capacitor-video-player/android')
