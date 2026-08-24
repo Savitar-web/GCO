@@ -13,16 +13,23 @@
  * 3. En web / PWA / Electron: navigator.mediaSession.
  * 4. Singleton fuera de React: desmontar vistas NO pausa el audio.
  * 5. Al pausar NO se destruye la Media Session (la notificación puede permanecer).
+ * 6. Android 13+ (API 33+): sin permiso POST_NOTIFICATIONS concedido, la
+ *    notificación de reproducción no aparece y el sistema puede matar el
+ *    Foreground Service mediaPlayback poco después. Este archivo pide el
+ *    permiso en runtime automáticamente antes de reproducir en Capacitor.
+ * 7. Android 14-16 (Samsung One UI incluido, p. ej. S26 Ultra): el orden de
+ *    llamadas alrededor de audio.play() importa. Se fija: metadata → handlers
+ *    → play() → playbackState:'playing'. Reordenar esto puede hacer que la
+ *    notificación aparezca "vacía" o que el sistema no reconozca la sesión
+ *    como activa en dispositivos con capas de fabricante agresivas.
  * ============================================================================
  */
-
 import { useSyncExternalStore } from 'react'
 import { getTrackBlob, type TrackItem } from '@/core/storage/mediaLibrary'
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Tipos
  * ═══════════════════════════════════════════════════════════════════════════ */
-
 export type RepeatMode = 'off' | 'one' | 'all'
 export type OutputMode = 'native' | 'native-nospec' | 'webaudio' | 'none'
 export type MediaPlayerApi = typeof api
@@ -62,18 +69,20 @@ type CapMediaSessionPlugin = {
   }) => Promise<void>
 }
 
+type LocalNotificationsPlugin = {
+  checkPermissions: () => Promise<{ display: string }>
+  requestPermissions: () => Promise<{ display: string }>
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * Utilidades de entorno
  * ═══════════════════════════════════════════════════════════════════════════ */
-
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n))
 }
-
 function isBrowser(): boolean {
   return typeof window !== 'undefined' && typeof document !== 'undefined'
 }
-
 function getCapacitor(): CapacitorBridge | null {
   if (!isBrowser()) return null
   try {
@@ -82,7 +91,6 @@ function getCapacitor(): CapacitorBridge | null {
     return null
   }
 }
-
 /** true solo dentro de APK / app iOS nativa Capacitor (no en PWA del navegador). */
 function isCapacitorNative(): boolean {
   try {
@@ -91,7 +99,20 @@ function isCapacitorNative(): boolean {
     return false
   }
 }
-
+function isCapacitorAndroid(): boolean {
+  try {
+    return isCapacitorNative() && getCapacitor()?.getPlatform?.() === 'android'
+  } catch {
+    return false
+  }
+}
+function isCapacitorIOS(): boolean {
+  try {
+    return isCapacitorNative() && getCapacitor()?.getPlatform?.() === 'ios'
+  } catch {
+    return false
+  }
+}
 function isAppleWebKit(): boolean {
   if (!isBrowser()) return false
   const ua = navigator.userAgent || ''
@@ -102,17 +123,46 @@ function isAppleWebKit(): boolean {
     /Safari/.test(ua) && !/Chrome|Chromium|CriOS|Edg|OPR|Firefox|FxiOS/.test(ua)
   return isIOS || isSafariDesktop
 }
-
+/** true si el navegador corre en un iOS real (Safari, o cualquier navegador iOS, que usan WebKit por obligación de Apple). */
+function isIOSAny(): boolean {
+  if (!isBrowser()) return false
+  const ua = navigator.userAgent || ''
+  return (
+    /iPad|iPhone|iPod/.test(ua) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ||
+    /CriOS|FxiOS|EdgiOS/.test(ua)
+  )
+}
 function isAndroidUa(): boolean {
   if (!isBrowser()) return false
   return /Android/i.test(navigator.userAgent || '')
 }
-
+/** Detecta la versión mayor de Android desde el user agent (best-effort, solo informativo/telemetría). */
+function androidMajorVersion(): number | null {
+  if (!isBrowser()) return null
+  const m = /Android\s+(\d+)/i.exec(navigator.userAgent || '')
+  return m ? parseInt(m[1], 10) : null
+}
+function isSamsungDevice(): boolean {
+  if (!isBrowser()) return false
+  return /SM-|Samsung|SAMSUNG/i.test(navigator.userAgent || '')
+}
 function isElectron(): boolean {
   if (!isBrowser()) return false
   return /Electron/i.test(navigator.userAgent || '')
 }
-
+function isPWAStandalone(): boolean {
+  if (!isBrowser()) return false
+  try {
+    const nav = navigator as Navigator & { standalone?: boolean }
+    return (
+      window.matchMedia?.('(display-mode: standalone)')?.matches === true ||
+      nav.standalone === true
+    )
+  } catch {
+    return false
+  }
+}
 function setAudioSessionPlayback() {
   try {
     const nav = navigator as Navigator & { audioSession?: { type?: string } }
@@ -123,7 +173,6 @@ function setAudioSessionPlayback() {
     /* Safari antiguo */
   }
 }
-
 async function tryKeepAwake(playing: boolean) {
   if (!isBrowser() || !isCapacitorNative()) return
   try {
@@ -145,9 +194,88 @@ async function tryKeepAwake(playing: boolean) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Permisos en runtime — Android 13+ (notificaciones) y batería
+ * ═══════════════════════════════════════════════════════════════════════════
+ * CRÍTICO: declarar POST_NOTIFICATIONS en el Manifest NO concede el permiso.
+ * Sin esto concedido, en Android 13-16 la notificación de reproducción no
+ * puede mostrarse y el Foreground Service tipo mediaPlayback puede ser
+ * detenido por el sistema poco después de iniciar. Se pide una sola vez
+ * por sesión de la app (no en cada play) para no ser intrusivos.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+let notifPermAsked = false
+let notifPermGranted: boolean | null = null
+
+async function ensureAndroidNotificationPermission(): Promise<boolean> {
+  if (!isBrowser() || !isCapacitorAndroid()) return true
+  if (notifPermGranted === true) return true
+  if (notifPermAsked && notifPermGranted === false) return false
+  notifPermAsked = true
+  try {
+    const mod = await import('@capacitor/local-notifications').catch(() => null)
+    const LN = (mod as { LocalNotifications?: LocalNotificationsPlugin } | null)
+      ?.LocalNotifications
+    if (LN) {
+      const cur = await LN.checkPermissions().catch(() => ({ display: 'prompt' }))
+      if (cur.display === 'granted') {
+        notifPermGranted = true
+        return true
+      }
+      const req = await LN.requestPermissions().catch(() => ({ display: 'denied' }))
+      notifPermGranted = req.display === 'granted'
+      return notifPermGranted
+    }
+  } catch (e) {
+    console.warn('[gco] ensureAndroidNotificationPermission:', e)
+  }
+  // Sin el plugin instalado no podemos pedir el permiso nativo: no bloqueamos
+  // la reproducción, solo dejamos constancia de que puede faltar notificación.
+  notifPermGranted = null
+  return true
+}
+
+let batteryPromptShown = false
+
+/**
+ * Abre (si hay un plugin disponible) el diálogo nativo para excluir la app
+ * de la optimización de batería del fabricante. En Samsung One UI (S26
+ * Ultra incluido), Xiaomi/MIUI, Huawei y OnePlus, esto es a menudo la causa
+ * real de que el audio se corte en segundo plano aunque el Foreground
+ * Service esté correctamente declarado y en ejecución.
+ *
+ * Es best-effort y silencioso: si no hay plugin, no interrumpe el flujo de
+ * reproducción; el usuario puede excluir la app manualmente desde
+ * Ajustes → Apps → GCO → Batería → Sin restricciones.
+ */
+async function requestUnrestrictedBatteryIfNeeded() {
+  if (!isBrowser() || !isCapacitorAndroid() || batteryPromptShown) return
+  batteryPromptShown = true
+  try {
+const mod = await import(
+  '@capawesome-team/capacitor-android-battery-optimization'
+).catch(() => null)
+    const plugin = (
+      mod as {
+        BatteryOptimization?: {
+          isBatteryOptimizationEnabled?: () => Promise<{ enabled: boolean }>
+          requestDisableBatteryOptimization?: () => Promise<void>
+        }
+      } | null
+    )?.BatteryOptimization
+    if (!plugin) return
+    const status = await plugin
+      .isBatteryOptimizationEnabled?.()
+      .catch(() => ({ enabled: false }))
+    if (status?.enabled && plugin.requestDisableBatteryOptimization) {
+      await plugin.requestDisableBatteryOptimization().catch(() => {})
+    }
+  } catch {
+    /* Plugin no instalado: no-op silencioso, ver nota de Ajustes manuales. */
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Capgo Media Session — SOLO nativo
  * ═══════════════════════════════════════════════════════════════════════════ */
-
 let capMs: CapMediaSessionPlugin | null = null
 let capMsTried = false
 let capMsHandlersReady = false
@@ -160,10 +288,8 @@ async function loadCapMediaSession(): Promise<CapMediaSessionPlugin | null> {
   if (capMs) return capMs
   if (capMsTried) return null
   capMsTried = true
-
   // CRÍTICO: no tocar el plugin en web
   if (!isBrowser() || !isCapacitorNative()) return null
-
   try {
     const cap = getCapacitor()
     if (typeof cap?.isPluginAvailable === 'function') {
@@ -173,7 +299,6 @@ async function loadCapMediaSession(): Promise<CapMediaSessionPlugin | null> {
         /* */
       }
     }
-
     const mod = await import('@capgo/capacitor-media-session')
     const bag = mod as Record<string, unknown>
     const raw = (bag.MediaSession ?? bag.default) as CapMediaSessionPlugin | undefined
@@ -191,7 +316,6 @@ async function loadCapMediaSession(): Promise<CapMediaSessionPlugin | null> {
   }
   return null
 }
-
 function hasWebMediaSession(): boolean {
   return isBrowser() && typeof navigator !== 'undefined' && 'mediaSession' in navigator
 }
@@ -199,17 +323,14 @@ function hasWebMediaSession(): boolean {
 /* ═══════════════════════════════════════════════════════════════════════════
  * Media Session unificada
  * ═══════════════════════════════════════════════════════════════════════════ */
-
 async function updateMediaSessionMetadata(t: TrackItem | null) {
   if (!isBrowser()) return
-
   const artwork: { src: string; sizes: string; type: string }[] = []
   if (t?.coverDataUrl) {
     for (const s of ['96x96', '128x128', '192x192', '256x256', '384x384', '512x512']) {
       artwork.push({ src: t.coverDataUrl, sizes: s, type: 'image/png' })
     }
   }
-
   // Capgo solo nativo
   if (isCapacitorNative()) {
     const plugin = await loadCapMediaSession()
@@ -230,7 +351,6 @@ async function updateMediaSessionMetadata(t: TrackItem | null) {
       }
     }
   }
-
   // Web / PWA / Electron
   if (!hasWebMediaSession()) return
   try {
@@ -248,10 +368,8 @@ async function updateMediaSessionMetadata(t: TrackItem | null) {
     /* */
   }
 }
-
 async function setMediaSessionPlaybackState(state: 'playing' | 'paused' | 'none') {
   if (!isBrowser()) return
-
   if (isCapacitorNative()) {
     const plugin = await loadCapMediaSession()
     if (plugin) {
@@ -262,7 +380,6 @@ async function setMediaSessionPlaybackState(state: 'playing' | 'paused' | 'none'
       }
     }
   }
-
   if (!hasWebMediaSession()) return
   try {
     navigator.mediaSession.playbackState = state
@@ -270,7 +387,6 @@ async function setMediaSessionPlaybackState(state: 'playing' | 'paused' | 'none'
     /* */
   }
 }
-
 async function updatePositionState(
   durationMs: number,
   positionMs: number,
@@ -278,12 +394,10 @@ async function updatePositionState(
 ) {
   if (!isBrowser()) return
   if (!durationMs || !Number.isFinite(durationMs) || durationMs <= 0) return
-
   const duration = durationMs / 1000
   const position = clamp(positionMs, 0, durationMs) / 1000
   const rate = playbackRate > 0 ? playbackRate : 1
   const safePos = Math.min(Math.max(0, position), duration)
-
   if (isCapacitorNative()) {
     const plugin = await loadCapMediaSession()
     if (plugin?.setPositionState) {
@@ -298,7 +412,6 @@ async function updatePositionState(
       }
     }
   }
-
   if (!hasWebMediaSession()) return
   const ms = navigator.mediaSession as MediaSession & {
     setPositionState?: (s: {
@@ -318,7 +431,6 @@ async function updatePositionState(
 /* ═══════════════════════════════════════════════════════════════════════════
  * Snapshot reactivo (singleton)
  * ═══════════════════════════════════════════════════════════════════════════ */
-
 type Snapshot = {
   track: TrackItem | null
   playing: boolean
@@ -333,11 +445,11 @@ type Snapshot = {
   outputMode: OutputMode
   version: number
   nativeMediaSession: boolean
+  notificationsGranted: boolean | null
+  androidVersion: number | null
 }
-
 type Listener = () => void
 const listeners = new Set<Listener>()
-
 let snapshot: Snapshot = {
   track: null,
   playing: false,
@@ -352,13 +464,15 @@ let snapshot: Snapshot = {
   outputMode: 'none',
   version: 0,
   nativeMediaSession: false,
+  notificationsGranted: null,
+  androidVersion: null,
 }
-
 function notify() {
   snapshot = {
     ...snapshot,
     version: snapshot.version + 1,
     nativeMediaSession: !!capMs && isCapacitorNative(),
+    notificationsGranted: notifPermGranted,
   }
   listeners.forEach((l) => {
     try {
@@ -368,14 +482,12 @@ function notify() {
     }
   })
 }
-
 function subscribe(listener: Listener) {
   listeners.add(listener)
   return () => {
     listeners.delete(listener)
   }
 }
-
 function getSnapshot(): Snapshot {
   return snapshot
 }
@@ -383,13 +495,11 @@ function getSnapshot(): Snapshot {
 /* ═══════════════════════════════════════════════════════════════════════════
  * Referencias del motor
  * ═══════════════════════════════════════════════════════════════════════════ */
-
 const audioRef: { current: HTMLAudioElement | null } = { current: null }
 const urlRef: { current: string | null } = { current: null }
 const queueRef: { current: TrackItem[] } = { current: [] }
 const indexRef: { current: number } = { current: 0 }
 const loadGenRef: { current: number } = { current: 0 }
-
 const ctxRef: { current: AudioContext | null } = { current: null }
 const analyserRef: { current: AnalyserNode | null } = { current: null }
 const mediaSourceRef: { current: MediaElementAudioSourceNode | null } = { current: null }
@@ -399,11 +509,9 @@ const compRef: { current: DynamicsCompressorNode | null } = { current: null }
 const graphReady = { current: false }
 const outputModeRef: { current: OutputMode } = { current: 'none' }
 const mediaSessionReady = { current: false }
-
 const appleWebKit = { current: false }
 const androidEnv = { current: false }
 const nativeShell = { current: false }
-
 const playingRef = { current: false }
 const volumeRef = { current: 1 }
 const gainRefState = { current: 1 }
@@ -412,7 +520,6 @@ const trackRef: { current: TrackItem | null } = { current: null }
 const shuffleRef = { current: false }
 const repeatRef: { current: RepeatMode } = { current: 'off' }
 const wantPlayingRef = { current: false }
-
 let pageLifecycleBound = false
 let capacitorListenersBound = false
 let floatingBarRequested = false
@@ -424,12 +531,12 @@ function initEnvFlags() {
   appleWebKit.current = isAppleWebKit()
   androidEnv.current = isAndroidUa()
   nativeShell.current = isCapacitorNative() || isElectron()
+  snapshot.androidVersion = androidMajorVersion()
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * URL / volumen
  * ═══════════════════════════════════════════════════════════════════════════ */
-
 function cleanupUrl() {
   if (urlRef.current) {
     try {
@@ -440,7 +547,6 @@ function cleanupUrl() {
     urlRef.current = null
   }
 }
-
 function applyElementVolume(audio: HTMLAudioElement) {
   const v = volumeRef.current
   const g = gainRefState.current
@@ -466,7 +572,6 @@ function applyElementVolume(audio: HTMLAudioElement) {
 /* ═══════════════════════════════════════════════════════════════════════════
  * Grafo de análisis (opcional; no sustituye salida en móvil)
  * ═══════════════════════════════════════════════════════════════════════════ */
-
 function ensureAudioContext(): AudioContext | null {
   try {
     if (ctxRef.current) {
@@ -485,17 +590,14 @@ function ensureAudioContext(): AudioContext | null {
     return null
   }
 }
-
 function ensureGraph(audio: HTMLAudioElement) {
   try {
     if (graphReady.current) {
       applyElementVolume(audio)
       return
     }
-
     const forceNativeOnly =
       appleWebKit.current || androidEnv.current || nativeShell.current
-
     // iOS / Safari: nunca createMediaElementSource (rompe background)
     if (appleWebKit.current) {
       outputModeRef.current = 'native-nospec'
@@ -506,7 +608,6 @@ function ensureGraph(audio: HTMLAudioElement) {
       notify()
       return
     }
-
     const ctx = ensureAudioContext()
     if (!ctx) {
       outputModeRef.current = 'native-nospec'
@@ -517,7 +618,6 @@ function ensureGraph(audio: HTMLAudioElement) {
       return
     }
     if (ctx.state === 'suspended') void ctx.resume().catch(() => {})
-
     if (!analyserRef.current) {
       const an = ctx.createAnalyser()
       an.fftSize = 512
@@ -526,7 +626,6 @@ function ensureGraph(audio: HTMLAudioElement) {
       an.maxDecibels = -10
       analyserRef.current = an
     }
-
     const el = audio as CaptureAudioElement
     const captureFn =
       typeof el.captureStream === 'function'
@@ -534,7 +633,6 @@ function ensureGraph(audio: HTMLAudioElement) {
         : typeof el.mozCaptureStream === 'function'
           ? () => el.mozCaptureStream!()
           : null
-
     if (captureFn) {
       try {
         const stream = captureFn()
@@ -552,7 +650,6 @@ function ensureGraph(audio: HTMLAudioElement) {
         /* */
       }
     }
-
     if (forceNativeOnly) {
       outputModeRef.current = 'native-nospec'
       snapshot.outputMode = 'native-nospec'
@@ -561,7 +658,6 @@ function ensureGraph(audio: HTMLAudioElement) {
       notify()
       return
     }
-
     // Desktop no-Apple: Web Audio con boost real
     if (!gainNodeRef.current) {
       const g = ctx.createGain()
@@ -601,7 +697,6 @@ function ensureGraph(audio: HTMLAudioElement) {
 /* ═══════════════════════════════════════════════════════════════════════════
  * Ciclo de vida / reanudación
  * ═══════════════════════════════════════════════════════════════════════════ */
-
 async function resumeAudioContext() {
   setAudioSessionPlayback()
   const ctx = ctxRef.current
@@ -626,7 +721,6 @@ async function resumeAudioContext() {
   }
   api.refreshMediaSession()
 }
-
 function startPositionTick() {
   stopPositionTick()
   if (!isBrowser()) return
@@ -638,22 +732,18 @@ function startPositionTick() {
     void updatePositionState(dur, pos, rateRef.current)
   }, 1000)
 }
-
 function stopPositionTick() {
   if (positionTickTimer != null) {
     window.clearInterval(positionTickTimer)
     positionTickTimer = null
   }
 }
-
 function bindPageLifecycle() {
   if (pageLifecycleBound || !isBrowser()) return
   pageLifecycleBound = true
-
   const onVisible = () => {
     if (document.visibilityState === 'visible') void resumeAudioContext()
   }
-
   document.addEventListener('visibilitychange', onVisible)
   window.addEventListener('focus', onVisible)
   window.addEventListener('pageshow', (ev) => {
@@ -663,8 +753,17 @@ function bindPageLifecycle() {
   window.addEventListener('pagehide', () => {
     stopPositionTick()
   })
+  // iOS Safari / PWA standalone: al desbloquear pantalla el AudioContext
+  // puede quedar suspendido sin disparar visibilitychange de forma fiable.
+  // Se refuerza con un segundo intento retrasado.
+  if (isIOSAny()) {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        window.setTimeout(() => void resumeAudioContext(), 300)
+      }
+    })
+  }
 }
-
 function bindCapacitorListeners() {
   if (capacitorListenersBound || !isBrowser() || !isCapacitorNative()) return
   capacitorListenersBound = true
@@ -681,7 +780,19 @@ function bindCapacitorListeners() {
         }).App
         if (!App?.addListener) return
         void App.addListener('appStateChange', (state) => {
-          if (state.isActive) void resumeAudioContext()
+          if (state.isActive) {
+            void resumeAudioContext()
+            // Refuerzo Android 14-16 / One UI: al volver a primer plano,
+            // reafirmar metadata + estado evita que la notificación quede
+            // "congelada" tras que el sistema recorte el proceso en segundo
+            // plano y lo reactive.
+            if (wantPlayingRef.current && trackRef.current) {
+              void updateMediaSessionMetadata(trackRef.current)
+              void setMediaSessionPlaybackState(
+                playingRef.current ? 'playing' : 'paused'
+              )
+            }
+          }
         })
         void App.addListener('resume', () => {
           void resumeAudioContext()
@@ -696,7 +807,6 @@ function bindCapacitorListeners() {
 /* ═══════════════════════════════════════════════════════════════════════════
  * Handlers Media Session
  * ═══════════════════════════════════════════════════════════════════════════ */
-
 function wireWebAction(
   action: MediaSessionAction,
   handler: (details?: { seekOffset?: number; seekTime?: number }) => void
@@ -713,7 +823,6 @@ function wireWebAction(
     /* acción no soportada */
   }
 }
-
 function wireCapAction(
   action: string,
   handler: (details?: { seekOffset?: number; seekTime?: number }) => void
@@ -728,13 +837,10 @@ function wireCapAction(
     })
     .catch(() => {})
 }
-
 async function ensureMediaSessionHandlers() {
   if (!isBrowser()) return
   if (isCapacitorNative()) await loadCapMediaSession()
-
   if (mediaSessionReady.current && (capMsHandlersReady || !capMs)) return
-
   const onPlay = () => {
     wantPlayingRef.current = true
     void api.toggle()
@@ -753,7 +859,6 @@ async function ensureMediaSessionHandlers() {
     }
   }
   const onStop = () => onPause()
-
   wireWebAction('play', onPlay)
   wireWebAction('pause', onPause)
   wireWebAction('stop', onStop)
@@ -780,7 +885,6 @@ async function ensureMediaSessionHandlers() {
     if (d?.seekTime == null) return
     api.seek(d.seekTime * 1000)
   })
-
   if (capMs && isCapacitorNative()) {
     wireCapAction('play', onPlay)
     wireCapAction('pause', onPause)
@@ -810,7 +914,6 @@ async function ensureMediaSessionHandlers() {
     })
     capMsHandlersReady = true
   }
-
   mediaSessionReady.current = true
   snapshot.nativeMediaSession = !!capMs && isCapacitorNative()
   notify()
@@ -819,10 +922,8 @@ async function ensureMediaSessionHandlers() {
 /* ═══════════════════════════════════════════════════════════════════════════
  * PlayerBar flotante
  * ═══════════════════════════════════════════════════════════════════════════ */
-
 type FloatingMounter = () => void
 let floatingMounter: FloatingMounter | null = null
-
 export function registerFloatingBarMounter(fn: FloatingMounter) {
   floatingMounter = fn
   if (!isBrowser()) return
@@ -834,7 +935,6 @@ export function registerFloatingBarMounter(fn: FloatingMounter) {
     }
   }
 }
-
 function requestFloatingBar() {
   if (!isBrowser()) return
   if (floatingMounter) {
@@ -866,12 +966,10 @@ function requestFloatingBar() {
 /* ═══════════════════════════════════════════════════════════════════════════
  * Elemento <audio>
  * ═══════════════════════════════════════════════════════════════════════════ */
-
 function ensureAudio(): HTMLAudioElement {
   initEnvFlags()
   bindPageLifecycle()
   bindCapacitorListeners()
-
   if (!audioRef.current) {
     const a = new Audio()
     a.preload = 'auto'
@@ -890,13 +988,11 @@ function ensureAudio(): HTMLAudioElement {
       /* */
     }
     a.volume = clamp(volumeRef.current, 0, 1)
-
     a.ontimeupdate = () => {
       const ms = (a.currentTime || 0) * 1000
       snapshot.currentMs = ms
       notify()
     }
-
     a.onloadedmetadata = () => {
       const dur = (a.duration || 0) * 1000
       if (dur > 0) {
@@ -905,26 +1001,24 @@ function ensureAudio(): HTMLAudioElement {
         void updatePositionState(dur, snapshot.currentMs, rateRef.current)
       }
     }
-
     a.ondurationchange = () => {
       if (a.duration && Number.isFinite(a.duration)) {
         snapshot.durationMs = a.duration * 1000
         notify()
       }
     }
-
     a.onplay = () => {
       playingRef.current = true
       wantPlayingRef.current = true
       snapshot.playing = true
       void setMediaSessionPlaybackState('playing')
+      void updateMediaSessionMetadata(trackRef.current)
       setAudioSessionPlayback()
       startPositionTick()
       void tryKeepAwake(true)
       notify()
       requestFloatingBar()
     }
-
     a.onplaying = () => {
       playingRef.current = true
       wantPlayingRef.current = true
@@ -933,7 +1027,6 @@ function ensureAudio(): HTMLAudioElement {
       startPositionTick()
       notify()
     }
-
     a.onpause = () => {
       playingRef.current = false
       snapshot.playing = false
@@ -942,11 +1035,9 @@ function ensureAudio(): HTMLAudioElement {
       void tryKeepAwake(false)
       notify()
     }
-
     a.onended = () => {
       void onEnded()
     }
-
     a.onerror = () => {
       const code = a.error?.code
       const msg =
@@ -968,7 +1059,6 @@ function ensureAudio(): HTMLAudioElement {
         void api.next()
       }, 500)
     }
-
     audioRef.current = a
     ensureGraph(a)
     void ensureMediaSessionHandlers()
@@ -980,7 +1070,6 @@ function ensureAudio(): HTMLAudioElement {
 /* ═══════════════════════════════════════════════════════════════════════════
  * Carga de pistas
  * ═══════════════════════════════════════════════════════════════════════════ */
-
 async function resolveBlob(blobKey: string): Promise<Blob | null> {
   if (!blobKey) return null
   try {
@@ -997,18 +1086,15 @@ async function resolveBlob(blobKey: string): Promise<Blob | null> {
     return null
   }
 }
-
 async function loadTrack(t: TrackItem) {
   const gen = ++loadGenRef.current
   snapshot.error = null
   notify()
-
   if (!t?.blobKey) {
     snapshot.error = 'La pista no tiene archivo de audio asociado.'
     notify()
     return
   }
-
   const media = await resolveBlob(t.blobKey)
   if (gen !== loadGenRef.current) return
   if (!media) {
@@ -1016,21 +1102,17 @@ async function loadTrack(t: TrackItem) {
     notify()
     return
   }
-
   const audio = ensureAudio()
   ensureGraph(audio)
   cleanupUrl()
-
   const url = URL.createObjectURL(media)
   urlRef.current = url
-
   // Reset antes de asignar src
   try {
     audio.pause()
   } catch {
     /* */
   }
-
   audio.src = url
   audio.playbackRate = rateRef.current
   try {
@@ -1039,18 +1121,15 @@ async function loadTrack(t: TrackItem) {
     /* */
   }
   applyElementVolume(audio)
-
   trackRef.current = t
   snapshot.track = t
   snapshot.currentMs = 0
   snapshot.durationMs = t.durationMs || 0
   notify()
   requestFloatingBar()
-
   // Media Session en paralelo (no bloquea el play si falla)
   void updateMediaSessionMetadata(t)
   void ensureMediaSessionHandlers()
-
   await new Promise<void>((resolve) => {
     if (gen !== loadGenRef.current) {
       resolve()
@@ -1075,7 +1154,6 @@ async function loadTrack(t: TrackItem) {
     }
   })
 }
-
 async function playIndex(i: number) {
   const q = queueRef.current
   if (!q.length) return
@@ -1083,7 +1161,6 @@ async function playIndex(i: number) {
   indexRef.current = idx
   await api.playTrack(q[idx])
 }
-
 async function onEnded() {
   if (repeatRef.current === 'one') {
     const audio = ensureAudio()
@@ -1118,10 +1195,27 @@ async function onEnded() {
   }
 }
 
+/**
+ * Preparación previa a reproducir en Android nativo: pide permiso de
+ * notificaciones (una vez por sesión) y, si procede, sugiere excluir la
+ * app de la optimización de batería. No bloquea el play si el usuario
+ * aún no ha respondido: el audio arranca igual, solo puede faltar la
+ * notificación hasta que el permiso se conceda.
+ */
+async function prepareAndroidBackgroundPlayback() {
+  if (!isCapacitorAndroid()) return
+  try {
+    await ensureAndroidNotificationPermission()
+  } catch {
+    /* */
+  }
+  // Se dispara sin esperar: no debe retrasar el arranque del audio.
+  void requestUnrestrictedBatteryIfNeeded()
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * API pública
  * ═══════════════════════════════════════════════════════════════════════════ */
-
 export const api = {
   get track() {
     return snapshot.track
@@ -1159,19 +1253,35 @@ export const api = {
   get nativeMediaSession() {
     return snapshot.nativeMediaSession
   },
-
+  get notificationsGranted() {
+    return snapshot.notificationsGranted
+  },
+  get androidVersion() {
+    return snapshot.androidVersion
+  },
+  get environment() {
+    return {
+      isCapacitorNative: isCapacitorNative(),
+      isCapacitorAndroid: isCapacitorAndroid(),
+      isCapacitorIOS: isCapacitorIOS(),
+      isElectron: isElectron(),
+      isAppleWebKit: isAppleWebKit(),
+      isIOSAny: isIOSAny(),
+      isAndroidUa: isAndroidUa(),
+      isPWAStandalone: isPWAStandalone(),
+      isSamsungDevice: isSamsungDevice(),
+    }
+  },
   setShuffle(v: boolean) {
     shuffleRef.current = !!v
     snapshot.shuffle = !!v
     notify()
   },
-
   setRepeat(v: RepeatMode) {
     repeatRef.current = v
     snapshot.repeat = v
     notify()
   },
-
   setVolume(v: number) {
     const val = clamp(v, 0, 1)
     volumeRef.current = val
@@ -1179,7 +1289,6 @@ export const api = {
     if (audioRef.current) applyElementVolume(audioRef.current)
     notify()
   },
-
   setGain(g: number) {
     const val = clamp(g, 0, 3)
     gainRefState.current = val
@@ -1187,7 +1296,6 @@ export const api = {
     if (audioRef.current) applyElementVolume(audioRef.current)
     notify()
   },
-
   setPlaybackRate(r: number) {
     const val = clamp(r, 0.5, 2)
     rateRef.current = val
@@ -1208,10 +1316,8 @@ export const api = {
     }
     notify()
   },
-
   async playTrack(t: TrackItem, queue?: TrackItem[]) {
     if (!t) return
-
     if (queue) {
       queueRef.current = queue
       const found = queue.findIndex((x) => x.id === t.id)
@@ -1222,18 +1328,18 @@ export const api = {
     } else {
       indexRef.current = queueRef.current.findIndex((x) => x.id === t.id)
     }
-
+    // Android 13-16: preparar permisos ANTES de tocar el <audio>, para que
+    // la notificación pueda aparecer en el primer play y no solo desde el
+    // segundo intento tras conceder el permiso.
+    await prepareAndroidBackgroundPlayback()
     await loadTrack(t)
-
     const audio = ensureAudio()
     if (!audio.src) {
       // loadTrack falló
       return
     }
-
     ensureGraph(audio)
     setAudioSessionPlayback()
-
     if (ctxRef.current?.state === 'suspended') {
       try {
         await ctxRef.current.resume()
@@ -1241,17 +1347,20 @@ export const api = {
         /* */
       }
     }
-
     wantPlayingRef.current = true
+    // Orden crítico en Android 14-16 / fabricantes con capas agresivas
+    // (Samsung One UI incluido): metadata y handlers se preparan ANTES de
+    // play(), y el playbackState:'playing' se confirma justo después.
+    // Invertir este orden puede dejar la notificación sin título/portada
+    // en el primer segundo de reproducción en algunos dispositivos.
+    void updateMediaSessionMetadata(t)
+    void ensureMediaSessionHandlers()
     try {
       await audio.play()
       playingRef.current = true
       snapshot.playing = true
       snapshot.error = null
-      // Media Session DESPUÉS del play (no bloquea si Capgo falla)
       void setMediaSessionPlaybackState('playing')
-      void updateMediaSessionMetadata(t)
-      void ensureMediaSessionHandlers()
       startPositionTick()
       void tryKeepAwake(true)
       notify()
@@ -1271,12 +1380,10 @@ export const api = {
       console.warn('[gco] audio.play() failed:', e)
     }
   },
-
   async toggle() {
     const audio = ensureAudio()
     ensureGraph(audio)
     setAudioSessionPlayback()
-
     if (ctxRef.current?.state === 'suspended') {
       try {
         await ctxRef.current.resume()
@@ -1284,7 +1391,6 @@ export const api = {
         /* */
       }
     }
-
     if (!audio.src) {
       if (queueRef.current.length) {
         await api.playTrack(
@@ -1293,8 +1399,8 @@ export const api = {
       }
       return
     }
-
     if (audio.paused) {
+      await prepareAndroidBackgroundPlayback()
       wantPlayingRef.current = true
       try {
         await audio.play()
@@ -1324,7 +1430,6 @@ export const api = {
       notify()
     }
   },
-
   seek(ms: number) {
     const audio = ensureAudio()
     const d = audio.duration || 0
@@ -1338,7 +1443,6 @@ export const api = {
     void updatePositionState(d * 1000 || snapshot.durationMs, t * 1000, rateRef.current)
     notify()
   },
-
   async next() {
     const q = queueRef.current
     if (!q.length) return
@@ -1350,7 +1454,6 @@ export const api = {
     }
     await playIndex(indexRef.current + 1)
   },
-
   async prev() {
     const audio = ensureAudio()
     if (audio.currentTime > 3) {
@@ -1362,7 +1465,6 @@ export const api = {
     }
     await playIndex(indexRef.current - 1)
   },
-
   insertNext(t: TrackItem) {
     const q = [...queueRef.current]
     const i = indexRef.current
@@ -1372,7 +1474,6 @@ export const api = {
     without.splice(pos, 0, t)
     queueRef.current = without
   },
-
   setQueue(q: TrackItem[]) {
     queueRef.current = q
     if (!q.length) {
@@ -1387,15 +1488,12 @@ export const api = {
       indexRef.current = clamp(indexRef.current, 0, q.length - 1)
     }
   },
-
   getQueue() {
     return [...queueRef.current]
   },
-
   getIndex() {
     return indexRef.current
   },
-
   getFrequencyData(): Uint8Array | null {
     const an = analyserRef.current
     if (!an) return null
@@ -1409,9 +1507,18 @@ export const api = {
     }
     return buf
   },
-
   resumeAudioContext,
-
+  /** Pide (o vuelve a pedir) el permiso de notificaciones de Android en runtime. */
+  async requestNotificationsPermission() {
+    const ok = await ensureAndroidNotificationPermission()
+    notify()
+    return ok
+  },
+  /** Sugiere al usuario excluir la app de la optimización de batería del fabricante. */
+  async requestBatteryUnrestricted() {
+    batteryPromptShown = false
+    await requestUnrestrictedBatteryIfNeeded()
+  },
   refreshMediaSession() {
     mediaSessionReady.current = false
     capMsHandlersReady = false
@@ -1441,4 +1548,6 @@ export const __mediaPlayerInternals = {
   notify,
   getSnapshot,
   loadCapMediaSession,
+  ensureAndroidNotificationPermission,
+  requestUnrestrictedBatteryIfNeeded,
 }

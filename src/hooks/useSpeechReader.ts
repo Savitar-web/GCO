@@ -1,3 +1,34 @@
+/**
+ * ============================================================================
+ * useSpeechReader — lector de voz (TTS) con soporte de segundo plano
+ * PWA (Chrome/Edge/Safari/Firefox…) · Capacitor APK/iOS · Electron
+ * ============================================================================
+ *
+ * NOTA DE REALISMO TÉCNICO
+ * -------------------------
+ * `speechSynthesis` del navegador es, por diseño, más frágil que un
+ * <audio> real en segundo plano: varios navegadores (incluido Chrome en
+ * Android y Safari en iOS) pueden pausar o cancelar utterances cuando la
+ * pestaña/app pierde el primer plano, sobre todo tras largos periodos.
+ * Esta versión maximiza la supervivencia con:
+ *   1. Un bucle de audio casi silencioso (<audio> real) que ancla una
+ *      sesión de audio del sistema operativo mientras se habla.
+ *   2. Un "watchdog" que fuerza pause()/resume() periódicamente, técnica
+ *      conocida para evitar que Chrome congele `speechSynthesis` tras
+ *      ~15s en segundo plano.
+ *   3. Media Session (web nativa + Capgo en Capacitor) para exponer
+ *      controles en notificación/pantalla de bloqueo.
+ *   4. En Capacitor Android, solicitud de permiso de notificaciones en
+ *      runtime (Android 13+) antes de empezar a hablar, igual que en
+ *      useMediaPlayer.ts, para que el Foreground Service asociado a la
+ *      Media Session no sea recortado por el sistema.
+ * Para audiolibros donde la fiabilidad en segundo plano sea crítica en
+ * Android 14-16 con capas agresivas (Samsung One UI incluido), la opción
+ * más robusta a mediano plazo sigue siendo enrutar el audio pre-renderizado
+ * a través de `useMediaPlayer` (que ancla un Foreground Service real), y
+ * usar TTS solo quiera improvisar sobre texto dinámico.
+ * ============================================================================
+ */
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 export type SkipSeconds = 5 | 10 | 15
@@ -15,10 +46,8 @@ export function scoreVoiceHumanness(v: SpeechSynthesisVoice, preferLang = 'es'):
   let s = 0
   const name = (v.name || '').toLowerCase()
   const lang = (v.lang || '').toLowerCase()
-
   if (lang.startsWith(preferLang) || lang.includes('spa')) s += 100
   else if (lang.startsWith('en')) s += 15
-
   if (/natural|neural|premium|enhanced|wavenet|studio|online|plus|eloquence/.test(name)) s += 60
   if (
     /google|microsoft|apple|siri|samantha|alex|daniel|monica|jorge|paulina|sabina|elsa|helena|mónica/.test(
@@ -81,7 +110,7 @@ function chunkText(text: string, maxLen = 220): string[] {
  * para mantener viva una sesión de audio del SO (background + MediaSession).
  */
 const SILENT_LOOP_SRC =
-  'data:audio/wav;base64,UklGRgwEAABXQVZFZm10IBAAAAABAAEAoA8AAKAPAAABAAgAZGF0YegDAACAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCB'
+  'data:audio/wav;base64,UklGRgwEAABXQVZFZm10IBAAAAABAAEAoA8AAKAPAAABAAgAZGF0YegDAACAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCBgIGAgYCB'
 
 export interface ReaderMediaMeta {
   title: string
@@ -97,11 +126,85 @@ export interface ChapterNavHandlers {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Utilidades de entorno (mismas convenciones que useMediaPlayer.ts)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+type CapacitorBridge = {
+  isNativePlatform?: () => boolean
+  getPlatform?: () => string
+  isPluginAvailable?: (name: string) => boolean
+}
+function isBrowserEnv(): boolean {
+  return typeof window !== 'undefined' && typeof document !== 'undefined'
+}
+function getCapacitor(): CapacitorBridge | null {
+  if (!isBrowserEnv()) return null
+  try {
+    return (window as Window & { Capacitor?: CapacitorBridge }).Capacitor ?? null
+  } catch {
+    return null
+  }
+}
+function isCapacitorNative(): boolean {
+  try {
+    return !!getCapacitor()?.isNativePlatform?.()
+  } catch {
+    return false
+  }
+}
+function isCapacitorAndroid(): boolean {
+  try {
+    return isCapacitorNative() && getCapacitor()?.getPlatform?.() === 'android'
+  } catch {
+    return false
+  }
+}
+function isAndroidUa(): boolean {
+  if (!isBrowserEnv()) return false
+  return /Android/i.test(navigator.userAgent || '')
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Permisos en runtime — igual criterio que useMediaPlayer.ts
+ * ═══════════════════════════════════════════════════════════════════════════ */
+let readerNotifPermAsked = false
+let readerNotifPermGranted: boolean | null = null
+
+async function ensureAndroidNotificationPermission(): Promise<boolean> {
+  if (!isBrowserEnv() || !isCapacitorAndroid()) return true
+  if (readerNotifPermGranted === true) return true
+  if (readerNotifPermAsked && readerNotifPermGranted === false) return false
+  readerNotifPermAsked = true
+  try {
+    const mod = await import('@capacitor/local-notifications').catch(() => null)
+    const LN = (
+      mod as {
+        LocalNotifications?: {
+          checkPermissions: () => Promise<{ display: string }>
+          requestPermissions: () => Promise<{ display: string }>
+        }
+      } | null
+    )?.LocalNotifications
+    if (LN) {
+      const cur = await LN.checkPermissions().catch(() => ({ display: 'prompt' }))
+      if (cur.display === 'granted') {
+        readerNotifPermGranted = true
+        return true
+      }
+      const req = await LN.requestPermissions().catch(() => ({ display: 'denied' }))
+      readerNotifPermGranted = req.display === 'granted'
+      return readerNotifPermGranted
+    }
+  } catch (e) {
+    console.warn('[gco] reader ensureAndroidNotificationPermission:', e)
+  }
+  readerNotifPermGranted = null
+  return true
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Capgo Media Session — tipos propios + carga sin chocar con TS2322
  * ═══════════════════════════════════════════════════════════════════════════ */
-
 type CapMsPlaybackState = 'none' | 'paused' | 'playing'
-
 type CapMsAction =
   | 'play'
   | 'pause'
@@ -110,12 +213,10 @@ type CapMsAction =
   | 'seekforward'
   | 'previoustrack'
   | 'nexttrack'
-
 type CapMsActionHandler = (details?: {
   seekOffset?: number
   seekTime?: number
 }) => void
-
 type CapMediaSessionPlugin = {
   setMetadata: (opts: {
     title?: string
@@ -129,25 +230,24 @@ type CapMediaSessionPlugin = {
     handler: CapMsActionHandler | null
   ) => Promise<void>
 }
-
 let capMs: CapMediaSessionPlugin | null = null
 let capMsTried = false
 
 /**
  * Carga @capgo/capacitor-media-session sin anotar el módulo completo
  * (así TypeScript no compara setActionHandler con ActionHandlerOptions del paquete).
+ * SOLO se intenta en Capacitor nativo, igual regla que useMediaPlayer.ts.
  */
 async function loadCapMediaSession(): Promise<CapMediaSessionPlugin | null> {
   if (capMs) return capMs
   if (capMsTried) return null
   capMsTried = true
   if (typeof window === 'undefined') return null
-
+  if (!isCapacitorNative()) return null
   try {
     const mod = await import('@capgo/capacitor-media-session')
     const bag = mod as Record<string, unknown>
     const raw = bag.MediaSession ?? bag.default ?? null
-
     if (
       raw &&
       typeof raw === 'object' &&
@@ -163,7 +263,6 @@ async function loadCapMediaSession(): Promise<CapMediaSessionPlugin | null> {
   }
   return null
 }
-
 function hasWebMediaSession(): boolean {
   return typeof navigator !== 'undefined' && 'mediaSession' in navigator
 }
@@ -171,7 +270,6 @@ function hasWebMediaSession(): boolean {
 /* ═══════════════════════════════════════════════════════════════════════════
  * Hook
  * ═══════════════════════════════════════════════════════════════════════════ */
-
 export function useSpeechReader() {
   const [speaking, setSpeaking] = useState(false)
   const [paused, setPaused] = useState(false)
@@ -181,6 +279,7 @@ export function useSpeechReader() {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([])
   const [voicesReady, setVoicesReady] = useState(false)
   const [noVoicesAvailable, setNoVoicesAvailable] = useState(false)
+  const [notificationsGranted, setNotificationsGranted] = useState<boolean | null>(null)
   const [backgroundSupported] = useState(
     () => hasWebMediaSession() || typeof window !== 'undefined'
   )
@@ -221,6 +320,7 @@ export function useSpeechReader() {
       a.preload = 'auto'
       a.volume = 0.01
       a.setAttribute('playsinline', 'true')
+      a.setAttribute('webkit-playsinline', 'true')
       keepAliveRef.current = a
     } catch {
       keepAliveRef.current = null
@@ -245,7 +345,6 @@ export function useSpeechReader() {
       /* */
     }
   }, [])
-
   const stopKeepAlive = useCallback(() => {
     const a = keepAliveRef.current
     if (!a) return
@@ -283,7 +382,6 @@ export function useSpeechReader() {
       return
     }
     loadVoices()
-
     const onVoices = () => loadVoices()
     try {
       window.speechSynthesis.addEventListener('voiceschanged', onVoices)
@@ -295,7 +393,6 @@ export function useSpeechReader() {
         /* */
       }
     }
-
     voicePollAttemptsRef.current = 0
     voicePollRef.current = window.setInterval(() => {
       voicePollAttemptsRef.current += 1
@@ -311,7 +408,6 @@ export function useSpeechReader() {
         }
       }
     }, 350)
-
     return () => {
       try {
         window.speechSynthesis.removeEventListener('voiceschanged', onVoices)
@@ -334,7 +430,6 @@ export function useSpeechReader() {
       watchdogRef.current = null
     }
   }, [])
-
   const startWatchdog = useCallback(() => {
     clearWatchdog()
     if (!supported) return
@@ -358,7 +453,6 @@ export function useSpeechReader() {
   }, [clearWatchdog, supported, startKeepAlive])
 
   /* ── Media Session (web + Capgo) ── */
-
   const updatePlaybackState = useCallback(async (state: CapMsPlaybackState) => {
     const plugin = await loadCapMediaSession()
     if (plugin) {
@@ -383,7 +477,6 @@ export function useSpeechReader() {
         await updatePlaybackState('none')
         return
       }
-
       const artwork = meta.artwork
         ? [
             { src: meta.artwork, sizes: '512x512', type: 'image/png' },
@@ -391,7 +484,6 @@ export function useSpeechReader() {
             { src: meta.artwork, sizes: '192x192', type: 'image/png' },
           ]
         : []
-
       const plugin = await loadCapMediaSession()
       if (plugin) {
         try {
@@ -405,7 +497,6 @@ export function useSpeechReader() {
           /* */
         }
       }
-
       if (!hasWebMediaSession() || typeof MediaMetadata === 'undefined') return
       try {
         navigator.mediaSession.metadata = new MediaMetadata({
@@ -420,14 +511,12 @@ export function useSpeechReader() {
     },
     [updatePlaybackState]
   )
-
   const setMediaMetadata = useCallback(
     (meta: ReaderMediaMeta) => {
       void applyMediaMetadata(meta)
     },
     [applyMediaMetadata]
   )
-
   const setChapterHandlers = useCallback((handlers: ChapterNavHandlers) => {
     chapterHandlersRef.current = handlers || {}
   }, [])
@@ -471,7 +560,6 @@ export function useSpeechReader() {
       } else {
         u.lang = 'es-ES'
       }
-
       u.onboundary = (ev) => {
         if (ev.name === 'word' || ev.charIndex != null) {
           setCharIndex(absoluteStart + (ev.charIndex ?? 0))
@@ -527,7 +615,6 @@ export function useSpeechReader() {
         setPaused(false)
         void updatePlaybackState('playing')
       }
-
       utteranceRef.current = u
       try {
         window.speechSynthesis.speak(u)
@@ -560,7 +647,6 @@ export function useSpeechReader() {
       setCharIndex(start)
       const slice = text.slice(start)
       if (!slice.trim()) return
-
       const chunks = chunkText(slice, 200)
       const offsets: number[] = []
       let cursor = start
@@ -573,7 +659,14 @@ export function useSpeechReader() {
       queueRef.current = chunks
       queueOffsetRef.current = offsets
       queueIdxRef.current = 0
-
+      // Android 13-16 en Capacitor: asegurar el permiso de notificaciones
+      // antes de empezar a hablar, para que la Media Session pueda mostrar
+      // notificación persistente desde la primera reproducción.
+      if (isCapacitorAndroid()) {
+        void ensureAndroidNotificationPermission().then((granted) => {
+          setNotificationsGranted(granted)
+        })
+      }
       speakChunk(chunks[0], offsets[0], r, vURI)
     },
     [rate, voiceURI, stop, supported, speakChunk]
@@ -612,7 +705,6 @@ export function useSpeechReader() {
     },
     [charIndex, rate, voiceURI, speakFrom]
   )
-
   const skipForward = useCallback(
     (sec: SkipSeconds) => {
       const delta = charsForSeconds(sec, rate)
@@ -631,11 +723,9 @@ export function useSpeechReader() {
   /* ── Handlers Media Session una sola vez ── */
   useEffect(() => {
     let cancelled = false
-
     const wire = async () => {
       const plugin = await loadCapMediaSession()
       if (cancelled) return
-
       const onPlay = () => resumeRef.current()
       const onPause = () => pauseRef.current()
       const onStop = () => stopRef.current()
@@ -643,7 +733,6 @@ export function useSpeechReader() {
       const onSeekFwd = () => skipForwardRef.current(10)
       const onPrev = () => chapterHandlersRef.current.onPrevChapter?.()
       const onNext = () => chapterHandlersRef.current.onNextChapter?.()
-
       if (plugin) {
         const actions: [CapMsAction, CapMsActionHandler][] = [
           ['play', onPlay],
@@ -658,7 +747,6 @@ export function useSpeechReader() {
           void plugin.setActionHandler({ action }, handler).catch(() => {})
         }
       }
-
       if (hasWebMediaSession()) {
         const ms = navigator.mediaSession
         const safeSet = (
@@ -680,9 +768,7 @@ export function useSpeechReader() {
         safeSet('nexttrack', onNext)
       }
     }
-
     void wire()
-
     return () => {
       cancelled = true
       if (capMs) {
@@ -737,10 +823,17 @@ export function useSpeechReader() {
         /* */
       }
       if (speaking) startKeepAlive()
+      // Refuerzo Android 14-16 / One UI: al recuperar visibilidad, reafirmar
+      // metadata y estado ayuda a que la notificación no quede desincronizada
+      // tras un recorte de proceso en segundo plano.
+      if (speaking && mediaMetaRef.current) {
+        void applyMediaMetadata(mediaMetaRef.current)
+        void updatePlaybackState(paused ? 'paused' : 'playing')
+      }
     }
     document.addEventListener('visibilitychange', onVisibility)
     return () => document.removeEventListener('visibilitychange', onVisibility)
-  }, [supported, speaking, paused, startKeepAlive])
+  }, [supported, speaking, paused, startKeepAlive, applyMediaMetadata, updatePlaybackState])
 
   /* ── Capacitor App resume ── */
   useEffect(() => {
@@ -767,6 +860,10 @@ export function useSpeechReader() {
               /* */
             }
             startKeepAlive()
+            if (mediaMetaRef.current) {
+              void applyMediaMetadata(mediaMetaRef.current)
+              void updatePlaybackState('playing')
+            }
           }
         }).then((h) => {
           remove = () => h.remove()
@@ -774,7 +871,19 @@ export function useSpeechReader() {
       })
       .catch(() => {})
     return () => remove?.()
-  }, [speaking, paused, startKeepAlive])
+  }, [speaking, paused, startKeepAlive, applyMediaMetadata, updatePlaybackState])
+
+  /**
+   * Solicita explícitamente el permiso de notificaciones de Android.
+   * Útil para exponerlo como botón/CTA en la UI si el usuario lo denegó
+   * la primera vez y quiere reintentarlo desde ajustes de la app.
+   */
+  const requestNotificationsPermission = useCallback(async () => {
+    if (!isCapacitorAndroid()) return true
+    const granted = await ensureAndroidNotificationPermission()
+    setNotificationsGranted(granted)
+    return granted
+  }, [])
 
   return {
     speaking,
@@ -798,5 +907,8 @@ export function useSpeechReader() {
     skipForward,
     setMediaMetadata,
     setChapterHandlers,
+    notificationsGranted,
+    requestNotificationsPermission,
+    isAndroidUa,
   }
 }
