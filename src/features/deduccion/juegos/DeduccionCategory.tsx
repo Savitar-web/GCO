@@ -61,7 +61,7 @@ export function DeduccionCategory() {
         </button>
         <h1 style={{ fontSize: 'clamp(1.6rem, 5vw, 2.1rem)' }}>🔍 Deducción</h1>
         <p style={{ color: 'var(--gco-ink-muted)', marginTop: '0.35rem' }}>
-          Entrena inferencias, patrones y razonamiento bajo presión. Más de 130 niveles por juego.
+          Entrena inferencias, patrones y razonamiento.
         </p>
       </header>
 
