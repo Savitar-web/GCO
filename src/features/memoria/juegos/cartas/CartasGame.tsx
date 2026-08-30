@@ -1,3 +1,4 @@
+// CartasGame.tsx  (archivo completo)
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
@@ -48,6 +49,9 @@ type CreativeCardsLevel = {
   updatedAt: string
 }
 
+/** Multiplicador de velocidad de animación (solo track / order). 1 = normal */
+type SpeedMul = 0.65 | 1 | 1.45
+
 const MODE_INFO: Record<
   CardsMode,
   { title: string; desc: string; emoji: string }
@@ -70,10 +74,14 @@ const MODE_INFO: Record<
 }
 
 const EMOJI_POOL = [
-  '🍎', '🍋', '🍇', '🍉', '🍓', '🍑', '🦊', '🐸',
-  '🦉', '🐙', '🦋', '🐬', '⭐', '🌙', '⚡', '🔥',
-  '💎', '🎯', '🎵', '🎲', '🧩', '🔑', '🎈', '🍀',
-  '🚀', '🌈', '❄️', '🌻', '🏀', '🐱', '🐼', '🐢',
+  '🍎', '🍋', '🍇', '🍉', '🍓', '🍑', '🥝', '🍌', '🍒', '🍍', '🥭',
+  '🍕', '🍔', '🌮', '🍣', '🍦', '🍩', '🍪',
+  '🦊', '🐸', '🦉', '🐙', '🦋', '🐬', '🐱', '🐼', '🐶', '🦄', '🦁',
+  '🐯', '🐻', '🐨', '🐰', '🐧', '🐦‍⬛', '🦅', '🐢', '🐝', '🐞', '🦈',
+  '⭐', '🌙', '⚡', '🔥', '💎', '🎯', '🎵', '🍀', '🌈', '❄️', '🌻',
+  '🌸', '🌺', '🌹', '🌴', '🌊', '☀️',
+  '🚀', '🏀', '🎲', '🔑', '🎈', '🎸', '🔔', '📱', '💻', '🎮', '🎨',
+  '📚', '🏆', '👑', '🧸', '🎁', '🧩', '🪄', '❤️', '💙', '✨', '💫',
 ]
 
 const CREATIVE_KEY = 'gco:cartas-creative-levels'
@@ -134,7 +142,7 @@ function buildCardsFromEmojis(
       cards,
       orderIds: [],
       targetIndex: -1,
-      gridCols: n <= 12 ? 3 : 4,
+      gridCols: n <= 12 ? 3 : n <= 20 ? 4 : 5,
     }
   }
 
@@ -153,7 +161,7 @@ function buildCardsFromEmojis(
       cards,
       orderIds: [],
       targetIndex: Math.floor(Math.random() * Math.max(1, cards.length)),
-      gridCols: cards.length <= 6 ? 3 : 4,
+      gridCols: cards.length <= 6 ? 3 : cards.length <= 12 ? 4 : 5,
     }
   }
 
@@ -162,7 +170,7 @@ function buildCardsFromEmojis(
     cards,
     orderIds,
     targetIndex: -1,
-    gridCols: cards.length <= 6 ? 3 : 4,
+    gridCols: cards.length <= 6 ? 3 : cards.length <= 12 ? 4 : 5,
   }
 }
 
@@ -332,6 +340,10 @@ export function CartasGame() {
   const [beatBest, setBeatBest] = useState(false)
   const [isCreativeRun, setIsCreativeRun] = useState(false)
 
+  // Velocidad de animación (solo afecta track / order). 1 = normal
+  const [speedMul, setSpeedMul] = useState<SpeedMul>(1)
+  const isTraining = speedMul !== 1 // si se modifica → no cuenta victoria
+
   const [creativeList, setCreativeList] =
     useState<CreativeCardsLevel[]>(loadCreative)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -346,6 +358,8 @@ export function CartasGame() {
   const orderIdsRef = useRef<string[]>([])
   const levelRef = useRef(level)
   levelRef.current = level
+  const isTrainingRef = useRef(isTraining)
+  isTrainingRef.current = isTraining
 
   const bestForLevel = getLevelBestTime(GAME_CAT, GAME_ID, level)
   const unlocked = useMemo(
@@ -401,7 +415,7 @@ export function CartasGame() {
           clearTimer()
           const ms = stopRunTimer()
           soundFail()
-          if (!isCreativeRun) {
+          if (!isCreativeRun && !isTrainingRef.current) {
             recordLevelResult({
               categoryId: GAME_CAT,
               gameId: GAME_ID,
@@ -427,7 +441,8 @@ export function CartasGame() {
       const isNew =
         timeMs > 0 && (prevBest == null || timeMs < prevBest)
 
-      if (!isCreativeRun) {
+      // Solo registra victoria si NO es creativo y NO es entrenamiento (velocidad ≠ normal)
+      if (!isCreativeRun && !isTrainingRef.current) {
         recordLevelResult({
           categoryId: GAME_CAT,
           gameId: GAME_ID,
@@ -438,7 +453,7 @@ export function CartasGame() {
       }
 
       setLastTimeMs(timeMs)
-      setBeatBest(!!isNew)
+      setBeatBest(!!isNew && !isTrainingRef.current)
       soundSuccess()
       setPhase('success')
     },
@@ -498,7 +513,7 @@ export function CartasGame() {
       applyBoard(data, m)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [useTimer, isCreativeRun]
+    [useTimer]
   )
 
   const startLevel = useCallback(() => {
@@ -526,18 +541,22 @@ export function CartasGame() {
     )
   }
 
+  // Track: mostrar la carta objetivo
   useEffect(() => {
     if (phase !== 'track-show' || !targetId) return
+    const showMs = Math.round(1800 / speedMul)
     const t = window.setTimeout(() => {
       setHighlightId(null)
       setPhase('track-shuffle')
-    }, 1800)
+    }, showMs)
     return () => clearTimeout(t)
-  }, [phase, targetId])
+  }, [phase, targetId, speedMul])
 
+  // Track: revoloteo (shuffle)
   useEffect(() => {
     if (phase !== 'track-shuffle') return
     let step = 0
+    const intervalMs = Math.round(420 / speedMul)
     const id = window.setInterval(() => {
       soundCard()
       setCards((prev) => reshuffleCards(prev, level + step))
@@ -548,10 +567,11 @@ export function CartasGame() {
         startRunTimer()
         startCountdown(useTimer ? Math.max(20, 40 - Math.min(level, 15)) : 0)
       }
-    }, 420)
+    }, intervalMs)
     return () => clearInterval(id)
-  }, [phase, level, useTimer])
+  }, [phase, level, useTimer, speedMul])
 
+  // Order: mostrar secuencia
   useEffect(() => {
     if (phase !== 'order-show') return
     const ids = orderIdsRef.current
@@ -559,6 +579,7 @@ export function CartasGame() {
     let i = 0
     setHighlightId(ids[0])
     soundCard()
+    const stepMs = Math.round(900 / speedMul)
     const id = window.setInterval(() => {
       i += 1
       if (i >= ids.length) {
@@ -572,9 +593,9 @@ export function CartasGame() {
       }
       soundCard()
       setHighlightId(ids[i])
-    }, 900)
+    }, stepMs)
     return () => clearInterval(id)
-  }, [phase, level, useTimer])
+  }, [phase, level, useTimer, speedMul])
 
   useEffect(() => {
     if (phase !== 'playing') return
@@ -624,7 +645,7 @@ export function CartasGame() {
     const t = stopRunTimer()
     if (card.id === targetId) win(t)
     else {
-      if (!isCreativeRun) {
+      if (!isCreativeRun && !isTraining) {
         recordLevelResult({
           categoryId: GAME_CAT,
           gameId: GAME_ID,
@@ -650,7 +671,7 @@ export function CartasGame() {
       else soundMatch()
     } else {
       const t = stopRunTimer()
-      if (!isCreativeRun) {
+      if (!isCreativeRun && !isTraining) {
         recordLevelResult({
           categoryId: GAME_CAT,
           gameId: GAME_ID,
@@ -714,6 +735,9 @@ export function CartasGame() {
       return `Orden ${orderStep}/${orderIdsRef.current.length}`
     return ''
   }
+
+  const speedLabel =
+    speedMul === 0.65 ? 'Lenta' : speedMul === 1.45 ? 'Rápida' : 'Normal'
 
   // ─── Hub creativo ────────────────────────────────────────────────────────
   if (phase === 'creative-hub') {
@@ -963,7 +987,7 @@ export function CartasGame() {
                   type="button"
                   onClick={() => {
                     if (editEmojis.includes(e)) return
-                    if (editEmojis.length >= 12) return
+                    if (editEmojis.length >= 16) return
                     soundClick()
                     setEditEmojis((s) => [...s, e])
                   }}
@@ -1074,7 +1098,7 @@ export function CartasGame() {
               style={{ fontSize: '0.85rem', color: 'var(--gco-ink-muted)' }}
             >
               {formatDuration(elapsedMs)}
-              {bestForLevel != null && bestForLevel > 0 && !isCreativeRun && (
+              {bestForLevel != null && bestForLevel > 0 && !isCreativeRun && !isTraining && (
                 <> · 🏆 {formatDuration(bestForLevel)}</>
               )}
             </span>
@@ -1095,6 +1119,17 @@ export function CartasGame() {
           {!isCreativeRun && phase !== 'ready' && (
             <span className="level-number" style={{ fontSize: '1.05rem' }}>
               Nivel {level}
+              {isTraining && (
+                <span
+                  style={{
+                    fontSize: '0.7rem',
+                    marginLeft: 6,
+                    color: 'var(--gco-ink-muted)',
+                  }}
+                >
+                  (entreno)
+                </span>
+              )}
             </span>
           )}
         </div>
@@ -1197,6 +1232,70 @@ export function CartasGame() {
               >
                 <ModeDropdown value={mode} onChange={setMode} />
 
+                {/* Control de velocidad (solo visible / útil en track y order) */}
+                {(mode === 'track' || mode === 'order') && (
+                  <div
+                    style={{
+                      background: 'rgba(255,255,255,0.04)',
+                      border: '1px solid var(--gco-glass-border)',
+                      borderRadius: 14,
+                      padding: '0.85rem 1.1rem',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <p style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: 4 }}>
+                      Velocidad de movimiento
+                    </p>
+                    <p
+                      style={{
+                        fontSize: '0.78rem',
+                        color: 'var(--gco-ink-muted)',
+                        marginBottom: 10,
+                      }}
+                    >
+                      Normal cuenta victoria. Lenta / Rápida solo para entrenamiento.
+                    </p>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {(
+                        [
+                          { v: 0.65 as SpeedMul, label: '🐢 Lenta' },
+                          { v: 1 as SpeedMul, label: '✨ Normal' },
+                          { v: 1.45 as SpeedMul, label: '⚡ Rápida' },
+                        ] as const
+                      ).map(({ v, label }) => (
+                        <button
+                          key={v}
+                          type="button"
+                          className={`glass-button ${speedMul === v ? '' : 'secondary'}`}
+                          style={{
+                            fontSize: '0.82rem',
+                            padding: '0.4rem 0.75rem',
+                            flex: 1,
+                            minWidth: 90,
+                          }}
+                          onClick={() => {
+                            soundToggle(v === 1)
+                            setSpeedMul(v)
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    {speedMul !== 1 && (
+                      <p
+                        style={{
+                          marginTop: 8,
+                          fontSize: '0.75rem',
+                          color: 'var(--gco-secondary)',
+                        }}
+                      >
+                        Modo entrenamiento · no se registra la victoria
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <div
                   style={{
                     display: 'flex',
@@ -1274,6 +1373,7 @@ export function CartasGame() {
 
                 <GlassButton onClick={startLevel}>
                   Comenzar nivel {level}
+                  {speedMul !== 1 && mode !== 'pairs' ? ' (entreno)' : ''}
                 </GlassButton>
 
                 <button
@@ -1301,7 +1401,7 @@ export function CartasGame() {
                     display: 'grid',
                     gridTemplateColumns: `repeat(${gridCols}, 1fr)`,
                     gap: '0.55rem',
-                    maxWidth: gridCols <= 3 ? 300 : 360,
+                    maxWidth: gridCols <= 3 ? 300 : gridCols <= 4 ? 360 : 420,
                     margin: '0 auto 1.1rem',
                   }}
                 >
@@ -1376,6 +1476,11 @@ export function CartasGame() {
                     }}
                   >
                     {statusText()}
+                    {isTraining && (mode === 'track' || mode === 'order') && (
+                      <span style={{ marginLeft: 8, opacity: 0.8 }}>
+                        · {speedLabel}
+                      </span>
+                    )}
                   </p>
                 )}
 
@@ -1402,6 +1507,7 @@ export function CartasGame() {
                     >
                       {lastTimeMs != null ? formatDuration(lastTimeMs) : '—'}
                       {beatBest ? ' · ¡Nueva marca!' : ''}
+                      {isTraining && ' · Entrenamiento (no registrado)'}
                     </p>
                     <div
                       style={{

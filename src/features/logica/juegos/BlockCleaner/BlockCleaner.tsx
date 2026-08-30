@@ -19,36 +19,33 @@ import {
   type Block,
   type BlockColor,
   type BlockCleanerLevel,
-  type Exit,
 } from './Generatelevelbc'
 
 // =============================================================================
-// BlockCleaner.tsx — UI + interacción fluida (v8)
+// BlockCleaner.tsx — UI + interacción fluida (v9)
 //
-// Mejoras v8:
-// - Drag más fluido: umbral bajo, cambio de eje sin soltar, snap con spring,
-//   ghost de rango opcional, interpolación visual durante el arrastre.
-// - Zoom / pan robustos: botones +/-, fit, rueda, clamp correcto; la
-//   cuadrícula y el tablero cubren todo el viewport.
-// - Motor de niveles más seguro (sin piezas listas al inicio).
-// - Más feedback visual, combos, tips y pantallas pulidas.
-// - Código extendido y profesional (> 1100 líneas).
+// Mejoras v9:
+// - Drag en píxeles continuos durante el arrastre; snap a celda al soltar.
+// - Umbral bajo (3px), cambio de eje sin soltar, ghost de rango visible.
+// - Puertas compatibles garantizadas por el motor v9.
+// - Zoom/pan robustos; tableros grandes se ven completos.
+// - Feedback de combo, tips, estilos de bloque, stats y pantallas pulidas.
 // =============================================================================
 
 const LS = {
-  current: 'bc.v8.current',
-  unlocked: 'bc.v8.unlocked',
-  scores: 'bc.v8.scores',
-  moves: 'bc.v8.moves',
-  times: 'bc.v8.times',
-  defeats: 'bc.v8.defeats',
-  style: 'bc.v8.style',
-  options: 'bc.v8.options',
-  wins: 'bc.v8.wins',
-  totalMoves: 'bc.v8.totalMoves',
-  streak: 'bc.v8.streak',
-  bestStreak: 'bc.v8.bestStreak',
-  bestCombo: 'bc.v8.bestCombo',
+  current: 'bc.v9.current',
+  unlocked: 'bc.v9.unlocked',
+  scores: 'bc.v9.scores',
+  moves: 'bc.v9.moves',
+  times: 'bc.v9.times',
+  defeats: 'bc.v9.defeats',
+  style: 'bc.v9.style',
+  options: 'bc.v9.options',
+  wins: 'bc.v9.wins',
+  totalMoves: 'bc.v9.totalMoves',
+  streak: 'bc.v9.streak',
+  bestStreak: 'bc.v9.bestStreak',
+  bestCombo: 'bc.v9.bestCombo',
 }
 
 function readJSON<T>(key: string, fallback: T): T {
@@ -148,18 +145,16 @@ const DEFAULT_OPTIONS: PlayOptions = {
 const PRO_TIPS = [
   'Solo salen por la pared de su color. Otra pared no elimina la pieza.',
   'La puerta mide la huella del bloque más grande de ese color en ese lado.',
-  'Pieza vertical de largo 2: hacia izquierda/derecha necesita puerta de altura 2; hacia arriba/abajo, de 1.',
-  'Sin soltar el dedo puedes cambiar de eje (horizontal ↔ vertical). No en diagonal.',
-  'Desde niveles avanzados aparecen flechas (dirección forzada) y candados 🔒 (hay que sacar N piezas antes).',
-  'Varias piezas del mismo color comparten UNA sola pared: piensa en qué orden conviene sacarlas.',
-  'El combo premia la precisión: si sueltas una pieza sin que entre por su puerta, se reinicia a cero.',
-  'Antes de mover, identifica la pieza con MENOS libertad — normalmente es la clave para empezar.',
-  'Una pieza que ya puede salir no siempre conviene sacarla ya: a veces sirve de "muro" temporal.',
-  'Con el reloj corriendo, prioriza movimientos que abran camino a varias piezas a la vez, no solo a una.',
-  'Usa el zoom y el pan: en tableros grandes es más fácil planear si ves todo el contexto.',
-  'Los obstáculos (rayados) no se mueven. Úsalos como topes para alinear piezas con precisión.',
-  'Si una pieza tiene flecha, solo puede moverse en esa dirección. Planifica el orden de salida.',
-  'El deshacer te permite experimentar rutas sin miedo (excepto en Hardcore).',
+  'Pieza con flecha: solo se mueve en esa dirección. Planifica el orden.',
+  'Sin soltar el dedo puedes cambiar de eje (horizontal ↔ vertical).',
+  'Candados 🔒: hay que sacar N piezas antes de poder moverlas.',
+  'Varias piezas del mismo color comparten UNA sola pared.',
+  'El combo se rompe si sueltas una pieza sin que entre por su puerta.',
+  'Identifica la pieza con MENOS libertad: suele ser la clave.',
+  'Una pieza lista para salir a veces conviene dejarla de muro temporal.',
+  'Usa zoom y pan en tableros grandes para ver el contexto completo.',
+  'Los obstáculos rayados no se mueven: úsalos como topes de alineación.',
+  'El deshacer permite experimentar rutas (excepto en Hardcore).',
 ]
 
 function formatTime(t: number) {
@@ -168,11 +163,11 @@ function formatTime(t: number) {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-/** Tamaño base de celda en px (sin zoom). El zoom escala el contenedor completo. */
 const BASE_CELL = 48
-const MIN_ZOOM = 0.28
-const MAX_ZOOM = 2.6
-const DRAG_THRESHOLD = 5
+const MIN_ZOOM = 0.22
+const MAX_ZOOM = 2.8
+/** Umbral bajo para arranque de arrastre fluido (como el original). */
+const DRAG_THRESHOLD = 3
 
 interface DragState {
   id: string
@@ -184,6 +179,9 @@ interface DragState {
   axis: 'horizontal' | 'vertical' | null
   min: number
   max: number
+  /** Posición visual en celdas fraccionarias durante el drag */
+  visualRow: number
+  visualCol: number
 }
 
 interface PanState {
@@ -223,8 +221,7 @@ export function BlockCleaner() {
   const [stars, setStars] = useState<1 | 2 | 3>(1)
   const [hintId, setHintId] = useState<string | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
-  const [dragRow, setDragRow] = useState<number | null>(null)
-  const [dragCol, setDragCol] = useState<number | null>(null)
+  const [dragVisual, setDragVisual] = useState<{ row: number; col: number } | null>(null)
   const [exitingId, setExitingId] = useState<string | null>(null)
   const [showTips, setShowTips] = useState(false)
   const [tipIndex, setTipIndex] = useState(0)
@@ -235,7 +232,6 @@ export function BlockCleaner() {
   const [hintMsg, setHintMsg] = useState<string | null>(null)
   const [bursts, setBursts] = useState<Array<{ id: string; x: number; y: number; color: BlockColor }>>([])
 
-  // Zoom / pan del visor
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
 
@@ -247,7 +243,6 @@ export function BlockCleaner() {
   const blocksRef = useRef(blocks)
   blocksRef.current = blocks
 
-  // ---- Pan clamp: mantiene el tablero dentro del viewport ----
   const computeClampedPan = useCallback(
     (zoomVal: number, panVal: { x: number; y: number }, vw: number, vh: number) => {
       const contentW = level.cols * BASE_CELL * zoomVal
@@ -263,28 +258,25 @@ export function BlockCleaner() {
     [level.cols, level.rows]
   )
 
-  /** Ajusta el zoom para que el tablero cubra el máximo posible del viewport. */
   const fitZoomToViewport = useCallback(() => {
     const el = viewportRef.current
     if (!el) return
     const vw = el.clientWidth
     const vh = el.clientHeight
     if (!vw || !vh) return
-    // Un poco de margen para que se vea el borde de las puertas
-    const pad = 0.92
+    const pad = 0.9
     const fit = clampNum(
       Math.min(
         (vw * pad) / (level.cols * BASE_CELL),
         (vh * pad) / (level.rows * BASE_CELL)
       ),
       MIN_ZOOM,
-      1.25
+      1.2
     )
     setZoom(fit)
     setPan(computeClampedPan(fit, { x: 0, y: 0 }, vw, vh))
   }, [level.cols, level.rows, computeClampedPan])
 
-  // Reset de nivel al entrar en play o cambiar levelId
   useEffect(() => {
     if (screen !== 'play') return
     const src = Array.isArray(level.blocks) ? level.blocks : FALLBACK_LEVEL.blocks
@@ -301,12 +293,14 @@ export function BlockCleaner() {
     setCombo(0)
     setBestComboThisLevel(0)
     setBursts([])
+    setDraggingId(null)
+    setDragVisual(null)
+    dragRef.current = null
     writeJSON(LS.current, levelId)
     const raf = requestAnimationFrame(() => fitZoomToViewport())
     return () => cancelAnimationFrame(raf)
   }, [level, levelId, screen, fitZoomToViewport])
 
-  // ResizeObserver: re-clampa el pan cuando cambia el tamaño del viewport
   useEffect(() => {
     const el = viewportRef.current
     if (!el || screen !== 'play') return
@@ -320,13 +314,12 @@ export function BlockCleaner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen, computeClampedPan])
 
-  // Rueda del ratón → zoom centrado
   useEffect(() => {
     const el = viewportRef.current
     if (!el || screen !== 'play') return
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
-      const delta = e.deltaY > 0 ? -0.12 : 0.12
+      const delta = e.deltaY > 0 ? -0.1 : 0.1
       const vw = el.clientWidth
       const vh = el.clientHeight
       setZoom((z) => {
@@ -339,7 +332,6 @@ export function BlockCleaner() {
     return () => el.removeEventListener('wheel', onWheel)
   }, [screen, computeClampedPan])
 
-  // Reloj siempre activo mientras se juega
   useEffect(() => {
     if (screen !== 'play' || isPaused || showTips) return
     timerRef.current = window.setInterval(() => {
@@ -432,20 +424,19 @@ export function BlockCleaner() {
           checkWin(next, nm)
           return nm
         })
-      }, 420)
+      }, 380)
       return next
     },
     [level, checkWin, spawnBurst]
   )
 
-  // Combo: sube si la pieza sale; se rompe si solo se mueve
   const commitMove = useCallback(
     (blockId: string, toRow: number, toCol: number) => {
       setBlocks((prev) => {
         const list = Array.isArray(prev) ? prev : []
         if (!options.hardcore) {
           setUndoStack((s) => [
-            ...s.slice(-28),
+            ...s.slice(-30),
             { blocks: list.map((b) => ({ ...b })), cleared: clearedCount },
           ])
         }
@@ -473,7 +464,7 @@ export function BlockCleaner() {
     [tryExit, options.hardcore, clearedCount]
   )
 
-  // ---- Drag de piezas (eje intercambiable, umbral bajo, fluido) ----
+  // ---- Drag fluido: visual continuo en celdas fraccionarias, snap al soltar ----
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>, block: Block) => {
     if (screen !== 'play' || exitingId || isPaused || showTips) return
     if (!isBlockMovable(block, clearedCount)) {
@@ -492,92 +483,132 @@ export function BlockCleaner() {
       axis: null,
       min: 0,
       max: 0,
+      visualRow: block.row,
+      visualCol: block.col,
     }
     setDraggingId(block.id)
-    setDragRow(block.row)
-    setDragCol(block.col)
+    setDragVisual({ row: block.row, col: block.col })
   }
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const d = dragRef.current
-    if (!d || d.pointerId !== e.pointerId) return
+    const drag = dragRef.current
+    if (!drag || e.pointerId !== drag.pointerId) return
     const list = blocksRef.current
-    const block = list.find((b) => b.id === d.id)
+    const block = list.find((b) => b.id === drag.id)
     if (!block) return
 
-    const dx = (e.clientX - d.originClientX) / zoom
-    const dy = (e.clientY - d.originClientY) / zoom
+    const dxPx = (e.clientX - drag.originClientX) / zoom
+    const dyPx = (e.clientY - drag.originClientY) / zoom
 
-    let axis = d.axis
-    const preferred = preferredAxisFromDelta(dx, dy, axis, DRAG_THRESHOLD)
-    if (!preferred) return
+    const axis = preferredAxisFromDelta(dxPx, dyPx, drag.axis, DRAG_THRESHOLD)
+    if (!axis) return
 
-    if (!axis || axis !== preferred) {
-      const curR = dragRow ?? d.baseRow
-      const curC = dragCol ?? d.baseCol
-      d.baseRow = curR
-      d.baseCol = curC
-      d.originClientX = e.clientX
-      d.originClientY = e.clientY
-      axis = preferred
-      d.axis = axis
-
-      const virtual: Block = { ...block, row: d.baseRow, col: d.baseCol }
+    // Recalcular rango si cambió el eje
+    if (axis !== drag.axis) {
       const range = computeSlideRangeOnAxis(
-        virtual,
+        { ...block, row: drag.baseRow, col: drag.baseCol },
         axis,
         list,
-        Array.isArray(level.obstacles) ? level.obstacles : [],
+        level.obstacles ?? [],
         level.rows,
         level.cols,
         clearedCount
       )
-      d.min = range.min
-      d.max = range.max
+      drag.axis = axis
+      drag.min = range.min
+      drag.max = range.max
     }
 
-    const dx2 = (e.clientX - d.originClientX) / zoom
-    const dy2 = (e.clientY - d.originClientY) / zoom
-    const deltaCells =
-      axis === 'horizontal'
-        ? Math.round(dx2 / BASE_CELL)
-        : Math.round(dy2 / BASE_CELL)
-
-    const target = computeDragTarget(
+    const deltaCells = axis === 'horizontal' ? dxPx / BASE_CELL : dyPx / BASE_CELL
+    const snapped = computeDragTarget(
       block,
       axis,
-      d.baseRow,
-      d.baseCol,
-      deltaCells,
+      drag.baseRow,
+      drag.baseCol,
+      Math.round(deltaCells),
       list,
-      Array.isArray(level.obstacles) ? level.obstacles : [],
+      level.obstacles ?? [],
       level.rows,
       level.cols,
       clearedCount
     )
-    setDragRow(target.row)
-    setDragCol(target.col)
+
+    // Visual continuo (clamp al rango en float) + snap lógico
+    let visualRow = drag.baseRow
+    let visualCol = drag.baseCol
+    if (axis === 'horizontal') {
+      const raw = drag.baseCol + deltaCells
+      visualCol = clampNum(raw, drag.min, drag.max)
+      visualRow = drag.baseRow
+    } else {
+      const raw = drag.baseRow + deltaCells
+      visualRow = clampNum(raw, drag.min, drag.max)
+      visualCol = drag.baseCol
+    }
+
+    drag.visualRow = visualRow
+    drag.visualCol = visualCol
+    setDragVisual({ row: visualRow, col: visualCol })
+
+    // Mantener base lógica alineada al último snap entero (para commit limpio)
+    drag.baseRow = snapped.row
+    // No actualizamos base durante el drag continuo; el commit usa el visual redondeado
   }
 
   const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
-    const d = dragRef.current
-    if (!d || d.pointerId !== e.pointerId) return
-    const toRow = dragRow ?? d.baseRow
-    const toCol = dragCol ?? d.baseCol
-    const startBlock = blocksRef.current.find((b) => b.id === d.id)
+    const drag = dragRef.current
+    if (!drag || e.pointerId !== drag.pointerId) return
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    } catch {
+      /* noop */
+    }
+
+    const list = blocksRef.current
+    const block = list.find((b) => b.id === drag.id)
+    const visual = dragVisual
+
     dragRef.current = null
     setDraggingId(null)
-    setDragRow(null)
-    setDragCol(null)
-    if (startBlock && (toRow !== startBlock.row || toCol !== startBlock.col)) {
-      commitMove(d.id, toRow, toCol)
+    setDragVisual(null)
+
+    if (!block || !visual || !drag.axis) return
+
+    const toRow = Math.round(visual.row)
+    const toCol = Math.round(visual.col)
+
+    // Clamp final al rango válido
+    const range = computeSlideRangeOnAxis(
+      { ...block, row: block.row, col: block.col },
+      drag.axis,
+      list,
+      level.obstacles ?? [],
+      level.rows,
+      level.cols,
+      clearedCount
+    )
+    let finalRow = block.row
+    let finalCol = block.col
+    if (drag.axis === 'horizontal') {
+      finalCol = clampNum(toCol, range.min, range.max)
+      finalRow = block.row
+    } else {
+      finalRow = clampNum(toRow, range.min, range.max)
+      finalCol = block.col
     }
+
+    if (finalRow === block.row && finalCol === block.col) return
+    commitMove(block.id, finalRow, finalCol)
   }
 
-  // ---- Pan del tablero (arrastrar el fondo) ----
-  const handleViewportPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (screen !== 'play' || dragRef.current) return
-    if ((e.target as HTMLElement).closest('.bc-block')) return
+  // Pan del viewport (fondo vacío)
+  const onViewportPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current) return
+    if (e.target !== e.currentTarget && !(e.target as HTMLElement).classList.contains('bc-grid') &&
+        !(e.target as HTMLElement).classList.contains('bc-cell') &&
+        !(e.target as HTMLElement).classList.contains('bc-board')) {
+      return
+    }
     panRef.current = {
       pointerId: e.pointerId,
       startX: e.clientX,
@@ -588,34 +619,25 @@ export function BlockCleaner() {
     e.currentTarget.setPointerCapture(e.pointerId)
   }
 
-  const handleViewportPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+  const onViewportPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const p = panRef.current
-    if (!p || p.pointerId !== e.pointerId) return
+    if (!p || e.pointerId !== p.pointerId) return
     const el = viewportRef.current
-    const vw = el?.clientWidth ?? 0
-    const vh = el?.clientHeight ?? 0
-    const dx = e.clientX - p.startX
-    const dy = e.clientY - p.startY
-    setPan(computeClampedPan(zoom, { x: p.originX + dx, y: p.originY + dy }, vw, vh))
+    if (!el) return
+    const nx = p.originX + (e.clientX - p.startX)
+    const ny = p.originY + (e.clientY - p.startY)
+    setPan(computeClampedPan(zoom, { x: nx, y: ny }, el.clientWidth, el.clientHeight))
   }
 
-  const handleViewportPointerUp = () => {
-    panRef.current = null
-  }
-
-  const zoomBy = (delta: number) => {
-    playSfx('ui')
-    const el = viewportRef.current
-    const vw = el?.clientWidth ?? 0
-    const vh = el?.clientHeight ?? 0
-    const nextZoom = clampNum(zoom + delta, MIN_ZOOM, MAX_ZOOM)
-    setZoom(nextZoom)
-    setPan((p) => computeClampedPan(nextZoom, p, vw, vh))
-  }
-
-  const resetZoom = () => {
-    playSfx('ui')
-    fitZoomToViewport()
+  const onViewportPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (panRef.current?.pointerId === e.pointerId) {
+      panRef.current = null
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId)
+      } catch {
+        /* noop */
+      }
+    }
   }
 
   const handleRestart = () => {
@@ -629,184 +651,138 @@ export function BlockCleaner() {
     setHintId(null)
     setHintMsg(null)
     setExitingId(null)
-    setIsPaused(false)
     setUndoStack([])
     setCombo(0)
     setBestComboThisLevel(0)
     setBursts([])
+    setIsPaused(false)
     setScreen('play')
-    requestAnimationFrame(() => fitZoomToViewport())
   }
 
   const handleUndo = () => {
-    if (options.hardcore || !undoStack.length) return
+    if (options.hardcore || undoStack.length === 0) return
     playSfx('ui')
-    const prev = undoStack[undoStack.length - 1]
+    const last = undoStack[undoStack.length - 1]
     setUndoStack((s) => s.slice(0, -1))
-    setBlocks(prev.blocks.map((b) => ({ ...b })))
-    setClearedCount(prev.cleared)
+    setBlocks(last.blocks.map((b) => ({ ...b })))
+    setClearedCount(last.cleared)
     setMoves((m) => Math.max(0, m - 1))
-    setHintId(null)
     setCombo(0)
+    setHintId(null)
   }
 
   const handleHint = () => {
-    if (options.noHints) {
-      setHintMsg('Pistas desactivadas en ajustes')
-      return
-    }
+    if (options.noHints) return
     playSfx('hint')
     const move = getHintMove(
-      Array.isArray(blocks) ? blocks : [],
-      Array.isArray(level.exits) ? level.exits : [],
-      Array.isArray(level.obstacles) ? level.obstacles : [],
+      blocks,
+      level.exits,
+      level.obstacles ?? [],
       level.rows,
       level.cols,
       clearedCount
     )
-    if (move) {
-      setHintId(move.blockId)
-      setHintMsg(move.isExit ? 'Saca este bloque por su salida' : 'Mueve el bloque resaltado')
-      window.setTimeout(() => {
-        setHintId((c) => (c === move.blockId ? null : c))
-        setHintMsg(null)
-      }, 2800)
-    } else {
-      setHintMsg('No hay movimiento obvio — prueba reiniciar')
-      window.setTimeout(() => setHintMsg(null), 2000)
+    if (!move) {
+      setHintMsg('No hay movimiento claro ahora')
+      return
     }
+    setHintId(move.blockId)
+    setHintMsg(move.isExit ? 'Esta pieza ya puede salir' : 'Mueve esta pieza')
+    window.setTimeout(() => setHintMsg(null), 2200)
   }
 
-  const startLevel = (id: number) => {
-    playSfx('ui')
-    setLevelId(Math.max(1, id))
-    setScreen('play')
+  const zoomBy = (delta: number) => {
+    const el = viewportRef.current
+    if (!el) return
+    setZoom((z) => {
+      const next = clampNum(z + delta, MIN_ZOOM, MAX_ZOOM)
+      setPan((p) => computeClampedPan(next, p, el.clientWidth, el.clientHeight))
+      return next
+    })
   }
+
+  const resetZoom = () => fitZoomToViewport()
 
   const getBlockStyleProps = (color: BlockColor): React.CSSProperties => {
     const c = COLOR_HEX[color] ?? COLOR_HEX.cyan
     switch (blockStyle) {
       case 'metallic':
         return {
-          background: `linear-gradient(160deg, ${c.light} 0%, ${c.base} 38%, ${c.dark} 72%, #0e0e10 100%)`,
-          boxShadow: `0 5px 16px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.7), inset 0 -5px 12px rgba(0,0,0,0.4)`,
-          border: '1px solid rgba(255,255,255,0.45)',
+          background: `linear-gradient(145deg, ${c.light}, ${c.base} 40%, ${c.dark})`,
+          boxShadow: `inset 0 1px 0 rgba(255,255,255,0.35), 0 3px 10px ${c.glow}`,
+          border: `1px solid ${c.dark}`,
         }
       case 'matte':
         return {
           background: c.base,
-          boxShadow: `0 2px 6px rgba(0,0,0,0.2)`,
-          border: `2px solid ${c.dark}`,
-          filter: 'saturate(0.92)',
+          boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
+          border: '1px solid rgba(0,0,0,0.15)',
         }
       case 'neon':
         return {
-          background: `linear-gradient(135deg, ${c.light}, ${c.base})`,
-          boxShadow: `0 0 10px ${c.glow}, 0 0 24px ${c.glow}, 0 0 40px ${c.glow}`,
-          border: `2px solid ${c.light}`,
+          background: c.base,
+          boxShadow: `0 0 12px ${c.glow}, 0 0 24px ${c.glow}, inset 0 0 8px ${c.light}`,
+          border: `1px solid ${c.light}`,
         }
       case 'pastel':
         return {
-          background: `linear-gradient(180deg, #faf8f5 0%, ${c.light} 50%, ${c.base}88 100%)`,
-          boxShadow: `0 3px 10px rgba(0,0,0,0.08)`,
-          border: '1px solid rgba(0,0,0,0.06)',
-          filter: 'saturate(0.75) brightness(1.05)',
+          background: c.light,
+          color: c.dark,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+          border: `1px solid ${c.base}`,
         }
       case 'crystal':
         return {
-          background: `linear-gradient(125deg, ${c.light}b0 0%, transparent 45%), linear-gradient(300deg, ${c.base}99, ${c.dark}66)`,
-          boxShadow: `0 0 22px ${c.glow}, inset 0 0 16px rgba(255,255,255,0.3)`,
+          background: `linear-gradient(160deg, rgba(255,255,255,0.45), ${c.base}88 50%, ${c.dark}aa)`,
+          boxShadow: `0 4px 14px ${c.glow}`,
           border: `1px solid ${c.light}`,
+          backdropFilter: 'blur(4px)',
         }
       case 'candy':
         return {
-          background: `radial-gradient(circle at 30% 20%, #ffffff 0%, ${c.light} 25%, ${c.base} 65%, ${c.dark} 100%)`,
-          boxShadow: `0 8px 18px rgba(0,0,0,0.3), inset 0 4px 8px rgba(255,255,255,0.7), inset 0 -4px 10px rgba(0,0,0,0.2)`,
-          border: '2px solid rgba(255,255,255,0.55)',
+          background: `linear-gradient(180deg, ${c.light} 0%, ${c.base} 45%, ${c.dark} 100%)`,
+          boxShadow: `inset 0 2px 4px rgba(255,255,255,0.5), 0 4px 12px ${c.glow}`,
+          border: `1px solid ${c.dark}`,
         }
       case 'obsidian':
         return {
-          background: `linear-gradient(155deg, #2c2c34 0%, #0c0c10 55%, #050508 100%)`,
-          boxShadow: `0 6px 18px rgba(0,0,0,0.65), inset 0 0 14px ${c.glow}`,
-          border: `1px solid ${c.base}77`,
+          background: `linear-gradient(145deg, #2a2a2e, ${c.dark} 60%, #111)`,
+          boxShadow: `0 0 10px ${c.glow}`,
+          border: `1px solid ${c.base}`,
         }
-      default:
+      default: // liquid-glass
         return {
-          background: `linear-gradient(155deg, rgba(255,255,255,0.55) 0%, ${c.light}cc 25%, ${c.base} 70%, ${c.dark} 100%)`,
-          boxShadow: `0 6px 20px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -3px 10px rgba(0,0,0,0.1)`,
-          border: '1px solid rgba(255,255,255,0.5)',
-          backdropFilter: 'blur(4px)',
+          background: `linear-gradient(155deg, ${c.light}cc, ${c.base} 55%, ${c.dark})`,
+          boxShadow: `inset 0 1px 0 rgba(255,255,255,0.4), 0 4px 14px ${c.glow}`,
+          border: `1px solid rgba(255,255,255,0.25)`,
         }
     }
   }
 
-  const renderExit = (e: Exit) => {
-    const c = COLOR_HEX[e.color] ?? COLOR_HEX.cyan
-    const style: React.CSSProperties = {
-      position: 'absolute',
-      background: `linear-gradient(135deg, ${c.light}, ${c.base})`,
-      boxShadow: `0 0 16px ${c.glow}`,
-      borderRadius: 5,
-      opacity: 0.95,
-      zIndex: 2,
-      pointerEvents: 'none',
-    }
-    const gap = 2
-    if (e.side === 'top') {
-      style.top = -14
-      style.left = e.pos * BASE_CELL + gap
-      style.width = Math.max(10, e.length * BASE_CELL - gap * 2)
-      style.height = 14
-    } else if (e.side === 'bottom') {
-      style.bottom = -14
-      style.left = e.pos * BASE_CELL + gap
-      style.width = Math.max(10, e.length * BASE_CELL - gap * 2)
-      style.height = 14
-    } else if (e.side === 'left') {
-      style.left = -14
-      style.top = e.pos * BASE_CELL + gap
-      style.width = 14
-      style.height = Math.max(10, e.length * BASE_CELL - gap * 2)
-    } else {
-      style.right = -14
-      style.top = e.pos * BASE_CELL + gap
-      style.width = 14
-      style.height = Math.max(10, e.length * BASE_CELL - gap * 2)
-    }
-    return <div key={e.id} style={style} aria-hidden />
-  }
+  const safeBlocks = Array.isArray(blocks) ? blocks : []
+  const safeExits = Array.isArray(level.exits) ? level.exits : []
+  const safeObstacles = Array.isArray(level.obstacles) ? level.obstacles : []
 
-  const TipsModal = showTips ? (
-    <div className="modal-overlay" onClick={() => setShowTips(false)}>
-      <motion.div
-        className="modal-panel glass-card bc-win-panel"
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="bc-win-title">Consejos</h2>
-        <p className="bc-tip-text">{PRO_TIPS[tipIndex] ?? PRO_TIPS[0]}</p>
-        <div className="bc-tip-actions">
-          <button
-            type="button"
-            className="glass-button secondary"
-            onClick={() => setTipIndex((i) => (i + 1) % PRO_TIPS.length)}
-          >
-            Siguiente consejo
-          </button>
-          <button type="button" className="glass-button" onClick={() => setShowTips(false)}>
-            Volver al juego
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  ) : null
+  // Ghost range del bloque en drag
+  const ghostRange = useMemo(() => {
+    if (!draggingId || !options.showGhost) return null
+    const drag = dragRef.current
+    const block = safeBlocks.find((b) => b.id === draggingId)
+    if (!block || !drag?.axis) return null
+    return {
+      block,
+      axis: drag.axis,
+      min: drag.min,
+      max: drag.max,
+      baseRow: block.row,
+      baseCol: block.col,
+    }
+  }, [draggingId, options.showGhost, safeBlocks, dragVisual])
 
-  // ==================== HUB ====================
+  // ---- Pantallas no-play ----
   if (screen === 'hub') {
     return (
-      <div className="app-shell bc-root">
+      <div className="app-shell">
         <style>{BC_STYLES}</style>
         <header className="bc-header">
           <button
@@ -821,126 +797,39 @@ export function BlockCleaner() {
           </button>
           <div className="bc-title-wrap">
             <h1 className="bc-title">Block Cleaner</h1>
-            <span className="bc-level-badge">
-              Nivel {levelId} · {level.tierLabel}
-            </span>
+            <span className="bc-level-badge">Nv. {levelId}</span>
           </div>
           <div className="bc-header-spacer" />
         </header>
-        <div className="bc-hub glass-card">
+        <div className="glass-card bc-hub">
           <p className="bc-hub-lead">
-            Desliza cada bloque hasta la <strong>pared de su color</strong>. Solo allí desaparece.
-            Sin soltar puedes cambiar de eje (horizontal ↔ vertical). El reloj siempre corre:
-            resuelve antes de que se agote.
+            Desliza bloques de color hacia su puerta. Cada nivel crece y se complica:
+            ejes forzados, candados y tableros más grandes.
           </p>
           <div className="bc-hub-grid">
             <button
               type="button"
               className="glass-button bc-hub-primary"
-              onClick={() => startLevel(levelId)}
-            >
-              Continuar · Nivel {levelId}
-            </button>
-            <button
-              type="button"
-              className="glass-button secondary"
               onClick={() => {
                 playSfx('ui')
-                setScreen('levels')
+                setScreen('play')
               }}
             >
+              Jugar · Nivel {levelId}
+            </button>
+            <button type="button" className="glass-button secondary" onClick={() => { playSfx('ui'); setScreen('levels') }}>
               Niveles
             </button>
-            <button
-              type="button"
-              className="glass-button secondary"
-              onClick={() => {
-                playSfx('ui')
-                setScreen('settings')
-              }}
-            >
-              Ajustes de partida
+            <button type="button" className="glass-button secondary" onClick={() => { playSfx('ui'); setScreen('styles') }}>
+              Estilos de bloque
             </button>
-            <button
-              type="button"
-              className="glass-button secondary"
-              onClick={() => {
-                playSfx('ui')
-                setScreen('styles')
-              }}
-            >
-              Aspecto
+            <button type="button" className="glass-button secondary" onClick={() => { playSfx('ui'); setScreen('settings') }}>
+              Opciones
             </button>
-            <button
-              type="button"
-              className="glass-button secondary"
-              onClick={() => {
-                playSfx('ui')
-                setScreen('stats')
-              }}
-            >
-              Progreso
+            <button type="button" className="glass-button secondary" onClick={() => { playSfx('ui'); setScreen('stats') }}>
+              Estadísticas
             </button>
           </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (screen === 'settings') {
-    return (
-      <div className="app-shell bc-root">
-        <style>{BC_STYLES}</style>
-        <header className="bc-header">
-          <button
-            type="button"
-            className="glass-button secondary bc-back"
-            onClick={() => setScreen('hub')}
-          >
-            ← Menú
-          </button>
-          <div className="bc-title-wrap">
-            <h1 className="bc-title">Ajustes de partida</h1>
-          </div>
-          <div className="bc-header-spacer" />
-        </header>
-        <div className="bc-panel glass-card">
-          {(
-            [
-              ['hardcore', 'Hardcore (sin deshacer)'],
-              ['noHints', 'Sin pistas'],
-              ['showExits', 'Mostrar salidas de color'],
-              ['showPar', 'Mostrar par de movimientos'],
-              ['showGhost', 'Mostrar rango de arrastre'],
-            ] as const
-          ).map(([key, label]) => (
-            <label key={key} className="bc-opt-row">
-              <span>{label}</span>
-              <label className="gco-switch">
-                <input
-                  type="checkbox"
-                  checked={options[key]}
-                  onChange={(e) => {
-                    const next = { ...options, [key]: e.target.checked }
-                    setOptions(next)
-                    writeJSON(LS.options, next)
-                  }}
-                />
-                <span />
-              </label>
-            </label>
-          ))}
-          <p className="bc-settings-note">
-            El límite de tiempo está siempre activo — forma parte del reto en todos los niveles.
-          </p>
-          <button
-            type="button"
-            className="glass-button"
-            style={{ marginTop: '1rem', width: '100%' }}
-            onClick={() => startLevel(levelId)}
-          >
-            Empezar nivel {levelId}
-          </button>
         </div>
       </div>
     )
@@ -950,42 +839,112 @@ export function BlockCleaner() {
     const scores = readJSON<Record<number, number>>(LS.scores, {})
     const bestM = readJSON<Record<number, number>>(LS.moves, {})
     const defeats = readJSON<Record<number, number>>(LS.defeats, {})
+    const maxShow = Math.max(unlocked + 4, 20)
     return (
-      <div className="app-shell bc-root">
+      <div className="app-shell">
         <style>{BC_STYLES}</style>
         <header className="bc-header">
-          <button
-            type="button"
-            className="glass-button secondary bc-back"
-            onClick={() => setScreen('hub')}
-          >
-            ← Menú
-          </button>
-          <div className="bc-title-wrap">
-            <h1 className="bc-title">Niveles</h1>
-          </div>
+          <button type="button" className="glass-button secondary bc-back" onClick={() => setScreen('hub')}>←</button>
+          <div className="bc-title-wrap"><h1 className="bc-title">Niveles</h1></div>
           <div className="bc-header-spacer" />
         </header>
-        <p className="bc-levels-hint">Puedes volver a jugar cualquier nivel ya desbloqueado.</p>
+        <p className="bc-levels-hint">Desbloqueados: {unlocked}</p>
         <div className="bc-level-grid">
-          {Array.from({ length: unlocked }, (_, i) => i + 1).map((n) => (
-            <button
-              key={n}
-              type="button"
-              className={`bc-level-btn glass-card ${n === levelId ? 'active' : ''}`}
-              onClick={() => startLevel(n)}
-            >
-              <span className="bc-level-num">{n}</span>
-              <span className="bc-level-stars">
-                {'★'.repeat(scores[n] ?? 0)}
-                {'☆'.repeat(3 - (scores[n] ?? 0))}
-              </span>
-              {bestM[n] != null && <span className="bc-level-meta mono">{bestM[n]} mov</span>}
-              {(defeats[n] ?? 0) > 0 && (
-                <span className="bc-level-meta mono defeats">{defeats[n]}×</span>
-              )}
-            </button>
+          {Array.from({ length: maxShow }, (_, i) => i + 1).map((n) => {
+            const locked = n > unlocked
+            return (
+              <button
+                key={n}
+                type="button"
+                className={`glass-card bc-level-btn ${n === levelId ? 'active' : ''}`}
+                disabled={locked}
+                onClick={() => {
+                  if (locked) return
+                  playSfx('ui')
+                  setLevelId(n)
+                  setScreen('play')
+                }}
+              >
+                <span className="bc-level-num">{locked ? '🔒' : n}</span>
+                {!locked && scores[n] != null && (
+                  <span className="bc-level-stars">{'★'.repeat(scores[n])}</span>
+                )}
+                {!locked && bestM[n] != null && (
+                  <span className="bc-level-meta mono">{bestM[n]} mov</span>
+                )}
+                {defeats[n] ? <span className="bc-level-meta defeats">{defeats[n]}×</span> : null}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  if (screen === 'settings') {
+    return (
+      <div className="app-shell">
+        <style>{BC_STYLES}</style>
+        <header className="bc-header">
+          <button type="button" className="glass-button secondary bc-back" onClick={() => setScreen('hub')}>←</button>
+          <div className="bc-title-wrap"><h1 className="bc-title">Opciones</h1></div>
+          <div className="bc-header-spacer" />
+        </header>
+        <div className="glass-card bc-panel">
+          {(
+            [
+              ['hardcore', 'Hardcore', 'Sin deshacer ni reiniciar'],
+              ['noHints', 'Sin pistas', 'Oculta el botón de pista'],
+              ['showExits', 'Mostrar puertas', 'Resalta las salidas de color'],
+              ['showPar', 'Mostrar par', 'Objetivo de movimientos'],
+              ['showGhost', 'Rango fantasma', 'Muestra el tramo deslizable'],
+            ] as const
+          ).map(([key, label, desc]) => (
+            <div key={key} className="bc-opt-row">
+              <div>
+                <div>{label}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--gco-ink-muted)' }}>{desc}</div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={options[key]}
+                className="gco-switch"
+                onClick={() => {
+                  const next = { ...options, [key]: !options[key] }
+                  setOptions(next)
+                  writeJSON(LS.options, next)
+                  playSfx('ui')
+                }}
+                style={{
+                  width: 52,
+                  height: 30,
+                  borderRadius: 999,
+                  border: 'none',
+                  background: options[key] ? 'var(--gco-primary)' : 'rgba(255,255,255,0.12)',
+                  position: 'relative',
+                  cursor: 'pointer',
+                }}
+              >
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: 3,
+                    left: options[key] ? 24 : 3,
+                    width: 24,
+                    height: 24,
+                    borderRadius: '50%',
+                    background: '#fff',
+                    transition: 'left 0.2s ease',
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.35)',
+                  }}
+                />
+              </button>
+            </div>
           ))}
+          <p className="bc-settings-note">
+            El motor v9 garantiza que cada pieza con eje forzado tenga su puerta en un lado compatible.
+          </p>
         </div>
       </div>
     )
@@ -993,19 +952,11 @@ export function BlockCleaner() {
 
   if (screen === 'styles') {
     return (
-      <div className="app-shell bc-root">
+      <div className="app-shell">
         <style>{BC_STYLES}</style>
         <header className="bc-header">
-          <button
-            type="button"
-            className="glass-button secondary bc-back"
-            onClick={() => setScreen('hub')}
-          >
-            ← Menú
-          </button>
-          <div className="bc-title-wrap">
-            <h1 className="bc-title">Aspecto</h1>
-          </div>
+          <button type="button" className="glass-button secondary bc-back" onClick={() => setScreen('hub')}>←</button>
+          <div className="bc-title-wrap"><h1 className="bc-title">Estilos</h1></div>
           <div className="bc-header-spacer" />
         </header>
         <div className="bc-styles-grid">
@@ -1013,14 +964,17 @@ export function BlockCleaner() {
             <button
               key={s.id}
               type="button"
-              className={`bc-style-card glass-card ${blockStyle === s.id ? 'active' : ''}`}
+              className={`glass-card bc-style-card ${blockStyle === s.id ? 'active' : ''}`}
               onClick={() => {
                 setBlockStyle(s.id)
                 writeJSON(LS.style, s.id)
                 playSfx('ui')
               }}
             >
-              <div className="bc-style-preview" style={getBlockStyleProps('cyan')} />
+              <div
+                className="bc-style-preview"
+                style={getBlockStyleProps('cyan')}
+              />
               <span className="bc-style-label">{s.label}</span>
               <span className="bc-style-desc">{s.desc}</span>
             </button>
@@ -1031,87 +985,58 @@ export function BlockCleaner() {
   }
 
   if (screen === 'stats') {
-    const scores = readJSON<Record<number, number>>(LS.scores, {})
     return (
-      <div className="app-shell bc-root">
+      <div className="app-shell">
         <style>{BC_STYLES}</style>
         <header className="bc-header">
-          <button
-            type="button"
-            className="glass-button secondary bc-back"
-            onClick={() => setScreen('hub')}
-          >
-            ← Menú
-          </button>
-          <div className="bc-title-wrap">
-            <h1 className="bc-title">Progreso</h1>
-          </div>
+          <button type="button" className="glass-button secondary bc-back" onClick={() => setScreen('hub')}>←</button>
+          <div className="bc-title-wrap"><h1 className="bc-title">Estadísticas</h1></div>
           <div className="bc-header-spacer" />
         </header>
-        <div className="bc-panel glass-card">
-          <div className="bc-stat-row">
-            <span>Desbloqueados</span>
-            <span className="mono">{unlocked}</span>
-          </div>
-          <div className="bc-stat-row">
-            <span>Victorias</span>
-            <span className="mono">{readJSON(LS.wins, 0)}</span>
-          </div>
-          <div className="bc-stat-row">
-            <span>Derrotas</span>
-            <span className="mono">
-              {Object.values(readJSON<Record<number, number>>(LS.defeats, {})).reduce(
-                (a, b) => a + b,
-                0
-              )}
-            </span>
-          </div>
-          <div className="bc-stat-row">
-            <span>Movimientos totales</span>
-            <span className="mono">{readJSON(LS.totalMoves, 0)}</span>
-          </div>
-          <div className="bc-stat-row">
-            <span>Niveles 3★</span>
-            <span className="mono">
-              {Object.values(scores).filter((s) => s === 3).length}
-            </span>
-          </div>
-          <div className="bc-stat-row">
-            <span>Racha / récord</span>
-            <span className="mono">
-              {readJSON(LS.streak, 0)} / {readJSON(LS.bestStreak, 0)}
-            </span>
-          </div>
-          <div className="bc-stat-row">
-            <span>Mejor combo</span>
-            <span className="mono">×{readJSON(LS.bestCombo, 0)}</span>
-          </div>
+        <div className="glass-card bc-panel">
+          <div className="bc-stat-row"><span>Victorias</span><span className="mono">{readJSON(LS.wins, 0)}</span></div>
+          <div className="bc-stat-row"><span>Movimientos totales</span><span className="mono">{readJSON(LS.totalMoves, 0)}</span></div>
+          <div className="bc-stat-row"><span>Racha actual</span><span className="mono">{readJSON(LS.streak, 0)}</span></div>
+          <div className="bc-stat-row"><span>Mejor racha</span><span className="mono">{readJSON(LS.bestStreak, 0)}</span></div>
+          <div className="bc-stat-row"><span>Mejor combo</span><span className="mono">×{readJSON(LS.bestCombo, 0)}</span></div>
+          <div className="bc-stat-row"><span>Desbloqueado hasta</span><span className="mono">{unlocked}</span></div>
         </div>
       </div>
     )
   }
 
-  // ==================== PLAY ====================
-  const safeExits = Array.isArray(level.exits) ? level.exits : []
-  const safeObstacles = Array.isArray(level.obstacles) ? level.obstacles : []
-  const safeBlocks = Array.isArray(blocks) ? blocks : []
-  const boardPixelW = level.cols * BASE_CELL
-  const boardPixelH = level.rows * BASE_CELL
-
-  // Ghost range mientras se arrastra (opcional)
-  const ghostRange =
-    options.showGhost && draggingId && dragRef.current?.axis
-      ? (() => {
-          const d = dragRef.current!
-          const block = safeBlocks.find((b) => b.id === draggingId)
-          if (!block) return null
-          return { axis: d.axis!, min: d.min, max: d.max, baseRow: d.baseRow, baseCol: d.baseCol, block }
-        })()
-      : null
+  // ---- PLAY ----
+  const TipsModal = (
+    <div className="modal-overlay" onClick={() => setShowTips(false)}>
+      <motion.div
+        className="modal-panel glass-card"
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 style={{ marginBottom: '0.75rem' }}>Consejo</h3>
+        <p className="bc-tip-text">{PRO_TIPS[tipIndex % PRO_TIPS.length]}</p>
+        <div className="bc-tip-actions">
+          <button
+            type="button"
+            className="glass-button secondary"
+            onClick={() => setTipIndex((i) => (i + 1) % PRO_TIPS.length)}
+          >
+            Otro consejo
+          </button>
+          <button type="button" className="glass-button" onClick={() => setShowTips(false)}>
+            Entendido
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  )
 
   return (
-    <div className="app-shell bc-root">
+    <div className="app-shell">
       <style>{BC_STYLES}</style>
+
       <header className="bc-header">
         <button
           type="button"
@@ -1121,69 +1046,114 @@ export function BlockCleaner() {
             setScreen('hub')
           }}
         >
-          ← Menú
+          ←
         </button>
         <div className="bc-title-wrap">
           <h1 className="bc-title">Block Cleaner</h1>
           <span className="bc-level-badge">
-            Nivel {levelId} · {level.tierLabel}
+            Nv. {levelId} · {level.tierLabel}
           </span>
         </div>
         <div className="bc-header-spacer" />
       </header>
 
-      <motion.div
-        className="glass-card bc-board-card"
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
+      <motion.div className="glass-card bc-board-card" layout>
         <div
-          className="bc-board-viewport"
           ref={viewportRef}
-          onPointerDown={handleViewportPointerDown}
-          onPointerMove={handleViewportPointerMove}
-          onPointerUp={handleViewportPointerUp}
-          onPointerCancel={handleViewportPointerUp}
+          className="bc-board-viewport"
+          onPointerDown={onViewportPointerDown}
+          onPointerMove={onViewportPointerMove}
+          onPointerUp={onViewportPointerUp}
+          onPointerCancel={onViewportPointerUp}
         >
           <div
             className="bc-board"
             style={{
-              width: boardPixelW,
-              height: boardPixelH,
+              width: level.cols * BASE_CELL,
+              height: level.rows * BASE_CELL,
               transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
               transformOrigin: '0 0',
             }}
           >
-            {/* Cuadrícula que cubre TODO el tablero */}
+            {/* Grid */}
             <div
               className="bc-grid"
               style={{
+                width: level.cols * BASE_CELL,
+                height: level.rows * BASE_CELL,
                 gridTemplateColumns: `repeat(${level.cols}, ${BASE_CELL}px)`,
                 gridTemplateRows: `repeat(${level.rows}, ${BASE_CELL}px)`,
-                width: boardPixelW,
-                height: boardPixelH,
               }}
             >
-              {Array.from({ length: Math.max(1, level.rows * level.cols) }).map((_, i) => (
+              {Array.from({ length: level.rows * level.cols }).map((_, i) => (
                 <div key={i} className="bc-cell" />
               ))}
             </div>
 
+            {/* Obstáculos */}
             {safeObstacles.map((o) => (
               <div
                 key={o.id}
                 className="bc-obstacle"
                 style={{
-                  width: BASE_CELL,
-                  height: BASE_CELL,
-                  transform: `translate(${o.col * BASE_CELL}px, ${o.row * BASE_CELL}px)`,
+                  left: o.col * BASE_CELL + 2,
+                  top: o.row * BASE_CELL + 2,
+                  width: BASE_CELL - 4,
+                  height: BASE_CELL - 4,
                 }}
               />
             ))}
 
-            {options.showExits && safeExits.map(renderExit)}
+            {/* Puertas */}
+            {options.showExits &&
+              safeExits.map((ex) => {
+                const c = COLOR_HEX[ex.color] ?? COLOR_HEX.cyan
+                const thick = 6
+                let style: React.CSSProperties = {
+                  position: 'absolute',
+                  background: c.base,
+                  boxShadow: `0 0 10px ${c.glow}`,
+                  borderRadius: 3,
+                  pointerEvents: 'none',
+                  zIndex: 2,
+                }
+                if (ex.side === 'left') {
+                  style = {
+                    ...style,
+                    left: -thick,
+                    top: ex.pos * BASE_CELL,
+                    width: thick,
+                    height: ex.length * BASE_CELL,
+                  }
+                } else if (ex.side === 'right') {
+                  style = {
+                    ...style,
+                    left: level.cols * BASE_CELL,
+                    top: ex.pos * BASE_CELL,
+                    width: thick,
+                    height: ex.length * BASE_CELL,
+                  }
+                } else if (ex.side === 'top') {
+                  style = {
+                    ...style,
+                    left: ex.pos * BASE_CELL,
+                    top: -thick,
+                    width: ex.length * BASE_CELL,
+                    height: thick,
+                  }
+                } else {
+                  style = {
+                    ...style,
+                    left: ex.pos * BASE_CELL,
+                    top: level.rows * BASE_CELL,
+                    width: ex.length * BASE_CELL,
+                    height: thick,
+                  }
+                }
+                return <div key={ex.id} style={style} />
+              })}
 
-            {/* Ghost de rango de arrastre */}
+            {/* Ghost range */}
             {ghostRange && (
               <div
                 className="bc-ghost-range"
@@ -1226,7 +1196,7 @@ export function BlockCleaner() {
                     initial={{ opacity: 0.85, scale: 0.2 }}
                     animate={{ opacity: 0, scale: 2.7 }}
                     exit={{ opacity: 0 }}
-                    transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+                    transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
                   />
                 )
               })}
@@ -1236,8 +1206,10 @@ export function BlockCleaner() {
               {safeBlocks.map((b) => {
                 const isDragging = draggingId === b.id
                 const isExiting = exitingId === b.id
-                const row = isDragging && dragRow != null ? dragRow : b.row
-                const col = isDragging && dragCol != null ? dragCol : b.col
+                const row =
+                  isDragging && dragVisual != null ? dragVisual.row : b.row
+                const col =
+                  isDragging && dragVisual != null ? dragVisual.col : b.col
                 const bw = blockWidth(b)
                 const bh = blockHeight(b)
                 const w = bw * BASE_CELL
@@ -1256,11 +1228,11 @@ export function BlockCleaner() {
                 const rotateOut = isExiting
                   ? exitVec.dx !== 0
                     ? exitVec.dx > 0
-                      ? 16
-                      : -16
+                      ? 14
+                      : -14
                     : exitVec.dy > 0
-                      ? 9
-                      : -9
+                      ? 8
+                      : -8
                   : 0
 
                 return (
@@ -1284,7 +1256,7 @@ export function BlockCleaner() {
                     animate={{
                       x: col * BASE_CELL + pad / 2 + exitVec.dx,
                       y: row * BASE_CELL + pad / 2 + exitVec.dy,
-                      scale: isExiting ? 0.12 : isDragging ? 1.04 : 1,
+                      scale: isExiting ? 0.12 : isDragging ? 1.05 : 1,
                       opacity: isExiting ? 0 : locked ? 0.48 : 1,
                       rotate: rotateOut,
                     }}
@@ -1292,8 +1264,8 @@ export function BlockCleaner() {
                       isDragging
                         ? { duration: 0 }
                         : isExiting
-                          ? { duration: 0.4, ease: [0.22, 1, 0.36, 1] }
-                          : { type: 'spring', stiffness: 420, damping: 32, mass: 0.85 }
+                          ? { duration: 0.38, ease: [0.22, 1, 0.36, 1] }
+                          : { type: 'spring', stiffness: 480, damping: 34, mass: 0.75 }
                     }
                     onPointerDown={(e) => handlePointerDown(e, b)}
                     onPointerMove={handlePointerMove}
@@ -1324,28 +1296,13 @@ export function BlockCleaner() {
           </div>
 
           <div className="bc-zoom-controls">
-            <button
-              type="button"
-              className="icon-btn bc-zoom-btn"
-              aria-label="Alejar"
-              onClick={() => zoomBy(-0.16)}
-            >
+            <button type="button" className="icon-btn bc-zoom-btn" aria-label="Alejar" onClick={() => zoomBy(-0.14)}>
               −
             </button>
-            <button
-              type="button"
-              className="icon-btn bc-zoom-btn"
-              aria-label="Ajustar al viewport"
-              onClick={resetZoom}
-            >
+            <button type="button" className="icon-btn bc-zoom-btn" aria-label="Ajustar" onClick={resetZoom}>
               ⤢
             </button>
-            <button
-              type="button"
-              className="icon-btn bc-zoom-btn"
-              aria-label="Acercar"
-              onClick={() => zoomBy(0.16)}
-            >
+            <button type="button" className="icon-btn bc-zoom-btn" aria-label="Acercar" onClick={() => zoomBy(0.14)}>
               +
             </button>
           </div>
@@ -1496,7 +1453,7 @@ const BC_STYLES = `
 .bc-hub-lead { color: var(--gco-ink-muted); font-size: 0.92rem; line-height: 1.5; margin-bottom: 1.25rem; text-align: center; }
 .bc-hub-grid { display: flex; flex-direction: column; gap: 0.6rem; }
 .bc-hub-primary { width: 100%; }
-.bc-opt-row { display: flex; align-items: center; justify-content: space-between; padding: 0.7rem 0; border-bottom: 1px solid var(--gco-hairline); font-size: 0.92rem; }
+.bc-opt-row { display: flex; align-items: center; justify-content: space-between; padding: 0.7rem 0; border-bottom: 1px solid var(--gco-hairline); font-size: 0.92rem; gap: 1rem; }
 .bc-settings-note { font-size: 0.75rem; color: var(--gco-ink-muted); margin-top: 0.9rem; line-height: 1.4; }
 .bc-tip-text { font-size: 1rem; line-height: 1.55; margin-bottom: 1.3rem; }
 .bc-tip-actions { display: flex; flex-direction: column; gap: 0.55rem; }
@@ -1505,7 +1462,8 @@ const BC_STYLES = `
 .bc-levels-hint { text-align: center; color: var(--gco-ink-muted); font-size: 0.85rem; margin-bottom: 0.9rem; }
 .bc-level-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 0.65rem; }
 .bc-level-btn { display: flex; flex-direction: column; align-items: center; gap: 0.2rem; padding: 0.8rem 0.4rem; cursor: pointer; border: 1px solid var(--gco-glass-border); background: var(--gco-glass-bg); color: var(--gco-ink); }
-.bc-level-btn.active, .bc-level-btn:hover { border-color: var(--gco-primary); background: var(--gco-primary-dim); }
+.bc-level-btn.active, .bc-level-btn:hover:not(:disabled) { border-color: var(--gco-primary); background: var(--gco-primary-dim); }
+.bc-level-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .bc-level-num { font-weight: 700; font-size: 1.05rem; }
 .bc-level-stars { font-size: 0.72rem; color: var(--gco-primary); letter-spacing: 1px; }
 .bc-level-meta { font-size: 0.62rem; color: var(--gco-ink-muted); }

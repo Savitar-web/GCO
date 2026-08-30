@@ -6,38 +6,44 @@ import { soundClick } from '@/core/audio/uiSounds'
 
 const GAMES = [
   {
-    id: 'secuencia-colores',
-    title: 'Secuencia de colores',
-    emoji: '🌈',
-    desc: 'Observa y repite la secuencia. Cada nivel es más largo y rápido.',
+    id: 'acertijos',
+    title: 'Acertijos y adivinanzas',
+    emoji: '🧩',
+    desc: 'Opción múltiple. Solo avanzas si aciertas; los fallados no se repiten en niveles posteriores.',
   },
   {
-    id: 'cartas',
-    title: 'Memoria de cartas',
-    emoji: '🃏',
-    desc: 'Encuentra las parejas. Más cartas y menos tiempo conforme avanzas.',
+    id: 'historias',
+    title: 'Casos de detective',
+    emoji: '🔍',
+    desc: 'Historias reales o filosóficas. 8 pistas lógicas; solo una es correcta.',
   },
   {
-    id: 'nexo',
-    title: 'Nexo',
-    emoji: '🔗',
-    desc: 'Memoriza la secuencia, sigue el revoloteo y repítela en las nuevas posiciones.',
+    id: 'palabras',
+    title: 'Palabras ocultas',
+    emoji: '🔤',
+    desc: 'Anagramas con tildes, ahorcado mental y crucigrama/sopa/constelación con todas las combinaciones válidas.',
   },
   {
-    id: 'numeros-asociados',
-    title: 'Números asociados',
-    emoji: '🔢',
-    desc: 'Asocia números aleatorios con objetos o conceptos y memorízalos.',
+    id: 'silogismos',
+    title: 'Silogismos',
+    emoji: '⚖️',
+    desc: 'Premisas → conclusión válida. Trampas de cuantificadores, negaciones y falacias sutiles.',
   },
   {
-    id: 'habilidades',
-    title: 'Habilidades',
-    emoji: '⚡',
-    desc: 'Reacción, puntería y Simón dice. Entrena reflejos y precisión.',
+    id: 'mapas',
+    title: 'Mapas mentales',
+    emoji: '🗺️',
+    desc: 'Relaciones espaciales, grafos y restricciones. Deduce posiciones sin dibujo completo.',
+  },
+  {
+    id: 'codigo',
+    title: 'Código cifrado',
+    emoji: '🔐',
+    desc: 'Cifrados, patrones y reglas ocultas. Decodifica mensajes con evidencia limitada.',
   },
 ] as const
 
-export function MemoriaCategory() {
+export function DeduccionCategory() {
   const navigate = useNavigate()
 
   return (
@@ -49,40 +55,30 @@ export function MemoriaCategory() {
             soundClick()
             navigate('/')
           }}
-          style={{
-            padding: '0.5rem 1rem',
-            fontSize: '0.9rem',
-            marginBottom: '1rem',
-          }}
+          style={{ padding: '0.5rem 1rem', fontSize: '0.9rem', marginBottom: '1rem' }}
         >
           ← Volver
         </button>
-        <h1 style={{ fontSize: 'clamp(1.6rem, 5vw, 2.1rem)' }}>🧠 Memoria</h1>
+        <h1 style={{ fontSize: 'clamp(1.6rem, 5vw, 2.1rem)' }}>🔍 Deducción</h1>
         <p style={{ color: 'var(--gco-ink-muted)', marginTop: '0.35rem' }}>
-          Entrena tu memoria a corto y largo plazo con ejercicios progresivos.
+          Entrena inferencias, patrones y razonamiento bajo presión. Más de 130 niveles por juego.
         </p>
       </header>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
         {GAMES.map((game, i) => {
-          const progressIds =
-            game.id === 'habilidades'
-              ? (['habilidad-reaccion', 'habilidad-punteria', 'habilidad-simon'] as const)
-              : ([game.id] as const)
-          const levels = progressIds.map((id) => getGameProgress('memoria', id).highestLevel)
-          const best = Math.max(0, ...levels)
-
+          const best = getGameProgress('deduccion', game.id).highestLevel
           return (
             <motion.div
               key={game.id}
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.06, duration: 0.3 }}
+              transition={{ delay: i * 0.05, duration: 0.3 }}
             >
               <GlassCard
                 onClick={() => {
                   soundClick()
-                  navigate(`/categoria/memoria/${game.id}`)
+                  navigate(`/categoria/deduccion/${game.id}`)
                 }}
               >
                 <div
@@ -94,10 +90,8 @@ export function MemoriaCategory() {
                   }}
                 >
                   <span style={{ fontSize: '1.75rem' }}>{game.emoji}</span>
-                  <div style={{ flex: 1 }}>
-                    <h3 style={{ fontSize: '1.05rem', marginBottom: '0.2rem' }}>
-                      {game.title}
-                    </h3>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <h3 style={{ fontSize: '1.05rem', marginBottom: '0.2rem' }}>{game.title}</h3>
                     <p
                       style={{
                         fontSize: '0.82rem',
@@ -120,11 +114,7 @@ export function MemoriaCategory() {
                       </p>
                     )}
                   </div>
-                  <span
-                    style={{ color: 'var(--gco-ink-faint)', fontSize: '1.25rem' }}
-                  >
-                    →
-                  </span>
+                  <span style={{ color: 'var(--gco-ink-faint)', fontSize: '1.25rem' }}>→</span>
                 </div>
               </GlassCard>
             </motion.div>

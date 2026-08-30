@@ -1,18 +1,16 @@
 // =============================================================================
-// Generatelevelbc.ts — Block Cleaner · Color Block Jam style engine (v8)
+// Generatelevelbc.ts — Block Cleaner · Color Block Jam style engine (v9)
 //
-// CAMBIOS v8 (sobre v7):
-// - MOVIMIENTO MÁS FLUIDO en runtime: helpers de rango, snap y validación
-//   más precisos; el cliente puede interpolar y mostrar ghost ranges.
-// - GENERACIÓN REFORZADA: inserción en cola + scramble reversible + 12
-//   pasadas de "no-exit-at-start" + reintento de semillas si queda alguna
-//   pieza desbloqueada alineada. Garantía fuerte de solucionabilidad.
-// - PUERTAS EXACTAS: longitud = huella máxima del color en ese lado.
-// - Cola hacia la puerta (depth 0 = pegada a la pared).
-// - Paleta 16 colores, dificultad más agresiva, más candados/ejes.
-// - Solver BFS + heurística mejorada + A*-lite para pistas.
+// FIXES v9 (críticos):
+// - PUERTAS SIEMPRE COMPATIBLES con axisLock / forcedDir / orientation.
+//   Pieza con eje horizontal → puerta SOLO en left/right.
+//   Pieza con eje vertical   → puerta SOLO en top/bottom.
+// - Asignación de lado de puerta ANTES de candados de eje; el axisLock
+//   se deriva del lado de la puerta (nunca al revés).
+// - Huella exacta: longitud de puerta = max footprint del color en ese lado.
+// - Scramble + 16 pasadas de "no-exit-at-start" + reintento de semillas.
+// - Tableros que crecen de forma agresiva y predecible.
 // - API pública estable para BlockCleaner.tsx.
-// - Código extendido, documentado y a prueba de bordes (> 1000 líneas).
 // =============================================================================
 
 export type BlockColor =
@@ -77,7 +75,7 @@ export interface Move {
 }
 
 // -----------------------------------------------------------------------------
-// RNG determinista (Mulberry32) — misma semilla = mismo nivel
+// RNG determinista (Mulberry32)
 // -----------------------------------------------------------------------------
 function mulberry32(seed: number) {
   let s = seed | 0
@@ -113,7 +111,7 @@ function clampNum(v: number, min: number, max: number) {
 }
 
 // -----------------------------------------------------------------------------
-// Configuración de dificultad por nivel
+// Dificultad — tableros que crecen de verdad
 // -----------------------------------------------------------------------------
 export interface DifficultyTierConfig {
   rows: number
@@ -132,11 +130,6 @@ export interface DifficultyTierConfig {
   label: string
 }
 
-/**
- * Escala de dificultad más agresiva que v7.
- * Tableros más grandes, más piezas compartiendo color (colas),
- * candados y bloqueos de eje aparecen antes.
- */
 export function getDifficultyTier(level: number): DifficultyTierConfig {
   const L = Math.max(1, level)
   const decade = Math.floor((L - 1) / 10)
@@ -144,64 +137,98 @@ export function getDifficultyTier(level: number): DifficultyTierConfig {
   if (L <= 3) {
     return {
       rows: 5, cols: 5, numBlocks: 3, numColors: 3, obstacleCount: 0,
-      minLength: 1, maxLength: 2, scrambleMoves: 6, axisLockChance: 0,
+      minLength: 1, maxLength: 2, scrambleMoves: 8, axisLockChance: 0,
       lockedChance: 0, lockedClearsMin: 0, lockedClearsMax: 0,
-      timeLimitBase: 160, label: 'Tutorial',
+      timeLimitBase: 180, label: 'Tutorial',
     }
   }
   if (L <= 6) {
     return {
-      rows: 5, cols: 6, numBlocks: 5, numColors: 3, obstacleCount: 0,
-      minLength: 1, maxLength: 2, scrambleMoves: 9, axisLockChance: 0,
+      rows: 5, cols: 6, numBlocks: 4, numColors: 3, obstacleCount: 0,
+      minLength: 1, maxLength: 2, scrambleMoves: 12, axisLockChance: 0,
       lockedChance: 0, lockedClearsMin: 0, lockedClearsMax: 0,
-      timeLimitBase: 145, label: 'Tutorial+',
+      timeLimitBase: 160, label: 'Tutorial+',
     }
   }
   if (L <= 10) {
     return {
       rows: 6, cols: 6, numBlocks: 6, numColors: 4, obstacleCount: 1,
-      minLength: 1, maxLength: 3, scrambleMoves: 14, axisLockChance: 0.08,
+      minLength: 1, maxLength: 3, scrambleMoves: 16, axisLockChance: 0.05,
       lockedChance: 0, lockedClearsMin: 0, lockedClearsMax: 0,
-      timeLimitBase: 130, label: 'Principiante',
+      timeLimitBase: 145, label: 'Principiante',
     }
   }
   if (L <= 16) {
     return {
-      rows: 6, cols: 7, numBlocks: 8, numColors: 4, obstacleCount: 2,
-      minLength: 1, maxLength: 3, scrambleMoves: 18, axisLockChance: 0.15,
-      lockedChance: 0.08, lockedClearsMin: 1, lockedClearsMax: 2,
-      timeLimitBase: 120, label: 'Principiante+',
+      rows: 6, cols: 7, numBlocks: 7, numColors: 4, obstacleCount: 2,
+      minLength: 1, maxLength: 3, scrambleMoves: 20, axisLockChance: 0.12,
+      lockedChance: 0.06, lockedClearsMin: 1, lockedClearsMax: 2,
+      timeLimitBase: 130, label: 'Principiante+',
+    }
+  }
+  if (L <= 25) {
+    return {
+      rows: 7, cols: 7, numBlocks: 9, numColors: 5, obstacleCount: 2,
+      minLength: 1, maxLength: 3, scrambleMoves: 26, axisLockChance: 0.2,
+      lockedChance: 0.12, lockedClearsMin: 1, lockedClearsMax: 3,
+      timeLimitBase: 120, label: 'Intermedio',
+    }
+  }
+  if (L <= 40) {
+    return {
+      rows: 8, cols: 8, numBlocks: 11, numColors: 5, obstacleCount: 3,
+      minLength: 1, maxLength: 4, scrambleMoves: 32, axisLockChance: 0.28,
+      lockedChance: 0.18, lockedClearsMin: 1, lockedClearsMax: 4,
+      timeLimitBase: 110, label: 'Intermedio+',
+    }
+  }
+  if (L <= 60) {
+    return {
+      rows: 9, cols: 9, numBlocks: 13, numColors: 6, obstacleCount: 4,
+      minLength: 1, maxLength: 4, scrambleMoves: 40, axisLockChance: 0.35,
+      lockedChance: 0.22, lockedClearsMin: 1, lockedClearsMax: 5,
+      timeLimitBase: 100, label: 'Avanzado',
+    }
+  }
+  if (L <= 80) {
+    return {
+      rows: 10, cols: 10, numBlocks: 15, numColors: 7, obstacleCount: 5,
+      minLength: 1, maxLength: 4, scrambleMoves: 48, axisLockChance: 0.4,
+      lockedChance: 0.28, lockedClearsMin: 1, lockedClearsMax: 6,
+      timeLimitBase: 90, label: 'Experto',
+    }
+  }
+  if (L <= 100) {
+    return {
+      rows: 11, cols: 11, numBlocks: 17, numColors: 8, obstacleCount: 6,
+      minLength: 1, maxLength: 5, scrambleMoves: 56, axisLockChance: 0.45,
+      lockedChance: 0.32, lockedClearsMin: 2, lockedClearsMax: 7,
+      timeLimitBase: 80, label: 'Maestro',
     }
   }
 
-  const rows = clampNum(7 + Math.floor(decade * 0.85), 7, 14)
-  const cols = clampNum(7 + Math.floor(decade * 0.85), 7, 14)
-
+  // Infinito: crece suavemente hasta 14×14
+  const extra = Math.floor((L - 100) / 15)
   return {
-    rows,
-    cols,
-    numBlocks: clampNum(8 + Math.round(decade * 1.7), 8, 24),
-    // Más piezas que colores → colas reales hacia la misma puerta
-    numColors: clampNum(4 + Math.floor(decade / 1.5), 4, BLOCK_COLOR_ORDER.length),
-    obstacleCount: clampNum(2 + Math.floor(decade * 1.1), 0, 20),
+    rows: clampNum(12 + extra, 12, 14),
+    cols: clampNum(12 + extra, 12, 14),
+    numBlocks: clampNum(18 + Math.floor((L - 100) / 8), 18, 26),
+    numColors: clampNum(8 + Math.floor((L - 100) / 20), 8, BLOCK_COLOR_ORDER.length),
+    obstacleCount: clampNum(7 + Math.floor((L - 100) / 12), 7, 18),
     minLength: 1,
-    maxLength: clampNum(2 + Math.floor(decade / 2.2), 2, 5),
-    scrambleMoves: clampNum(18 + decade * 5.5, 18, 80),
-    axisLockChance: clampNum(0.18 + decade * 0.05, 0, 0.6),
-    lockedChance: L >= 12 ? clampNum(0.12 + (decade - 1) * 0.048, 0, 0.48) : 0,
-    lockedClearsMin: 1,
-    lockedClearsMax: clampNum(2 + Math.floor(decade / 2), 2, 9),
-    timeLimitBase: clampNum(140 - decade * 6.5, 40, 140),
-    label:
-      decade < 2 ? 'Intermedio' :
-      decade < 4 ? 'Avanzado' :
-      decade < 6 ? 'Experto' :
-      decade < 9 ? 'Maestro' : 'Infinito',
+    maxLength: clampNum(4 + Math.floor((L - 100) / 40), 4, 5),
+    scrambleMoves: clampNum(60 + Math.floor((L - 100) / 5), 60, 90),
+    axisLockChance: clampNum(0.48 + decade * 0.01, 0.48, 0.62),
+    lockedChance: clampNum(0.35 + decade * 0.01, 0.35, 0.5),
+    lockedClearsMin: 2,
+    lockedClearsMax: clampNum(6 + Math.floor((L - 100) / 25), 6, 10),
+    timeLimitBase: clampNum(75 - Math.floor((L - 100) / 10), 45, 75),
+    label: 'Infinito',
   }
 }
 
 // -----------------------------------------------------------------------------
-// Geometría de bloques y ocupación
+// Geometría
 // -----------------------------------------------------------------------------
 function cellKey(r: number, c: number) {
   return `${r}:${c}`
@@ -226,7 +253,6 @@ export function blockHeight(b: Pick<Block, 'length' | 'orientation'>): number {
   return b.orientation === 'vertical' ? b.length : 1
 }
 
-/** Huella del bloque proyectada sobre el lado de la puerta. */
 export function footprintAlongSide(b: Pick<Block, 'length' | 'orientation'>, side: Side): number {
   if (side === 'left' || side === 'right') return blockHeight(b)
   return blockWidth(b)
@@ -259,15 +285,26 @@ function cellsAt(
   return blockCells({ ...b, row, col })
 }
 
-// -----------------------------------------------------------------------------
-// Rangos de deslizamiento (núcleo del movimiento fluido)
-// -----------------------------------------------------------------------------
+/** Lados compatibles con un axisLock (o con orientación si no hay lock). */
+function sidesForAxis(axis: AxisLock | Orientation): Side[] {
+  if (axis === 'horizontal') return ['left', 'right']
+  return ['top', 'bottom']
+}
 
-/**
- * Calcula el intervalo [min, max] de posiciones válidas en un eje.
- * Respeta candados, forcedDir, obstáculos y otros bloques.
- * Usado tanto en generación como en el cliente para drag fluido.
- */
+function axisForSide(side: Side): AxisLock {
+  return side === 'left' || side === 'right' ? 'horizontal' : 'vertical'
+}
+
+function dirTowardSide(side: Side): Direction {
+  if (side === 'left') return 'left'
+  if (side === 'right') return 'right'
+  if (side === 'top') return 'up'
+  return 'down'
+}
+
+// -----------------------------------------------------------------------------
+// Rangos de deslizamiento
+// -----------------------------------------------------------------------------
 export function computeSlideRangeOnAxis(
   block: Block,
   axis: 'horizontal' | 'vertical',
@@ -336,7 +373,6 @@ export function computeSlideRangeOnAxis(
   return { min, max }
 }
 
-/** Rango sobre el eje natural del bloque (compatibilidad). */
 export function computeSlideRange(
   block: Block,
   blocks: Block[],
@@ -349,9 +385,6 @@ export function computeSlideRange(
   return computeSlideRangeOnAxis(block, axis, blocks, obstacles, rows, cols, clearedCount)
 }
 
-/**
- * Lista de posiciones discretas alcanzables en un eje (útil para ghost UI).
- */
 export function listReachablePositionsOnAxis(
   block: Block,
   axis: 'horizontal' | 'vertical',
@@ -370,9 +403,8 @@ export function listReachablePositionsOnAxis(
 }
 
 // -----------------------------------------------------------------------------
-// Salidas y alineación
+// Salidas
 // -----------------------------------------------------------------------------
-
 function isAlignedWithExit(
   block: Block,
   exit: Exit,
@@ -402,6 +434,14 @@ function isAlignedWithExit(
   return false
 }
 
+/**
+ * Una pieza solo puede salir por su color si:
+ * - no está bloqueada por candado
+ * - la huella cabe en la puerta
+ * - está alineada con la puerta
+ * - su axisLock (si existe) es compatible con el lado de la puerta
+ * - su forcedDir (si existe) apunta hacia ese lado
+ */
 export function canExit(
   block: Block,
   exit: Exit,
@@ -414,6 +454,17 @@ export function canExit(
   if (block.color !== exit.color) return false
   if (!isBlockMovable(block, clearedCount)) return false
   if (footprintAlongSide(block, exit.side) > exit.length) return false
+
+  // Compatibilidad de eje: horizontal lock → solo left/right
+  if (block.axisLock) {
+    const need = axisForSide(exit.side)
+    if (block.axisLock !== need) return false
+  }
+  if (block.forcedDir) {
+    const need = dirTowardSide(exit.side)
+    if (block.forcedDir !== need) return false
+  }
+
   return isAlignedWithExit(block, exit, rows, cols)
 }
 
@@ -443,7 +494,7 @@ export function isSolved(blocks: Block[]): boolean {
 }
 
 // -----------------------------------------------------------------------------
-// Nivel de respaldo (siempre válido)
+// Fallback
 // -----------------------------------------------------------------------------
 export const FALLBACK_LEVEL: BlockCleanerLevel = {
   id: 1,
@@ -456,12 +507,12 @@ export const FALLBACK_LEVEL: BlockCleanerLevel = {
     { id: 'b4', color: 'cyan', row: 1, col: 0, length: 1, orientation: 'horizontal' },
   ],
   exits: [
-    { id: 'e1', color: 'cyan', side: 'right', pos: 0, length: 2 },
+    { id: 'e1', color: 'cyan', side: 'right', pos: 1, length: 2 },
     { id: 'e2', color: 'orange', side: 'bottom', pos: 3, length: 1 },
     { id: 'e3', color: 'violet', side: 'left', pos: 3, length: 1 },
   ],
   obstacles: [],
-  timeLimit: 150,
+  timeLimit: 180,
   difficulty: 1,
   parMoves: 6,
   seed: 1,
@@ -469,14 +520,8 @@ export const FALLBACK_LEVEL: BlockCleanerLevel = {
 }
 
 // -----------------------------------------------------------------------------
-// Inserción constructiva "en cola" hacia la puerta
+// Inserción en cola hacia la puerta
 // -----------------------------------------------------------------------------
-
-/**
- * Busca la profundidad libre más cercana a la pared de la puerta.
- * depth 0 = pegada a la pared; depth 1 = justo detrás, etc.
- * Prueba todas las posiciones dentro del tramo de la puerta.
- */
 function tryPlaceAtDepth(
   p: { color: BlockColor; length: number; orientation: Orientation },
   exit: Exit,
@@ -529,10 +574,6 @@ function tryPlaceAtDepth(
   return null
 }
 
-// -----------------------------------------------------------------------------
-// Validación de estado (post-scramble / post-corrección)
-// -----------------------------------------------------------------------------
-
 function countUnlockedExitable(
   blocks: Block[],
   exits: Exit[],
@@ -553,10 +594,6 @@ function countUnlockedExitable(
   return n
 }
 
-/**
- * Mueve una pieza a una posición interior aleatoria válida (un solo paso).
- * Devuelve el nuevo array o el original si no pudo.
- */
 function nudgeBlockAwayFromExit(
   blocks: Block[],
   blockId: string,
@@ -592,10 +629,28 @@ function nudgeBlockAwayFromExit(
   return blocks
 }
 
-// -----------------------------------------------------------------------------
-// Generación principal (constructiva + scramble + garantía no-exit)
-// -----------------------------------------------------------------------------
+/**
+ * Comprueba que TODA pieza pueda, en teoría, alcanzar su puerta
+ * (ignorando otras piezas): el axisLock y forcedDir apuntan al lado correcto
+ * y la huella cabe.
+ */
+function allBlocksCompatibleWithExits(blocks: Block[], exits: Exit[]): boolean {
+  const byColor = new Map<BlockColor, Exit>()
+  for (const e of exits) byColor.set(e.color, e)
 
+  for (const b of blocks) {
+    const exit = byColor.get(b.color)
+    if (!exit) return false
+    if (footprintAlongSide(b, exit.side) > exit.length) return false
+    if (b.axisLock && b.axisLock !== axisForSide(exit.side)) return false
+    if (b.forcedDir && b.forcedDir !== dirTowardSide(exit.side)) return false
+  }
+  return true
+}
+
+// -----------------------------------------------------------------------------
+// Generación principal
+// -----------------------------------------------------------------------------
 function generateLevelOnce(
   safeId: number,
   tier: DifficultyTierConfig,
@@ -606,7 +661,7 @@ function generateLevelOnce(
   const colors = BLOCK_COLOR_ORDER.slice(0, Math.max(2, tier.numColors))
   const sides: Side[] = ['top', 'bottom', 'left', 'right']
 
-  // 1) Planificar bloques
+  // 1) Planificar bloques (color, length, orientation)
   type Planned = { color: BlockColor; length: number; orientation: Orientation }
   const planned: Planned[] = []
   for (let i = 0; i < tier.numBlocks; i++) {
@@ -617,12 +672,20 @@ function generateLevelOnce(
   }
 
   const usedColors = Array.from(new Set(planned.map((p) => p.color)))
+
+  // 2) Elegir lado de puerta POR COLOR según mayoría de orientaciones
+  //    horizontal-majority → left/right; vertical-majority → top/bottom
   const sideByColor = new Map<BlockColor, Side>()
   for (const color of usedColors) {
-    sideByColor.set(color, pickItem(rng, sides))
+    const group = planned.filter((p) => p.color === color)
+    const hCount = group.filter((p) => p.orientation === 'horizontal').length
+    const vCount = group.length - hCount
+    const preferredAxis: AxisLock = hCount >= vCount ? 'horizontal' : 'vertical'
+    const allowed = sidesForAxis(preferredAxis)
+    sideByColor.set(color, pickItem(rng, allowed))
   }
 
-  // 2) Una puerta por color, ANCHO EXACTO = max footprint
+  // 3) Una puerta por color, ANCHO = max footprint en ese lado
   const exits: Exit[] = []
   const usedSlots: Array<{ side: Side; pos: number; length: number }> = []
 
@@ -631,7 +694,7 @@ function generateLevelOnce(
     const need = Math.max(1, ...sameColor.map((p) => footprintAlongSide(p, side)))
     const boundaryLen = side === 'top' || side === 'bottom' ? cols : rows
     const length = Math.min(need, boundaryLen)
-    for (let attempt = 0; attempt < 140; attempt++) {
+    for (let attempt = 0; attempt < 160; attempt++) {
       const pos = pickInt(rng, 0, Math.max(0, boundaryLen - length))
       const overlap = usedSlots.some(
         (u) => u.side === side && pos < u.pos + u.length && pos + length > u.pos
@@ -649,7 +712,9 @@ function generateLevelOnce(
     const preferred = sideByColor.get(color) ?? pickItem(rng, sides)
     let placed = placeExit(color, preferred)
     if (!placed) {
-      for (const alt of shuffle(rng, sides.filter((s) => s !== preferred))) {
+      // Alternativas del MISMO eje (compatibles con la orientación mayoritaria)
+      const sameAxis = sidesForAxis(axisForSide(preferred)).filter((s) => s !== preferred)
+      for (const alt of shuffle(rng, sameAxis)) {
         if (placeExit(color, alt)) {
           placed = true
           break
@@ -657,37 +722,51 @@ function generateLevelOnce(
       }
     }
     if (!placed) {
-      // Último recurso: forzar en pos 0 del primer lado libre
-      for (const alt of sides) {
-        const boundaryLen = alt === 'top' || alt === 'bottom' ? cols : rows
-        const need = Math.max(
-          1,
-          ...planned.filter((p) => p.color === color).map((p) => footprintAlongSide(p, alt))
-        )
-        const length = Math.min(need, boundaryLen)
-        const pos = 0
-        const overlap = usedSlots.some(
-          (u) => u.side === alt && pos < u.pos + u.length && pos + length > u.pos
-        )
-        if (overlap) continue
-        exits.push({ id: `e${exits.length + 1}`, color, side: alt, pos, length })
-        usedSlots.push({ side: alt, pos, length })
-        sideByColor.set(color, alt)
-        break
+      // Último recurso: cualquier lado libre (se reorientarán piezas si hace falta)
+      for (const alt of shuffle(rng, sides)) {
+        if (placeExit(color, alt)) {
+          placed = true
+          break
+        }
       }
     }
+    if (!placed) return null
   }
 
   const colorExit = new Map<BlockColor, Exit>()
   for (const e of exits) colorExit.set(e.color, e)
-  const validPlanned = planned.filter((p) => colorExit.has(p.color))
 
-  // 3) Obstáculos en el interior
+  // 4) Reorientar planned para que cada bloque quepa en su puerta
+  //    y su orientación sea compatible con el lado de la puerta.
+  const fixedPlanned: Planned[] = planned.map((p) => {
+    const exit = colorExit.get(p.color)
+    if (!exit) return p
+    const needAxis = axisForSide(exit.side)
+    // Si la pieza es más larga que la puerta en su orientación actual, girar
+    let orientation = p.orientation
+    let length = p.length
+    if (footprintAlongSide({ length, orientation }, exit.side) > exit.length) {
+      // Girar: la huella en el otro eje suele ser 1
+      orientation = orientation === 'horizontal' ? 'vertical' : 'horizontal'
+      if (footprintAlongSide({ length, orientation }, exit.side) > exit.length) {
+        length = exit.length
+      }
+    }
+    // Preferir orientación alineada con el eje de la puerta (cola natural)
+    if (needAxis === 'horizontal' && orientation === 'vertical' && length === 1) {
+      // 1×1: da igual
+    } else if (needAxis === 'vertical' && orientation === 'horizontal' && length === 1) {
+      // 1×1: da igual
+    }
+    return { ...p, orientation, length }
+  })
+
+  // 5) Obstáculos interiores
   const occupied = new Set<string>()
   const obstacles: Obstacle[] = []
   for (let i = 0; i < tier.obstacleCount && rows > 2 && cols > 2; i++) {
     let attempts = 0
-    while (attempts < 100) {
+    while (attempts < 120) {
       attempts++
       const row = pickInt(rng, 1, rows - 2)
       const col = pickInt(rng, 1, cols - 2)
@@ -699,10 +778,11 @@ function generateLevelOnce(
     }
   }
 
-  // 4) Inserción constructiva en cola
+  // 6) Inserción constructiva en cola hacia la puerta
   const blocks: Block[] = []
   const byColor = new Map<BlockColor, Planned[]>()
-  for (const p of validPlanned) {
+  for (const p of fixedPlanned) {
+    if (!colorExit.has(p.color)) continue
     const arr = byColor.get(p.color) ?? []
     arr.push(p)
     byColor.set(p.color, arr)
@@ -712,6 +792,8 @@ function generateLevelOnce(
     const queue = shuffle(rng, byColor.get(color) ?? [])
     const exit = colorExit.get(color)
     if (!exit) continue
+    const exitAxis = axisForSide(exit.side)
+
     for (const p of queue) {
       const bh = p.orientation === 'vertical' ? p.length : 1
       const bw = p.orientation === 'horizontal' ? p.length : 1
@@ -727,23 +809,13 @@ function generateLevelOnce(
         occupied.add(cellKey(r, c))
       }
 
+      // axisLock / forcedDir SIEMPRE derivados del lado de la puerta
       let axisLock: AxisLock | undefined
       let forcedDir: Direction | undefined
       if (rng() < tier.axisLockChance) {
-        axisLock = p.orientation
-        if (rng() < 0.42) {
-          const dir: Direction =
-            exit.side === 'left'
-              ? 'left'
-              : exit.side === 'right'
-                ? 'right'
-                : exit.side === 'top'
-                  ? 'up'
-                  : 'down'
-          const compatible =
-            (axisLock === 'horizontal' && (dir === 'left' || dir === 'right')) ||
-            (axisLock === 'vertical' && (dir === 'up' || dir === 'down'))
-          if (compatible) forcedDir = dir
+        axisLock = exitAxis // compatible por construcción
+        if (rng() < 0.45) {
+          forcedDir = dirTowardSide(exit.side) // apunta a la puerta
         }
       }
 
@@ -762,7 +834,7 @@ function generateLevelOnce(
 
   if (!blocks.length) return null
 
-  // 5) Candados (orden de inserción → precedentes garantizados)
+  // 7) Candados de orden (precedentes garantizados por orden de inserción)
   const n = blocks.length
   for (let i = 0; i < n; i++) {
     const guaranteedPrecedents = n - 1 - i
@@ -776,7 +848,10 @@ function generateLevelOnce(
     }
   }
 
-  // 6) Scramble reversible (solo piezas sin candado)
+  // Validación dura: toda pieza compatible con su puerta
+  if (!allBlocksCompatibleWithExits(blocks, exits)) return null
+
+  // 8) Scramble reversible
   let current = blocks.map((b) => ({ ...b }))
   let lastId: string | null = null
   for (let step = 0; step < tier.scrambleMoves; step++) {
@@ -807,8 +882,8 @@ function generateLevelOnce(
     lastId = block.id
   }
 
-  // 7) GARANTÍA REFORZADA: ninguna pieza desbloqueada arranca lista para salir
-  for (let pass = 0; pass < 12; pass++) {
+  // 9) GARANTÍA: ninguna pieza desbloqueada arranca lista para salir
+  for (let pass = 0; pass < 16; pass++) {
     let fixedAny = false
     for (let i = 0; i < current.length; i++) {
       const block = current[i]
@@ -823,8 +898,6 @@ function generateLevelOnce(
         fixedAny = true
         continue
       }
-
-      // Si no se pudo mover la pieza, mover otra para abrirle hueco
       const others = shuffle(
         rng,
         current.filter((b) => b.id !== block.id && !b.lockedUntilClears)
@@ -841,14 +914,14 @@ function generateLevelOnce(
     if (!fixedAny) break
   }
 
-  // Verificación final: si aún hay piezas desbloqueadas listas, fallar esta semilla
   if (countUnlockedExitable(current, exits, obstacles, rows, cols) > 0) {
     return null
   }
+  if (!allBlocksCompatibleWithExits(current, exits)) return null
 
   const parMoves = Math.max(
     1,
-    Math.round(tier.scrambleMoves * 0.4 + current.length * 1.85)
+    Math.round(tier.scrambleMoves * 0.38 + current.length * 1.9)
   )
 
   return {
@@ -860,28 +933,22 @@ function generateLevelOnce(
     obstacles,
     difficulty: safeId,
     parMoves,
-    timeLimit: Math.max(40, tier.timeLimitBase + pickInt(rng, -12, 18)),
+    timeLimit: Math.max(40, tier.timeLimitBase + pickInt(rng, -10, 20)),
     seed,
     tierLabel: tier.label,
   }
 }
 
-/**
- * Genera un nivel garantizado solvable y sin piezas desbloqueadas
- * ya alineadas con su salida. Reintenta con semillas derivadas si hace falta.
- */
 export function generateLevel(levelId: number): BlockCleanerLevel {
   try {
     const safeId = Math.max(1, Math.floor(Number(levelId)) || 1)
     const tier = getDifficultyTier(safeId)
     const baseSeed = safeId * 2654435761 + 17
 
-    // Hasta 8 intentos con semillas derivadas
-    for (let attempt = 0; attempt < 8; attempt++) {
+    for (let attempt = 0; attempt < 12; attempt++) {
       const seed = (baseSeed + attempt * 9973) >>> 0
       const level = generateLevelOnce(safeId, tier, seed)
       if (level && level.blocks.length > 0) {
-        // Doble chequeo de no-exit-at-start
         const unlockedReady = countUnlockedExitable(
           level.blocks,
           level.exits,
@@ -889,11 +956,12 @@ export function generateLevel(levelId: number): BlockCleanerLevel {
           level.rows,
           level.cols
         )
-        if (unlockedReady === 0) return level
+        if (unlockedReady === 0 && allBlocksCompatibleWithExits(level.blocks, level.exits)) {
+          return level
+        }
       }
     }
 
-    // Fallback seguro
     return {
       ...FALLBACK_LEVEL,
       id: safeId,
@@ -907,9 +975,9 @@ export function generateLevel(levelId: number): BlockCleanerLevel {
 }
 
 // -----------------------------------------------------------------------------
-// Solver BFS acotado + heurística (pistas)
+// Solver + pistas
 // -----------------------------------------------------------------------------
-const SOLVER_CAP = 18000
+const SOLVER_CAP = 20000
 
 function stateKey(blocks: Block[]) {
   return blocks
@@ -1001,10 +1069,6 @@ export function solveLevel(
   return null
 }
 
-/**
- * Heurística de pista: prioriza piezas ya listadas para salir,
- * luego acerca piezas a su puerta, luego cualquier movimiento útil.
- */
 function heuristicHint(
   blocks: Block[],
   exits: Exit[],
@@ -1013,7 +1077,6 @@ function heuristicHint(
   cols: number,
   clearedCount: number
 ): Move | null {
-  // 1) Piezas que ya pueden salir
   for (const block of blocks) {
     if (!isBlockMovable(block, clearedCount)) continue
     const exit = exits.find((e) => e.color === block.color)
@@ -1023,7 +1086,6 @@ function heuristicHint(
     }
   }
 
-  // 2) Acercar a la puerta
   for (const block of blocks) {
     if (!isBlockMovable(block, clearedCount)) continue
     const exit = exits.find((e) => e.color === block.color)
@@ -1062,7 +1124,6 @@ function heuristicHint(
     }
   }
 
-  // 3) Cualquier movimiento disponible
   for (const block of blocks) {
     if (!isBlockMovable(block, clearedCount)) continue
     for (const axis of ['horizontal', 'vertical'] as const) {
@@ -1097,13 +1158,13 @@ export function getHintMove(
   cols: number,
   clearedCount = 0
 ): Move | null {
-  const sol = solveLevel(blocks, exits, obstacles, rows, cols, clearedCount, 10000)
+  const sol = solveLevel(blocks, exits, obstacles, rows, cols, clearedCount, 12000)
   if (sol && sol.length > 0) return sol[0]
   return heuristicHint(blocks, exits, obstacles, rows, cols, clearedCount)
 }
 
 // -----------------------------------------------------------------------------
-// Estrellas y utilidades de puntuación
+// Estrellas y utilidades
 // -----------------------------------------------------------------------------
 export function starsForMoves(moves: number, par: number): 1 | 2 | 3 {
   if (moves <= par) return 3
@@ -1118,10 +1179,6 @@ export function starsForTime(seconds: number, limit: number): 1 | 2 | 3 {
 }
 
 export { isSolved as isLevelSolved }
-
-// -----------------------------------------------------------------------------
-// Análisis y utilidades extra (para debug / futuros paneles)
-// -----------------------------------------------------------------------------
 
 export interface LevelAnalysis {
   totalBlocks: number
@@ -1164,13 +1221,10 @@ export function analyzeLevel(level: BlockCleanerLevel): LevelAnalysis {
   }
 }
 
-/**
- * Verifica que un nivel generado no tenga piezas desbloqueadas listas
- * para salir y que al menos tenga una pieza.
- */
 export function validateLevel(level: BlockCleanerLevel): boolean {
   if (!level || !Array.isArray(level.blocks) || level.blocks.length === 0) return false
   if (!Array.isArray(level.exits) || level.exits.length === 0) return false
+  if (!allBlocksCompatibleWithExits(level.blocks, level.exits)) return false
   const ready = countUnlockedExitable(
     level.blocks,
     level.exits,
@@ -1181,14 +1235,6 @@ export function validateLevel(level: BlockCleanerLevel): boolean {
   return ready === 0
 }
 
-// -----------------------------------------------------------------------------
-// Helpers de movimiento para el cliente (drag fluido)
-// -----------------------------------------------------------------------------
-
-/**
- * Dado un delta de puntero (en celdas), calcula la posición target
- * clampada al rango válido. El cliente puede interpolar visualmente.
- */
 export function computeDragTarget(
   block: Block,
   axis: 'horizontal' | 'vertical',
@@ -1213,15 +1259,11 @@ export function computeDragTarget(
   return { row: target, col: baseCol }
 }
 
-/**
- * Determina el eje preferido a partir del vector de arrastre.
- * Umbral bajo para cambio de eje fluido sin soltar.
- */
 export function preferredAxisFromDelta(
   dx: number,
   dy: number,
   currentAxis: 'horizontal' | 'vertical' | null,
-  threshold = 6
+  threshold = 4
 ): 'horizontal' | 'vertical' | null {
   if (Math.abs(dx) < threshold && Math.abs(dy) < threshold && !currentAxis) {
     return null
@@ -1229,10 +1271,7 @@ export function preferredAxisFromDelta(
   return Math.abs(dx) >= Math.abs(dy) ? 'horizontal' : 'vertical'
 }
 
-// -----------------------------------------------------------------------------
-// Constantes y metadatos del motor
-// -----------------------------------------------------------------------------
-export const ENGINE_VERSION = '8.0.0'
+export const ENGINE_VERSION = '9.0.0'
 export const ENGINE_NAME = 'BlockCleaner / Color Block Jam style'
 
 export const SIDE_VECTORS: Record<Side, { dr: number; dc: number }> = {
@@ -1242,9 +1281,6 @@ export const SIDE_VECTORS: Record<Side, { dr: number; dc: number }> = {
   right: { dr: 0, dc: 1 },
 }
 
-/**
- * Calcula un vector de "salida" en píxeles para animaciones de exit.
- */
 export function exitPixelVector(
   side: Side,
   cellSize: number,
@@ -1259,9 +1295,6 @@ export function exitPixelVector(
   }
 }
 
-// -----------------------------------------------------------------------------
-// Generación de lotes (útil para tests o pre-cache)
-// -----------------------------------------------------------------------------
 export function generateLevelBatch(
   fromId: number,
   toId: number
@@ -1273,20 +1306,19 @@ export function generateLevelBatch(
   return out
 }
 
-/**
- * Resumen rápido de un rango de niveles (debug).
- */
 export function summarizeRange(fromId: number, toId: number): {
   total: number
   avgBlocks: number
   avgColors: number
   withLocks: number
   immediateExitCount: number
+  incompatible: number
 } {
   let totalBlocks = 0
   let totalColors = 0
   let withLocks = 0
   let immediate = 0
+  let incompatible = 0
   const n = Math.max(0, toId - fromId + 1)
   for (let id = fromId; id <= toId; id++) {
     const lv = generateLevel(id)
@@ -1295,6 +1327,7 @@ export function summarizeRange(fromId: number, toId: number): {
     totalColors += a.colorsUsed
     if (a.lockedBlocks > 0) withLocks++
     if (a.hasImmediateExit) immediate++
+    if (!allBlocksCompatibleWithExits(lv.blocks, lv.exits)) incompatible++
   }
   return {
     total: n,
@@ -1302,12 +1335,10 @@ export function summarizeRange(fromId: number, toId: number): {
     avgColors: n ? totalColors / n : 0,
     withLocks,
     immediateExitCount: immediate,
+    incompatible,
   }
 }
 
-// -----------------------------------------------------------------------------
-// Utilidades de color / UI (compartidas)
-// -----------------------------------------------------------------------------
 export const COLOR_DISPLAY_NAMES: Record<BlockColor, string> = {
   cyan: 'Cian',
   blue: 'Azul',

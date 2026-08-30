@@ -18,6 +18,7 @@ import { FondoSettings } from './features/ajustes/FondoSettings'
 import { DatosSettings } from './features/ajustes/DatosSettings'
 import { RutinasSettings } from './features/ajustes/RutinasSettings'
 import { CartasGame } from './features/memoria/juegos/cartas/CartasGame'
+import { NexoGame } from './features/memoria/juegos/nexo/NexoGame'
 import { RoutineWidget } from '@/components/ui/RoutineWidget'
 import { NutricionHome } from './features/nutricion/NutricionHome'
 import { BookReader } from './features/nutricion/BookReader'
@@ -25,7 +26,13 @@ import { MusicaHome } from './features/musica/MusicaHome'
 import { ReaderPlayerProvider, MiniPlayer } from '@/core/reader/ReaderPlayerContext'
 import { HabilidadesGame } from './features/memoria/juegos/habilidades/Habilidades'
 import { DespejesGame } from './features/logica/juegos/despejes/DespejesGame'
-
+import { DeduccionCategory } from './features/deduccion/juegos/DeduccionCategory'
+import { AcertijosGame } from './features/deduccion/juegos/acertijos/acertijos'
+import { HistoriasGame } from './features/deduccion/juegos/historias/historias'
+import { PalabrasGame } from './features/deduccion/juegos/palabras/palabras'
+import { SilogismosGame } from './features/deduccion/juegos/silogismos/silogismos'
+import { MapasGame } from './features/deduccion/juegos/mapas/mapas'
+import { CodigoGame } from './features/deduccion/juegos/codigo/codigo'
 
 /* Lógica */
 import { LogicaCategory } from './features/logica/juegos/LogicaCategory'
@@ -52,7 +59,6 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [])
 
-  // Mientras carga el perfil, mostrar solo el fondo (evita pantalla negra sin layout)
   if (hasProfile === null) {
     return (
       <>
@@ -92,6 +98,7 @@ function App() {
               element={<ColorSequenceGame />}
             />
             <Route path="/categoria/memoria/cartas" element={<CartasGame />} />
+            <Route path="/categoria/memoria/nexo" element={<NexoGame />} />
             <Route
               path="/categoria/memoria/numeros-asociados"
               element={<NumerosAsociadosGame />}
@@ -108,10 +115,8 @@ function App() {
               path="/categoria/logica/rompecabezas"
               element={<RompecabezasGame />}
             />
-
             <Route path="/categoria/logica/despejes" element={<DespejesGame />} />
             <Route path="/categoria/logica/blockcleaner" element={<BlockCleaner />} />
-
 
             {/* ── Nutrición ── */}
             <Route path="/nutricion" element={<NutricionHome />} />
@@ -120,7 +125,7 @@ function App() {
             {/* ── Música ── */}
             <Route path="/musica" element={<MusicaHome />} />
 
-            {/* ── Ajustes (solo hijos relativos) ── */}
+            {/* ── Ajustes ── */}
             <Route path="/ajustes" element={<SettingsLayout />}>
               <Route index element={<SettingsHome />} />
               <Route path="perfil" element={<PerfilSettings />} />
@@ -130,6 +135,15 @@ function App() {
               <Route path="datos" element={<DatosSettings />} />
               <Route path="rutinas" element={<RutinasSettings />} />
             </Route>
+
+            {/* ── Deducción ── */}
+            <Route path="/categoria/deduccion" element={<DeduccionCategory />} />
+            <Route path="/categoria/deduccion/acertijos" element={<AcertijosGame />} />
+            <Route path="/categoria/deduccion/historias" element={<HistoriasGame />} />
+            <Route path="/categoria/deduccion/palabras" element={<PalabrasGame />} />
+            <Route path="/categoria/deduccion/silogismos" element={<SilogismosGame />} />
+            <Route path="/categoria/deduccion/mapas" element={<MapasGame />} />
+            <Route path="/categoria/deduccion/codigo" element={<CodigoGame />} />
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
