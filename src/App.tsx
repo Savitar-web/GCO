@@ -40,6 +40,8 @@ import { Colocador } from './features/logica/juegos/numberpuzzle/colocador'
 import { RompecabezasGame } from '@/features/logica/juegos/rompecabezas/RompecabezasGame'
 import { BlockCleaner } from '@/features/logica/juegos/BlockCleaner/BlockCleaner'
 
+import { IdiomasGame } from './features/deduccion/juegos/idiomas/idiomas'
+
 function App() {
   const [showSplash, setShowSplash] = useState(true)
   const [hasProfile, setHasProfile] = useState<boolean | null>(null)
@@ -144,7 +146,7 @@ function App() {
             <Route path="/categoria/deduccion/silogismos" element={<SilogismosGame />} />
             <Route path="/categoria/deduccion/mapas" element={<MapasGame />} />
             <Route path="/categoria/deduccion/codigo" element={<CodigoGame />} />
-
+            <Route path="/categoria/deduccion/idiomas" element={<IdiomasGame />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
 

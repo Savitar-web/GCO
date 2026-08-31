@@ -41,6 +41,12 @@ const GAMES = [
     emoji: '🔐',
     desc: 'Cifrados, patrones y reglas ocultas. Decodifica mensajes con evidencia limitada.',
   },
+  {
+    id: 'idiomas',
+    title: 'Idiomas · Deducción',
+    emoji: '🌐',
+    desc: 'Traducción lógica, gramática y cognados en español, inglés, japonés, chino y francés. 220+ niveles.',
+  },
 ] as const
 
 export function DeduccionCategory() {
