@@ -43,7 +43,7 @@ const GAMES = [
   },
   {
     id: 'idiomas',
-    title: 'Idiomas · Deducción',
+    title: 'Idiomas',
     emoji: '🌐',
     desc: 'Traducción lógica, gramática y cognados en español, inglés, japonés, chino y francés. 220+ niveles.',
   },
