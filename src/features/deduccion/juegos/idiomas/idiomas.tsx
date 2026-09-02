@@ -2450,7 +2450,7 @@ export function IdiomasGame() {
             ←
           </button>
           <div className="id-top-title">
-            <h1>Idiomas · Deducción</h1>
+            <h1>Idiomas</h1>
             <p>Gramática, cognados, lectura y traducción lógica</p>
           </div>
         </header>
