@@ -41,7 +41,8 @@ export type GameMode =
   | 'particle_or_order'    // orden / partículas / artículos
   | 'false_friends'        // false friends
   | 'morphology'           // sufijos, prefijos, formación de palabras
-  | 'reading_comprehension'// texto corto + pregunta
+  | 'reading_comprehension'
+  | 'contextual_usage' // palabra → contexto y forma
 
 export type CefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2'
 
@@ -74,6 +75,8 @@ export interface Question {
   ruleHint: string
   /** Explicación extendida de la regla. */
   ruleExplain: string
+  /** Consejo si falla (sin revelar la respuesta). */
+  failAdvice: string
   options: string[]
   correctIndex: number
   explanation: string
@@ -98,15 +101,16 @@ export interface Story {
 type Screen = 'hub' | 'learn' | 'play' | 'result' | 'levels' | 'modes' | 'reading' | 'story'
 
 const LS = {
-  unlocked: 'gco.idiomas.unlocked.v2',
-  current: 'gco.idiomas.current.v2',
+  unlocked: 'gco.idiomas.unlocked.v3',
+  current: 'gco.idiomas.current.v3',
   lang: 'gco.idiomas.lang',
-  scores: 'gco.idiomas.scores.v2',
+  scores: 'gco.idiomas.scores.v3',
   wins: 'gco.idiomas.wins',
   fails: 'gco.idiomas.fails',
   mode: 'gco.idiomas.mode',
-  attempts: 'gco.idiomas.attempts.v2',
-  bestTime: 'gco.idiomas.bestTime.v2',
+  attempts: 'gco.idiomas.attempts.v3',
+  bestTime: 'gco.idiomas.bestTime.v3',
+  completed: 'gco.idiomas.completed.v3',
 }
 
 function readJSON<T>(key: string, fallback: T): T {
@@ -141,11 +145,11 @@ function clamp(n: number, min: number, max: number) {
 
 /** CEFR según número de nivel (progresión propia por idioma). */
 export function levelToCefr(level: number): CefrLevel {
-  if (level <= 20) return 'A1'
-  if (level <= 40) return 'A2'
-  if (level <= 80) return 'B1'
-  if (level <= 120) return 'B2'
-  if (level <= 160) return 'C1'
+  if (level <= 40) return 'A1'
+  if (level <= 60) return 'A2'
+  if (level <= 120) return 'B1'
+  if (level <= 240) return 'B2'
+  if (level <= 480) return 'C1'
   return 'C2'
 }
 
@@ -671,6 +675,7 @@ const MODE_LABELS: Record<GameMode, string> = {
   false_friends: 'False friends',
   morphology: 'Morfología y sufijos',
   reading_comprehension: 'Comprensión lectora',
+  contextual_usage: 'Uso contextual de la palabra',
 }
 
 const MODE_HELP: Record<GameMode, string> = {
@@ -682,6 +687,7 @@ const MODE_HELP: Record<GameMode, string> = {
   false_friends: 'Detectas trampas de parecido engañoso entre lenguas.',
   morphology: 'Analizas prefijos, sufijos y formación de palabras (-ción, -ment, -ung…).',
   reading_comprehension: 'Lees un texto breve y respondes una pregunta de comprensión o forma.',
+  contextual_usage: 'Ves una palabra y eliges el contexto correcto y cómo se interpreta o escribe en ese uso.',
 }
 
 // -----------------------------------------------------------------------------
@@ -1159,6 +1165,8 @@ interface GrammarItem {
   prompt: string
   ruleHint: string
   ruleExplain: string
+  /** Consejo si falla (sin revelar la respuesta). */
+  failAdvice: string
   options: string[]
   correctIndex: number
   explanation: string
@@ -1170,6 +1178,7 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Elige la forma correcta: “She ____ to school every day.”',
     ruleHint: 'Presente simple, 3.ª persona singular: verbo + -s.',
     ruleExplain: 'En presente simple, he/she/it añade -s/-es al verbo. Es una marca de concordancia, no de plural.',
+      failAdvice: 'Revisa la regla y descarta opciones incompatibles antes de elegir.',
     options: ['go', 'goes', 'going', 'gone', 'went', 'goed', 'goe', 'to go'],
     correctIndex: 1,
     explanation: 'En presente simple, la 3.ª persona singular (he/she/it) añade -s/-es: goes.',
@@ -1178,6 +1187,7 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: '¿Cuál es el plural de “child”?',
     ruleHint: 'Plurales irregulares germánicos.',
     ruleExplain: 'Algunos sustantivos antiguos forman el plural con cambio vocálico (umlaut histórico) o formas supletivas, no con -s.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['childs', 'childes', 'children', 'childrens', 'child', 'childer', 'kids', 'childen'],
     correctIndex: 2,
     explanation: 'Child → children es un plural irregular histórico; no se forma con -s.',
@@ -1186,6 +1196,7 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Completa: “I have ____ this book.”',
     ruleHint: 'Present perfect: have + participio pasado.',
     ruleExplain: 'El present perfect (have/has + past participle) enlaza pasado y presente: experiencia, resultado o acción no terminada en un periodo que incluye ahora.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['readed', 'read', 'reading', 'reads', 'rode', 'written', 'red', 'reed'],
     correctIndex: 1,
     explanation: 'El participio de read es read (pronunciado /red/). Have read = presente perfecto.',
@@ -1194,6 +1205,7 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Orden natural de adjetivos: “a ____ box”',
     ruleHint: 'Opinión → tamaño → edad → color → origen → material → propósito.',
     ruleExplain: 'El inglés ordena adjetivos prenominales en una secuencia preferida. “Nice small wooden” suena natural; otras permutaciones suenan raras.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'wooden small nice',
       'nice small wooden',
@@ -1211,6 +1223,7 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'False friend: en inglés, “actually” significa…',
     ruleHint: 'False friends con el español.',
     ruleExplain: 'Actually ≠ actualmente. Actualmente = currently / nowadays. Actually = en realidad / de hecho.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'actualmente',
       'en realidad / de hecho',
@@ -1228,6 +1241,7 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Elige el phrasal verb: “buscar información en un diccionario”',
     ruleHint: 'Verb + particle cambia el significado.',
     ruleExplain: 'Los phrasal verbs no se traducen palabra a palabra. Look up = consultar; look for = buscar; look after = cuidar.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['look after', 'look up', 'look for', 'look out', 'look into', 'look down', 'look over', 'look on'],
     correctIndex: 1,
     explanation: 'Look up = consultar (palabra). Look for = buscar; look after = cuidar.',
@@ -1236,6 +1250,7 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Artículo correcto: “____ university is big.” (hablando de una concreta conocida)',
     ruleHint: 'The para referentes definidos; a/an indefinidos.',
     ruleExplain: 'The se usa cuando el oyente puede identificar el referente (ya mencionado, único en contexto, o conocido).',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['A', 'An', 'The', '∅ (ninguno)', 'Some', 'Any', 'This only', 'Those'],
     correctIndex: 2,
     explanation: 'Si es definida/conocida en el discurso: the university.',
@@ -1244,6 +1259,7 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Negación correcta en inglés estándar:',
     ruleHint: 'Un solo negativo de polaridad; do-support.',
     ruleExplain: 'El inglés estándar evita la doble negación de polaridad. Don’t + anything (no don’t + nothing).',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'I don’t know nothing',
       'I don’t know anything',
@@ -1261,6 +1277,7 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'El sufijo “-tion” en “nation”, “information”, “decision” suele indicar…',
     ruleHint: 'Morfología derivativa latina.',
     ruleExplain: 'El sufijo -tion/-sion forma sustantivos abstractos (a menudo deverbales) de origen latino. Es cognado del español -ción/-sión.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'adverbio de modo',
       'sustantivo abstracto / proceso o resultado',
@@ -1278,6 +1295,7 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: '“If it rains, we will stay home.” Es un condicional de tipo…',
     ruleHint: 'Condicionales: 0 (hechos), 1 (real futuro), 2 (irreal presente), 3 (irreal pasado).',
     ruleExplain: '1.ª condicional: if + present, will + verb. Situaciones reales o posibles en el futuro.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['0 (verdades generales)', '1 (posible en el futuro)', '2 (hipótesis presente)', '3 (hipótesis pasada)', 'mixto solo', 'imperativo', 'subjuntivo latino', 'ninguno'],
     correctIndex: 1,
     explanation: 'If + presente, will + verbo = 1.ª condicional (posible/real en el futuro).',
@@ -1289,6 +1307,7 @@ const FR_GRAMMAR: GrammarItem[] = [
     prompt: 'Género: “problème” es…',
     ruleHint: 'No todas las palabras en -e son femeninas.',
     ruleExplain: 'En francés, la terminación no garantiza el género. Problème, système, thème son masculinos pese a -e.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['femenino', 'masculino', 'neutro', 'variable', 'plural', 'epiceno solo', 'invariable', 'dual'],
     correctIndex: 1,
     explanation: 'Un problème es masculino pese a terminar en -e.',
@@ -1297,6 +1316,7 @@ const FR_GRAMMAR: GrammarItem[] = [
     prompt: 'Artículo: “____ eau est froide.”',
     ruleHint: 'Elisión ante vocal: le/la → l’.',
     ruleExplain: 'Ante vocal o h muda, le/la se eliden en l’. Eau empieza por vocal: l’eau.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['La', 'Le', 'L’', 'Les', 'Un', 'Une', 'De', 'Du'],
     correctIndex: 2,
     explanation: 'Eau empieza por vocal: l’eau (elisión de la).',
@@ -1305,6 +1325,7 @@ const FR_GRAMMAR: GrammarItem[] = [
     prompt: 'Negación formal completa:',
     ruleHint: 'ne … pas alrededor del verbo conjugado.',
     ruleExplain: 'La negación clásica enmarca el verbo: ne + verbo + pas. En oral informal a menudo se omite ne.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'Je pas mange',
       'Je ne mange pas',
@@ -1322,6 +1343,7 @@ const FR_GRAMMAR: GrammarItem[] = [
     prompt: 'Passé composé de “aller” (yo):',
     ruleHint: 'Verbos de movimiento con être; acuerdo del participio.',
     ruleExplain: 'Aller, venir, arriver, partir… forman el passé composé con être. El participio concuerda en género y número con el sujeto.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'j’ai allé',
       'je suis allé(e)',
@@ -1339,6 +1361,7 @@ const FR_GRAMMAR: GrammarItem[] = [
     prompt: 'False friend: “librairie” significa…',
     ruleHint: 'Cognados engañosos con el inglés/español.',
     ruleExplain: 'Librairie = tienda de libros. Biblioteca = bibliothèque. Library (inglés) = bibliothèque.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'biblioteca',
       'librería (tienda)',
@@ -1356,6 +1379,7 @@ const FR_GRAMMAR: GrammarItem[] = [
     prompt: '“Bien que” exige…',
     ruleHint: 'Subjuntivo tras ciertas conjunciones.',
     ruleExplain: 'Bien que, pour que, afin que, avant que… rigen subjuntivo. Bien qu’il soit tard…',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'indicativo siempre',
       'subjuntivo',
@@ -1376,6 +1400,7 @@ const JA_GRAMMAR: GrammarItem[] = [
     prompt: 'La partícula de tema se escribe は y se pronuncia…',
     ruleHint: 'Lecturas especiales de partículas.',
     ruleExplain: 'La partícula tema se escribe con el kana は pero se pronuncia “wa”. Es una convención ortográfica histórica.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['ha', 'wa', 'ba', 'pa', 'a', 'ho', 'wo', 'ga'],
     correctIndex: 1,
     explanation: 'La partícula tema は se pronuncia “wa”, no “ha”.',
@@ -1384,6 +1409,7 @@ const JA_GRAMMAR: GrammarItem[] = [
     prompt: 'Orden típico japonés:',
     ruleHint: 'Lengua SOV.',
     ruleExplain: 'El japonés coloca el verbo al final. Sujeto y objeto van antes, marcados por partículas.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['SVO', 'SOV', 'VSO', 'VOS', 'OSV', 'OVS', 'libre total', 'V primero siempre'],
     correctIndex: 1,
     explanation: 'El japonés es predominantemente SOV: sujeto-objeto-verbo.',
@@ -1392,6 +1418,7 @@ const JA_GRAMMAR: GrammarItem[] = [
     prompt: 'Partícula de objeto directo habitual:',
     ruleHint: 'Marcas de caso por partículas.',
     ruleExplain: 'を (o) marca el objeto directo del verbo transitivo. が marca sujeto/foco; は marca tema.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['は', 'が', 'を', 'に', 'で', 'の', 'と', 'も'],
     correctIndex: 2,
     explanation: 'を (o) marca el objeto directo: 本を読む.',
@@ -1400,6 +1427,7 @@ const JA_GRAMMAR: GrammarItem[] = [
     prompt: '¿Qué silabario se usa típicamente para préstamos extranjeros?',
     ruleHint: 'Tres sistemas de escritura.',
     ruleExplain: 'Katakana se usa de forma característica para gairaigo (préstamos), onomatopeyas y énfasis.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['hiragana', 'katakana', 'kanji solo', 'romaji solo', 'man’yōgana', 'hangul', 'latin', 'cuneiforme'],
     correctIndex: 1,
     explanation: 'Katakana se usa de forma característica para gairaigo (préstamos).',
@@ -1408,6 +1436,7 @@ const JA_GRAMMAR: GrammarItem[] = [
     prompt: 'Forma cortés de 食べる (taberu):',
     ruleHint: 'Masu-form para cortesía neutra.',
     ruleExplain: 'La forma -masu es la cortesía estándar en situaciones neutrales/formales. 食べます tabemasu.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['たべる', 'たべます', 'たべた', 'たべて', 'たべない', 'たべろ', 'たべよう', 'たべられる'],
     correctIndex: 1,
     explanation: 'Verbos en -masu (たべます) son la cortesía estándar.',
@@ -1416,6 +1445,7 @@ const JA_GRAMMAR: GrammarItem[] = [
     prompt: 'Pasado cortés de 行く (iku):',
     ruleHint: 'Pasado en -mashita.',
     ruleExplain: 'La forma cortés de pasado se forma con -mashita. 行きます → 行きました.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['いきます', 'いきました', 'いった', 'いって', 'いかない', 'いこう', 'いかれた', 'いく'],
     correctIndex: 1,
     explanation: '行きました (ikimashita) es el pasado cortés de 行く.',
@@ -1427,6 +1457,7 @@ const ZH_GRAMMAR: GrammarItem[] = [
     prompt: 'En mandarín, 书 (shū) con numeral requiere clasificador. ¿Cuál es típico?',
     ruleHint: 'Clasificadores obligatorios con números.',
     ruleExplain: 'Entre numeral y sustantivo hace falta un clasificador. Para libros: 本 běn. 一本书 yī běn shū.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['个 gè', '本 běn', '只 zhī', '条 tiáo', '张 zhāng', '件 jiàn', '位 wèi', '头 tóu'],
     correctIndex: 1,
     explanation: 'Los libros usan 本: 一本书 yī běn shū.',
@@ -1435,6 +1466,7 @@ const ZH_GRAMMAR: GrammarItem[] = [
     prompt: 'Negación de acciones habituales / futuro: se usa…',
     ruleHint: '不 vs 没.',
     ruleExplain: '不 bù niega presente habitual, futuro y adjetivos. 没 méi niega pasado perfectivo y posesión.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['没 méi', '不 bù', '别 bié solo', '无 wú', '否', '非', '无有', '未'],
     correctIndex: 1,
     explanation: '不 niega presente/habitual/futuro; 没 niega pasado o posesión.',
@@ -1443,6 +1475,7 @@ const ZH_GRAMMAR: GrammarItem[] = [
     prompt: 'Orden básico del mandarín:',
     ruleHint: 'Lengua SVO analítica.',
     ruleExplain: 'El mandarín es SVO. No hay flexión de persona/tiempo en el verbo; el aspecto y el tiempo se marcan con partículas y adverbios.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['SOV', 'SVO', 'VSO', 'VOS', 'OSV', 'libre', 'OVS', 'V final siempre'],
     correctIndex: 1,
     explanation: 'Mandarín es SVO: 我吃饭 wǒ chī fàn.',
@@ -1451,6 +1484,7 @@ const ZH_GRAMMAR: GrammarItem[] = [
     prompt: '¿Cuántos tonos principales tiene el mandarín estándar (sin el neutro)?',
     ruleHint: 'Sistema tonal.',
     ruleExplain: 'Cuatro tonos léxicos (alto, ascendente, descendente-ascendente, descendente) más el tono neutro.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['2', '3', '4', '5', '6', '1', '8', '7'],
     correctIndex: 2,
     explanation: 'Cuatro tonos léxicos principales, más el tono neutro.',
@@ -1459,6 +1493,7 @@ const ZH_GRAMMAR: GrammarItem[] = [
     prompt: '因为 (yīnwèi) introduce la causa. ¿Qué suele introducir la consecuencia?',
     ruleHint: 'Correlación causal.',
     ruleExplain: 'Estructura frecuente: 因为 … 所以 … (porque … por eso …).',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['但是', '所以', '如果', '虽然', '而且', '或者', '还是', '因为 de nuevo'],
     correctIndex: 1,
     explanation: '因为 … 所以 … = porque … por eso …',
@@ -1470,6 +1505,7 @@ const PT_GRAMMAR: GrammarItem[] = [
     prompt: 'En portugués brasileño coloquial, “a gente” funciona como…',
     ruleHint: 'Pronombres y concordancia en PT-BR.',
     ruleExplain: 'A gente significa “nosotros” pero concuerda en 3.ª persona singular: A gente vai (no vamos).',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'ellos (3.ª plural)',
       'nosotros (con verbo en 3.ª singular)',
@@ -1487,6 +1523,7 @@ const PT_GRAMMAR: GrammarItem[] = [
     prompt: 'El infinitivo personal permite decir “para hablarmos” con el sentido de…',
     ruleHint: 'Infinitivo flexionado (rasgo del portugués).',
     ruleExplain: 'El infinitivo personal marca persona/número en el infinitivo: para falarmos = para que hablemos / al hablar nosotros.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'solo pasado',
       'persona y número en el infinitivo',
@@ -1504,6 +1541,7 @@ const PT_GRAMMAR: GrammarItem[] = [
     prompt: '“Obrigado” / “Obrigada” concuerda con…',
     ruleHint: 'Concordancia de cortesía.',
     ruleExplain: 'Quien agradece usa obrigado (hombre) u obrigada (mujer). No depende del interlocutor.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'el género del interlocutor',
       'el género de quien agradece',
@@ -1521,6 +1559,7 @@ const PT_GRAMMAR: GrammarItem[] = [
     prompt: 'Sufijo típico de sustantivos abstractos (nación, información):',
     ruleHint: 'Morfología: -ção / -são.',
     ruleExplain: 'Como el español -ción/-sión, el portugués usa -ção/-são: nação, informação, decisão.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['-mente', '-ção / -são', '-íssimo', '-inho', '-dor solo', '-ar', '-vel sin más', '-ção nunca'],
     correctIndex: 1,
     explanation: '-ção/-são forma sustantivos abstractos: nação, decisão.',
@@ -1529,6 +1568,7 @@ const PT_GRAMMAR: GrammarItem[] = [
     prompt: 'Pret. perfeito vs imperfeito: “Ontem ____ (falar) com ela uma vez.”',
     ruleHint: 'Acción cerrada en el pasado → pretérito perfeito.',
     ruleExplain: 'Pretérito perfeito: acciones terminadas y puntuales. Imperfeito: hábito, descripción, marco.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['falava', 'falei', 'falarei', 'falaria', 'falasse', 'falar', 'falando', 'falámos sempre'],
     correctIndex: 1,
     explanation: 'Acción puntual terminada ayer: falei (pretérito perfeito).',
@@ -1540,6 +1580,7 @@ const DE_GRAMMAR: GrammarItem[] = [
     prompt: 'En una oración principal alemana, el verbo finito suele ir en…',
     ruleHint: 'Orden verb-second (V2).',
     ruleExplain: 'En la oración principal declarativa, el verbo conjugado ocupa la segunda posición. El primer slot puede ser sujeto, adverbio, complemento, etc.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'posición final siempre',
       'segunda posición',
@@ -1557,6 +1598,7 @@ const DE_GRAMMAR: GrammarItem[] = [
     prompt: 'En una subordinada con “weil”, el verbo conjugado va…',
     ruleHint: 'Subordinadas: verbo al final.',
     ruleExplain: 'En Nebensätze introducidas por weil, dass, obwohl… el verbo finito se desplaza al final.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'en segunda posición',
       'al final de la subordinada',
@@ -1574,6 +1616,7 @@ const DE_GRAMMAR: GrammarItem[] = [
     prompt: '“das Haus” está en caso…',
     ruleHint: 'Artículos marcan caso y género.',
     ruleExplain: 'Das puede ser nominativo o acusativo neutro. Sin más contexto, la forma del artículo neutro nominativo/acusativo es das.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['solo genitivo', 'nominativo o acusativo neutro', 'solo dativo', 'femenino', 'plural dativo', 'vocativo', 'ablativo', 'instrumental'],
     correctIndex: 1,
     explanation: 'das Haus: neutro nominativo o acusativo.',
@@ -1582,6 +1625,7 @@ const DE_GRAMMAR: GrammarItem[] = [
     prompt: 'El sufijo “-ung” en “Bildung”, “Bedeutung” forma…',
     ruleHint: 'Morfología derivativa.',
     ruleExplain: '-ung forma sustantivos femeninos abstractos a partir de verbos (bilden → Bildung).',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'adverbios',
       'sustantivos femeninos abstractos',
@@ -1599,6 +1643,7 @@ const DE_GRAMMAR: GrammarItem[] = [
     prompt: 'Perfekt de “gehen” (yo):',
     ruleHint: 'Verbos de movimiento con sein.',
     ruleExplain: 'Geh en y muchos verbos de movimiento/cambio de estado forman el Perfekt con sein: ich bin gegangen.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'ich habe gegangen',
       'ich bin gegangen',
@@ -1619,6 +1664,7 @@ const IT_GRAMMAR: GrammarItem[] = [
     prompt: 'Passato prossimo de “andare” (yo, masculino):',
     ruleHint: 'Essere + participio; acuerdo en género/número.',
     ruleExplain: 'Andare forma el passato prossimo con essere. El participio concuerda: sono andato / andata.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'ho andato',
       'sono andato',
@@ -1636,6 +1682,7 @@ const IT_GRAMMAR: GrammarItem[] = [
     prompt: 'False friend: “camera” en italiano significa…',
     ruleHint: 'Cognados engañosos.',
     ruleExplain: 'Camera = habitación. Cámara fotográfica = macchina fotografica / fotocamera.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'cámara fotográfica',
       'habitación',
@@ -1653,6 +1700,7 @@ const IT_GRAMMAR: GrammarItem[] = [
     prompt: 'El sufijo “-zione” en “nazione”, “informazione” indica…',
     ruleHint: 'Morfología: cognado de -ción.',
     ruleExplain: '-zione forma sustantivos abstractos, cognado del español -ción y del francés -tion.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'adverbio',
       'sustantivo abstracto',
@@ -1670,6 +1718,7 @@ const IT_GRAMMAR: GrammarItem[] = [
     prompt: '“Non … mai” significa…',
     ruleHint: 'Negación con mai.',
     ruleExplain: 'Mai = nunca. Con non forma la negación temporal: non parlo mai = no hablo nunca.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'siempre',
       'nunca',
@@ -1687,6 +1736,7 @@ const IT_GRAMMAR: GrammarItem[] = [
     prompt: 'Artículo ante “uomo”:',
     ruleHint: 'Il / lo / l’ según inicio del sustantivo.',
     ruleExplain: 'Ante vocal se usa l’: l’uomo. Lo se usa ante s+consonante, z, gn, etc.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['il', 'lo', 'l’', 'la', 'gli', 'un', 'uno', 'del'],
     correctIndex: 2,
     explanation: 'L’uomo (elisión ante vocal).',
@@ -1698,6 +1748,7 @@ const ES_GRAMMAR: GrammarItem[] = [
     prompt: '“Estoy cansado” usa estar porque…',
     ruleHint: 'Ser vs estar.',
     ruleExplain: 'Estar: estados temporales, localización, progresivo, resultado. Ser: esencia, identidad, material, hora, origen.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'es esencia permanente',
       'es estado temporal',
@@ -1715,6 +1766,7 @@ const ES_GRAMMAR: GrammarItem[] = [
     prompt: '“Trabajo para una ONG” — para indica…',
     ruleHint: 'Por vs para.',
     ruleExplain: 'Para: finalidad, destinatario, plazo, dirección. Por: causa, medio, duración, intercambio, agente de pasiva.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'causa',
       'propósito / beneficiario',
@@ -1732,6 +1784,7 @@ const ES_GRAMMAR: GrammarItem[] = [
     prompt: 'El subjuntivo aparece típicamente tras…',
     ruleHint: 'Modo y modalidad.',
     ruleExplain: 'Deseo (quiero que…), duda, valoración, hipótesis y ciertas conjunciones activan subjuntivo.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'verbos de certeza absoluta sin matiz',
       'deseo, duda, valoración, hipótesis',
@@ -1749,6 +1802,7 @@ const ES_GRAMMAR: GrammarItem[] = [
     prompt: 'El sufijo “-ción” en “nación”, “educación” forma…',
     ruleHint: 'Morfología derivativa.',
     ruleExplain: '-ción/-sión crea sustantivos abstractos (a menudo desde verbos: educar → educación; decidir → decisión).',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'adverbios de modo',
       'sustantivos abstractos',
@@ -1766,6 +1820,7 @@ const ES_GRAMMAR: GrammarItem[] = [
     prompt: '“Ayer hablé con María” usa pretérito indefinido porque…',
     ruleHint: 'Indefinido vs imperfecto.',
     ruleExplain: 'Indefinido: acciones terminadas, puntuales o vista como cerradas. Imperfecto: hábito, descripción, acción en curso en el pasado.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'describe un hábito pasado',
       'es acción terminada / puntual en el pasado',
@@ -1798,6 +1853,8 @@ interface ReadingItem {
   prompt: string
   ruleHint: string
   ruleExplain: string
+  /** Consejo si falla (sin revelar la respuesta). */
+  failAdvice: string
   options: string[]
   correctIndex: number
   explanation: string
@@ -1811,6 +1868,7 @@ const READING_BY_LANG: Record<LangId, ReadingItem[]> = {
       prompt: 'Según el texto, los gobiernos obtienen su poder legítimo de…',
       ruleHint: 'Comprensión: localiza la cláusula de “consent of the governed”.',
       ruleExplain: 'En textos históricos en inglés, las cláusulas de relativo y las nominalizaciones (-tion) concentran la idea principal.',
+      failAdvice: 'Revisa la regla y descarta opciones incompatibles antes de elegir.',
       options: [
         'la fuerza militar solo',
         'el consentimiento de los gobernados',
@@ -1830,6 +1888,7 @@ const READING_BY_LANG: Record<LangId, ReadingItem[]> = {
       prompt: '¿Qué explica en parte que la ortografía inglesa no coincida con la pronunciación actual?',
       ruleHint: 'Causa histórica: Great Vowel Shift.',
       ruleExplain: 'Cambios fonológicos posteriores a la fijación ortográfica dejan “huellas” en la escritura.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
       options: [
         'la invención del teléfono',
         'el Great Vowel Shift',
@@ -1850,6 +1909,7 @@ const READING_BY_LANG: Record<LangId, ReadingItem[]> = {
       prompt: 'Según el texto, ¿qué favoreció la unificación de la escritura?',
       ruleHint: 'Localiza 有助于 (contribuye a / ayuda a).',
       ruleExplain: 'En chino escrito, los compuestos y el orden SVO permiten localizar causa y efecto con marcadores como 有助于, 因为, 所以.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
       options: [
         'solo el comercio marítimo',
         'la gobernanza y el intercambio cultural',
@@ -1870,6 +1930,7 @@ const READING_BY_LANG: Record<LangId, ReadingItem[]> = {
       prompt: '¿Qué se consolidó en la época de Nara según el texto?',
       ruleHint: 'Busca 整備されました (se organizó / se puso en orden).',
       ruleExplain: 'La forma pasiva/cortés -mashta y los compuestos chino-japoneses (律令) marcan instituciones históricas.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
       options: [
         'solo el anime',
         'el budismo y el sistema ritsuryō',
@@ -1891,6 +1952,7 @@ const READING_BY_LANG: Record<LangId, ReadingItem[]> = {
       prompt: '¿Qué lengua se impuso en los actos administrativos?',
       ruleHint: 'Localiza “imposa le français”.',
       ruleExplain: 'Passé simple narrativo (imposa) y léxico administrativo son frecuentes en textos históricos franceses.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
       options: [
         'el latín únicamente',
         'el francés',
@@ -1912,6 +1974,7 @@ const READING_BY_LANG: Record<LangId, ReadingItem[]> = {
       prompt: '¿Qué expandió el portugués a varios continentes según el texto?',
       ruleHint: 'Causa: navegações / rotas marítimas.',
       ruleExplain: 'Pretérito perfeito (abriram, espalhando) narra hechos cerrados en el pasado histórico.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
       options: [
         'solo la Unión Europea',
         'las rutas marítimas de los navegantes portugueses',
@@ -1933,6 +1996,7 @@ const READING_BY_LANG: Record<LangId, ReadingItem[]> = {
       prompt: '¿Qué impulsó la traducción de Lutero según el texto?',
       ruleHint: 'Busca “trug … bei” (contribuyó).',
       ruleExplain: 'Verbo separable beitragen (trugt … bei) y compuestos (Schriftsprache) son típicos del alemán escrito.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
       options: [
         'solo el dialecto bávaro',
         'una lengua escrita alemana común',
@@ -1954,6 +2018,7 @@ const READING_BY_LANG: Record<LangId, ReadingItem[]> = {
       prompt: '¿Qué demostró Dante según el texto?',
       ruleHint: 'Localiza “dimostrò che…”.',
       ruleExplain: 'Passato remoto narrativo (dimostrò) es habitual en italiano histórico escrito.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
       options: [
         'que solo el latín servía para literatura',
         'que el vulgar toscano podía expresar alta literatura',
@@ -1975,6 +2040,7 @@ const READING_BY_LANG: Record<LangId, ReadingItem[]> = {
       prompt: '¿Qué fue innovador en la obra de Nebrija según el texto?',
       ruleHint: 'Primera gramática de una lengua romance europea.',
       ruleExplain: 'El pretérito y las aposiciones (“primera gramática…”) condensan el dato histórico clave.',
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
       options: [
         'fue la primera novela',
         'fue la primera gramática de una lengua romance europea',
@@ -1992,7 +2058,7 @@ const READING_BY_LANG: Record<LangId, ReadingItem[]> = {
 }
 
 /** Total de niveles objetivo */
-export const TOTAL_LEVELS = 200
+export const TOTAL_LEVELS = 500
 
 function buildOptions(
   correct: string,
@@ -2010,13 +2076,14 @@ function buildOptions(
 /**
  * Genera pregunta determinista por nivel + idioma + modo preferido.
  */
+
 export function generateQuestion(level: number, lang: LangId, preferredMode?: GameMode | 'auto'): Question {
   const L = clamp(Math.floor(level) || 1, 1, TOTAL_LEVELS)
   const lex = LEX_BY_LANG[lang]
   const grammar = GRAMMAR_BY_LANG[lang]
   const reading = READING_BY_LANG[lang] ?? []
   const cefr = levelToCefr(L)
-  const difficulty = (clamp(1 + Math.floor((L - 1) / 40), 1, 5) as 1 | 2 | 3 | 4 | 5)
+  const difficulty = (clamp(1 + Math.floor((L - 1) / 80), 1, 5) as 1 | 2 | 3 | 4 | 5)
 
   const modeCycle: GameMode[] = [
     'translate_to_es',
@@ -2026,6 +2093,7 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
     'particle_or_order',
     'false_friends',
     'morphology',
+    'contextual_usage',
     'reading_comprehension',
   ]
 
@@ -2034,9 +2102,17 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
       ? preferredMode
       : modeCycle[(L - 1) % modeCycle.length]
 
-  // Reading levels: force reading when available and mode matches or every 8th
+  const rotateOptions = (options: string[], correctIndex: number, salt: number) => {
+    const rot = salt % options.length
+    const rotated = [...options.slice(rot), ...options.slice(0, rot)]
+    const newCorrect = (correctIndex - rot + options.length) % options.length
+    return { options: rotated, correctIndex: newCorrect }
+  }
+
+  // Reading
   if (mode === 'reading_comprehension' && reading.length > 0) {
     const r = reading[(L - 1) % reading.length]
+    const rotated = rotateOptions(r.options, r.correctIndex, L)
     return {
       id: `${lang}-read-${L}`,
       lang,
@@ -2047,14 +2123,102 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
       passage: r.passage,
       ruleHint: r.ruleHint,
       ruleExplain: r.ruleExplain,
-      options: r.options,
-      correctIndex: r.correctIndex,
+      failAdvice: 'Vuelve al pasaje y localiza la cláusula o palabra clave que responde a la pregunta; no elijas por intuición general.',
+      options: rotated.options,
+      correctIndex: rotated.correctIndex,
       explanation: r.explanation,
       difficulty,
     }
   }
 
-  // Grammar / particle / morphology / false friends from grammar bank
+  // Contextual usage: palabra → contexto
+  if (mode === 'contextual_usage') {
+    const contexts: Record<string, { prompt: string; options: string[]; correctIndex: number; hint: string; explain: string; advice: string }> = {
+      en: {
+        prompt: 'Palabra: 「bank」. En “we sat on the bank of the river”, ¿qué significa?',
+        options: ['banco financiero', 'orilla del río', 'banqueta', 'archivo', 'pendiente', 'empresa', 'moneda', 'puente'],
+        correctIndex: 1,
+        hint: 'Polisemia: institución vs orilla.',
+        explain: 'bank of the river = orilla.',
+        advice: 'Mira el complemento “of the river”; no asumas siempre el sentido financiero.',
+      },
+      es: {
+        prompt: 'Palabra: 「banco」. En “nos sentamos en un banco del parque”, ¿qué significa?',
+        options: ['entidad financiera', 'asiento', 'banco de peces', 'archivo', 'grupo de datos', 'orilla', 'empresa', 'caja fuerte'],
+        correctIndex: 1,
+        hint: 'Polisemia según complemento.',
+        explain: 'banco del parque = asiento.',
+        advice: 'El complemento “del parque” orienta al asiento, no al banco financiero.',
+      },
+      fr: {
+        prompt: 'Palabra: 「temps」. En “quel temps fait-il ?”, ¿qué significa?',
+        options: ['tiempo cronológico', 'clima / tiempo atmosférico', 'tiempo verbal', 'tempo musical', 'época', 'horario', 'retraso', 'calendario'],
+        correctIndex: 1,
+        hint: 'Expresión fija con faire → clima.',
+        explain: 'quel temps fait-il = qué tiempo hace.',
+        advice: 'La construcción con “fait-il” apunta al clima, no al reloj.',
+      },
+      ja: {
+        prompt: 'Elemento: 「は」 como partícula de tema. ¿Cómo se pronuncia?',
+        options: ['ha', 'wa', 'ba', 'pa', 'ga', 'wo', 'a', 'ho'],
+        correctIndex: 1,
+        hint: 'Lectura especial de partícula.',
+        explain: 'は tema = wa.',
+        advice: 'No uses la lectura del kana independiente; la partícula tema se lee wa.',
+      },
+      zh: {
+        prompt: 'Partícula 「了」 en “我吃了” (cambio/completado). ¿Qué marca?',
+        options: ['futuro', 'acción completada / cambio de estado', 'plural', 'posesión', 'pasiva', 'comparativo', 'clasificador', 'tono'],
+        correctIndex: 1,
+        hint: 'Aspecto, no tiempo europeo exacto.',
+        explain: '了 aspectual de completado/cambio.',
+        advice: 'No lo equinares automáticamente a un pretérito único; piensa en aspecto o cambio de estado.',
+      },
+      pt: {
+        prompt: 'Expresión 「a gente」 (PT-BR). ¿Qué concordancia verbal usa?',
+        options: ['1.ª plural (vamos)', '3.ª singular (vai)', '2.ª singular', '1.ª singular', '3.ª plural', 'imperativo', 'infinitivo', 'gerundio'],
+        correctIndex: 1,
+        hint: 'Significa “nosotros” pero concuerda en 3.ª singular.',
+        explain: 'A gente vai / fala.',
+        advice: 'No conjugues en 1.ª plural con a gente en el patrón coloquial brasileño descrito.',
+      },
+      de: {
+        prompt: 'Conjunción 「weil」. ¿Qué hace al verbo conjugado de la subordinada?',
+        options: ['segunda posición', 'lo envía al final', 'lo elimina', 'imperativo', 'infinitivo', 'al inicio', 'no cambia', 'modal'],
+        correctIndex: 1,
+        hint: 'Nebensatz: verbo al final.',
+        explain: 'weil ich müde bin.',
+        advice: 'Dentro de la subordinada con weil no dejes el verbo en V2.',
+      },
+      it: {
+        prompt: 'Palabra 「camera」 en hotel. ¿Qué significa?',
+        options: ['cámara fotográfica', 'habitación', 'salón', 'cocina', 'baño', 'recepción', 'ascensor', 'pasillo'],
+        correctIndex: 1,
+        hint: 'False friend con “cámara”.',
+        explain: 'camera = habitación.',
+        advice: 'En contexto hotelero no elijas cámara fotográfica.',
+      },
+    }
+    const c = contexts[lang] ?? contexts.en
+    const rotated = rotateOptions(c.options, c.correctIndex, L + 3)
+    return {
+      id: `${lang}-ctx-${L}`,
+      lang,
+      mode: 'contextual_usage',
+      level: L,
+      cefr,
+      prompt: c.prompt,
+      ruleHint: c.hint,
+      ruleExplain: c.explain,
+      failAdvice: c.advice,
+      options: rotated.options,
+      correctIndex: rotated.correctIndex,
+      explanation: c.explain,
+      difficulty,
+    }
+  }
+
+  // Grammar family
   if (
     (mode === 'grammar_deduce' ||
       mode === 'particle_or_order' ||
@@ -2063,6 +2227,7 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
     grammar.length > 0
   ) {
     const g = grammar[(L - 1) % grammar.length]
+    const rotated = rotateOptions(g.options, g.correctIndex, L)
     return {
       id: `${lang}-g-${L}`,
       lang,
@@ -2073,14 +2238,14 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
       passage: g.passage,
       ruleHint: g.ruleHint,
       ruleExplain: g.ruleExplain,
-      options: g.options,
-      correctIndex: g.correctIndex,
+      failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir; no te guíes solo por el parecido superficial.',
+      options: rotated.options,
+      correctIndex: rotated.correctIndex,
       explanation: g.explanation,
       difficulty,
     }
   }
 
-  // Lexical / translation / cognate
   if (!lex.length) {
     return {
       id: `${lang}-fallback-${L}`,
@@ -2088,12 +2253,13 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
       mode: 'translate_to_es',
       level: L,
       cefr,
-      prompt: 'Nivel de refuerzo: elige la opción coherente con la deducción lingüística.',
+      prompt: 'Elige la opción coherente con la deducción lingüística.',
       ruleHint: 'Aplica la regla del idioma activo.',
-      ruleExplain: 'Usa el panel de reglas del idioma y elimina opciones imposibles.',
+      ruleExplain: 'Elimina opciones imposibles.',
+      failAdvice: 'Abre la pista y descarta sistemáticamente lo incompatible con la regla.',
       options: ['Opción A', 'Opción B', 'Opción C', 'Opción D', 'Opción E', 'Opción F', 'Opción G', 'Opción H'],
-      correctIndex: 0,
-      explanation: 'Completa el banco léxico del idioma para más variedad.',
+      correctIndex: (L % 8),
+      explanation: 'Nivel de refuerzo.',
       difficulty: 1,
     }
   }
@@ -2103,7 +2269,7 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
   const esPool = ES_DISTRACTORS
 
   if (mode === 'translate_to_es' || mode === 'cognate_logic') {
-    const { options, correctIndex } = buildOptions(item.es, esPool, 8)
+    const built = buildOptions(item.es, esPool, 8)
     return {
       id: `${lang}-toes-${L}`,
       lang,
@@ -2112,35 +2278,33 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
       cefr,
       prompt: `¿Qué significa en español: 「${item.target}」?`,
       ruleHint: item.rule || 'Deduce por cognado, contexto o regla del idioma.',
-      ruleExplain:
-        item.note +
-        ' Busca raíces compartidas, género/número y evita traducir palabra por palabra sin contexto.',
-      options,
-      correctIndex,
+      ruleExplain: item.note + ' Busca raíces, género/número y evita calcos literales.',
+      failAdvice: 'Revisa cognados y false friends; no elijas solo por parecido de letras.',
+      options: built.options,
+      correctIndex: built.correctIndex,
       explanation: `${item.target} → ${item.es}. ${item.note}`,
       difficulty,
     }
   }
 
-  // translate_from_es (default branch)
-  const { options, correctIndex } = buildOptions(item.target, targetPool, 8)
+  const built = buildOptions(item.target, targetPool, 8)
   return {
     id: `${lang}-fromes-${L}`,
     lang,
-    mode: mode === 'translate_from_es' ? 'translate_from_es' : 'translate_from_es',
+    mode: 'translate_from_es',
     level: L,
     cefr,
     prompt: `¿Cómo se dice en ${LANG_PROFILES[lang].name}: 「${item.es}」?`,
-    ruleHint: item.rule || 'Aplica correspondencia léxica y evita false friends.',
-    ruleExplain:
-      item.note +
-      ' Recuerda artículos, género y formas irregulares típicas del idioma.',
-    options,
-    correctIndex,
+    ruleHint: item.rule || 'Correspondencia léxica; evita false friends.',
+    ruleExplain: item.note + ' Atiende artículos, género e irregularidades.',
+      failAdvice: 'Descarta false friends y calcos del español; busca la forma nativa habitual.',
+    options: built.options,
+    correctIndex: built.correctIndex,
     explanation: `${item.es} → ${item.target}. ${item.note}`,
     difficulty,
   }
 }
+
 
 export function generateLevelBank(lang: LangId, count = TOTAL_LEVELS): Question[] {
   return Array.from({ length: count }, (_, i) => generateQuestion(i + 1, lang))
@@ -2311,6 +2475,778 @@ El español era ya lengua de administración y de élites, pero la construcción
     note: 'Estudio sobre la independencia mexicana y sus dimensiones sociales.',
     tags: ['México', 'independencia', 'multilingüismo', 'nación'],
   },
+  {
+    id: 'prehistory-lascaux',
+    region: 'Prehistoria / Europa occidental',
+    titleEs: 'Lascaux y la mente simbólica',
+    titleOriginal: 'Lascaux and the symbolic mind',
+    lang: 'en',
+    textEs: `Hace unos 17.000 años, en el suroeste de Francia, grupos de Homo sapiens decoraron Lascaux con bisontes, caballos y signos. No es arte de museo: es evidencia de una mente capaz de representar lo ausente y compartirlo. Esa capacidad de desplazar la referencia —hablar o pintar sobre lo que no está aquí y ahora— es un pilar de cualquier lengua humana posterior.
+
+Las hipótesis (magia de caza, chamanismo, enseñanza, calendarios) siguen abiertas. Lo seguro es más sobrio y asombroso: en la penumbra de una cueva, la especie ya practicaba la representación compartida.`,
+    textOriginal: `About 17,000 years ago in southwestern France, Homo sapiens groups decorated Lascaux with bison, horses, and signs. This is not museum “art”: it is evidence of a mind able to represent the absent and share it. That capacity to displace reference—to speak or paint about what is not here and now—is a pillar of any later human language.
+
+Hypotheses (hunting magic, shamanism, teaching, calendars) remain open. What is certain is soberer and more astonishing: in cave half-light, the species was already practicing shared representation.`,
+    apa: 'Clottes, J. (2008). Cave art. Phaidon.',
+    note: 'Arte parietal paleolítico.',
+    tags: ['prehistoria', 'Lascaux', 'símbolos'],
+  },
+  {
+    id: 'athens-democracy',
+    region: 'Atenas / Grecia clásica',
+    titleEs: 'Atenas: democracia, imperio y contradicción',
+    titleOriginal: 'Athens: democracy, empire, and contradiction',
+    lang: 'en',
+    textEs: `En el siglo V a. C., Atenas impulsó la participación directa de ciudadanos varones en la asamblea y tribunales populares. Al mismo tiempo sostuvo un imperio naval con tributos de la Liga de Delos y excluyó a mujeres, metecos y esclavos del núcleo cívico.
+
+Curiosidad: el ostracismo permitía exiliar a un ciudadano por voto popular sin condena penal formal. Leer “demos” sin esa doble cara empobrece cualquier texto griego antiguo.`,
+    textOriginal: `In the fifth century BCE, Athens advanced direct participation of male citizens in the assembly and popular courts. At the same time it sustained a naval empire with Delian League tribute and excluded women, metics, and slaves from the civic core.
+
+Curiosity: ostracism allowed exile by popular vote without a formal criminal conviction. Reading demos without that double face impoverishes any ancient Greek text.`,
+    apa: 'Hansen, M. H. (1999). The Athenian democracy in the age of Demosthenes. University of Oklahoma Press.',
+    note: 'Instituciones atenienses.',
+    tags: ['Atenas', 'democracia', 'ostracismo'],
+  },
+  {
+    id: 'gobekli',
+    region: 'Prehistoria / Anatolia',
+    titleEs: 'Göbekli Tepe: santuarios antes de la ciudad',
+    titleOriginal: 'Göbekli Tepe: sanctuaries before the city',
+    lang: 'en',
+    textEs: `Göbekli Tepe (c. 9600–8000 a. C.) desafió la secuencia cómoda “primero aldea agrícola, después templo”. Recintos megalíticos con pilares en T sugieren cooperación ritual a gran escala entre comunidades aún no urbanas.
+
+Donde hay pilares alineados e iconografía recurrente hay mente colectiva articulada por signos: nombres, instrucciones, tabúes, relatos.`,
+    textOriginal: `Göbekli Tepe (c. 9600–8000 BCE) unsettled the comfortable sequence “first farming village, then temple.” Megalithic enclosures with T-shaped pillars suggest large-scale ritual cooperation among not-yet-urban communities.
+
+Where pillars align and iconography recurs, there is collective mind articulated by signs: names, instructions, taboos, stories.`,
+    apa: 'Schmidt, K. (2012). Göbekli Tepe: A Stone Age sanctuary in south-eastern Anatolia. ex oriente.',
+    note: 'Excavaciones en Göbekli Tepe.',
+    tags: ['neolítico', 'ritual', 'Anatolia'],
+  },
+  {
+    id: 'timbuktu',
+    region: 'África occidental',
+    titleEs: 'Timbuktú: manuscritos en el borde del desierto',
+    titleOriginal: 'Timbuktu: manuscripts at the desert’s edge',
+    lang: 'en',
+    textEs: `Entre los siglos XIV y XVII, Timbuktú fue nodo de comercio y saber islámico en el Sahel. Sus manuscritos —teología, derecho, astronomía, poesía— desmienten la caricatura de un África “sin escritura”.
+
+Muchos fondos familiares conservaron códices durante generaciones. La historia del conocimiento también pasa por patios, cofres y rutas de caravanas.`,
+    textOriginal: `Between the fourteenth and seventeenth centuries, Timbuktu was a node of trade and Islamic learning in the Sahel. Its manuscripts—theology, law, astronomy, poetry—refute the caricature of an Africa “without writing.”
+
+Many family collections preserved codices for generations. The history of knowledge also passes through courtyards, chests, and caravan routes.`,
+    apa: 'Jeppie, S., & Diagne, S. B. (Eds.). (2008). The meanings of Timbuktu. HSRC Press.',
+    note: 'Manuscritos y saber en Timbuktú.',
+    tags: ['Timbuktú', 'manuscritos', 'Sahel'],
+  },
+  {
+    id: 'carthage-rome',
+    region: 'Mediterráneo antiguo',
+    titleEs: 'Cartago y Roma: un duelo que reordenó Occidente',
+    titleOriginal: 'Carthage and Rome: a duel that reset the West',
+    lang: 'en',
+    textEs: `Las Guerras Púnicas enfrentaron una potencia comercial norteafricana y una república itálica en expansión. Tras 146 a. C., Roma no solo eliminó un rival: reordenó el Mediterráneo occidental.
+
+El púnico dejó huellas en toponimia y bilingüismo norteafricano durante siglos. Las lenguas de los vencidos no siempre mueren el mismo día que sus murallas.`,
+    textOriginal: `The Punic Wars set a North African commercial power against an expanding Italic republic. After 146 BCE, Rome did not merely remove a rival: it reset the western Mediterranean.
+
+Punic left traces in place names and North African bilingualism for centuries. The languages of the defeated do not always die on the same day as their walls.`,
+    apa: 'Hoyos, D. (2015). Mastering the West: Rome and Carthage at war. Oxford University Press.',
+    note: 'Conflicto romano-cartaginés.',
+    tags: ['Cartago', 'Roma', 'Púnicas'],
+  },
+  {
+    id: 'inca-khipu',
+    region: 'Andes',
+    titleEs: 'Khipus incaicos: contabilidad en cuerdas',
+    titleOriginal: 'Inka khipus: accounting in cords',
+    lang: 'en',
+    textEs: `El Tahuantinsuyu administró un imperio andino sin escritura alfabética generalizada. Los khipus —cuerdas con nudos y colores— registraban cifras y, según debates actuales, quizá información más compleja.
+
+“Escribir” no es solo trazar letras. Un Estado puede gobernar con sistemas semióticos distintos al alfabeto latino.`,
+    textOriginal: `The Tawantinsuyu administered an Andean empire without widespread alphabetic writing. Khipus—cords with knots and colors—recorded numbers and, in current debates, perhaps more complex information.
+
+“Writing” is not only letter-drawing. A state can govern with semiotic systems other than the Latin alphabet.`,
+    apa: 'Urton, G. (2003). Signs of the Inka khipu. University of Texas Press.',
+    note: 'Khipus y semiosis andina.',
+    tags: ['Inca', 'khipu', 'Andes'],
+  },
+  {
+    id: 'baghdad-wisdom',
+    region: 'Bagdad abasí',
+    titleEs: 'Bagdad: traducción como política de saber',
+    titleOriginal: 'Baghdad: translation as a politics of knowledge',
+    lang: 'en',
+    textEs: `En época abasí, Bagdad concentró traducción y debate: griego, siriaco, pahlavi y sánscrito alimentaron el árabe científico y filosófico.
+
+Muchas obras de Aristóteles llegaron a Europa latina por rutas árabes y hebreas. La filosofía occidental es, en tramos decisivos, historia de traducción interlingüe.`,
+    textOriginal: `In the Abbasid era, Baghdad concentrated translation and debate: Greek, Syriac, Middle Persian, and Sanskrit fed scientific and philosophical Arabic.
+
+Many Aristotelian works reached Latin Europe through Arabic and Hebrew routes. Western philosophy is, at decisive stretches, a history of interlingual translation.`,
+    apa: 'Gutas, D. (1998). Greek thought, Arabic culture. Routledge.',
+    note: 'Traducción greco-árabe.',
+    tags: ['Bagdad', 'traducción', 'abásidas'],
+  },
+  {
+    id: 'polynesia-nav',
+    region: 'Oceanía',
+    titleEs: 'Navegación polinesia: leer el océano',
+    titleOriginal: 'Polynesian navigation: reading the ocean',
+    lang: 'en',
+    textEs: `Navegantes polinesios colonizaron islas dispersas usando estrellas, oleaje, aves, nubes y memoria oral de rutas: un sistema cognitivo distribuido entre experto, tripulación y relato.
+
+El “mapa” no siempre era un objeto; a menudo era una práctica enseñada. Una lengua que codifica direcciones y peligros marinos también es tecnología.`,
+    textOriginal: `Polynesian navigators settled scattered islands using stars, swell, birds, clouds, and oral memory of routes—a cognitive system distributed among expert, crew, and story.
+
+The “map” was not always an object; it was often a taught practice. A language that encodes directions and marine hazards is technology too.`,
+    apa: 'Lewis, D. (1994). We, the navigators (2nd ed.). University of Hawai‘i Press.',
+    note: 'Navegación del Pacífico.',
+    tags: ['Polinesia', 'navegación', 'oralidad'],
+  },
+
+
+  // ---- 5+ historias largas adicionales por ámbito / idioma ----
+  {
+    id: 'en-stonehenge',
+    region: 'Prehistoria / Britania',
+    titleEs: 'Stonehenge: círculo, tiempo y trabajo colectivo',
+    titleOriginal: 'Stonehenge: circle, time, and collective labor',
+    lang: 'en',
+    textEs: `Stonehenge no es solo un círculo de piedras: es el resultado de generaciones de transporte, alineación y ritual en la llanura de Salisbury. Las fases constructivas abarcan siglos. Algunas piedras viajaron distancias enormes.
+
+Lo impresionante no es el misterio turístico, sino la logística social: coordinar trabajo estacional, memoria oral de alineaciones y un calendario implícito en la arquitectura. Antes de la escritura alfabética local, ya había ingeniería del tiempo grabada en el paisaje.`,
+    textOriginal: `Stonehenge is not only a circle of stones: it is the outcome of generations of transport, alignment, and ritual on Salisbury Plain. Building phases span centuries. Some stones traveled enormous distances.
+
+What impresses is not tourist mystery but social logistics: coordinating seasonal labor, oral memory of alignments, and a calendar implicit in architecture. Before local alphabetic writing, an engineering of time was already cut into the landscape.`,
+    apa: 'Parker Pearson, M. (2012). Stonehenge: Exploring the greatest Stone Age mystery. Simon & Schuster.',
+    note: 'Arqueología contemporánea de Stonehenge.',
+    tags: ['Stonehenge', 'prehistoria', 'calendario', 'Britania'],
+  },
+  {
+    id: 'en-magna-carta',
+    region: 'Inglaterra medieval',
+    titleEs: 'Magna Carta: límite al poder, mito y documento',
+    titleOriginal: 'Magna Carta: limiting power, myth, and document',
+    lang: 'en',
+    textEs: `En 1215, barones ingleses obligaron a Juan sin Tierra a sellar un acuerdo que limitaba ciertas arbitrariedades reales. El texto fue reescrito y reinterpreto durante siglos. No era una constitución moderna, pero se volvió símbolo de legalidad frente al poder.
+
+Curiosidad: gran parte de su fuerza posterior viene de usos políticos mucho más tardíos (siglos XVII–XVIII). Leer Magna Carta es leer también cómo un documento medieval se convierte en argumento moderno.`,
+    textOriginal: `In 1215 English barons forced King John to seal an agreement limiting certain royal arbitrariness. The text was rewritten and reinterpreted for centuries. It was not a modern constitution, yet it became a symbol of legality against power.
+
+Curiosity: much of its later force comes from far later political uses (17th–18th centuries). To read Magna Carta is also to read how a medieval document becomes a modern argument.`,
+    apa: 'Holt, J. C. (2015). Magna Carta (3rd ed.). Cambridge University Press.',
+    note: 'Historia crítica de Magna Carta.',
+    tags: ['Magna Carta', 'derecho', 'Inglaterra', 'poder'],
+  },
+  {
+    id: 'en-abolition',
+    region: 'Atlántico / mundo anglófono',
+    titleEs: 'Abolicionismo atlántico: palabras que movieron imperios',
+    titleOriginal: 'Atlantic abolitionism: words that moved empires',
+    lang: 'en',
+    textEs: `El fin legal de la trata y de la esclavitud en el mundo británico no fue un milagro moral instantáneo: fue política, economía, resistencia de esclavizados y campañas públicas con panfletos, petitorios e imágenes.
+
+La lengua importó: términos como “slave trade” o “humanity” se volvieron armas en el debate parlamentario. Leer esa historia es ver cómo el léxico moral se entrelaza con el interés y la presión social.`,
+    textOriginal: `The legal end of the trade and of slavery in the British world was not an instant moral miracle: it was politics, economics, resistance by the enslaved, and public campaigns with pamphlets, petitions, and images.
+
+Language mattered: terms like “slave trade” or “humanity” became weapons in parliamentary debate. To read that history is to see moral lexicon intertwined with interest and social pressure.`,
+    apa: 'Drescher, S. (2009). Abolition: A history of slavery and antislavery. Cambridge University Press.',
+    note: 'Historia de la abolición.',
+    tags: ['abolición', 'Atlántico', 'imperio', 'léxico'],
+  },
+  {
+    id: 'en-industrial',
+    region: 'Gran Bretaña',
+    titleEs: 'Revolución industrial: vapor, fábricas y nuevo tiempo social',
+    titleOriginal: 'Industrial Revolution: steam, factories, and a new social time',
+    lang: 'en',
+    textEs: `La industrialización británica reordenó el trabajo, el paisaje y el reloj. El tiempo de fábrica no es el tiempo agrícola. Aparecieron barrios obreros, humo, prensa de masas y un inglés técnico lleno de préstamos y neologismos.
+
+Curiosidad lingüística: muchas palabras de la ingeniería y del ferrocarril se exportaron a otras lenguas europeas casi sin cambio. La tecnología arrastra vocabulario.`,
+    textOriginal: `British industrialization reordered work, landscape, and the clock. Factory time is not agricultural time. Working-class districts, smoke, mass press, and a technical English full of loans and neologisms appeared.
+
+Linguistic curiosity: many engineering and railway words were exported into other European languages almost unchanged. Technology drags vocabulary with it.`,
+    apa: 'Allen, R. C. (2009). The British industrial revolution in global perspective. Cambridge University Press.',
+    note: 'Perspectiva económica global de la industrialización británica.',
+    tags: ['industria', 'vapor', 'vocabulario', 'Britania'],
+  },
+  {
+    id: 'en-civil-rights',
+    region: 'Estados Unidos',
+    titleEs: 'Derechos civiles: discurso público y cambio legal',
+    titleOriginal: 'Civil rights: public speech and legal change',
+    lang: 'en',
+    textEs: `El movimiento por los derechos civiles en EE. UU. combinó litigios, desobediencia civil y una oratoria extraordinaria. Las palabras de discursos y sermones circularon por radio y televisión y redefinieron lo que contaba como “americano” en el debate público.
+
+Leer solo las leyes sin los discursos —o solo los discursos sin las leyes— deja la historia a medias. El cambio fue jurídico y retórico a la vez.`,
+    textOriginal: `The U.S. civil rights movement combined litigation, civil disobedience, and extraordinary oratory. Words from speeches and sermons circulated by radio and television and redefined what counted as “American” in public debate.
+
+To read only the laws without the speeches—or only the speeches without the laws—leaves the story half-told. Change was legal and rhetorical at once.`,
+    apa: 'Branch, T. (1988). Parting the waters: America in the King years 1954–63. Simon & Schuster.',
+    note: 'Historia del movimiento por los derechos civiles.',
+    tags: ['derechos civiles', 'EE. UU.', 'oratoria', 'ley'],
+  },
+  {
+    id: 'es-altamira',
+    region: 'Prehistoria / Iberia',
+    titleEs: 'Altamira: policromía paleolítica en Cantabria',
+    titleOriginal: 'Altamira: policromía paleolítica en Cantabria',
+    lang: 'es',
+    textEs: `La cueva de Altamira, en Cantabria, conserva bisontes policromos que obligaron a Europa a tomarse en serio el arte del Paleolítico superior. Durante un tiempo se dudó de su autenticidad: parecían “demasiado buenos”.
+
+Esa duda dice mucho sobre los prejuicios del siglo XIX respecto a la “primitividad”. Hoy Altamira es referencia de complejidad simbólica temprana en la península ibérica.`,
+    textOriginal: `La cueva de Altamira, en Cantabria, conserva bisontes policromos que obligaron a Europa a tomarse en serio el arte del Paleolítico superior. Durante un tiempo se dudó de su autenticidad: parecían “demasiado buenos”.
+
+Esa duda dice mucho sobre los prejuicios del siglo XIX respecto a la “primitividad”. Hoy Altamira es referencia de complejidad simbólica temprana en la península ibérica.`,
+    apa: 'Lasheras Corruchaga, J. A. (Ed.). (2002). Redescubrir Altamira. Museo de Altamira.',
+    note: 'Estudios sobre Altamira.',
+    tags: ['Altamira', 'Paleolítico', 'Iberia', 'arte'],
+  },
+  {
+    id: 'es-al-andalus',
+    region: 'Península ibérica',
+    titleEs: 'Al-Ándalus: lenguas en contacto',
+    titleOriginal: 'Al-Ándalus: lenguas en contacto',
+    lang: 'es',
+    textEs: `En al-Ándalus convivieron árabe, romance, hebreo y otras variedades. La poesía, la ciencia y la administración circularon en un ecosistema multilingüe. Muchos arabismos del español moderno (almohada, aceite, alcalde…) son fósiles de ese contacto.
+
+No fue un paraíso sin conflicto ni un bloque monolítico: fue un laboratorio histórico de traducción, préstamo y frontera.`,
+    textOriginal: `En al-Ándalus convivieron árabe, romance, hebreo y otras variedades. La poesía, la ciencia y la administración circularon en un ecosistema multilingüe. Muchos arabismos del español moderno (almohada, aceite, alcalde…) son fósiles de ese contacto.
+
+No fue un paraíso sin conflicto ni un bloque monolítico: fue un laboratorio histórico de traducción, préstamo y frontera.`,
+    apa: 'Menocal, M. R. (2002). The ornament of the world. Little, Brown.',
+    note: 'Cultura y convivencia en al-Ándalus (visión sintética).',
+    tags: ['al-Ándalus', 'arabismos', 'contacto', 'Iberia'],
+  },
+  {
+    id: 'es-comuneros',
+    region: 'Castilla',
+    titleEs: 'Comuneros: revuelta urbana y memoria política',
+    titleOriginal: 'Comuneros: revuelta urbana y memoria política',
+    lang: 'es',
+    textEs: `La revuelta de las Comunidades de Castilla (1520–1521) enfrentó ciudades y elites locales al proyecto imperial de Carlos V. Fue derrotada militarmente, pero dejó una memoria larga de “libertad castellana” reutilizada en siglos posteriores.
+
+Leer a los comuneros es leer el choque entre fiscalidad imperial, privilegios urbanos y nuevas formas de soberanía europea.`,
+    textOriginal: `La revuelta de las Comunidades de Castilla (1520–1521) enfrentó ciudades y elites locales al proyecto imperial de Carlos V. Fue derrotada militarmente, pero dejó una memoria larga de “libertad castellana” reutilizada en siglos posteriores.
+
+Leer a los comuneros es leer el choque entre fiscalidad imperial, privilegios urbanos y nuevas formas de soberanía europea.`,
+    apa: 'Pérez, J. (2001). Los comuneros. La Esfera de los Libros.',
+    note: 'Síntesis sobre la revuelta comunera.',
+    tags: ['Comuneros', 'Castilla', 'Carlos V', 'revuelta'],
+  },
+  {
+    id: 'es-borbon-reform',
+    region: 'Imperio hispánico',
+    titleEs: 'Reformas borbónicas: idioma, fisco e imperio',
+    titleOriginal: 'Reformas borbónicas: idioma, fisco e imperio',
+    lang: 'es',
+    textEs: `En el siglo XVIII, la monarquía borbónica intentó reordenar el imperio americano: más control fiscal, milicias, expulsión de los jesuitas y una burocracia más uniforme. El español administrativo se reforzó como lengua de expediente.
+
+Eso no borró las lenguas indígenas, pero cambió quién debía escribir para ser oído por el Estado.`,
+    textOriginal: `En el siglo XVIII, la monarquía borbónica intentó reordenar el imperio americano: más control fiscal, milicias, expulsión de los jesuitas y una burocracia más uniforme. El español administrativo se reforzó como lengua de expediente.
+
+Eso no borró las lenguas indígenas, pero cambió quién debía escribir para ser oído por el Estado.`,
+    apa: 'Kuethe, A. W., & Andrien, K. J. (2014). The Spanish Atlantic world in the eighteenth century. Cambridge University Press.',
+    note: 'Reformas borbónicas en perspectiva atlántica.',
+    tags: ['Borbones', 'imperio', 'fisco', 'administración'],
+  },
+  {
+    id: 'es-constitucion-1812',
+    region: 'Cádiz / mundo hispánico',
+    titleEs: 'Constitución de 1812: nación en guerra y en palabras',
+    titleOriginal: 'Constitución de 1812: nación en guerra y en palabras',
+    lang: 'es',
+    textEs: `La Constitución de Cádiz (1812) se redactó en plena guerra contra Napoleón y pensó un sujeto político nuevo: la Nación española. Su texto viajó a América y fue leído, adaptado y combatido.
+
+Curiosidad: el debate sobre quién contaba como ciudadano —peninsulares, americanos, castas— pasó por comisiones y artículos. La nación se escribió antes de estabilizarse.`,
+    textOriginal: `La Constitución de Cádiz (1812) se redactó en plena guerra contra Napoleón y pensó un sujeto político nuevo: la Nación española. Su texto viajó a América y fue leído, adaptado y combatido.
+
+Curiosidad: el debate sobre quién contaba como ciudadano —peninsulares, americanos, castas— pasó por comisiones y artículos. La nación se escribió antes de estabilizarse.`,
+    apa: 'Chust, M. (Ed.). (2007). 1808–1823: Doceañistas, liberales y jefes. Fundación Instituto de Historia Social.',
+    note: 'Contextos del liberalismo gaditano e hispánico.',
+    tags: ['Cádiz', '1812', 'nación', 'liberalismo'],
+  },
+  {
+    id: 'zh-oracle-bones',
+    region: 'China antigua',
+    titleEs: 'Huesos oraculares: escritura y adivinación Shang',
+    titleOriginal: '甲骨与商代占卜',
+    lang: 'zh',
+    textEs: `Los huesos oraculares de la dinastía Shang registran preguntas al ancestro y al poder ritual: cosechas, guerras, partos, clima. Son de los testimonios escritos más antiguos de una lengua sínica.
+
+Allí la escritura no es solo burocracia: es técnica para interrogar el futuro y archivar la respuesta. Leer esos fragmentos es ver el Estado y lo sagrado entrelazados en signos.`,
+    textOriginal: `商代甲骨记录了向祖先与神力的占问：收成、战争、生育、天气。它们是早期汉语最古老的书写证据之一。
+
+在那里，书写不只是官僚技术，更是追问未来并记录答案的手段。阅读这些残片，可见国家与神圣在符号中交织。`,
+    apa: 'Keightley, D. N. (1978). Sources of Shang history. University of California Press.',
+    note: 'Fuentes oraculares Shang.',
+    tags: ['Shang', 'oracle bones', 'escritura', 'China'],
+  },
+  {
+    id: 'zh-silk-road-tang',
+    region: 'China / Ruta de la Seda',
+    titleEs: 'Chang’an bajo los Tang: capital cosmopolita',
+    titleOriginal: '唐都长安：世界性的都城',
+    lang: 'zh',
+    textEs: `Chang’an en época Tang fue una de las ciudades más grandes del mundo, con mercados, templos y viajeros de Asia Central, Persia y más allá. El chino clásico convivía con lenguas y scripts de la Ruta de la Seda.
+
+Curiosidad: la moda, la música y los préstamos léxicos muestran un imperio seguro de sí mismo y a la vez permeable. La capital era un puerto seco de culturas.`,
+    textOriginal: `唐代长安是当时世界最大城市之一，有市场、寺庙以及来自中亚、波斯等地的旅行者。古典汉语与丝绸之路上的多种语言、文字并存。
+
+有趣的是：服饰、音乐与借词显示了一个自信而又开放的帝国。都城是文化的旱港。`,
+    apa: 'Lewis, M. E. (2009). China’s cosmopolitan empire: The Tang dynasty. Harvard University Press.',
+    note: 'Imperio cosmopolita Tang.',
+    tags: ['Tang', 'Chang’an', 'cosmopolitismo', 'Ruta de la Seda'],
+  },
+  {
+    id: 'zh-exam-system',
+    region: 'China imperial',
+    titleEs: 'Exámenes imperiales: meritocracia imperfecta',
+    titleOriginal: '科举：不完美的选才制度',
+    lang: 'zh',
+    textEs: `El sistema de exámenes imperiales seleccionó élites letradas durante siglos. No fue igualdad pura: exigía tiempo, maestros y recursos. Pero cambió la idea de que el rango solo se hereda.
+
+La lengua clásica escrita se volvió llave de ascenso. Dominar el ensayo formal era dominar una puerta al Estado.`,
+    textOriginal: `科举制度在数世纪中选拔读书人。它并非纯粹平等：需要时间、老师与资源。但它改变了“地位只靠出身”的观念。
+
+古典书面语成为上升的钥匙。掌握规范文章，等于掌握进入国家的门径。`,
+    apa: 'Elman, B. A. (2000). A cultural history of civil examinations in late imperial China. University of California Press.',
+    note: 'Historia cultural de los exámenes civiles.',
+    tags: ['keju', 'exámenes', 'élite', 'China'],
+  },
+  {
+    id: 'zh-mayfourth',
+    region: 'China moderna',
+    titleEs: 'Cuatro de Mayo: lengua vernácula y política',
+    titleOriginal: '五四：白话与政治',
+    lang: 'zh',
+    textEs: `El movimiento del Cuatro de Mayo (1919) impulsó el uso del chino vernáculo (baihua) frente al clasicismo rígido, junto a protestas patrióticas y debates sobre ciencia y democracia.
+
+Escribir “como se habla” fue también un proyecto de ciudadanía y de prensa moderna. La reforma lingüística fue política hasta la médula.`,
+    textOriginal: `1919年的五四运动推动白话文，对抗僵化的古典文体，并与爱国抗议及科学、民主的论争相连。
+
+“照说话来写”也是公民身份与现代报刊的规划。语文改革在骨子里是政治的。`,
+    apa: 'Chow, Tse-tsung. (1960). The May Fourth Movement. Harvard University Press.',
+    note: 'Movimiento del Cuatro de Mayo.',
+    tags: ['May Fourth', 'baihua', 'modernidad', 'China'],
+  },
+  {
+    id: 'zh-pinyin',
+    region: 'China RPC',
+    titleEs: 'Pinyin: romanizar para alfabetizar',
+    titleOriginal: '拼音：为识字而设计的罗马化',
+    lang: 'zh',
+    textEs: `El hanyu pinyin (1958) ofreció una romanización oficial del mandarín con marcas tonales. Sirvió a la alfabetización, a la pedagogía y a la entrada de nombres chinos en sistemas globales.
+
+No sustituye a los caracteres en la vida escrita plena, pero cambió cómo se enseña la pronunciación y cómo el mundo cita nombres chinos.`,
+    textOriginal: `1958年的汉语拼音为普通话提供了带调号的官方罗马化方案。它服务识字教育，也方便中文名字进入全球系统。
+
+它并未在完整书写生活中取代汉字，但改变了语音教学，也改变了世界引用中文名的方式。`,
+    apa: 'Zhou, Youguang. (2003). The historical evolution of Chinese languages and scripts. Ohio State University National East Asian Languages Resource Center.',
+    note: 'Evolución de lenguas y escrituras chinas (Zhou Youguang).',
+    tags: ['pinyin', 'romanización', 'educación', 'mandarín'],
+  },
+  {
+    id: 'ja-heian',
+    region: 'Japón',
+    titleEs: 'Heian: kana, cortesanas y novela',
+    titleOriginal: '平安：仮名と宮廷の物語',
+    lang: 'ja',
+    textEs: `En Heian, el desarrollo de kana permitió una prosa literaria en japonés que no dependía solo del chino clásico. Obras como Genji monopolizan la fama, pero el cambio de fondo es gráfico: un silabario para la voz nativa.
+
+Esa decisión estética y práctica reorganizó quién podía escribir con soltura en la corte.`,
+    textOriginal: `平安時代、仮名の発達により、古典中国語だけに頼らない日本語の散文が可能になりました。『源氏』が有名でも、本質的な変化は文字にあります。母語の声のための音節文字です。
+
+その美的かつ実用的な選択が、宮廷で誰が楽に書けるかを組み替えました。`,
+    apa: 'Shirane, H. (Ed.). (2007). Traditional Japanese literature. Columbia University Press.',
+    note: 'Literatura japonesa tradicional.',
+    tags: ['Heian', 'kana', 'Genji', 'escritura'],
+  },
+  {
+    id: 'ja-sekigahara',
+    region: 'Japón',
+    titleEs: 'Sekigahara: una batalla, un orden',
+    titleOriginal: '関ヶ原：一つの戦い、一つの秩序',
+    lang: 'ja',
+    textEs: `La batalla de Sekigahara (1600) decidió el ascenso de Tokugawa Ieyasu y abrió el bakufu de Edo. Un día de combate reordenó lealtades de dominios enteros.
+
+Después vendrían dos siglos de paz relativa, urbanización y una cultura impresa vibrante. La política del archipiélago quedó marcada por ese punto de inflexión.`,
+    textOriginal: `1600年の関ヶ原の戦いは徳川家康の台頭を決め、江戸幕府を開きました。一日の戦闘が藩の忠誠を組み替えました。
+
+その後、約二世紀の相対的平和、都市化、活気ある印刷文化が続きます。列島の政治は、その転換点に刻まれました。`,
+    apa: 'Bryant, A. J. (1995). Sekigahara 1600. Osprey.',
+    note: 'Batalla de Sekigahara.',
+    tags: ['Sekigahara', 'Tokugawa', 'Edo', 'política'],
+  },
+  {
+    id: 'ja-rangaku',
+    region: 'Japón',
+    titleEs: 'Rangaku: aprender del holandés en Nagasaki',
+    titleOriginal: '蘭学：長崎でオランダから学ぶ',
+    lang: 'ja',
+    textEs: `Durante el periodo de restricciones marítimas, Nagasaki fue ventana controlada. A través del holandés entraron anatomía, astronomía y mapas. El “estudio holandés” (rangaku) tradujo saberes occidentales al japonés.
+
+Curiosidad: traducir ciencia sin abrir del todo el país exigió intermediarios, diccionarios y paciencia filológica.`,
+    textOriginal: `海禁の時代、長崎は管理された窓でした。オランダ語を通じて解剖、天文、地図が入りました。蘭学は西洋の知を日本語へ翻訳しました。
+
+興味深いのは、国を大きく開かずに科学を訳すには、仲介者、辞書、文献学的忍耐が必要だったことです。`,
+    apa: 'Keene, D. (1969). The Japanese discovery of Europe, 1720–1830 (rev. ed.). Stanford University Press.',
+    note: 'Rangaku y descubrimiento de Europa.',
+    tags: ['rangaku', 'Nagasaki', 'traducción', 'Edo'],
+  },
+  {
+    id: 'ja-meiji',
+    region: 'Japón',
+    titleEs: 'Meiji: reformar el Estado y la lengua nacional',
+    titleOriginal: '明治：国家と国語の改革',
+    lang: 'ja',
+    textEs: `La Restauración Meiji no solo industrializó: construyó escuela, ejército moderno y una lengua nacional estándar a partir de variedades diversas. El japonés “común” se enseñó como herramienta de ciudadanía.
+
+Estandarizar una lengua es siempre una decisión política disfrazada de pedagogía.`,
+    textOriginal: `明治維新は工業化だけでなく、学校、近代軍、多様な方言からつくられる標準国語を建設しました。『共通語』は市民の道具として教えられました。
+
+言語の標準化は、教育の顔をした政治的決定です。`,
+    apa: 'Twine, N. (1991). Language and the modern state: The reform of written Japanese. Routledge.',
+    note: 'Reforma de la lengua escrita japonesa.',
+    tags: ['Meiji', 'kokugo', 'estándar', 'escuela'],
+  },
+  {
+    id: 'ja-postwar',
+    region: 'Japón',
+    titleEs: 'Posguerra: constitución, kanji y cultura de masas',
+    titleOriginal: '戦後：憲法・漢字・大衆文化',
+    lang: 'ja',
+    textEs: `Tras 1945, Japón reformó la escritura (lista de kanji de uso común), adoptó una nueva constitución y explotó medios de masas. El manga, el cine y la televisión redefinieron el japonés cotidiano.
+
+La lengua del día a día se volvió también industria cultural exportable.`,
+    textOriginal: `1945年以降、日本は表記を改革し（常用漢字）、新憲法を採り、大衆メディアを拡大しました。漫画・映画・テレビが日常日本語を作り変えました。
+
+日常語は輸出可能な文化産業にもなりました。`,
+    apa: 'Gottlieb, N. (1995). Kanji politics: Language policy and Japanese script. Kegan Paul International.',
+    note: 'Política lingüística y escritura japonesa.',
+    tags: ['posguerra', 'kanji', 'medios', 'Japón'],
+  },
+  {
+    id: 'fr-revolution',
+    region: 'Francia',
+    titleEs: '1789: nación, derechos y lengua revolucionaria',
+    titleOriginal: '1789 : nation, droits et langue révolutionnaire',
+    lang: 'fr',
+    textEs: `La Revolución Francesa inventó un léxico político de ciudadanía, derechos y soberanía nacional. También desconfió de los patois y soñó con un francés único para la República.
+
+Esa tensión —emancipar y homogeneizar— atraviesa la historia escolar francesa.`,
+    textOriginal: `La Révolution française inventa un lexique politique de citoyenneté, de droits et de souveraineté nationale. Elle se méfia aussi des patois et rêva d’un français unique pour la République.
+
+Cette tension — émanciper et homogénéiser — traverse l’histoire scolaire française.`,
+    apa: 'Soboul, A. (1982). The French Revolution 1787–1799. NLB / Verso.',
+    note: 'Síntesis clásica de la Revolución Francesa.',
+    tags: ['1789', 'nación', 'francés', 'ciudadanía'],
+  },
+  {
+    id: 'fr-haiti',
+    region: 'Saint-Domingue / Haití',
+    titleEs: 'Haití: revolución antiesclavista en francés y criollo',
+    titleOriginal: 'Haïti : révolution antiesclavagiste entre français et créole',
+    lang: 'fr',
+    textEs: `La revolución de Saint-Domingue (Haití) fue la única revuelta de esclavizados que culminó en Estado independiente en ese contexto atlántico. El francés jurídico y el criollo de la vida cotidiana marcaron un mapa lingüístico de libertad conflictiva.
+
+Leer Haití obliga a sacar la Revolución Francesa de un marco solo europeo.`,
+    textOriginal: `La révolution de Saint-Domingue (Haïti) fut la seule révolte d’esclavisés qui aboutit à un État indépendant dans ce contexte atlantique. Le français juridique et le créole du quotidien dessinèrent une carte linguistique de liberté conflictuelle.
+
+Lire Haïti force à sortir la Révolution française d’un cadre seulement européen.`,
+    apa: 'James, C. L. R. (1989). The Black Jacobins (rev. ed.). Vintage.',
+    note: 'Clásico sobre la revolución haitiana.',
+    tags: ['Haití', 'revolución', 'criollo', 'Atlántico'],
+  },
+  {
+    id: 'fr-school-ferry',
+    region: 'Francia',
+    titleEs: 'Escuela republicana: francés y ciudadanía',
+    titleOriginal: 'École républicaine : français et citoyenneté',
+    lang: 'fr',
+    textEs: `Las leyes escolares de finales del XIX consolidaron la escuela primaria laica y el francés como lengua de la República. Los dialectos fueron empujados al margen del aula.
+
+Fue un proyecto de ciudadanía… y de unificación lingüística con costes culturales reales.`,
+    textOriginal: `Les lois scolaires de la fin du XIXe consolidèrent l’école primaire laïque et le français comme langue de la République. Les dialectes furent repoussés hors de la classe.
+
+Projet de citoyenneté… et d’unification linguistique au coût culturel réel.`,
+    apa: 'Weber, E. (1976). Peasants into Frenchmen. Stanford University Press.',
+    note: 'Modernización y francesización del mundo rural.',
+    tags: ['escuela', 'francés', 'República', 'dialectos'],
+  },
+  {
+    id: 'fr-decolonization',
+    region: 'Francofonía',
+    titleEs: 'Descolonización: el francés después del imperio',
+    titleOriginal: 'Décolonisation : le français après l’empire',
+    lang: 'fr',
+    textEs: `Tras las independencias africanas y asiáticas, el francés siguió como lengua de Estado, escuela o literatura en muchos países. Ya no era solo “lengua de París”.
+
+La francofonía contemporánea es un campo de tensiones: recurso internacional y recuerdo colonial a la vez.`,
+    textOriginal: `Après les indépendances africaines et asiatiques, le français resta langue d’État, d’école ou de littérature dans bien des pays. Il n’était plus seulement la « langue de Paris ».
+
+La francophonie contemporaine est un champ de tensions : ressource internationale et mémoire coloniale à la fois.`,
+    apa: 'Conklin, A. L. (1997). A mission to civilize. Stanford University Press.',
+    note: 'Ideología colonial republicana francesa.',
+    tags: ['descolonización', 'francofonía', 'África', 'imperio'],
+  },
+  {
+    id: 'fr-paris-commune',
+    region: 'París',
+    titleEs: 'Comuna de París (1871): ciudad insurgente',
+    titleOriginal: 'Commune de Paris (1871) : ville insurgée',
+    lang: 'fr',
+    textEs: `La Comuna de 1871 experimentó autogobierno obrero y popular durante semanas. Su aplastamiento fue sangriento. El léxico de “commune”, “fédérés” y “semaine sanglante” quedó grabado en la memoria política europea.
+
+Fue un laboratorio breve y trágico de poder urbano.`,
+    textOriginal: `La Commune de 1871 expérimenta un autogouvernement ouvrier et populaire pendant des semaines. Son écrasement fut sanglant. Le lexique de « commune », « fédérés » et « semaine sanglante » resta gravé dans la mémoire politique européenne.
+
+Laboratoire bref et tragique du pouvoir urbain.`,
+    apa: 'Tombs, R. (1999). The Paris Commune, 1871. Longman.',
+    note: 'Historia de la Comuna de París.',
+    tags: ['Comuna', 'París', '1871', 'revolución'],
+  },
+  {
+    id: 'pt-covilha',
+    region: 'Portugal',
+    titleEs: 'Precursores de la expansión: información antes de las naves',
+    titleOriginal: 'Precursores da expansão: informação antes das naus',
+    lang: 'pt',
+    textEs: `Antes del boom de las especias, agentes portugueses recolectaban mapas y noticias sobre el Índico. La expansión fue también una economía de la información.
+
+Sin inteligencia previa, el cabo de Buena Esperanza habría sido solo una proeza; con ella, se volvió puerta de un sistema.`,
+    textOriginal: `Antes do boom das especiarias, agentes portugueses recolhiam mapas e notícias sobre o Índico. A expansão foi também uma economia da informação.
+
+Sem inteligência prévia, o cabo da Boa Esperança teria sido só proeza; com ela, tornou-se porta de um sistema.`,
+    apa: 'Disney, A. R. (2009). A history of Portugal and the Portuguese empire (Vol. 2). Cambridge University Press.',
+    note: 'Portugal y el imperio portugués.',
+    tags: ['expansión', 'Índico', 'información', 'Portugal'],
+  },
+  {
+    id: 'pt-brazil-gold',
+    region: 'Brasil colonial',
+    titleEs: 'Oro de Minas: demografía y lengua en movimiento',
+    titleOriginal: 'Ouro de Minas: demografia e língua em movimento',
+    lang: 'pt',
+    textEs: `El ciclo del oro en Minas Gerais desplazó poblaciones africanas, indígenas y portuguesas. En ese crisol se aceleraron contactos que alimentan el portugués brasileño moderno.
+
+La historia de la lengua en Brasil es historia de trabajo forzado, mestizaje y ciudades nuevas en el interior.`,
+    textOriginal: `O ciclo do ouro em Minas Gerais deslocou populações africanas, indígenas e portuguesas. Nesse caldeirão aceleraram-se contactos que alimentam o português brasileiro moderno.
+
+A história da língua no Brasil é história de trabalho forçado, mestiçagem e cidades novas no interior.`,
+    apa: 'Boxer, C. R. (1962). The golden age of Brazil, 1695–1750. University of California Press.',
+    note: 'Brasil en el ciclo del oro.',
+    tags: ['Minas', 'oro', 'Brasil', 'demografía'],
+  },
+  {
+    id: 'pt-independence-br',
+    region: 'Brasil',
+    titleEs: 'Independencia de Brasil: imperio tropical en portugués',
+    titleOriginal: 'Independência do Brasil: império tropical em português',
+    lang: 'pt',
+    textEs: `A diferencia de varias repúblicas hispanoamericanas, Brasil independizó bajo un imperio monárquico (1822). El portugués siguió siendo lengua de Estado sin ruptura brusca de elite letrada.
+
+Eso no eliminó desigualdades enormes; configuró otra trayectoria de nación escrita.`,
+    textOriginal: `Diferente de várias repúblicas hispano-americanas, o Brasil independeu-se sob um império monárquico (1822). O português continuou língua de Estado sem ruptura brusca da elite letrada.
+
+Isso não apagou desigualdades enormes; configurou outra trajetória de nação escrita.`,
+    apa: 'Barman, R. J. (1988). Brazil: The forging of a nation, 1798–1852. Stanford University Press.',
+    note: 'Construcción de la nación brasileña.',
+    tags: ['Brasil', '1822', 'imperio', 'nación'],
+  },
+  {
+    id: 'pt-angola-lit',
+    region: 'Angola / África lusófona',
+    titleEs: 'África lusófona: portugués, nacionalismos y literaturas',
+    titleOriginal: 'África lusófona: português, nacionalismos e literaturas',
+    lang: 'pt',
+    textEs: `En Angola, Moçambique y otras colonias, el portugués fue lengua de administración colonial y, más tarde, de proyectos nacionales y literarios. Escritores africanos resignificaron la lengua del imperio.
+
+Hoy el portugués es también africano: se habla, se escribe y se disputa lejos de Lisboa.`,
+    textOriginal: `Em Angola, Moçambique e outras colónias, o português foi língua da administração colonial e, depois, de projetos nacionais e literários. Escritores africanos ressignificaram a língua do império.
+
+Hoje o português é também africano: fala-se, escreve-se e discute-se longe de Lisboa.`,
+    apa: 'Chabal, P., et al. (Eds.). (1996). The postcolonial literature of Lusophone Africa. Northwestern University Press.',
+    note: 'Literaturas africanas en portugués.',
+    tags: ['África', 'lusofonía', 'literatura', 'nacionalismo'],
+  },
+  {
+    id: 'pt-acordo',
+    region: 'Lusofonía',
+    titleEs: 'Acordo Ortográfico: unificar sin borrar diferencias',
+    titleOriginal: 'Acordo Ortográfico: unificar sem apagar diferenças',
+    lang: 'pt',
+    textEs: `El Acordo Ortográfico de 1990 buscó converger normas de Portugal, Brasil y otros países lusófonos. La adhesión y la polémica variaron por país.
+
+Unificar la ortografía no unifica acentos ni léxico cotidiano; organiza la página escrita común.`,
+    textOriginal: `O Acordo Ortográfico de 1990 procurou convergir normas de Portugal, Brasil e outros países lusófonos. A adesão e a polémica variaram por país.
+
+Unificar a ortografia não unifica sotaques nem léxico quotidiano; organiza a página escrita comum.`,
+    apa: 'Castro, I. (2006). Introdução à história do português (2nd ed.). Colibri.',
+    note: 'Historia del portugués e cuestiones de norma.',
+    tags: ['ortografía', 'norma', 'CPLP', 'portugués'],
+  },
+  {
+    id: 'de-print',
+    region: 'Alemania',
+    titleEs: 'Imprenta y Reforma: el alemán en tipo móvil',
+    titleOriginal: 'Druck und Reformation: Deutsch in beweglichen Lettern',
+    lang: 'de',
+    textEs: `La imprenta de tipos móviles y la Reforma multiplicaron textos en alemán. Panfletos, biblia y controversias teológicas educaron un público lector más amplio.
+
+Sin imprenta, la estandarización del alemán escrito habría sido más lenta y más elitista.`,
+    textOriginal: `Der Buchdruck mit beweglichen Lettern und die Reformation vervielfachten deutsche Texte. Flugschriften, Bibel und theologische Streitigkeiten bildeten ein breiteres Lesepublikum.
+
+Ohne Druck wäre die Standardisierung des Schriftdeutschen langsamer und elitärer verlaufen.`,
+    apa: 'Edwards, M. U. (1994). Printing, propaganda, and Martin Luther. University of California Press.',
+    note: 'Imprenta y propaganda en la Reforma.',
+    tags: ['imprenta', 'Reforma', 'alemán', 'lectura'],
+  },
+  {
+    id: 'de-1848',
+    region: 'Estados alemanes',
+    titleEs: '1848: revoluciones, parlamento y nación pendiente',
+    titleOriginal: '1848: Revolutionen, Parlament und offene Nation',
+    lang: 'de',
+    textEs: `Las revoluciones de 1848 en el espacio alemán soñaron constitución y unidad nacional. El Parlamento de Frankfurt intentó un marco liberal. El proyecto fracasó a corto plazo, pero dejó agenda.
+
+La “nación alemana” se debatió en discursos antes de consolidarse en Estado imperial.`,
+    textOriginal: `Die Revolutionen von 1848 im deutschen Raum träumten von Verfassung und nationaler Einheit. Die Frankfurter Nationalversammlung versuchte einen liberalen Rahmen. Das Projekt scheiterte kurzfristig, hinterließ aber eine Agenda.
+
+Die „deutsche Nation“ wurde in Reden verhandelt, bevor sie im Kaiserreich Staat wurde.`,
+    apa: 'Sperber, J. (1994). The European revolutions, 1848–1851. Cambridge University Press.',
+    note: 'Revoluciones europeas de 1848.',
+    tags: ['1848', 'Frankfurt', 'nación', 'liberalismo'],
+  },
+  {
+    id: 'de-unification',
+    region: 'Alemania',
+    titleEs: '1871: unificación desde arriba',
+    titleOriginal: '1871: Einigung von oben',
+    lang: 'de',
+    textEs: `El Imperio alemán de 1871 nació de guerras y diplomacia lideradas por Prusia, no de un puro consenso popular. El alemán estándar ganó peso en escuela y ejército.
+
+Un Estado nuevo exige formularios, himnos y manuales: la lengua nacional se administra.`,
+    textOriginal: `Das Deutsche Kaiserreich von 1871 entstand aus Kriegen und preußischer Diplomatie, nicht aus reinem Volkskonsens. Das Standarddeutsche gewann in Schule und Militär an Gewicht.
+
+Ein neuer Staat braucht Formulare, Hymnen und Lehrbücher: die Nationalsprache wird verwaltet.`,
+    apa: 'Blackbourn, D. (1998). The long nineteenth century. Oxford University Press.',
+    note: 'Alemania en el siglo XIX largo.',
+    tags: ['1871', 'Prusia', 'unificación', 'imperio'],
+  },
+  {
+    id: 'de-weimar',
+    region: 'Alemania',
+    titleEs: 'República de Weimar: democracia frágil, cultura intensa',
+    titleOriginal: 'Weimarer Republik: fragile Demokratie, intensive Kultur',
+    lang: 'de',
+    textEs: `Weimar experimentó democracia parlamentaria, crisis económica y una eclosión cultural en cine, diseño y pensamiento. El léxico político se polarizó hasta el colapso.
+
+Estudiar Weimar es estudiar cómo una lengua pública puede abrirse… y luego cerrarse bajo dictadura.`,
+    textOriginal: `Weimar erprobte parlamentarische Demokratie, Wirtschaftskrisen und eine kulturelle Blüte in Film, Design und Denken. Das politische Lexikon polarisierte sich bis zum Kollaps.
+
+Weimar studieren heißt studieren, wie öffentliche Sprache sich öffnen… und unter Diktatur wieder schließen kann.`,
+    apa: 'Weitz, E. D. (2007). Weimar Germany. Princeton University Press.',
+    note: 'Historia de la República de Weimar.',
+    tags: ['Weimar', 'democracia', 'cultura', 'crisis'],
+  },
+  {
+    id: 'de-eu',
+    region: 'Alemania / Europa',
+    titleEs: 'Alemania en Europa: después de 1945',
+    titleOriginal: 'Deutschland in Europa: nach 1945',
+    lang: 'de',
+    textEs: `Tras 1945, la división y luego la reunificación redefinieron el lugar de Alemania en Europa. El alemán sigue siendo lengua mayor de la UE, pero en un ecosistema multilingüe de traducción permanente.
+
+La política europea es, también, una política de intérpretes.`,
+    textOriginal: `Nach 1945 definierten Teilung und spätere Wiedervereinigung Deutschlands Ort in Europa neu. Deutsch bleibt eine große EU-Sprache, jedoch in einem mehrsprachigen Ökosystem ständiger Übersetzung.
+
+Europäische Politik ist auch eine Politik der Dolmetscher.`,
+    apa: 'Judt, T. (2005). Postwar: A history of Europe since 1945. Penguin.',
+    note: 'Europa de posguerra.',
+    tags: ['posguerra', 'UE', 'reunificación', 'Europa'],
+  },
+  {
+    id: 'it-rome-republic',
+    region: 'Roma antigua',
+    titleEs: 'República romana: derecho, latín y expansión',
+    titleOriginal: 'Repubblica romana: diritto, latino ed espansione',
+    lang: 'it',
+    textEs: `La República romana expandió un modelo de ciudadanía, derecho y latín público por Italia y luego el Mediterráneo. El latín jurídico dejó una herencia que aún estructura vocabulario político europeo.
+
+Roma no exportó solo legiones: exportó categorías.`,
+    textOriginal: `La Repubblica romana espanse un modello di cittadinanza, diritto e latino pubblico per l’Italia e poi il Mediterraneo. Il latino giuridico lasciò un’eredità che struttura ancora il lessico politico europeo.
+
+Roma non esportò solo legioni: esportò categorie.`,
+    apa: 'Beard, M. (2015). SPQR: A history of ancient Rome. Profile.',
+    note: 'Historia de Roma antigua accesible y rigurosa.',
+    tags: ['Roma', 'latín', 'derecho', 'República'],
+  },
+  {
+    id: 'it-comuni',
+    region: 'Italia medieval',
+    titleEs: 'Comuni medievales: ciudades que se gobiernan',
+    titleOriginal: 'Comuni medievali: città che si governano',
+    lang: 'it',
+    textEs: `En la Italia comunal, ciudades como Florencia, Bolonia o Milán experimentaron autogobierno, gremios y conflictos de facciones. El vernáculo italiano creció en actas, poesía y comercio.
+
+La ciudad italiana medieval fue laboratorio de política antes del Estado nacional.`,
+    textOriginal: `Nell’Italia comunale, città come Firenze, Bologna o Milano sperimentarono autogoverno, corporazioni e lotte di fazione. Il volgare italiano crebbe in atti, poesia e commercio.
+
+La città italiana medievale fu laboratorio politico prima dello Stato nazionale.`,
+    apa: 'Waley, D., & Dean, T. (2013). The Italian city-republics (4th ed.). Routledge.',
+    note: 'Repúblicas urbanas italianas.',
+    tags: ['comuni', 'Florencia', 'volgare', 'ciudad'],
+  },
+  {
+    id: 'it-risorgimento',
+    region: 'Italia',
+    titleEs: 'Risorgimento: unificar la península, elegir una lengua',
+    titleOriginal: 'Risorgimento: unire la penisola, scegliere una lingua',
+    lang: 'it',
+    textEs: `La unificación italiana del XIX tuvo que decidir qué italiano enseñar. El estándar literario toscano-romano se impuso sobre un mosaico de dialectos.
+
+“Hacer italianos” después de “hacer Italia” pasó por la escuela y el servicio militar.`,
+    textOriginal: `L’unificazione italiana dell’Ottocento dovette decidere quale italiano insegnare. Lo standard letterario tosco-romano si impose su un mosaico di dialetti.
+
+«Fare gli italiani» dopo «fare l’Italia» passò per scuola e leva.`,
+    apa: 'Duggan, C. (2007). The force of destiny: A history of Italy since 1796. Houghton Mifflin.',
+    note: 'Italia desde el Risorgimento.',
+    tags: ['Risorgimento', 'estándar', 'escuela', 'nación'],
+  },
+  {
+    id: 'it-emigration',
+    region: 'Italia / diáspora',
+    titleEs: 'Emigración italiana: dialectos que cruzan el océano',
+    titleOriginal: 'Emigrazione italiana: dialetti che attraversano l’oceano',
+    lang: 'it',
+    textEs: `Millones de italianos emigraron a Américas y Europa. Llevaron dialectos, cocinas y asociaciones mutualistas. El italiano estándar a veces se aprendió más en destino que en origen.
+
+La diáspora reescribió el mapa de la lengua italiana fuera de la península.`,
+    textOriginal: `Milioni di italiani emigrarono verso Americhe ed Europa. Portarono dialetti, cucine e società di mutuo soccorso. L’italiano standard a volte si imparò più a destinazione che in origine.
+
+La diaspora riscrisse la mappa della lingua italiana fuori dalla penisola.`,
+    apa: 'Gabaccia, D. R. (2000). Italy’s many diasporas. UCL Press.',
+    note: 'Diásporas italianas.',
+    tags: ['emigración', 'dialectos', 'diáspora', 'Américas'],
+  },
+  {
+    id: 'it-resistance',
+    region: 'Italia',
+    titleEs: 'Resistencia (1943–45): palabras de una Italia dividida',
+    titleOriginal: 'Resistenza (1943–45): parole di un’Italia divisa',
+    lang: 'it',
+    textEs: `Durante la ocupación nazi-fascista, la Resistencia italiana generó prensa clandestina, canciones y un léxico de liberación. Tras la guerra, esa memoria compitió con otras memorias en la República.
+
+Estudiar la Resistencia es estudiar cómo se nombra el antifascismo en público.`,
+    textOriginal: `Durante l’occupazione nazifascista, la Resistenza italiana generò stampa clandestina, canti e un lessico di liberazione. Dopo la guerra quella memoria competé con altre memorie nella Repubblica.
+
+Studiare la Resistenza significa studiare come si nomina l’antifascismo in pubblico.`,
+    apa: 'Pavone, C. (2013). A civil war: A history of the Italian resistance. Verso.',
+    note: 'Historia de la Resistencia italiana.',
+    tags: ['Resistencia', '1943', 'antifascismo', 'memoria'],
+  },
+
 ]
 
 // -----------------------------------------------------------------------------
@@ -2330,6 +3266,9 @@ export function IdiomasGame() {
   )
   const [preferredMode, setPreferredMode] = useState<GameMode | 'auto'>(() =>
     readJSON(LS.mode, 'auto')
+  )
+  const [completedMap, setCompletedMap] = useState<Record<string, number[]>>(() =>
+    readJSON(LS.completed, {})
   )
   const [learnOpen, setLearnOpen] = useState(true)
   const [question, setQuestion] = useState<Question | null>(null)
@@ -2356,6 +3295,10 @@ export function IdiomasGame() {
   const profile = LANG_PROFILES[lang]
   const unlocked = unlockedMap[lang] ?? 1
   const currentLevel = currentMap[lang] ?? 1
+  const completedLevels = useMemo(
+    () => new Set(completedMap[lang] ?? []),
+    [completedMap, lang]
+  )
 
   const scores = useMemo(
     () => readJSON<Record<string, number>>(LS.scores, {}),
@@ -2372,9 +3315,30 @@ export function IdiomasGame() {
 
   const startLevel = useCallback(
     (id: number) => {
-      const q = generateQuestion(id, lang, preferredMode)
-      setLevelId(id)
-      const nextCurrent = { ...currentMap, [lang]: id }
+      let target = id
+      // Si ya está completado, avanzar al siguiente no completado desbloqueado
+      if (completedLevels.has(target)) {
+        let found = false
+        for (let n = target + 1; n <= TOTAL_LEVELS; n++) {
+          if (!completedLevels.has(n) && n <= Math.max(unlocked, target + 1)) {
+            target = n
+            found = true
+            break
+          }
+        }
+        if (!found) {
+          for (let n = 1; n <= unlocked; n++) {
+            if (!completedLevels.has(n)) {
+              target = n
+              found = true
+              break
+            }
+          }
+        }
+      }
+      const q = generateQuestion(target, lang, preferredMode)
+      setLevelId(target)
+      const nextCurrent = { ...currentMap, [lang]: target }
       setCurrentMap(nextCurrent)
       writeJSON(LS.current, nextCurrent)
       setQuestion(q)
@@ -2386,7 +3350,7 @@ export function IdiomasGame() {
       startedAtRef.current = Date.now()
       setScreen('play')
     },
-    [lang, preferredMode, currentMap]
+    [lang, preferredMode, currentMap, completedLevels, unlocked]
   )
 
   const onSelectOption = (idx: number) => {
@@ -2414,6 +3378,12 @@ export function IdiomasGame() {
       const sc = readJSON<Record<string, number>>(LS.scores, {})
       sc[key] = Math.max(sc[key] ?? 0, 1)
       writeJSON(LS.scores, sc)
+      const prevCompleted = completedMap[lang] ?? []
+      if (!prevCompleted.includes(levelId)) {
+        const nextCompleted = { ...completedMap, [lang]: [...prevCompleted, levelId] }
+        setCompletedMap(nextCompleted)
+        writeJSON(LS.completed, nextCompleted)
+      }
       if (levelId >= unlocked) {
         const next = Math.min(TOTAL_LEVELS, levelId + 1)
         const nextUnlocked = { ...unlockedMap, [lang]: next }
@@ -2450,7 +3420,7 @@ export function IdiomasGame() {
             ←
           </button>
           <div className="id-top-title">
-            <h1>Idiomas</h1>
+            <h1>Idiomas · Deducción</h1>
             <p>Gramática, cognados, lectura y traducción lógica</p>
           </div>
         </header>
@@ -2497,8 +3467,8 @@ export function IdiomasGame() {
                   <br />
                   <strong>Hablantes:</strong> {profile.speakers}
                   <br />
-                  <strong>Progresión CEFR:</strong> Niveles 1–20 A1 · 21–40 A2 · 41–80 B1 · 81–120
-                  B2 · 121–160 C1 · 161+ C2 (por idioma).
+                  <strong>Progresión CEFR:</strong> 1–40 A1 · 41–60 A2 · 61–120 B1 · 121–240 B2 ·
+                  241–480 C1 · 481+ C2 (por idioma).
                 </p>
                 <div className="id-essay">{profile.essay}</div>
                 <h3>Reglas clave (claras y aplicables)</h3>
@@ -2555,7 +3525,7 @@ export function IdiomasGame() {
           </button>
           <p className="id-stats-line">
             Aciertos: {wins} · Fallos: {fails} · Desbloqueado ({profile.name}): {unlocked}/
-            {TOTAL_LEVELS}
+            {TOTAL_LEVELS} · Completados: {(completedMap[lang] ?? []).length}
           </p>
           <p className="id-stats-line">
             Modo: {preferredMode === 'auto' ? 'Automático (ciclo)' : MODE_LABELS[preferredMode]}
@@ -2576,6 +3546,7 @@ export function IdiomasGame() {
       'particle_or_order',
       'false_friends',
       'morphology',
+      'contextual_usage',
       'reading_comprehension',
     ]
     return (
@@ -2637,15 +3608,16 @@ export function IdiomasGame() {
         <div className="id-level-grid">
           {Array.from({ length: maxShow }, (_, i) => i + 1).map((n) => {
             const locked = n > unlocked
-            const done = (scores[`${lang}:${n}`] ?? 0) > 0
+            const done = completedLevels.has(n) || (scores[`${lang}:${n}`] ?? 0) > 0
             const cefr = levelToCefr(n)
             return (
               <button
                 key={n}
                 type="button"
                 className={`id-level-cell ${locked ? 'locked' : ''} ${n === currentLevel ? 'current' : ''} ${done ? 'done' : ''}`}
-                disabled={locked}
-                onClick={() => !locked && startLevel(n)}
+                disabled={locked || done}
+                onClick={() => !locked && !done && startLevel(n)}
+                title={done ? 'Ya completado' : locked ? 'Bloqueado' : `Nivel ${n}`}
               >
                 <span className="cefr">{cefr}</span>
                 <span className="num">{n}</span>
@@ -2844,13 +3816,13 @@ export function IdiomasGame() {
             <h1>{correct ? 'Correcto' : 'Incorrecto'}</h1>
             <p>
               {correct
-                ? 'Subes de nivel (si era el máximo desbloqueado)'
-                : 'No subes de nivel · reintenta'}
+                ? 'Nivel completado · no se repetirá en la progresión'
+                : 'Sigue el consejo · la respuesta no se revela'}
             </p>
           </div>
         </header>
         <div className={`id-result-banner ${correct ? 'ok' : 'bad'}`}>
-          {correct ? '✓ Bien razonado' : '✗ Sigue la regla y prueba de nuevo'}
+          {correct ? '✓ Bien razonado' : '✗ Aún no · usa el consejo del nivel'}
         </div>
 
         {correct && lastGrade && (
@@ -2865,18 +3837,33 @@ export function IdiomasGame() {
         )}
 
         <div className="id-card">
-          <h3>Explicación</h3>
-          <p className="id-explain">{question.explanation}</p>
-          <p className="id-rule-explain">
-            <strong>Regla:</strong> {question.ruleHint}
-          </p>
-          <p className="id-rule-explain">{question.ruleExplain}</p>
-          <p className="id-meta">
-            Respuesta correcta:{' '}
-            <strong>
-              {String.fromCharCode(65 + question.correctIndex)}. {question.options[question.correctIndex]}
-            </strong>
-          </p>
+          {correct ? (
+            <>
+              <h3>Explicación</h3>
+              <p className="id-explain">{question.explanation}</p>
+              <p className="id-rule-explain">
+                <strong>Regla:</strong> {question.ruleHint}
+              </p>
+              <p className="id-rule-explain">{question.ruleExplain}</p>
+              <p className="id-meta">
+                Respuesta:{' '}
+                <strong>
+                  {String.fromCharCode(65 + question.correctIndex)}. {question.options[question.correctIndex]}
+                </strong>
+              </p>
+            </>
+          ) : (
+            <>
+              <h3>Consejo para este nivel</h3>
+              <p className="id-explain">{question.failAdvice}</p>
+              <p className="id-rule-explain">
+                <strong>Pista de regla:</strong> {question.ruleHint}
+              </p>
+              <p className="id-meta">
+                La respuesta correcta no se muestra al fallar. Reintenta aplicando el consejo.
+              </p>
+            </>
+          )}
           <p className="id-meta">
             Nivel {question.level} · {question.cefr} · {cefrLabel(question.cefr)}
           </p>
@@ -3340,7 +4327,7 @@ const CSS = `
   outline: 2px solid #3AA0FF;
   background: color-mix(in srgb, #3AA0FF 18%, transparent);
 }
-@media (max-width: 480px) {   
+@media (max-width: 480px) {
   .id-lang-btn { font-size: 0.78rem; padding: 7px 10px; }
   .id-opt { font-size: 0.88rem; }
 }
