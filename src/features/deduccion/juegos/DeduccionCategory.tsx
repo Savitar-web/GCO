@@ -15,7 +15,7 @@ const GAMES = [
     id: 'historias',
     title: 'Casos de detective',
     emoji: '🔍',
-    desc: 'Historias reales o filosóficas. 8 pistas lógicas; solo una es correcta.',
+    desc: 'Historias reales.',
   },
   {
     id: 'palabras',
