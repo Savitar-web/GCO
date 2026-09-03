@@ -1859,7 +1859,7 @@ export function HistoriasGame() {
           </div>
           <h1 style={{ fontSize: 'clamp(1.45rem, 4.5vw, 1.9rem)' }}>🔍 Casos de detective</h1>
           <p style={{ color: 'var(--gco-ink-muted)', fontSize: '0.9rem' }}>
-            Inferencia con fuentes. Opciones barajadas · pista sin spoiler · casos completados no se repiten.
+            Inferencias y casos para analizarse.
           </p>
         </div>
       </header>
