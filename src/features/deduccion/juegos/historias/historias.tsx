@@ -2043,7 +2043,7 @@ export function HistoriasGame() {
                     setShowHint((v) => !v)
                   }}
                 >
-                  {showHint ? 'Ocultar pista' : 'Mostrar pista (sin respuesta)'}
+                  {showHint ? 'Ocultar pista' : 'Pista'}
                 </button>
 
                 <AnimatePresence>
