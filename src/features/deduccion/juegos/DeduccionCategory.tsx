@@ -21,7 +21,7 @@ const GAMES = [
     id: 'palabras',
     title: 'Palabras ocultas',
     emoji: '🔤',
-    desc: 'Anagramas con tildes, ahorcado mental y crucigrama/sopa/constelación con todas las combinaciones válidas.',
+    desc: 'Anagramas, ahorcado y crucigramas con todas las combinaciones válidas.',
   },
   {
     id: 'silogismos',
@@ -33,7 +33,7 @@ const GAMES = [
     id: 'mapas',
     title: 'Mapas mentales',
     emoji: '🗺️',
-    desc: 'Relaciones espaciales, grafos y restricciones. Deduce posiciones sin dibujo completo.',
+    desc: 'Relaciones espaciales, grafos y restricciones. Deduce posiciones y trayectos.',
   },
   {
     id: 'codigo',
@@ -45,7 +45,7 @@ const GAMES = [
     id: 'idiomas',
     title: 'Idiomas',
     emoji: '🌐',
-    desc: 'Traducción lógica, gramática y cognados en español, inglés, japonés, chino y francés. 220+ niveles.',
+    desc: 'Traducción, gramática y cognados en español, inglés, japonés, chino y francés.',
   },
 ] as const
 
