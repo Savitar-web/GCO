@@ -21,7 +21,6 @@ import {
   summarizeAimSession,
   generateSimonLevel,
   getSimonTimeLimit,
-  SIMON_BUTTONS,
   type AimHitResult,
   type AimSessionSummary,
   type SimonLevel,
@@ -29,7 +28,14 @@ import {
   type SimonCustomLevel,
 } from '../generateLevel'
 
-type View = 'menu' | 'reaccion' | 'punteria' | 'simon' | 'secuencia'
+type View =
+  | 'menu'
+  | 'reaccion'
+  | 'punteria'
+  | 'simon'
+  | 'secuencia'
+  | 'numero-fugaz'
+  | 'memoria-posicion'
 
 /* ── storage ─────────────────────────────────────────────────────────────── */
 function loadJSON<T>(key: string, fallback: T): T {
@@ -51,11 +57,18 @@ function saveJSON(key: string, value: unknown) {
 const KEYS = {
   reaction: 'gco:habilidades:reaccion',
   aim: 'gco:habilidades:punteria',
+  aimKeyPrimary: 'gco:habilidades:punteria-key-primary',
+  aimKeySecondary: 'gco:habilidades:punteria-key-secondary',
   simonLevel: 'gco:habilidades:simon-nivel',
   simonCustom: 'gco:habilidades:simon-creativo',
   simonActions: 'gco:habilidades:simon-acciones',
   sequenceLevel: 'gco:habilidades:secuencia-nivel',
   sequenceHistory: 'gco:habilidades:secuencia-historial',
+  sequenceCellScale: 'gco:habilidades:secuencia-escala',
+  flashLevel: 'gco:habilidades:numero-fugaz-nivel',
+  flashHistory: 'gco:habilidades:numero-fugaz-historial',
+  positionLevel: 'gco:habilidades:memoria-posicion-nivel',
+  positionHistory: 'gco:habilidades:memoria-posicion-historial',
 } as const
 
 const CAT = 'memoria' as const
@@ -71,14 +84,11 @@ function shuffleArray<T>(arr: T[]): T[] {
   return a
 }
 
-/** Nivel creativo de Simón Dice con tiempo de espera propio, editable por el
- *  jugador. Extiende el tipo de la librería de generación de niveles. */
+/** Nivel creativo de Simón Dice con tiempo de espera propio. */
 interface CreativeSimonLevel extends SimonCustomLevel {
   timeLimitMsOverride: number
 }
 
-/** Construye un SimonLevel jugable a partir de un nivel creativo guardado,
- *  respetando el tiempo de espera que el propio jugador definió. */
 function buildSimonLevelFromCustom(
   custom: CreativeSimonLevel,
   level: number
@@ -92,18 +102,160 @@ function buildSimonLevelFromCustom(
   }
 }
 
-/** Recomienda un tiempo de espera prudente pero desafiante para el modo
- *  creativo, basado en el progreso actual del jugador en el modo normal. */
 function recommendSimonTime(referenceLevel: number): number {
   const raw = getSimonTimeLimit(Math.max(1, referenceLevel))
   return Math.min(2800, Math.max(1200, Math.round(raw / 50) * 50))
 }
 
+/* ── Banco masivo de acciones para Simón Dice (>120) ─────────────────────── */
+const BASE_SIMON_ACTIONS: SimonButtonDef[] = [
+  { id: 'aplaude', label: 'aplaude', emoji: '👏', hex: '#22E6C5' },
+  { id: 'salta', label: 'salta', emoji: '🤸', hex: '#FF6B4A' },
+  { id: 'saluda', label: 'saluda', emoji: '👋', hex: '#8B7CF6' },
+  { id: 'gira', label: 'gira', emoji: '🔄', hex: '#F5A623' },
+  { id: 'sientate', label: 'siéntate', emoji: '🪑', hex: '#4A9EFF' },
+  { id: 'toca-nariz', label: 'tócate la nariz', emoji: '👃', hex: '#FF6BCB' },
+  { id: 'tapa-ojos', label: 'tápate los ojos', emoji: '🙈', hex: '#A3E635' },
+  { id: 'sonrie', label: 'sonríe', emoji: '😄', hex: '#FB923C' },
+  { id: 'silencio', label: 'haz silencio', emoji: '🤫', hex: '#818CF8' },
+  { id: 'levanta-mano', label: 'levanta la mano', emoji: '🙋', hex: '#2DD4BF' },
+  { id: 'congelate', label: 'congélate', emoji: '🧊', hex: '#38BDF8' },
+  { id: 'mira-arriba', label: 'mira hacia arriba', emoji: '👀', hex: '#FB7185' },
+  { id: 'choca-5', label: 'choca los cinco', emoji: '🖐️', hex: '#22E6C5' },
+  { id: 'pisa-fuerte', label: 'pisa fuerte', emoji: '🦶', hex: '#FF6B4A' },
+  { id: 'ok', label: 'haz ok', emoji: '🤙', hex: '#8B7CF6' },
+  { id: 'para', label: 'para', emoji: '✋', hex: '#F5A623' },
+  { id: 'saluda-mano', label: 'saluda con la mano', emoji: '👋', hex: '#4A9EFF' },
+  { id: 'aprieta-mano', label: 'aprieta la mano', emoji: '🤝', hex: '#FF6BCB' },
+  { id: 'canta', label: 'canta', emoji: '🎤', hex: '#A3E635' },
+  { id: 'baila', label: 'baila', emoji: '🕺', hex: '#FB923C' },
+  { id: 'baila-mujer', label: 'baila suave', emoji: '💃', hex: '#818CF8' },
+  { id: 'medita', label: 'medita', emoji: '🧘', hex: '#2DD4BF' },
+  { id: 'corre-sitio', label: 'corre en el sitio', emoji: '🏃', hex: '#38BDF8' },
+  { id: 'lanza', label: 'lanza', emoji: '🤾', hex: '#FB7185' },
+  { id: 'malabarea', label: 'malabarea', emoji: '🤹', hex: '#22E6C5' },
+  { id: 'palma-abajo', label: 'palma hacia abajo', emoji: '🫳', hex: '#FF6B4A' },
+  { id: 'mano-derecha', label: 'mano a la derecha', emoji: '🫱', hex: '#8B7CF6' },
+  { id: 'vulcano', label: 'saludo vulcaniano', emoji: '🖖', hex: '#F5A623' },
+  { id: 'pinza', label: 'haz la pinza', emoji: '🤌', hex: '#4A9EFF' },
+  { id: 'pulgar-arriba', label: 'pulgar arriba', emoji: '👍', hex: '#FF6BCB' },
+  { id: 'pulgar-abajo', label: 'pulgar abajo', emoji: '👎', hex: '#A3E635' },
+  { id: 'corazon', label: 'haz un corazón', emoji: '🫶', hex: '#FB923C' },
+  { id: 'cruzate-brazos', label: 'crúzate de brazos', emoji: '🙅', hex: '#818CF8' },
+  { id: 'toca-hombro', label: 'tócate el hombro', emoji: '💪', hex: '#2DD4BF' },
+  { id: 'guiña', label: 'guiña un ojo', emoji: '😉', hex: '#38BDF8' },
+  { id: 'bosteza', label: 'bosteza', emoji: '🥱', hex: '#FB7185' },
+  { id: 'estornuda', label: 'estornuda (finge)', emoji: '🤧', hex: '#22E6C5' },
+  { id: 'tose', label: 'tose (suave)', emoji: '😷', hex: '#FF6B4A' },
+  { id: 'suspira', label: 'suspira', emoji: '😮‍💨', hex: '#8B7CF6' },
+  { id: 'piensa', label: 'piensa', emoji: '🤔', hex: '#F5A623' },
+  { id: 'celebra', label: 'celebra', emoji: '🎉', hex: '#4A9EFF' },
+  { id: 'abrase', label: 'abrázate', emoji: '🤗', hex: '#FF6BCB' },
+  { id: 'senala-arriba', label: 'señala arriba', emoji: '☝️', hex: '#A3E635' },
+  { id: 'senala-abajo', label: 'señala abajo', emoji: '👇', hex: '#FB923C' },
+  { id: 'senala-izq', label: 'señala a la izquierda', emoji: '👈', hex: '#818CF8' },
+  { id: 'senala-der', label: 'señala a la derecha', emoji: '👉', hex: '#2DD4BF' },
+  { id: 'cuenta-3', label: 'cuenta hasta 3', emoji: '3️⃣', hex: '#38BDF8' },
+  { id: 'cierra-ojos', label: 'cierra los ojos', emoji: '😌', hex: '#FB7185' },
+  { id: 'abre-boca', label: 'abre la boca', emoji: '😮', hex: '#22E6C5' },
+  { id: 'saca-lengua', label: 'saca la lengua', emoji: '😛', hex: '#FF6B4A' },
+  { id: 'mueve-cejas', label: 'mueve las cejas', emoji: '🤨', hex: '#8B7CF6' },
+  { id: 'sopla', label: 'sopla', emoji: '🌬️', hex: '#F5A623' },
+  { id: 'silba', label: 'silba', emoji: '🎵', hex: '#4A9EFF' },
+  { id: 'choca-codos', label: 'choca los codos', emoji: '🦾', hex: '#FF6BCB' },
+  { id: 'toca-rodilla', label: 'tócate la rodilla', emoji: '🦵', hex: '#A3E635' },
+  { id: 'equilibrio', label: 'ponte en equilibrio', emoji: '⚖️', hex: '#FB923C' },
+  { id: 'camina-atras', label: 'camina hacia atrás', emoji: '🔙', hex: '#818CF8' },
+  { id: 'gira-cabeza', label: 'gira la cabeza', emoji: '🔄', hex: '#2DD4BF' },
+  { id: 'encoge-hombros', label: 'encoge los hombros', emoji: '🤷', hex: '#38BDF8' },
+  { id: 'toca-oreja', label: 'tócate la oreja', emoji: '👂', hex: '#FB7185' },
+  { id: 'toca-barbilla', label: 'tócate la barbilla', emoji: '🧔', hex: '#22E6C5' },
+  { id: 'cruza-piernas', label: 'cruza las piernas', emoji: '🤞', hex: '#FF6B4A' },
+  { id: 'salta-1-pie', label: 'salta a un pie', emoji: '🦶', hex: '#8B7CF6' },
+  { id: 'agachate', label: 'agáchate', emoji: '🙇', hex: '#F5A623' },
+  { id: 'estira-brazos', label: 'estira los brazos', emoji: '🙆', hex: '#4A9EFF' },
+  { id: 'manos-caderas', label: 'manos en la cadera', emoji: '🧍', hex: '#FF6BCB' },
+  { id: 'toca-pies', label: 'tócate los pies', emoji: '🦶', hex: '#A3E635' },
+  { id: 'mira-reloj', label: 'mira el reloj', emoji: '⌚', hex: '#FB923C' },
+  { id: 'escribe-aire', label: 'escribe en el aire', emoji: '✍️', hex: '#818CF8' },
+  { id: 'dibuja-circulo', label: 'dibuja un círculo', emoji: '⭕', hex: '#2DD4BF' },
+  { id: 'cuenta-dedos', label: 'cuenta con los dedos', emoji: '🖐️', hex: '#38BDF8' },
+  { id: 'choca-rodillas', label: 'choca las rodillas', emoji: '🦵', hex: '#FB7185' },
+  { id: 'imita-avion', label: 'imita un avión', emoji: '✈️', hex: '#22E6C5' },
+  { id: 'imita-robot', label: 'imita un robot', emoji: '🤖', hex: '#FF6B4A' },
+  { id: 'imita-gatoo', label: 'imita un gato', emoji: '🐱', hex: '#8B7CF6' },
+  { id: 'imita-perro', label: 'imita un perro', emoji: '🐶', hex: '#F5A623' },
+  { id: 'imita-pajaro', label: 'imita un pájaro', emoji: '🐦', hex: '#4A9EFF' },
+  { id: 'hace-ola', label: 'haz la ola', emoji: '🌊', hex: '#FF6BCB' },
+  { id: 'toca-codo', label: 'tócate el codo', emoji: '💪', hex: '#A3E635' },
+  { id: 'palmas-arriba', label: 'palmas hacia arriba', emoji: '🤲', hex: '#FB923C' },
+  { id: 'forma-pistola', label: 'forma una pistola', emoji: '🔫', hex: '#818CF8' },
+  { id: 'forma-telefono', label: 'forma un teléfono', emoji: '📞', hex: '#2DD4BF' },
+  { id: 'forma-corazon-manos', label: 'corazón con las manos', emoji: '❣️', hex: '#38BDF8' },
+  { id: 'toca-nuca', label: 'tócate la nuca', emoji: '🧍‍♂️', hex: '#FB7185' },
+  { id: 'mira-suelo', label: 'mira al suelo', emoji: '⬇️', hex: '#22E6C5' },
+  { id: 'mira-cielo', label: 'mira al cielo', emoji: '⬆️', hex: '#FF6B4A' },
+  { id: 'gira-360', label: 'da una vuelta completa', emoji: '🔁', hex: '#8B7CF6' },
+  { id: 'paso-lateral', label: 'da un paso lateral', emoji: '↔️', hex: '#F5A623' },
+  { id: 'salta-tijera', label: 'salta en tijera', emoji: '✂️', hex: '#4A9EFF' },
+  { id: 'toca-cadera', label: 'tócate la cadera', emoji: '🦴', hex: '#FF6BCB' },
+  { id: 'parpadea-rapido', label: 'parpadea rápido', emoji: '👁️', hex: '#A3E635' },
+  { id: 'susurra', label: 'susurra algo', emoji: '🗣️', hex: '#FB923C' },
+  { id: 'grita-suave', label: 'grita suave “¡ya!”', emoji: '📢', hex: '#818CF8' },
+  { id: 'cuenta-atras', label: 'cuenta atrás desde 5', emoji: '5️⃣', hex: '#2DD4BF' },
+  { id: 'toca-mejilla', label: 'tócate la mejilla', emoji: '😊', hex: '#38BDF8' },
+  { id: 'manos-cabeza', label: 'manos en la cabeza', emoji: '🤦', hex: '#FB7185' },
+  { id: 'toca-muneca', label: 'tócate la muñeca', emoji: '⌚', hex: '#22E6C5' },
+  { id: 'forma-l', label: 'forma una L', emoji: '👆', hex: '#FF6B4A' },
+  { id: 'forma-v', label: 'forma una V', emoji: '✌️', hex: '#8B7CF6' },
+  { id: 'forma-ok-clasico', label: 'haz el ok clásico', emoji: '👌', hex: '#F5A623' },
+  { id: 'toca-frente', label: 'tócate la frente', emoji: '🧠', hex: '#4A9EFF' },
+  { id: 'respira-hondo', label: 'respira hondo', emoji: '😮‍💨', hex: '#FF6BCB' },
+  { id: 'sonrie-grande', label: 'sonríe muy grande', emoji: '😁', hex: '#A3E635' },
+  { id: 'cara-seria', label: 'ponte serio', emoji: '😐', hex: '#FB923C' },
+  { id: 'cara-sorprendida', label: 'ponte sorprendido', emoji: '😲', hex: '#818CF8' },
+  { id: 'cara-enfadada', label: 'ponte enfadado (finge)', emoji: '😠', hex: '#2DD4BF' },
+  { id: 'cara-triste', label: 'ponte triste (finge)', emoji: '😢', hex: '#38BDF8' },
+  { id: 'saludo-militar', label: 'saludo militar', emoji: '🫡', hex: '#FB7185' },
+  { id: 'toca-tobillos', label: 'tócate los tobillos', emoji: '🦶', hex: '#22E6C5' },
+  { id: 'equilibrio-1-pie', label: 'equilibrio en un pie', emoji: '🦩', hex: '#FF6B4A' },
+  { id: 'camina-lento', label: 'camina muy lento', emoji: '🚶', hex: '#8B7CF6' },
+  { id: 'corre-rapido-sitio', label: 'corre rápido en el sitio', emoji: '🏃‍♂️', hex: '#F5A623' },
+  { id: 'salta-alto', label: 'salta lo más alto', emoji: '⬆️', hex: '#4A9EFF' },
+  { id: 'agacha-profundo', label: 'agáchate profundo', emoji: '🧎', hex: '#FF6BCB' },
+  { id: 'estira-cuello', label: 'estira el cuello', emoji: '🦒', hex: '#A3E635' },
+  { id: 'roda-hombros', label: 'roda los hombros', emoji: '🔄', hex: '#FB923C' },
+  { id: 'toca-codo-izq', label: 'codo izquierdo', emoji: '💪', hex: '#818CF8' },
+  { id: 'toca-codo-der', label: 'codo derecho', emoji: '💪', hex: '#2DD4BF' },
+  { id: 'palma-frente', label: 'palma en la frente', emoji: '🤦‍♂️', hex: '#38BDF8' },
+  { id: 'dedos-entrelazados', label: 'dedos entrelazados', emoji: '🤞', hex: '#FB7185' },
+  { id: 'mano-corazon', label: 'mano en el corazón', emoji: '❤️', hex: '#22E6C5' },
+  { id: 'senala-tu', label: 'señálate a ti mismo', emoji: '🫵', hex: '#FF6B4A' },
+  { id: 'doble-ok', label: 'doble ok', emoji: '👌', hex: '#8B7CF6' },
+  { id: 'aplauso-lento', label: 'aplauso lento', emoji: '👏', hex: '#F5A623' },
+  { id: 'aplauso-rapido', label: 'aplauso rápido', emoji: '👏', hex: '#4A9EFF' },
+  { id: 'chasquido', label: 'haz un chasquido', emoji: '🫰', hex: '#FF6BCB' },
+  { id: 'toca-nuez', label: 'tócate la nuez', emoji: '🦴', hex: '#A3E635' },
+  { id: 'mira-izquierda', label: 'mira a la izquierda', emoji: '👀', hex: '#FB923C' },
+  { id: 'mira-derecha', label: 'mira a la derecha', emoji: '👀', hex: '#818CF8' },
+  { id: 'cabeza-no', label: 'mueve la cabeza (no)', emoji: '🙅', hex: '#2DD4BF' },
+  { id: 'cabeza-si', label: 'mueve la cabeza (sí)', emoji: '🙆', hex: '#38BDF8' },
+  { id: 'bostezo-grande', label: 'bostezo grande', emoji: '🥱', hex: '#FB7185' },
+  { id: 'estornudo-falso', label: 'estornudo falso', emoji: '🤧', hex: '#22E6C5' },
+  { id: 'tos-suave', label: 'tos suave', emoji: '😷', hex: '#FF6B4A' },
+  { id: 'suspiro-dramatico', label: 'suspiro dramático', emoji: '😮‍💨', hex: '#8B7CF6' },
+  { id: 'pensativo', label: 'pon cara pensativa', emoji: '🤔', hex: '#F5A623' },
+  { id: 'celebracion', label: 'celebración corta', emoji: '🥳', hex: '#4A9EFF' },
+]
+
 const ACTION_EMOJI_CHOICES = [
   '🙌', '🤸', '🙇', '👏', '🔄', '🪑', '👃', '🙈', '😄', '🤫',
   '🙋', '🧊', '👀', '🖐️', '🦶', '🤙', '✋', '👋', '🤝', '🎤',
   '🕺', '💃', '🧘', '🏃', '🤾', '🤹', '🫳', '🫱', '🖖', '🤌',
+  '👍', '👎', '🫶', '💪', '😉', '🥱', '🎉', '🤗', '☝️', '👇',
+  '👈', '👉', '😮', '😛', '🤨', '🎵', '⚖️', '✍️', '⭕', '🤖',
 ]
+
 const ACTION_COLOR_CHOICES = [
   '#22E6C5', '#FF6B4A', '#8B7CF6', '#F5A623', '#4A9EFF', '#FF6BCB',
   '#A3E635', '#FB923C', '#818CF8', '#2DD4BF', '#FB7185', '#38BDF8',
@@ -146,7 +298,7 @@ export function HabilidadesGame() {
                 fontSize: '0.92rem',
               }}
             >
-              Reflejos, puntería y atención bajo presión.
+              Reflejos, puntería, atención y memoria de trabajo bajo presión.
             </p>
           </>
         )}
@@ -163,6 +315,8 @@ export function HabilidadesGame() {
         {view === 'punteria' && <AimGame key="punteria" />}
         {view === 'simon' && <SimonGame key="simon" />}
         {view === 'secuencia' && <SequenceGame key="secuencia" />}
+        {view === 'numero-fugaz' && <FlashNumberGame key="numero-fugaz" />}
+        {view === 'memoria-posicion' && <PositionMemoryGame key="memoria-posicion" />}
       </AnimatePresence>
     </div>
   )
@@ -182,6 +336,8 @@ function MenuHabilidades({
   const aimHist = loadJSON<AimSessionSummary[]>(KEYS.aim, [])
   const simonLevel = loadJSON<number>(KEYS.simonLevel, 1)
   const sequenceHist = loadJSON<SequenceResult[]>(KEYS.sequenceHistory, [])
+  const flashHist = loadJSON<FlashResult[]>(KEYS.flashHistory, [])
+  const positionHist = loadJSON<PositionResult[]>(KEYS.positionHistory, [])
 
   const bestReaction = reactionHist.length ? Math.min(...reactionHist) : null
   const bestAim = aimHist.length
@@ -193,6 +349,12 @@ function MenuHabilidades({
     : sequenceHist.length
       ? Math.min(...sequenceHist.map((r) => r.timeMs))
       : null
+  const bestFlash = flashHist.length
+    ? Math.max(...flashHist.map((r) => r.level))
+    : null
+  const bestPosition = positionHist.length
+    ? Math.max(...positionHist.map((r) => r.level))
+    : null
 
   const cards: Array<{
     id: View
@@ -215,25 +377,39 @@ function MenuHabilidades({
       id: 'punteria',
       title: 'Puntería',
       emoji: '🎯',
-      desc: 'Golpea el blanco lo más cerca del centro posible.',
+      desc: 'Golpea el blanco lo más cerca del centro. Niveles, contrarreloj y teclado opcional.',
       stat: bestAim !== null ? `Mejor precisión: ${bestAim}%` : null,
     },
     {
       id: 'simon',
       title: 'Simón Dice',
       emoji: '🧠',
-      desc: 'Lee la orden y pulsa el botón correcto antes de que se acabe el tiempo.',
+      desc: 'Lee la orden y pulsa el botón correcto antes de que se acabe el tiempo. +120 acciones.',
       stat: `Nivel ${simonLevel}`,
     },
     {
       id: 'secuencia',
       title: 'Secuencia numérica',
       emoji: '🔢',
-      desc: 'Encuentra los números en orden ascendente lo más rápido posible.',
+      desc: 'Encuentra los números en orden ascendente. Cuadrícula adaptable y tamaño ajustable.',
       stat:
         bestSequence !== null
           ? `Mejor: ${formatReactionTime(bestSequence)}`
           : null,
+    },
+    {
+      id: 'numero-fugaz',
+      title: 'Número fugaz',
+      emoji: '👁️',
+      desc: 'Observa un número durante un instante y reescríbelo. El tiempo de observación se acorta.',
+      stat: bestFlash !== null ? `Nivel máximo: ${bestFlash}` : null,
+    },
+    {
+      id: 'memoria-posicion',
+      title: 'Memoria de posición',
+      emoji: '📍',
+      desc: 'Memoriza qué celdas se iluminan y reprodúcelas en el mismo orden o conjunto.',
+      stat: bestPosition !== null ? `Nivel máximo: ${bestPosition}` : null,
     },
   ]
 
@@ -261,7 +437,7 @@ function MenuHabilidades({
           key={game.id}
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: i * 0.06, duration: 0.3 }}
+          transition={{ delay: i * 0.05, duration: 0.3 }}
         >
           <GlassCard
             onClick={() => {
@@ -401,8 +577,6 @@ function ReactionGame() {
     'muy-pronto': 'var(--gco-ink)',
     resultado: 'var(--gco-ink)',
   }
-  // El mensaje de espera NO debe nombrar ningún color específico: sólo debe
-  // indicar que hay que esperar a que la zona cambie de color.
   const message: Record<ReactionState, string> = {
     idle: 'Toca para empezar',
     esperando: 'Espera a que cambie de color',
@@ -542,28 +716,43 @@ function ReactionGame() {
   )
 }
 
-/* ── Puntería ────────────────────────────────────────────────────────────── */
+/* ── Puntería (con niveles, contrarreloj y teclado Z/X) ──────────────────── */
 function AimGame() {
-  const [level] = useState(1)
+  const [level, setLevel] = useState(1)
   const config = useMemo(() => getAimSessionConfig(level), [level])
-  const totalTargets = Math.min(config.targetCount, 15)
+  // Más blancos según nivel
+  const totalTargets = Math.min(8 + level * 2, 28)
+  const sessionTimeLimit = Math.max(18, 45 - level) // segundos, se endurece
+
   const [phase, setPhase] = useState<'listo' | 'jugando' | 'resumen'>('listo')
   const [index, setIndex] = useState(0)
-  const [target, setTarget] = useState<ReturnType<typeof generateAimTarget> | null>(
-    null
-  )
+  const [target, setTarget] = useState<ReturnType<typeof generateAimTarget> | null>(null)
   const [results, setResults] = useState<AimHitResult[]>([])
   const [lastFeedback, setLastFeedback] = useState<{
     accuracy: number
     hit: boolean
   } | null>(null)
+  const [timeLeft, setTimeLeft] = useState(sessionTimeLimit)
   const spawnAtRef = useRef(0)
   const startedAtRef = useRef(0)
   const areaRef = useRef<HTMLDivElement | null>(null)
+  const pointerRef = useRef<{ x: number; y: number }>({ x: 50, y: 50 })
   const [history, setHistory] = useState<AimSessionSummary[]>(() =>
     loadJSON(KEYS.aim, [])
   )
   const [summary, setSummary] = useState<AimSessionSummary | null>(null)
+
+  // Teclas configurables (por defecto z y x)
+  const [keyPrimary, setKeyPrimary] = useState(() =>
+    loadJSON(KEYS.aimKeyPrimary, 'z')
+  )
+  const [keySecondary, setKeySecondary] = useState(() =>
+    loadJSON(KEYS.aimKeySecondary, 'x')
+  )
+  const [assigningKey, setAssigningKey] = useState<'primary' | 'secondary' | null>(null)
+  const isDesktop =
+    typeof window !== 'undefined' &&
+    window.matchMedia('(pointer: fine)').matches
 
   const spawnNext = useCallback(
     (i: number) => {
@@ -574,50 +763,19 @@ function AimGame() {
     [config, level]
   )
 
-  const start = () => {
-    soundStart()
-    setResults([])
-    setSummary(null)
-    setLastFeedback(null)
-    setIndex(0)
-    startedAtRef.current = performance.now()
-    setPhase('jugando')
-    spawnNext(0)
-  }
-
-  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (phase !== 'jugando' || !target || !areaRef.current) return
-    const rect = areaRef.current.getBoundingClientRect()
-    const clickX = ((e.clientX - rect.left) / rect.width) * 100
-    const clickY = ((e.clientY - rect.top) / rect.height) * 100
-    const dxPct = clickX - target.x
-    const dyPct = clickY - target.y
-    const distPx = Math.sqrt(dxPct * dxPct + dyPct * dyPct) * (rect.width / 100)
-    const hit = distPx <= target.radius * 1.15
-    const accuracy = hit ? scoreAimHit(distPx, target.radius) : 0
-    const reactionMs = performance.now() - spawnAtRef.current
-    if (hit) soundMatch()
-    else soundFail()
-    const result: AimHitResult = {
-      targetId: target.id,
-      hit,
-      distanceFromCenterPx: distPx,
-      accuracyPct: accuracy,
-      reactionMs,
-    }
-    setLastFeedback({ accuracy, hit })
-    const nextResults = [...results, result]
-    setResults(nextResults)
-    const nextIndex = index + 1
-    if (nextIndex >= totalTargets) {
+  const finishSession = useCallback(
+    (nextResults: AimHitResult[], timedOut: boolean) => {
       const totalTimeMs = performance.now() - startedAtRef.current
       const s = summarizeAimSession(nextResults, totalTimeMs)
       setSummary(s)
-      const nextHist = [s, ...history].slice(0, 10)
+      const nextHist = [s, ...history].slice(0, 12)
       setHistory(nextHist)
       saveJSON(KEYS.aim, nextHist)
       setTarget(null)
       setPhase('resumen')
+      if (!timedOut && s.hits > s.misses) {
+        setLevel((l) => l + 1)
+      }
       try {
         recordLevelResult({
           categoryId: CAT,
@@ -629,11 +787,123 @@ function AimGame() {
       } catch {
         /* */
       }
-    } else {
-      setIndex(nextIndex)
-      spawnNext(nextIndex)
+    },
+    [history]
+  )
+
+  const registerHit = useCallback(
+    (clientX: number, clientY: number) => {
+      if (phase !== 'jugando' || !target || !areaRef.current) return
+      const rect = areaRef.current.getBoundingClientRect()
+      const clickX = ((clientX - rect.left) / rect.width) * 100
+      const clickY = ((clientY - rect.top) / rect.height) * 100
+      const dxPct = clickX - target.x
+      const dyPct = clickY - target.y
+      const distPx = Math.sqrt(dxPct * dxPct + dyPct * dyPct) * (rect.width / 100)
+      const hit = distPx <= target.radius * 1.15
+      const accuracy = hit ? scoreAimHit(distPx, target.radius) : 0
+      const reactionMs = performance.now() - spawnAtRef.current
+      if (hit) soundMatch()
+      else soundFail()
+      const result: AimHitResult = {
+        targetId: target.id,
+        hit,
+        distanceFromCenterPx: distPx,
+        accuracyPct: accuracy,
+        reactionMs,
+      }
+      setLastFeedback({ accuracy, hit })
+      const nextResults = [...results, result]
+      setResults(nextResults)
+      const nextIndex = index + 1
+      if (nextIndex >= totalTargets) {
+        finishSession(nextResults, false)
+      } else {
+        setIndex(nextIndex)
+        spawnNext(nextIndex)
+      }
+    },
+    [phase, target, results, index, totalTargets, spawnNext, finishSession]
+  )
+
+  const start = () => {
+    soundStart()
+    setResults([])
+    setSummary(null)
+    setLastFeedback(null)
+    setIndex(0)
+    setTimeLeft(sessionTimeLimit)
+    startedAtRef.current = performance.now()
+    setPhase('jugando')
+    spawnNext(0)
+  }
+
+  // Ratón / touch
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    registerHit(e.clientX, e.clientY)
+  }
+
+  // Seguimiento del puntero para el teclado
+  const handlePointerMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!areaRef.current) return
+    const rect = areaRef.current.getBoundingClientRect()
+    pointerRef.current = {
+      x: e.clientX,
+      y: e.clientY,
     }
   }
+
+  // Teclado (Z / X o teclas asignadas)
+  useEffect(() => {
+    if (phase !== 'jugando') return
+    const onKey = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase()
+      if (k === keyPrimary.toLowerCase() || k === keySecondary.toLowerCase()) {
+        e.preventDefault()
+        // Usa la última posición conocida del puntero
+        registerHit(pointerRef.current.x, pointerRef.current.y)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [phase, keyPrimary, keySecondary, registerHit])
+
+  // Contrarreloj de sesión
+  useEffect(() => {
+    if (phase !== 'jugando') return
+    const id = window.setInterval(() => {
+      setTimeLeft((t) => {
+        if (t <= 1) {
+          clearInterval(id)
+          finishSession(results, true)
+          soundFail()
+          return 0
+        }
+        return t - 1
+      })
+    }, 1000)
+    return () => clearInterval(id)
+  }, [phase]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Asignación de teclas
+  useEffect(() => {
+    if (!assigningKey) return
+    const onKey = (e: KeyboardEvent) => {
+      e.preventDefault()
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key
+      if (assigningKey === 'primary') {
+        setKeyPrimary(k)
+        saveJSON(KEYS.aimKeyPrimary, k)
+      } else {
+        setKeySecondary(k)
+        saveJSON(KEYS.aimKeySecondary, k)
+      }
+      setAssigningKey(null)
+      soundSuccess()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [assigningKey])
 
   const display = summary ?? history[0] ?? null
 
@@ -645,16 +915,92 @@ function AimGame() {
     >
       <div className="glass-card" style={{ marginBottom: '1rem' }}>
         <div style={{ padding: '1.1rem 1.25rem' }}>
-          <h2 style={{ fontSize: '1.15rem', marginBottom: '0.25rem' }}>
-            🎯 Puntería
-          </h2>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              flexWrap: 'wrap',
+              marginBottom: '0.35rem',
+            }}
+          >
+            <h2 style={{ fontSize: '1.15rem', margin: 0 }}>🎯 Puntería</h2>
+            <span
+              className="mono"
+              style={{ fontSize: '0.85rem', color: 'var(--gco-primary)' }}
+            >
+              Nivel {level} · {totalTargets} blancos
+            </span>
+          </div>
           <p style={{ fontSize: '0.82rem', color: 'var(--gco-ink-muted)' }}>
             {phase === 'jugando'
-              ? `Blanco ${index + 1} de ${totalTargets}`
-              : 'Golpea el centro del blanco lo más rápido posible.'}
+              ? `Blanco ${index + 1} de ${totalTargets} · ⏱ ${timeLeft}s`
+              : 'Golpea el centro del blanco. En PC puedes usar teclas además del ratón.'}
           </p>
         </div>
       </div>
+
+      {/* Controles de teclado (solo escritorio) */}
+      {isDesktop && phase !== 'jugando' && (
+        <div className="glass-card" style={{ marginBottom: '1rem' }}>
+          <div style={{ padding: '0.95rem 1.15rem' }}>
+            <p
+              style={{
+                fontSize: '0.8rem',
+                color: 'var(--gco-ink-muted)',
+                marginBottom: '0.65rem',
+              }}
+            >
+              Teclas de disparo (opcional). El clic se registra donde esté el
+              puntero del ratón.
+            </p>
+            <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="glass-button secondary"
+                style={{ padding: '0.45rem 0.85rem', fontSize: '0.8rem' }}
+                onClick={() => {
+                  soundClick()
+                  setAssigningKey('primary')
+                }}
+              >
+                {assigningKey === 'primary'
+                  ? 'Pulsa una tecla…'
+                  : `Primaria: ${keyPrimary.toUpperCase()}`}
+              </button>
+              <button
+                type="button"
+                className="glass-button secondary"
+                style={{ padding: '0.45rem 0.85rem', fontSize: '0.8rem' }}
+                onClick={() => {
+                  soundClick()
+                  setAssigningKey('secondary')
+                }}
+              >
+                {assigningKey === 'secondary'
+                  ? 'Pulsa una tecla…'
+                  : `Secundaria: ${keySecondary.toUpperCase()}`}
+              </button>
+              <button
+                type="button"
+                className="glass-button secondary"
+                style={{ padding: '0.45rem 0.85rem', fontSize: '0.8rem' }}
+                onClick={() => {
+                  soundClick()
+                  setKeyPrimary('z')
+                  setKeySecondary('x')
+                  saveJSON(KEYS.aimKeyPrimary, 'z')
+                  saveJSON(KEYS.aimKeySecondary, 'x')
+                }}
+              >
+                Restablecer Z / X
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {phase !== 'jugando' && (
         <div className="glass-card">
           <div style={{ padding: '1.85rem 1.5rem', textAlign: 'center' }}>
@@ -667,7 +1013,7 @@ function AimGame() {
                     marginBottom: '1.15rem',
                   }}
                 >
-                  Resultado de la ronda
+                  Resultado de la ronda · Nivel {level}
                 </p>
                 <div
                   style={{
@@ -709,15 +1055,17 @@ function AimGame() {
               onClick={start}
               style={{ width: '100%' }}
             >
-              {phase === 'resumen' ? 'Jugar de nuevo' : 'Comenzar'}
+              {phase === 'resumen' ? 'Siguiente / Repetir' : 'Comenzar'}
             </button>
           </div>
         </div>
       )}
+
       {phase === 'jugando' && (
         <div
           ref={areaRef}
           onClick={handleClick}
+          onMouseMove={handlePointerMove}
           style={{
             position: 'relative',
             width: '100%',
@@ -732,6 +1080,28 @@ function AimGame() {
             touchAction: 'manipulation',
           }}
         >
+          {/* Barra de tiempo */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 4,
+              background: 'var(--gco-glass-border)',
+              zIndex: 2,
+            }}
+          >
+            <div
+              style={{
+                height: '100%',
+                width: `${(timeLeft / sessionTimeLimit) * 100}%`,
+                background:
+                  timeLeft > 8 ? 'var(--gco-primary)' : 'var(--gco-secondary)',
+                transition: 'width 1s linear',
+              }}
+            />
+          </div>
           {target && (
             <div
               key={target.id}
@@ -804,14 +1174,13 @@ function Stat({ label, value }: { label: string; value: string }) {
   )
 }
 
-/* ── Simón Dice ──────────────────────────────────────────────────────────── */
+/* ── Simón Dice (con menú previo + banco grande + creativo completo) ─────── */
 type SimonPhase = 'lectura' | 'esperando' | 'acierto' | 'fallo' | 'tiempo'
+type SimonScreen = 'menu' | 'jugar' | 'creativo'
 
 function SimonGame() {
-  const [mode, setMode] = useState<'jugar' | 'creativo'>('jugar')
+  const [screen, setScreen] = useState<SimonScreen>('menu')
 
-  // Nivel máximo desbloqueado (persistido) y nivel que se está jugando en
-  // este momento (puede ser cualquiera entre 1 y el nivel desbloqueado).
   const [unlockedLevel, setUnlockedLevel] = useState<number>(() =>
     loadJSON(KEYS.simonLevel, 1)
   )
@@ -823,11 +1192,7 @@ function SimonGame() {
   const [lastElapsedMs, setLastElapsedMs] = useState<number | null>(null)
   const [showLevelPicker, setShowLevelPicker] = useState(false)
 
-  // Práctica libre: cuando no es null, el jugador está jugando un nivel
-  // creativo guardado directamente, sin afectar su progresión numérica.
-  const [directLevel, setDirectLevel] = useState<CreativeSimonLevel | null>(
-    null
-  )
+  const [directLevel, setDirectLevel] = useState<CreativeSimonLevel | null>(null)
 
   const [customActions, setCustomActions] = useState<SimonButtonDef[]>(() =>
     loadJSON(KEYS.simonActions, [])
@@ -836,10 +1201,8 @@ function SimonGame() {
     loadJSON(KEYS.simonCustom, [])
   )
 
-  // Las acciones creadas en el modo creativo se suman al set de botones
-  // disponible, y por tanto también aparecen en la progresión normal.
   const pool = useMemo(
-    () => [...SIMON_BUTTONS, ...customActions],
+    () => [...BASE_SIMON_ACTIONS, ...customActions],
     [customActions]
   )
 
@@ -867,7 +1230,7 @@ function SimonGame() {
   const playCustomLevel = useCallback(
     (lvl: CreativeSimonLevel) => {
       soundClick()
-      setMode('jugar')
+      setScreen('jugar')
       setDirectLevel(lvl)
       const built = buildSimonLevelFromCustom(lvl, playingLevel)
       setCurrent(built)
@@ -878,23 +1241,26 @@ function SimonGame() {
     [playingLevel]
   )
 
-  useEffect(() => {
-    loadLevel(unlockedLevel)
-    // solo al montar
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const startPlaying = (lvl?: number) => {
+    soundStart()
+    const target = lvl ?? unlockedLevel
+    setPlayingLevel(target)
+    setScreen('jugar')
+    loadLevel(target)
+  }
 
   useEffect(() => {
+    if (screen !== 'jugar') return
     if (phase !== 'lectura') return
     const t = window.setTimeout(() => {
       startedAtRef.current = performance.now()
       setPhase('esperando')
     }, 550)
     return () => window.clearTimeout(t)
-  }, [phase, current])
+  }, [phase, current, screen])
 
   useEffect(() => {
-    if (phase !== 'esperando' || !current) return
+    if (screen !== 'jugar' || phase !== 'esperando' || !current) return
     tickRef.current = setInterval(() => {
       const elapsed = performance.now() - startedAtRef.current
       const remaining = current.timeLimitMs - elapsed
@@ -910,7 +1276,7 @@ function SimonGame() {
     return () => {
       if (tickRef.current) clearInterval(tickRef.current)
     }
-  }, [phase, current])
+  }, [phase, current, screen])
 
   const press = (id: string) => {
     if (phase !== 'esperando' || !current) return
@@ -923,7 +1289,6 @@ function SimonGame() {
       setPhase('acierto')
 
       if (directLevel) {
-        // Práctica libre de un nivel creativo: no afecta la progresión.
         window.setTimeout(() => playCustomLevel(directLevel), 900)
         return
       }
@@ -985,6 +1350,98 @@ function SimonGame() {
     [unlockedLevel]
   )
 
+  // ——— Pantalla de menú de Simón ———
+  if (screen === 'menu') {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+      >
+        <div className="glass-card" style={{ marginBottom: '1rem' }}>
+          <div style={{ padding: '1.25rem 1.25rem' }}>
+            <h2 style={{ fontSize: '1.25rem', marginBottom: '0.35rem' }}>
+              🧠 Simón Dice
+            </h2>
+            <p
+              style={{
+                fontSize: '0.88rem',
+                color: 'var(--gco-ink-muted)',
+                lineHeight: 1.45,
+                marginBottom: '1.1rem',
+              }}
+            >
+              Lee la orden y pulsa el botón correcto antes de que se acabe el
+              tiempo. Hay más de 120 acciones distintas y puedes crear las tuyas.
+            </p>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.7rem',
+              }}
+            >
+              <button
+                type="button"
+                className="glass-button"
+                style={{ width: '100%', minHeight: 48 }}
+                onClick={() => startPlaying()}
+              >
+                Jugar · Nivel {unlockedLevel}
+              </button>
+              <button
+                type="button"
+                className="glass-button secondary"
+                style={{ width: '100%' }}
+                onClick={() => {
+                  soundClick()
+                  setScreen('creativo')
+                }}
+              >
+                Modo creativo
+              </button>
+              {unlockedLevel > 1 && (
+                <button
+                  type="button"
+                  className="glass-button secondary"
+                  style={{ width: '100%' }}
+                  onClick={() => {
+                    soundClick()
+                    setShowLevelPicker((v) => !v)
+                  }}
+                >
+                  {showLevelPicker ? 'Ocultar niveles' : 'Elegir nivel pasado'}
+                </button>
+              )}
+            </div>
+            {showLevelPicker && (
+              <SimonLevelPicker
+                unlockedLevel={unlockedLevel}
+                currentLevel={playingLevel}
+                onSelect={(lvl) => {
+                  setShowLevelPicker(false)
+                  startPlaying(lvl)
+                }}
+              />
+            )}
+            <p
+              className="mono"
+              style={{
+                fontSize: '0.75rem',
+                color: 'var(--gco-primary)',
+                marginTop: '1rem',
+                textAlign: 'center',
+              }}
+            >
+              {pool.length} acciones disponibles · {customLevels.length} niveles
+              creativos
+            </p>
+          </div>
+        </div>
+      </motion.div>
+    )
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -1014,26 +1471,27 @@ function SimonGame() {
           <div className="segmented" style={{ marginBottom: '0.6rem' }}>
             <button
               type="button"
-              className={mode === 'jugar' ? 'active' : ''}
+              className={screen === 'jugar' ? 'active' : ''}
               onClick={() => {
                 soundClick()
-                setMode('jugar')
+                setScreen('jugar')
+                if (!current) loadLevel(playingLevel)
               }}
             >
               Jugar
             </button>
             <button
               type="button"
-              className={mode === 'creativo' ? 'active' : ''}
+              className={screen === 'creativo' ? 'active' : ''}
               onClick={() => {
                 soundClick()
-                setMode('creativo')
+                setScreen('creativo')
               }}
             >
               Modo creativo
             </button>
           </div>
-          {mode === 'jugar' && !directLevel && (
+          {screen === 'jugar' && !directLevel && (
             <>
               <button
                 type="button"
@@ -1059,7 +1517,7 @@ function SimonGame() {
               )}
             </>
           )}
-          {mode === 'jugar' && directLevel && (
+          {screen === 'jugar' && directLevel && (
             <button
               type="button"
               className="glass-button secondary"
@@ -1076,7 +1534,7 @@ function SimonGame() {
         </div>
       </div>
 
-      {mode === 'jugar' && current && (
+      {screen === 'jugar' && current && (
         <div className="glass-card">
           <div style={{ padding: '1.5rem 1.25rem', textAlign: 'center' }}>
             <p
@@ -1148,8 +1606,6 @@ function SimonGame() {
               }}
             >
               {current.options.map((btn) => {
-                // La respuesta correcta sólo se revela DESPUÉS de responder
-                // (acierto, fallo o tiempo agotado). Nunca antes de empezar.
                 const reveal =
                   (phase === 'acierto' ||
                     phase === 'fallo' ||
@@ -1253,7 +1709,7 @@ function SimonGame() {
         </div>
       )}
 
-      {mode === 'creativo' && (
+      {screen === 'creativo' && (
         <SimonCreativeEditor
           pool={pool}
           customActions={customActions}
@@ -1329,7 +1785,7 @@ function SimonLevelPicker({
   )
 }
 
-/* ── Simón Dice · modo creativo ──────────────────────────────────────────── */
+/* ── Simón Dice · modo creativo completo ─────────────────────────────────── */
 function SimonCreativeEditor({
   pool,
   customActions,
@@ -1349,6 +1805,7 @@ function SimonCreativeEditor({
 }) {
   const [selected, setSelected] = useState<SimonButtonDef[]>(pool.slice(0, 4))
   const [correctId, setCorrectId] = useState(pool[0]?.id ?? '')
+  const [customPrompt, setCustomPrompt] = useState('')
   const [timeLimitMs, setTimeLimitMs] = useState(recommendedTimeMs)
   const [msg, setMsg] = useState('')
 
@@ -1361,16 +1818,12 @@ function SimonCreativeEditor({
     soundClick()
     const exists = selected.some((b) => b.id === btn.id)
     if (exists) {
-      if (selected.length <= 4) {
-        // mantener mínimo 4: solo permite quitar si luego añades otro
-        return
-      }
+      if (selected.length <= 4) return
       const next = selected.filter((b) => b.id !== btn.id)
       setSelected(next)
       if (correctId === btn.id && next[0]) setCorrectId(next[0].id)
     } else {
       if (selected.length >= 4) {
-        // sustituye el último
         const next = [...selected.slice(0, 3), btn]
         setSelected(next)
         return
@@ -1401,7 +1854,7 @@ function SimonCreativeEditor({
     setNewLabel('')
     soundSuccess()
     setActionMsg('Acción añadida: ya aparece en el juego normal')
-    window.setTimeout(() => setActionMsg(''), 2000)
+    window.setTimeout(() => setActionMsg(''), 2200)
   }
 
   const removeAction = (id: string) => {
@@ -1417,18 +1870,22 @@ function SimonCreativeEditor({
       return
     }
     const correctBtn = selected.find((b) => b.id === correctId)!
+    const promptText =
+      customPrompt.trim() ||
+      `Simón dice: ${correctBtn.label}`
     const level: CreativeSimonLevel = {
       id: `custom-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
-      prompt: `Simón dice: ${correctBtn.label}`,
+      prompt: promptText,
       correctId,
       options: selected,
       createdAt: Date.now(),
       timeLimitMsOverride: timeLimitMs,
     }
-    onChangeLevels([level, ...customLevels].slice(0, 40))
+    onChangeLevels([level, ...customLevels].slice(0, 50))
     soundSuccess()
-    setMsg('Nivel guardado, ya puedes jugarlo cuando quieras')
-    window.setTimeout(() => setMsg(''), 2000)
+    setMsg('Nivel guardado. Puedes jugarlo cuando quieras.')
+    setCustomPrompt('')
+    window.setTimeout(() => setMsg(''), 2200)
   }
 
   const removeLevel = (id: string) => {
@@ -1454,6 +1911,8 @@ function SimonCreativeEditor({
               gridTemplateColumns: 'repeat(3, 1fr)',
               gap: '0.55rem',
               marginBottom: '1.2rem',
+              maxHeight: 280,
+              overflowY: 'auto',
             }}
           >
             {pool.map((btn) => {
@@ -1496,7 +1955,7 @@ function SimonCreativeEditor({
               display: 'flex',
               flexWrap: 'wrap',
               gap: '0.5rem',
-              marginBottom: '1.3rem',
+              marginBottom: '1rem',
             }}
           >
             {selected.map((btn) => (
@@ -1528,18 +1987,32 @@ function SimonCreativeEditor({
               </button>
             ))}
           </div>
-          {correctId && (
-            <p
-              style={{
-                fontSize: '0.78rem',
-                color: 'var(--gco-ink-muted)',
-                marginBottom: '1.3rem',
-              }}
-            >
-              El jugador verá: “Simón dice:{' '}
-              {selected.find((b) => b.id === correctId)?.label ?? ''}”
-            </p>
-          )}
+
+          <label className="more-field-label">
+            Texto de la pregunta (opcional)
+          </label>
+          <input
+            className="glass-input"
+            value={customPrompt}
+            onChange={(e) => setCustomPrompt(e.target.value)}
+            placeholder={
+              correctId
+                ? `Simón dice: ${selected.find((b) => b.id === correctId)?.label ?? ''}`
+                : 'Simón dice: …'
+            }
+            style={{ marginBottom: '1.1rem' }}
+          />
+          <p
+            style={{
+              fontSize: '0.78rem',
+              color: 'var(--gco-ink-muted)',
+              marginBottom: '1.3rem',
+            }}
+          >
+            El jugador verá exactamente el texto que escribas (o el automático
+            si lo dejas vacío). Tú eliges cuál de los 4 botones es la respuesta
+            correcta.
+          </p>
 
           <p className="more-section-title">Tiempo para responder</p>
           <div
@@ -1602,8 +2075,8 @@ function SimonCreativeEditor({
               lineHeight: 1.4,
             }}
           >
-            Recomendado: {formatReactionTime(recommendedTimeMs)} — un tiempo
-            prudente pero desafiante según tu nivel actual.
+            Recomendado: {formatReactionTime(recommendedTimeMs)} según tu nivel
+            actual.
           </p>
 
           <button
@@ -1626,19 +2099,6 @@ function SimonCreativeEditor({
               {msg}
             </p>
           )}
-          <p
-            style={{
-              fontSize: '0.72rem',
-              color: 'var(--gco-ink-faint)',
-              marginTop: '0.7rem',
-              lineHeight: 1.4,
-            }}
-          >
-            Estos niveles no sustituyen el historial de tiempos, pero sí
-            aparecen mezclados en la progresión normal (cada 4 niveles), y
-            también puedes jugarlos cuando quieras desde “Tus niveles
-            guardados”.
-          </p>
         </div>
       </div>
 
@@ -1857,13 +2317,7 @@ function SimonCreativeEditor({
   )
 }
 
-/* ── Secuencia numérica (nuevo juego de habilidad) ──────────────────────────
-   Inspirado en la clásica "tabla de Schulte", muy usada para entrenar
-   atención sostenida, búsqueda visual y velocidad de procesamiento. Es
-   simple de entender pero muy retante y adictivo: el jugador debe tocar
-   los números en orden ascendente lo más rápido posible dentro de una
-   cuadrícula que crece de tamaño en cada nivel. ─────────────────────────── */
-
+/* ── Secuencia numérica (responsive + control de tamaño) ─────────────────── */
 interface SequenceResult {
   level: number
   size: number
@@ -1883,7 +2337,6 @@ function sequenceCols(size: number): number {
   if (size <= 25) return 5
   return 6
 }
-/** Tiempo de referencia "bueno" para calificar el resultado con estrellas. */
 function sequencePar(size: number): number {
   return size * 620
 }
@@ -1909,10 +2362,15 @@ function SequenceGame() {
   const [history, setHistory] = useState<SequenceResult[]>(() =>
     loadJSON(KEYS.sequenceHistory, [])
   )
+  // Escala de celda (0.7 – 1.35). Por defecto se calcula para que quepa.
+  const [cellScale, setCellScale] = useState<number>(() =>
+    loadJSON(KEYS.sequenceCellScale, 1)
+  )
 
   const startedAtRef = useRef(0)
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const gridRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(
     () => () => {
@@ -2003,6 +2461,12 @@ function SequenceGame() {
     ? sequenceStars(summary.timeMs, summary.mistakes, summary.size)
     : 0
 
+  // Altura disponible aproximada para la cuadrícula (evita scroll)
+  const gridMaxHeight =
+    typeof window !== 'undefined'
+      ? Math.max(240, window.innerHeight - 280)
+      : 400
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -2034,10 +2498,55 @@ function SequenceGame() {
           <p style={{ fontSize: '0.82rem', color: 'var(--gco-ink-muted)' }}>
             {phase === 'jugando'
               ? `Buscas el número ${nextTarget}`
-              : 'Toca los números en orden ascendente lo más rápido posible.'}
+              : 'Toca los números en orden ascendente. La cuadrícula se adapta a la pantalla.'}
           </p>
         </div>
       </div>
+
+      {/* Control de tamaño de celdas */}
+      {phase !== 'jugando' && (
+        <div className="glass-card" style={{ marginBottom: '1rem' }}>
+          <div style={{ padding: '0.9rem 1.15rem' }}>
+            <p
+              style={{
+                fontSize: '0.8rem',
+                color: 'var(--gco-ink-muted)',
+                marginBottom: '0.55rem',
+              }}
+            >
+              Tamaño de los números
+            </p>
+            <input
+              type="range"
+              min={0.7}
+              max={1.35}
+              step={0.05}
+              value={cellScale}
+              onChange={(e) => {
+                const v = Number(e.target.value)
+                setCellScale(v)
+                saveJSON(KEYS.sequenceCellScale, v)
+              }}
+              className="pref-slider"
+              style={
+                {
+                  '--fill': `${((cellScale - 0.7) / (1.35 - 0.7)) * 100}%`,
+                } as unknown as React.CSSProperties
+              }
+            />
+            <p
+              className="mono"
+              style={{
+                fontSize: '0.75rem',
+                color: 'var(--gco-primary)',
+                marginTop: '0.4rem',
+              }}
+            >
+              {Math.round(cellScale * 100)}%
+            </p>
+          </div>
+        </div>
+      )}
 
       {phase === 'jugando' && (
         <div
@@ -2119,10 +2628,16 @@ function SequenceGame() {
 
       {phase === 'jugando' && (
         <div
+          ref={gridRef}
           style={{
             display: 'grid',
             gridTemplateColumns: `repeat(${cols}, 1fr)`,
-            gap: '0.55rem',
+            gap: `calc(0.35rem * ${cellScale})`,
+            width: '100%',
+            maxHeight: gridMaxHeight,
+            // Las celdas se adaptan para que toda la cuadrícula quepa
+            aspectRatio: `${cols} / ${Math.ceil(size / cols)}`,
+            maxWidth: '100%',
           }}
         >
           {board.map((n) => {
@@ -2148,11 +2663,13 @@ function SequenceGame() {
                       : 'var(--gco-glass-bg)',
                   color: done ? 'var(--gco-primary)' : 'var(--gco-ink)',
                   fontWeight: 700,
-                  fontSize: 'clamp(0.85rem, 3.4vw, 1.15rem)',
+                  fontSize: `clamp(0.7rem, ${2.6 * cellScale}vw, ${1.1 * cellScale}rem)`,
                   cursor: done ? 'default' : 'pointer',
                   opacity: done ? 0.55 : 1,
                   transition: 'background 0.12s ease, border-color 0.12s ease',
                   WebkitTapHighlightColor: 'transparent',
+                  minWidth: 0,
+                  minHeight: 0,
                 }}
               >
                 {n}
@@ -2185,6 +2702,657 @@ function SequenceGame() {
                 >
                   {formatReactionTime(r.timeMs)}
                   {r.mistakes > 0 ? ` · ${r.mistakes} err` : ''}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </motion.div>
+  )
+}
+
+/* ── Número fugaz (nuevo) ────────────────────────────────────────────────── */
+interface FlashResult {
+  level: number
+  digits: number
+  timeMs: number
+  correct: boolean
+  date: number
+}
+
+type FlashPhase = 'listo' | 'mostrando' | 'escribiendo' | 'resultado'
+
+function flashDigits(level: number): number {
+  return Math.min(3 + Math.floor((level - 1) / 2), 9)
+}
+function flashShowMs(level: number): number {
+  // Empieza generoso y se va acortando
+  return Math.max(350, 2200 - (level - 1) * 120)
+}
+
+function FlashNumberGame() {
+  const [level, setLevel] = useState(() => loadJSON(KEYS.flashLevel, 1))
+  const [phase, setPhase] = useState<FlashPhase>('listo')
+  const [number, setNumber] = useState('')
+  const [input, setInput] = useState('')
+  const [showMs, setShowMs] = useState(0)
+  const [correct, setCorrect] = useState<boolean | null>(null)
+  const [history, setHistory] = useState<FlashResult[]>(() =>
+    loadJSON(KEYS.flashHistory, [])
+  )
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(
+    () => () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    },
+    []
+  )
+
+  const digits = flashDigits(level)
+  const displayTime = flashShowMs(level)
+
+  const start = () => {
+    soundStart()
+    const max = Math.pow(10, digits) - 1
+    const min = Math.pow(10, digits - 1)
+    const n = String(Math.floor(Math.random() * (max - min + 1)) + min)
+    setNumber(n)
+    setInput('')
+    setCorrect(null)
+    setShowMs(displayTime)
+    setPhase('mostrando')
+    timeoutRef.current = setTimeout(() => {
+      setPhase('escribiendo')
+      // auto-focus en el input
+      window.setTimeout(() => inputRef.current?.focus(), 50)
+    }, displayTime)
+  }
+
+  const submit = () => {
+    if (phase !== 'escribiendo') return
+    const ok = input.trim() === number
+    setCorrect(ok)
+    setPhase('resultado')
+    if (ok) soundSuccess()
+    else soundFail()
+
+    const result: FlashResult = {
+      level,
+      digits,
+      timeMs: displayTime,
+      correct: ok,
+      date: Date.now(),
+    }
+    const nextHist = [result, ...history].slice(0, 20)
+    setHistory(nextHist)
+    saveJSON(KEYS.flashHistory, nextHist)
+
+    if (ok) {
+      const nextLevel = level + 1
+      setLevel(nextLevel)
+      saveJSON(KEYS.flashLevel, nextLevel)
+    }
+    try {
+      recordLevelResult({
+        categoryId: CAT,
+        gameId: GAME_ID,
+        level: level,
+        success: ok,
+        timeMs: displayTime,
+      })
+    } catch {
+      /* */
+    }
+  }
+
+  const streak = history.filter((r) => r.correct).length
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <div className="glass-card" style={{ marginBottom: '1rem' }}>
+        <div style={{ padding: '1.1rem 1.25rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              flexWrap: 'wrap',
+              marginBottom: '0.35rem',
+            }}
+          >
+            <h2 style={{ fontSize: '1.15rem', margin: 0 }}>👁️ Número fugaz</h2>
+            <span
+              className="mono"
+              style={{ fontSize: '0.85rem', color: 'var(--gco-primary)' }}
+            >
+              Nivel {level} · {digits} dígitos
+            </span>
+          </div>
+          <p style={{ fontSize: '0.82rem', color: 'var(--gco-ink-muted)' }}>
+            Observa el número el tiempo indicado y escríbelo de memoria. Cada
+            nivel reduce el tiempo de exposición.
+          </p>
+        </div>
+      </div>
+
+      <div className="glass-card">
+        <div style={{ padding: '1.75rem 1.4rem', textAlign: 'center' }}>
+          {phase === 'listo' && (
+            <>
+              <p
+                style={{
+                  fontSize: '0.9rem',
+                  color: 'var(--gco-ink-muted)',
+                  marginBottom: '1.2rem',
+                  lineHeight: 1.45,
+                }}
+              >
+                Tiempo de observación en este nivel:{' '}
+                <span className="mono" style={{ color: 'var(--gco-primary)' }}>
+                  {formatReactionTime(displayTime)}
+                </span>
+              </p>
+              <button
+                type="button"
+                className="glass-button"
+                style={{ width: '100%' }}
+                onClick={start}
+              >
+                Comenzar
+              </button>
+            </>
+          )}
+
+          {phase === 'mostrando' && (
+            <div>
+              <p
+                style={{
+                  fontSize: '0.78rem',
+                  color: 'var(--gco-ink-faint)',
+                  marginBottom: '0.8rem',
+                }}
+              >
+                Memoriza…
+              </p>
+              <p
+                className="mono"
+                style={{
+                  fontSize: 'clamp(2.4rem, 12vw, 3.8rem)',
+                  fontWeight: 700,
+                  letterSpacing: '0.12em',
+                  color: 'var(--gco-ink)',
+                }}
+              >
+                {number}
+              </p>
+              <div
+                style={{
+                  height: 5,
+                  borderRadius: 5,
+                  background: 'var(--gco-glass-border)',
+                  marginTop: '1.4rem',
+                  overflow: 'hidden',
+                }}
+              >
+                <motion.div
+                  initial={{ width: '100%' }}
+                  animate={{ width: '0%' }}
+                  transition={{ duration: displayTime / 1000, ease: 'linear' }}
+                  style={{
+                    height: '100%',
+                    background: 'var(--gco-primary)',
+                    borderRadius: 5,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {phase === 'escribiendo' && (
+            <div>
+              <p
+                style={{
+                  fontSize: '0.85rem',
+                  color: 'var(--gco-ink-muted)',
+                  marginBottom: '1rem',
+                }}
+              >
+                Escribe el número que viste
+              </p>
+              <input
+                ref={inputRef}
+                className="glass-input"
+                value={input}
+                onChange={(e) =>
+                  setInput(e.target.value.replace(/\D/g, '').slice(0, digits))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') submit()
+                }}
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="off"
+                style={{
+                  textAlign: 'center',
+                  fontSize: '1.6rem',
+                  letterSpacing: '0.15em',
+                  fontFamily: 'var(--font-mono)',
+                  marginBottom: '1.1rem',
+                }}
+                placeholder={'·'.repeat(digits)}
+              />
+              <button
+                type="button"
+                className="glass-button"
+                style={{ width: '100%' }}
+                onClick={submit}
+                disabled={input.length !== digits}
+              >
+                Comprobar
+              </button>
+            </div>
+          )}
+
+          {phase === 'resultado' && (
+            <div>
+              <p
+                style={{
+                  fontSize: '1.3rem',
+                  fontWeight: 700,
+                  color: correct ? 'var(--gco-primary)' : 'var(--gco-secondary)',
+                  marginBottom: '0.6rem',
+                }}
+              >
+                {correct ? '✓ Correcto' : '✗ Incorrecto'}
+              </p>
+              <p
+                style={{
+                  fontSize: '0.9rem',
+                  color: 'var(--gco-ink-muted)',
+                  marginBottom: '0.4rem',
+                }}
+              >
+                Número: <span className="mono">{number}</span>
+              </p>
+              {!correct && (
+                <p
+                  style={{
+                    fontSize: '0.9rem',
+                    color: 'var(--gco-ink-muted)',
+                    marginBottom: '1rem',
+                  }}
+                >
+                  Escribiste: <span className="mono">{input || '—'}</span>
+                </p>
+              )}
+              <button
+                type="button"
+                className="glass-button"
+                style={{ width: '100%', marginTop: '0.8rem' }}
+                onClick={start}
+              >
+                {correct ? 'Siguiente nivel' : 'Reintentar'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {history.length > 0 && (
+        <div className="glass-card" style={{ marginTop: '1rem' }}>
+          <div style={{ padding: '1.05rem 1.25rem' }}>
+            <p className="more-section-title" style={{ marginBottom: '0.55rem' }}>
+              Historial · Aciertos recientes: {streak}
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+              {history.slice(0, 12).map((r, i) => (
+                <span
+                  key={`${r.date}-${i}`}
+                  className="mono"
+                  style={{
+                    fontSize: '0.72rem',
+                    padding: '0.3rem 0.55rem',
+                    borderRadius: 999,
+                    background: 'var(--gco-glass-bg)',
+                    border: '1px solid var(--gco-glass-border)',
+                    color: r.correct ? 'var(--gco-primary)' : 'var(--gco-secondary)',
+                  }}
+                >
+                  Nv.{r.level} · {r.digits}d · {formatReactionTime(r.timeMs)}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </motion.div>
+  )
+}
+
+/* ── Memoria de posición (nuevo) ─────────────────────────────────────────── */
+interface PositionResult {
+  level: number
+  cells: number
+  timeMs: number
+  correct: boolean
+  date: number
+}
+
+type PositionPhase = 'listo' | 'mostrando' | 'respondiendo' | 'resultado'
+
+function positionGridSize(level: number): number {
+  if (level <= 3) return 3
+  if (level <= 7) return 4
+  if (level <= 12) return 5
+  return 6
+}
+function positionShowCount(level: number): number {
+  return Math.min(2 + Math.floor(level / 2), 10)
+}
+function positionShowMs(level: number): number {
+  return Math.max(700, 2400 - (level - 1) * 90)
+}
+
+function PositionMemoryGame() {
+  const [level, setLevel] = useState(() => loadJSON(KEYS.positionLevel, 1))
+  const [phase, setPhase] = useState<PositionPhase>('listo')
+  const [lit, setLit] = useState<number[]>([])
+  const [selected, setSelected] = useState<number[]>([])
+  const [correct, setCorrect] = useState<boolean | null>(null)
+  const [history, setHistory] = useState<PositionResult[]>(() =>
+    loadJSON(KEYS.positionHistory, [])
+  )
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(
+    () => () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    },
+    []
+  )
+
+  const grid = positionGridSize(level)
+  const count = positionShowCount(level)
+  const showMs = positionShowMs(level)
+  const totalCells = grid * grid
+
+  const start = () => {
+    soundStart()
+    const indices = shuffleArray(
+      Array.from({ length: totalCells }, (_, i) => i)
+    ).slice(0, count)
+    setLit(indices)
+    setSelected([])
+    setCorrect(null)
+    setPhase('mostrando')
+    timeoutRef.current = setTimeout(() => {
+      setPhase('respondiendo')
+    }, showMs)
+  }
+
+  const toggleCell = (idx: number) => {
+    if (phase !== 'respondiendo') return
+    soundClick()
+    setSelected((prev) =>
+      prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
+    )
+  }
+
+  const submit = () => {
+    if (phase !== 'respondiendo') return
+    const a = [...selected].sort((x, y) => x - y)
+    const b = [...lit].sort((x, y) => x - y)
+    const ok =
+      a.length === b.length && a.every((v, i) => v === b[i])
+    setCorrect(ok)
+    setPhase('resultado')
+    if (ok) soundSuccess()
+    else soundFail()
+
+    const result: PositionResult = {
+      level,
+      cells: count,
+      timeMs: showMs,
+      correct: ok,
+      date: Date.now(),
+    }
+    const nextHist = [result, ...history].slice(0, 20)
+    setHistory(nextHist)
+    saveJSON(KEYS.positionHistory, nextHist)
+
+    if (ok) {
+      const nextLevel = level + 1
+      setLevel(nextLevel)
+      saveJSON(KEYS.positionLevel, nextLevel)
+    }
+    try {
+      recordLevelResult({
+        categoryId: CAT,
+        gameId: GAME_ID,
+        level,
+        success: ok,
+        timeMs: showMs,
+      })
+    } catch {
+      /* */
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <div className="glass-card" style={{ marginBottom: '1rem' }}>
+        <div style={{ padding: '1.1rem 1.25rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              flexWrap: 'wrap',
+              marginBottom: '0.35rem',
+            }}
+          >
+            <h2 style={{ fontSize: '1.15rem', margin: 0 }}>
+              📍 Memoria de posición
+            </h2>
+            <span
+              className="mono"
+              style={{ fontSize: '0.85rem', color: 'var(--gco-primary)' }}
+            >
+              Nivel {level} · {count} celdas
+            </span>
+          </div>
+          <p style={{ fontSize: '0.82rem', color: 'var(--gco-ink-muted)' }}>
+            Memoriza qué celdas se iluminan y selecciónalas después. El tiempo
+            de visualización se acorta con el nivel.
+          </p>
+        </div>
+      </div>
+
+      <div className="glass-card">
+        <div style={{ padding: '1.4rem 1.2rem', textAlign: 'center' }}>
+          {phase === 'listo' && (
+            <>
+              <p
+                style={{
+                  fontSize: '0.9rem',
+                  color: 'var(--gco-ink-muted)',
+                  marginBottom: '1.1rem',
+                  lineHeight: 1.45,
+                }}
+              >
+                Cuadrícula {grid}×{grid} · Observación:{' '}
+                <span className="mono" style={{ color: 'var(--gco-primary)' }}>
+                  {formatReactionTime(showMs)}
+                </span>
+              </p>
+              <button
+                type="button"
+                className="glass-button"
+                style={{ width: '100%' }}
+                onClick={start}
+              >
+                Comenzar
+              </button>
+            </>
+          )}
+
+          {(phase === 'mostrando' ||
+            phase === 'respondiendo' ||
+            phase === 'resultado') && (
+            <>
+              <p
+                style={{
+                  fontSize: '0.8rem',
+                  color: 'var(--gco-ink-faint)',
+                  marginBottom: '0.85rem',
+                }}
+              >
+                {phase === 'mostrando'
+                  ? 'Memoriza las celdas iluminadas…'
+                  : phase === 'respondiendo'
+                    ? 'Selecciona las celdas que viste'
+                    : correct
+                      ? '¡Correcto!'
+                      : 'Incorrecto'}
+              </p>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${grid}, 1fr)`,
+                  gap: '0.45rem',
+                  maxWidth: 340,
+                  margin: '0 auto 1.1rem',
+                }}
+              >
+                {Array.from({ length: totalCells }, (_, idx) => {
+                  const isLit =
+                    phase === 'mostrando'
+                      ? lit.includes(idx)
+                      : phase === 'resultado'
+                        ? lit.includes(idx)
+                        : selected.includes(idx)
+                  const isMiss =
+                    phase === 'resultado' &&
+                    selected.includes(idx) &&
+                    !lit.includes(idx)
+                  const isHit =
+                    phase === 'resultado' &&
+                    lit.includes(idx) &&
+                    selected.includes(idx)
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => toggleCell(idx)}
+                      disabled={phase !== 'respondiendo'}
+                      style={{
+                        aspectRatio: '1 / 1',
+                        borderRadius: 'var(--gco-radius-sm)',
+                        border: isMiss
+                          ? '1.5px solid var(--gco-secondary)'
+                          : isHit || (phase === 'mostrando' && isLit)
+                            ? '1.5px solid var(--gco-primary)'
+                            : '1px solid var(--gco-glass-border)',
+                        background: isMiss
+                          ? 'var(--gco-secondary-dim)'
+                          : isLit
+                            ? 'var(--gco-primary-dim)'
+                            : 'var(--gco-glass-bg)',
+                        cursor:
+                          phase === 'respondiendo' ? 'pointer' : 'default',
+                        transition: 'background 0.12s ease',
+                        WebkitTapHighlightColor: 'transparent',
+                      }}
+                    />
+                  )
+                })}
+              </div>
+
+              {phase === 'mostrando' && (
+                <div
+                  style={{
+                    height: 5,
+                    borderRadius: 5,
+                    background: 'var(--gco-glass-border)',
+                    overflow: 'hidden',
+                    maxWidth: 340,
+                    margin: '0 auto',
+                  }}
+                >
+                  <motion.div
+                    initial={{ width: '100%' }}
+                    animate={{ width: '0%' }}
+                    transition={{ duration: showMs / 1000, ease: 'linear' }}
+                    style={{
+                      height: '100%',
+                      background: 'var(--gco-primary)',
+                      borderRadius: 5,
+                    }}
+                  />
+                </div>
+              )}
+
+              {phase === 'respondiendo' && (
+                <button
+                  type="button"
+                  className="glass-button"
+                  style={{ width: '100%', maxWidth: 340 }}
+                  onClick={submit}
+                  disabled={selected.length === 0}
+                >
+                  Comprobar ({selected.length}/{count})
+                </button>
+              )}
+
+              {phase === 'resultado' && (
+                <button
+                  type="button"
+                  className="glass-button"
+                  style={{ width: '100%', maxWidth: 340, marginTop: '0.4rem' }}
+                  onClick={start}
+                >
+                  {correct ? 'Siguiente nivel' : 'Reintentar'}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {history.length > 0 && (
+        <div className="glass-card" style={{ marginTop: '1rem' }}>
+          <div style={{ padding: '1.05rem 1.25rem' }}>
+            <p className="more-section-title" style={{ marginBottom: '0.55rem' }}>
+              Historial reciente
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+              {history.slice(0, 12).map((r, i) => (
+                <span
+                  key={`${r.date}-${i}`}
+                  className="mono"
+                  style={{
+                    fontSize: '0.72rem',
+                    padding: '0.3rem 0.55rem',
+                    borderRadius: 999,
+                    background: 'var(--gco-glass-bg)',
+                    border: '1px solid var(--gco-glass-border)',
+                    color: r.correct ? 'var(--gco-primary)' : 'var(--gco-secondary)',
+                  }}
+                >
+                  Nv.{r.level} · {r.cells}c
                 </span>
               ))}
             </div>
