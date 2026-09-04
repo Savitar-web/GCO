@@ -540,7 +540,7 @@ function ReactionGame() {
       setLastTime(elapsed)
       setState('resultado')
       setRound((r) => r + 1)
-      const next = [elapsed, ...history].slice(0, 12)
+      const next = [elapsed, ...history]
       setHistory(next)
       saveJSON(KEYS.reaction, next)
       try {
@@ -768,7 +768,7 @@ function AimGame() {
       const totalTimeMs = performance.now() - startedAtRef.current
       const s = summarizeAimSession(nextResults, totalTimeMs)
       setSummary(s)
-      const nextHist = [s, ...history].slice(0, 12)
+      const nextHist = [s, ...history]
       setHistory(nextHist)
       saveJSON(KEYS.aim, nextHist)
       setTarget(null)
@@ -845,8 +845,6 @@ function AimGame() {
 
   // Seguimiento del puntero para el teclado
   const handlePointerMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!areaRef.current) return
-    const rect = areaRef.current.getBoundingClientRect()
     pointerRef.current = {
       x: e.clientX,
       y: e.clientY,
@@ -2382,6 +2380,7 @@ function SequenceGame() {
 
   const size = sequenceBoardSize(level)
   const cols = sequenceCols(size)
+  const rows = Math.ceil(size / cols)
 
   const start = () => {
     soundStart()
@@ -2408,7 +2407,7 @@ function SequenceGame() {
         mistakes: finalMistakes,
         date: Date.now(),
       }
-      const nextHist = [result, ...history].slice(0, 15)
+      const nextHist = [result, ...history]
       setHistory(nextHist)
       saveJSON(KEYS.sequenceHistory, nextHist)
       setSummary(result)
@@ -2461,11 +2460,25 @@ function SequenceGame() {
     ? sequenceStars(summary.timeMs, summary.mistakes, summary.size)
     : 0
 
-  // Altura disponible aproximada para la cuadrícula (evita scroll)
-  const gridMaxHeight =
+  // Tamaño de celda en px: quepa toda la cuadrícula sin solaparse ni scroll
+  const gapPx = 6
+  const maxGridPx =
     typeof window !== 'undefined'
-      ? Math.max(240, window.innerHeight - 280)
-      : 400
+      ? Math.max(220, Math.min(window.innerHeight - 300, 520))
+      : 360
+  const availW =
+    typeof window !== 'undefined'
+      ? Math.min(window.innerWidth - 48, 420)
+      : 360
+  const cellPx = Math.max(
+    28,
+    Math.floor(
+      Math.min(
+        (maxGridPx - (rows - 1) * gapPx) / rows,
+        availW / cols - gapPx
+      ) * cellScale
+    )
+  )
 
   return (
     <motion.div
@@ -2631,13 +2644,13 @@ function SequenceGame() {
           ref={gridRef}
           style={{
             display: 'grid',
-            gridTemplateColumns: `repeat(${cols}, 1fr)`,
-            gap: `calc(0.35rem * ${cellScale})`,
+            gridTemplateColumns: `repeat(${cols}, ${cellPx}px)`,
+            gridTemplateRows: `repeat(${rows}, ${cellPx}px)`,
+            gap: `${gapPx}px`,
+            justifyContent: 'center',
             width: '100%',
-            maxHeight: gridMaxHeight,
-            // Las celdas se adaptan para que toda la cuadrícula quepa
-            aspectRatio: `${cols} / ${Math.ceil(size / cols)}`,
             maxWidth: '100%',
+            overflow: 'hidden',
           }}
         >
           {board.map((n) => {
@@ -2651,8 +2664,9 @@ function SequenceGame() {
                 disabled={done}
                 className="mono"
                 style={{
-                  aspectRatio: '1 / 1',
-                  borderRadius: 'var(--gco-radius-sm)',
+                  width: cellPx,
+                  height: cellPx,
+                  borderRadius: Math.max(6, cellPx * 0.12),
                   border: isWrong
                     ? '1.5px solid var(--gco-secondary)'
                     : '1px solid var(--gco-glass-border)',
@@ -2663,13 +2677,16 @@ function SequenceGame() {
                       : 'var(--gco-glass-bg)',
                   color: done ? 'var(--gco-primary)' : 'var(--gco-ink)',
                   fontWeight: 700,
-                  fontSize: `clamp(0.7rem, ${2.6 * cellScale}vw, ${1.1 * cellScale}rem)`,
+                  fontSize: Math.max(11, Math.floor(cellPx * 0.38)),
                   cursor: done ? 'default' : 'pointer',
                   opacity: done ? 0.55 : 1,
                   transition: 'background 0.12s ease, border-color 0.12s ease',
                   WebkitTapHighlightColor: 'transparent',
-                  minWidth: 0,
-                  minHeight: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0,
+                  lineHeight: 1,
                 }}
               >
                 {n}
@@ -2736,7 +2753,6 @@ function FlashNumberGame() {
   const [phase, setPhase] = useState<FlashPhase>('listo')
   const [number, setNumber] = useState('')
   const [input, setInput] = useState('')
-  const [showMs, setShowMs] = useState(0)
   const [correct, setCorrect] = useState<boolean | null>(null)
   const [history, setHistory] = useState<FlashResult[]>(() =>
     loadJSON(KEYS.flashHistory, [])
@@ -2762,7 +2778,6 @@ function FlashNumberGame() {
     setNumber(n)
     setInput('')
     setCorrect(null)
-    setShowMs(displayTime)
     setPhase('mostrando')
     timeoutRef.current = setTimeout(() => {
       setPhase('escribiendo')
@@ -2786,7 +2801,7 @@ function FlashNumberGame() {
       correct: ok,
       date: Date.now(),
     }
-    const nextHist = [result, ...history].slice(0, 20)
+    const nextHist = [result, ...history]
     setHistory(nextHist)
     saveJSON(KEYS.flashHistory, nextHist)
 
@@ -3050,15 +3065,22 @@ type PositionPhase = 'listo' | 'mostrando' | 'respondiendo' | 'resultado'
 
 function positionGridSize(level: number): number {
   if (level <= 3) return 3
-  if (level <= 7) return 4
-  if (level <= 12) return 5
-  return 6
+  if (level <= 8) return 4
+  if (level <= 18) return 5
+  if (level <= 35) return 6
+  if (level <= 60) return 7
+  if (level <= 100) return 8
+  if (level <= 160) return 9
+  return Math.min(10, 9 + Math.floor((level - 160) / 80))
 }
 function positionShowCount(level: number): number {
-  return Math.min(2 + Math.floor(level / 2), 10)
+  const grid = positionGridSize(level)
+  const maxCells = grid * grid
+  const raw = 2 + Math.floor(level * 0.35)
+  return Math.min(raw, Math.floor(maxCells * 0.55), maxCells - 1)
 }
 function positionShowMs(level: number): number {
-  return Math.max(700, 2400 - (level - 1) * 90)
+  return Math.max(550, 2600 - Math.floor(level * 8))
 }
 
 function PositionMemoryGame() {
@@ -3124,7 +3146,7 @@ function PositionMemoryGame() {
       correct: ok,
       date: Date.now(),
     }
-    const nextHist = [result, ...history].slice(0, 20)
+    const nextHist = [result, ...history]
     setHistory(nextHist)
     saveJSON(KEYS.positionHistory, nextHist)
 
