@@ -25,7 +25,6 @@ import {
   type AimSessionSummary,
   type SimonLevel,
   type SimonButtonDef,
-  type SimonCustomLevel,
 } from '../generateLevel'
 
 type View =
@@ -84,21 +83,32 @@ function shuffleArray<T>(arr: T[]): T[] {
   return a
 }
 
-/** Nivel creativo de Simón Dice con tiempo de espera propio. */
-interface CreativeSimonLevel extends SimonCustomLevel {
-  timeLimitMsOverride: number
+/** Ronda individual dentro de un nivel creativo multi-ronda. */
+interface CreativeSimonRound {
+  prompt: string
+  correctId: string
+  options: SimonButtonDef[]
+  timeLimitMs: number
 }
 
-function buildSimonLevelFromCustom(
-  custom: CreativeSimonLevel,
+/** Nivel creativo con varias rondas y nombre propio. */
+interface CreativeSimonLevel {
+  id: string
+  name: string
+  rounds: CreativeSimonRound[]
+  createdAt: number
+}
+
+function buildSimonLevelFromRound(
+  round: CreativeSimonRound,
   level: number
 ): SimonLevel {
   return {
     level,
-    options: shuffleArray(custom.options),
-    correctId: custom.correctId,
-    prompt: custom.prompt,
-    timeLimitMs: custom.timeLimitMsOverride,
+    options: shuffleArray(round.options),
+    correctId: round.correctId,
+    prompt: round.prompt,
+    timeLimitMs: round.timeLimitMs,
   }
 }
 
@@ -1191,13 +1201,30 @@ function SimonGame() {
   const [showLevelPicker, setShowLevelPicker] = useState(false)
 
   const [directLevel, setDirectLevel] = useState<CreativeSimonLevel | null>(null)
+  const [directRoundIndex, setDirectRoundIndex] = useState(0)
 
   const [customActions, setCustomActions] = useState<SimonButtonDef[]>(() =>
     loadJSON(KEYS.simonActions, [])
   )
-  const [customLevels, setCustomLevels] = useState<CreativeSimonLevel[]>(() =>
-    loadJSON(KEYS.simonCustom, [])
-  )
+  const [customLevels, setCustomLevels] = useState<CreativeSimonLevel[]>(() => {
+    const raw = loadJSON<unknown[]>(KEYS.simonCustom, [])
+    return (raw as Array<Record<string, unknown>>).map((item) => {
+      if (item && Array.isArray((item as any).rounds)) return item as unknown as CreativeSimonLevel
+      return {
+        id: String(item.id ?? `migrated-${Date.now()}`),
+        name: String(item.prompt ?? 'Nivel antiguo'),
+        rounds: [
+          {
+            prompt: String(item.prompt ?? 'Simón dice'),
+            correctId: String(item.correctId ?? ''),
+            options: (item.options as SimonButtonDef[]) ?? [],
+            timeLimitMs: Number(item.timeLimitMsOverride ?? 2000),
+          },
+        ],
+        createdAt: Number(item.createdAt ?? Date.now()),
+      } satisfies CreativeSimonLevel
+    })
+  })
 
   const pool = useMemo(
     () => [...BASE_SIMON_ACTIONS, ...customActions],
@@ -1210,13 +1237,40 @@ function SimonGame() {
   const loadLevel = useCallback(
     (lvl: number) => {
       setDirectLevel(null)
-      const useCustom = customLevels.length > 0 && lvl % 4 === 0
-      const next = useCustom
-        ? buildSimonLevelFromCustom(
-            customLevels[Math.floor(Math.random() * customLevels.length)],
-            lvl
-          )
-        : generateSimonLevel(lvl, pool)
+      setDirectRoundIndex(0)
+      // A partir del nivel 8, mezclar distractores similares (misma categoría visual)
+      let next: SimonLevel
+      if (customLevels.length > 0 && lvl % 5 === 0) {
+        const cl = customLevels[Math.floor(Math.random() * customLevels.length)]
+        const round = cl.rounds[Math.floor(Math.random() * cl.rounds.length)]
+        next = buildSimonLevelFromRound(round, lvl)
+      } else {
+        next = generateSimonLevel(lvl, pool)
+        // Inteligencia de dificultad: si el nivel es alto, priorizar opciones
+        // con etiquetas parecidas a la correcta para forzar lectura atenta
+        if (lvl >= 8 && next.options.length >= 4) {
+          const correct = next.options.find((o) => o.id === next.correctId)
+          if (correct) {
+            const similar = pool
+              .filter((b) => b.id !== correct.id)
+              .map((b) => ({
+                b,
+                score:
+                  (b.label.slice(0, 3) === correct.label.slice(0, 3) ? 3 : 0) +
+                  (b.emoji === correct.emoji ? 2 : 0) +
+                  (Math.abs(b.label.length - correct.label.length) <= 2 ? 1 : 0),
+              }))
+              .sort((a, c) => c.score - a.score)
+            const distractors = similar.slice(0, 3).map((x) => x.b)
+            if (distractors.length === 3) {
+              next = {
+                ...next,
+                options: shuffleArray([correct, ...distractors]),
+              }
+            }
+          }
+        }
+      }
       setCurrent(next)
       setPhase('lectura')
       setMsLeft(next.timeLimitMs)
@@ -1226,11 +1280,13 @@ function SimonGame() {
   )
 
   const playCustomLevel = useCallback(
-    (lvl: CreativeSimonLevel) => {
+    (lvl: CreativeSimonLevel, roundIdx = 0) => {
       soundClick()
       setScreen('jugar')
       setDirectLevel(lvl)
-      const built = buildSimonLevelFromCustom(lvl, playingLevel)
+      setDirectRoundIndex(roundIdx)
+      const round = lvl.rounds[roundIdx % lvl.rounds.length]
+      const built = buildSimonLevelFromRound(round, playingLevel)
       setCurrent(built)
       setPhase('lectura')
       setMsLeft(built.timeLimitMs)
@@ -1287,7 +1343,8 @@ function SimonGame() {
       setPhase('acierto')
 
       if (directLevel) {
-        window.setTimeout(() => playCustomLevel(directLevel), 900)
+        const nextRound = (directRoundIndex + 1) % directLevel.rounds.length
+        window.setTimeout(() => playCustomLevel(directLevel, nextRound), 900)
         return
       }
 
@@ -1317,7 +1374,8 @@ function SimonGame() {
 
   const retry = () => {
     soundClick()
-    if (directLevel) playCustomLevel(directLevel)
+    // Al fallar: nueva acción/texto (no la misma)
+    if (directLevel) playCustomLevel(directLevel, directRoundIndex)
     else loadLevel(playingLevel)
   }
 
@@ -1463,7 +1521,7 @@ function SimonGame() {
               className="mono"
               style={{ fontSize: '0.85rem', color: 'var(--gco-primary)' }}
             >
-              {directLevel ? 'Práctica libre' : `Nivel ${playingLevel}`}
+              {directLevel ? `${directLevel.name} · R${directRoundIndex + 1}` : `Nivel ${playingLevel}`}
             </span>
           </div>
           <div className="segmented" style={{ marginBottom: '0.6rem' }}>
@@ -1801,33 +1859,99 @@ function SimonCreativeEditor({
   recommendedTimeMs: number
   onPlayLevel: (lvl: CreativeSimonLevel) => void
 }) {
-  const [selected, setSelected] = useState<SimonButtonDef[]>(pool.slice(0, 4))
-  const [correctId, setCorrectId] = useState(pool[0]?.id ?? '')
-  const [customPrompt, setCustomPrompt] = useState('')
+  const [rounds, setRounds] = useState<CreativeSimonRound[]>([])
+  const [selected, setSelected] = useState<SimonButtonDef[]>([])
+  const [correctId, setCorrectId] = useState('')
   const [timeLimitMs, setTimeLimitMs] = useState(recommendedTimeMs)
   const [msg, setMsg] = useState('')
+  const [levelName, setLevelName] = useState('')
+  const [askingName, setAskingName] = useState(false)
 
   const [newLabel, setNewLabel] = useState('')
   const [newEmoji, setNewEmoji] = useState(ACTION_EMOJI_CHOICES[0])
   const [newColor, setNewColor] = useState(ACTION_COLOR_CHOICES[0])
   const [actionMsg, setActionMsg] = useState('')
+  const [customEmojiMode, setCustomEmojiMode] = useState(false)
+  const [customEmojiInput, setCustomEmojiInput] = useState('')
 
+  // Toggle: click selecciona, click otra vez deselecciona
   const toggleButton = (btn: SimonButtonDef) => {
     soundClick()
     const exists = selected.some((b) => b.id === btn.id)
     if (exists) {
-      if (selected.length <= 4) return
       const next = selected.filter((b) => b.id !== btn.id)
       setSelected(next)
-      if (correctId === btn.id && next[0]) setCorrectId(next[0].id)
+      if (correctId === btn.id) setCorrectId(next[0]?.id ?? '')
     } else {
       if (selected.length >= 4) {
+        // Reemplaza la última si ya hay 4
         const next = [...selected.slice(0, 3), btn]
         setSelected(next)
         return
       }
       setSelected([...selected, btn])
+      if (!correctId) setCorrectId(btn.id)
     }
+  }
+
+  const autoPrompt =
+    selected.find((b) => b.id === correctId)?.label != null
+      ? `Simón dice: ${selected.find((b) => b.id === correctId)!.label}`
+      : 'Simón dice: …'
+
+  const addRound = () => {
+    if (selected.length !== 4 || !selected.some((b) => b.id === correctId)) {
+      soundFail()
+      setMsg('Necesitas exactamente 4 acciones y una respuesta correcta')
+      return
+    }
+    const round: CreativeSimonRound = {
+      prompt: autoPrompt,
+      correctId,
+      options: [...selected],
+      timeLimitMs,
+    }
+    setRounds((prev) => [...prev, round])
+    soundSuccess()
+    setMsg(`Ronda ${rounds.length + 1} añadida`)
+    window.setTimeout(() => setMsg(''), 1800)
+  }
+
+  const removeRound = (idx: number) => {
+    soundClick()
+    setRounds((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  const requestSave = () => {
+    if (rounds.length < 4) {
+      soundFail()
+      setMsg('Necesitas al menos 4 rondas para guardar el nivel')
+      return
+    }
+    setAskingName(true)
+    setMsg('')
+  }
+
+  const confirmSave = () => {
+    const name = levelName.trim()
+    if (!name) {
+      soundFail()
+      setMsg('Escribe un nombre para el nivel')
+      return
+    }
+    const level: CreativeSimonLevel = {
+      id: `custom-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
+      name,
+      rounds: [...rounds],
+      createdAt: Date.now(),
+    }
+    onChangeLevels([level, ...customLevels])
+    soundSuccess()
+    setMsg(`Nivel «${name}» guardado con ${rounds.length} rondas`)
+    setRounds([])
+    setLevelName('')
+    setAskingName(false)
+    window.setTimeout(() => setMsg(''), 2500)
   }
 
   const addAction = () => {
@@ -1851,39 +1975,14 @@ function SimonCreativeEditor({
     onChangeActions([...customActions, action])
     setNewLabel('')
     soundSuccess()
-    setActionMsg('Acción añadida: ya aparece en el juego normal')
-    window.setTimeout(() => setActionMsg(''), 2200)
+    setActionMsg('Acción añadida')
+    window.setTimeout(() => setActionMsg(''), 2000)
   }
 
   const removeAction = (id: string) => {
     soundClick()
     onChangeActions(customActions.filter((a) => a.id !== id))
     setSelected((prev) => prev.filter((b) => b.id !== id))
-  }
-
-  const save = () => {
-    if (selected.length !== 4 || !selected.some((b) => b.id === correctId)) {
-      soundFail()
-      setMsg('Necesitas 4 acciones y una acción correcta válida')
-      return
-    }
-    const correctBtn = selected.find((b) => b.id === correctId)!
-    const promptText =
-      customPrompt.trim() ||
-      `Simón dice: ${correctBtn.label}`
-    const level: CreativeSimonLevel = {
-      id: `custom-${Date.now()}-${Math.floor(Math.random() * 9999)}`,
-      prompt: promptText,
-      correctId,
-      options: selected,
-      createdAt: Date.now(),
-      timeLimitMsOverride: timeLimitMs,
-    }
-    onChangeLevels([level, ...customLevels].slice(0, 50))
-    soundSuccess()
-    setMsg('Nivel guardado. Puedes jugarlo cuando quieras.')
-    setCustomPrompt('')
-    window.setTimeout(() => setMsg(''), 2200)
   }
 
   const removeLevel = (id: string) => {
@@ -1902,14 +2001,17 @@ function SimonCreativeEditor({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       <div className="glass-card">
         <div style={{ padding: '1.25rem 1.25rem' }}>
-          <p className="more-section-title">Elige 4 acciones para la ronda</p>
+          <p className="more-section-title">Elige 4 acciones para esta ronda</p>
+          <p style={{ fontSize: '0.75rem', color: 'var(--gco-ink-faint)', marginBottom: '0.7rem' }}>
+            Clic = seleccionar · Clic otra vez = deseleccionar · Máximo 4
+          </p>
           <div
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(3, 1fr)',
               gap: '0.55rem',
               marginBottom: '1.2rem',
-              maxHeight: 280,
+              maxHeight: 260,
               overflowY: 'auto',
             }}
           >
@@ -1947,7 +2049,7 @@ function SimonCreativeEditor({
             })}
           </div>
 
-          <p className="more-section-title">¿Cuál es la acción correcta?</p>
+          <p className="more-section-title">Respuesta correcta</p>
           <div
             style={{
               display: 'flex',
@@ -1984,32 +2086,35 @@ function SimonCreativeEditor({
                 {btn.emoji} {btn.label}
               </button>
             ))}
+            {selected.length === 0 && (
+              <span style={{ fontSize: '0.78rem', color: 'var(--gco-ink-faint)' }}>
+                Selecciona acciones arriba
+              </span>
+            )}
           </div>
 
-          <label className="more-field-label">
-            Texto de la pregunta (opcional)
-          </label>
-          <input
-            className="glass-input"
-            value={customPrompt}
-            onChange={(e) => setCustomPrompt(e.target.value)}
-            placeholder={
-              correctId
-                ? `Simón dice: ${selected.find((b) => b.id === correctId)?.label ?? ''}`
-                : 'Simón dice: …'
-            }
-            style={{ marginBottom: '1.1rem' }}
-          />
+          <p className="more-section-title">Texto de la pregunta</p>
           <p
             style={{
-              fontSize: '0.78rem',
-              color: 'var(--gco-ink-muted)',
-              marginBottom: '1.3rem',
+              fontSize: '0.88rem',
+              color: 'var(--gco-ink)',
+              marginBottom: '1.1rem',
+              padding: '0.65rem 0.85rem',
+              borderRadius: 10,
+              background: 'var(--gco-glass-bg)',
+              border: '1px solid var(--gco-glass-border)',
             }}
           >
-            El jugador verá exactamente el texto que escribas (o el automático
-            si lo dejas vacío). Tú eliges cuál de los 4 botones es la respuesta
-            correcta.
+            {autoPrompt}
+          </p>
+          <p
+            style={{
+              fontSize: '0.75rem',
+              color: 'var(--gco-ink-muted)',
+              marginBottom: '1.1rem',
+            }}
+          >
+            Se genera automáticamente según la respuesta correcta (no es editable).
           </p>
 
           <p className="more-section-title">Tiempo para responder</p>
@@ -2060,31 +2165,115 @@ function SimonCreativeEditor({
               fontSize: '0.78rem',
               color: 'var(--gco-primary)',
               marginTop: '0.5rem',
-              marginBottom: '0.3rem',
+              marginBottom: '1.1rem',
             }}
           >
             {formatReactionTime(timeLimitMs)}
           </p>
-          <p
-            style={{
-              fontSize: '0.72rem',
-              color: 'var(--gco-ink-faint)',
-              marginBottom: '1.3rem',
-              lineHeight: 1.4,
-            }}
-          >
-            Recomendado: {formatReactionTime(recommendedTimeMs)} según tu nivel
-            actual.
-          </p>
 
           <button
             type="button"
-            className="glass-button"
-            style={{ width: '100%' }}
-            onClick={save}
+            className="glass-button secondary"
+            style={{ width: '100%', marginBottom: '0.7rem' }}
+            onClick={addRound}
           >
-            Guardar nivel creativo
+            + Añadir esta ronda
           </button>
+
+          {rounds.length > 0 && (
+            <div style={{ marginBottom: '1rem' }}>
+              <p className="more-section-title">
+                Rondas preparadas ({rounds.length})
+                {rounds.length < 4 && (
+                  <span
+                    style={{
+                      fontSize: '0.75rem',
+                      color: 'var(--gco-secondary)',
+                      marginLeft: 8,
+                    }}
+                  >
+                    · mínimo 4
+                  </span>
+                )}
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                {rounds.map((r, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '0.55rem 0.75rem',
+                      borderRadius: 'var(--gco-radius-xs)',
+                      background: 'var(--gco-glass-bg)',
+                      border: '1px solid var(--gco-glass-border)',
+                      gap: 8,
+                    }}
+                  >
+                    <span style={{ fontSize: '0.8rem' }}>
+                      {idx + 1}. {r.prompt}
+                    </span>
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      onClick={() => removeRound(idx)}
+                      aria-label="Eliminar ronda"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!askingName ? (
+            <button
+              type="button"
+              className="glass-button"
+              style={{ width: '100%' }}
+              onClick={requestSave}
+              disabled={rounds.length < 4}
+            >
+              Guardar nivel
+              {rounds.length < 4 ? ` (${rounds.length}/4)` : ''}
+            </button>
+          ) : (
+            <div>
+              <label className="more-field-label">
+                Nombre del nivel (no es el texto de la ronda)
+              </label>
+              <input
+                className="glass-input"
+                value={levelName}
+                onChange={(e) => setLevelName(e.target.value)}
+                placeholder="p. ej. Desafío matutino"
+                style={{ marginBottom: '0.75rem' }}
+              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  className="glass-button"
+                  style={{ flex: 1 }}
+                  onClick={confirmSave}
+                >
+                  Confirmar
+                </button>
+                <button
+                  type="button"
+                  className="glass-button secondary"
+                  style={{ flex: 1 }}
+                  onClick={() => {
+                    setAskingName(false)
+                    setLevelName('')
+                  }}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
           {msg && (
             <p
               style={{
@@ -2117,7 +2306,7 @@ function SimonCreativeEditor({
               display: 'grid',
               gridTemplateColumns: 'repeat(6, 1fr)',
               gap: '0.4rem',
-              marginBottom: '1rem',
+              marginBottom: '0.75rem',
             }}
           >
             {ACTION_EMOJI_CHOICES.map((emoji) => (
@@ -2127,16 +2316,17 @@ function SimonCreativeEditor({
                 onClick={() => {
                   soundClick()
                   setNewEmoji(emoji)
+                  setCustomEmojiMode(false)
                 }}
                 style={{
                   height: 40,
                   borderRadius: 'var(--gco-radius-xs)',
                   border:
-                    newEmoji === emoji
+                    !customEmojiMode && newEmoji === emoji
                       ? '1.5px solid var(--gco-primary)'
                       : '1px solid var(--gco-glass-border)',
                   background:
-                    newEmoji === emoji
+                    !customEmojiMode && newEmoji === emoji
                       ? 'var(--gco-primary-dim)'
                       : 'var(--gco-glass-bg)',
                   fontSize: '1.15rem',
@@ -2146,7 +2336,58 @@ function SimonCreativeEditor({
                 {emoji}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => {
+                soundClick()
+                setCustomEmojiMode(true)
+              }}
+              style={{
+                height: 40,
+                borderRadius: 'var(--gco-radius-xs)',
+                border: customEmojiMode
+                  ? '1.5px solid var(--gco-primary)'
+                  : '1px solid var(--gco-glass-border)',
+                background: customEmojiMode
+                  ? 'var(--gco-primary-dim)'
+                  : 'var(--gco-glass-bg)',
+                fontSize: '1.15rem',
+                cursor: 'pointer',
+                fontWeight: 700,
+              }}
+              title="Elegir otro emoji"
+            >
+              +
+            </button>
           </div>
+          {customEmojiMode && (
+            <div style={{ marginBottom: '1rem' }}>
+              <input
+                className="glass-input"
+                value={customEmojiInput}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setCustomEmojiInput(v)
+                  // Toma el último emoji/carácter introducido
+                  if (v.trim()) {
+                    const chars = Array.from(v.trim())
+                    setNewEmoji(chars[chars.length - 1])
+                  }
+                }}
+                placeholder="Pega o escribe un emoji aquí"
+                style={{ textAlign: 'center', fontSize: '1.4rem' }}
+              />
+              <p
+                style={{
+                  fontSize: '0.72rem',
+                  color: 'var(--gco-ink-faint)',
+                  marginTop: 4,
+                }}
+              >
+                En móvil se abrirá el teclado de emojis. Seleccionado: {newEmoji}
+              </p>
+            </div>
+          )}
           <label className="more-field-label">Color</label>
           <div
             style={{
@@ -2199,22 +2440,12 @@ function SimonCreativeEditor({
               {actionMsg}
             </p>
           )}
-
           {customActions.length > 0 && (
             <>
-              <p
-                className="more-section-title"
-                style={{ marginTop: '1.4rem' }}
-              >
+              <p className="more-section-title" style={{ marginTop: '1.4rem' }}>
                 Tus acciones creadas
               </p>
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.5rem',
-                }}
-              >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 {customActions.map((a) => (
                   <div
                     key={a.id}
@@ -2275,7 +2506,9 @@ function SimonCreativeEditor({
                   }}
                 >
                   <div style={{ minWidth: 0, flex: 1 }}>
-                    <span style={{ fontSize: '0.82rem' }}>{lvl.prompt}</span>
+                    <span style={{ fontSize: '0.88rem', fontWeight: 600 }}>
+                      {lvl.name}
+                    </span>
                     <p
                       className="mono"
                       style={{
@@ -2284,7 +2517,7 @@ function SimonCreativeEditor({
                         marginTop: 2,
                       }}
                     >
-                      {formatReactionTime(lvl.timeLimitMsOverride)}
+                      {lvl.rounds.length} rondas
                     </p>
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
