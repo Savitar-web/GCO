@@ -1,22 +1,15 @@
 /**
  * =============================================================================
- * BlockCleaner.tsx — UI + interacción · Color Block Jam style (v11.2)
+ * BlockCleaner.tsx — UI + interacción · Color Block Jam style (v12.0)
  * =============================================================================
  *
- * Dependencias del motor (Generatelevelbc.ts v11.1+):
- * - generateLevel / FALLBACK_LEVEL
- * - computeFreeSlideRanges / computeContinuousDragPosition / snapToGrid
- * - getHintMove / getExitableBlocks / isBlockMovable
- * - blockWidth / blockHeight / normalizeBlock
- * - starsForMoves / starsForTime / exitPixelVector
- *
- * MOVIMIENTO:
- * - Visual continuo (fraccionario) durante el arrastre.
- * - El motor fuerza ortogonal (sin diagonal) vía computeContinuousDragPosition.
- * - Snap a grilla solo al soltar.
- * - Rangos físicos: no atraviesa ni solapa.
- *
- * EXPORT named: export function BlockCleaner
+ * Mejoras v12:
+ * - Movimiento fluido continuo (permite cambiar de eje sin soltar).
+ * - Rangos dinámicos recalculados durante el drag.
+ * - Salida por arrastre hacia la pared del color + animación de salida/fade.
+ * - Sin iluminación de cuadrícula (ghost opcional y sutil).
+ * - Optimización: menos setState durante drag, refs + requestAnimationFrame.
+ * - Generación más robusta vía motor v12.
  * =============================================================================
  */
 
@@ -28,11 +21,13 @@ import {
   generateLevel,
   FALLBACK_LEVEL,
   computeFreeSlideRanges,
-  computeContinuousDragPosition,
+  computeDynamicSlideRanges,
+  computeFluidDragPosition,
   snapToGrid,
   getHintMove,
   getExitableBlocks,
   isBlockMovable,
+  canExitByDrag,
   blockWidth,
   blockHeight,
   starsForMoves,
@@ -42,22 +37,23 @@ import {
   type Block,
   type BlockColor,
   type BlockCleanerLevel,
+  type Exit,
 } from './Generatelevelbc'
 
 const LS = {
-  current: 'bc.v11.current',
-  unlocked: 'bc.v11.unlocked',
-  scores: 'bc.v11.scores',
-  moves: 'bc.v11.moves',
-  times: 'bc.v11.times',
-  defeats: 'bc.v11.defeats',
-  style: 'bc.v11.style',
-  options: 'bc.v11.options',
-  wins: 'bc.v11.wins',
-  totalMoves: 'bc.v11.totalMoves',
-  streak: 'bc.v11.streak',
-  bestStreak: 'bc.v11.bestStreak',
-  bestCombo: 'bc.v11.bestCombo',
+  current: 'bc.v12.current',
+  unlocked: 'bc.v12.unlocked',
+  scores: 'bc.v12.scores',
+  moves: 'bc.v12.moves',
+  times: 'bc.v12.times',
+  defeats: 'bc.v12.defeats',
+  style: 'bc.v12.style',
+  options: 'bc.v12.options',
+  wins: 'bc.v12.wins',
+  totalMoves: 'bc.v12.totalMoves',
+  streak: 'bc.v12.streak',
+  bestStreak: 'bc.v12.bestStreak',
+  bestCombo: 'bc.v12.bestCombo',
 }
 
 function readJSON<T>(key: string, fallback: T): T {
@@ -151,22 +147,21 @@ const DEFAULT_OPTIONS: PlayOptions = {
   noHints: false,
   showExits: true,
   showPar: true,
-  showGhost: true,
+  showGhost: false, // por defecto apagado (usuario no quiere iluminación de grilla)
 }
 
 const PRO_TIPS = [
-  'Solo salen por la pared de su color. Otra pared no elimina la pieza.',
+  'Solo salen por la pared de su color. Arrastra hacia fuera cuando esté alineada.',
   'La puerta mide la huella del bloque más grande de ese color en ese lado.',
-  'Movimiento en línea recta: el motor evita diagonales.',
+  'Movimiento fluido: puedes cambiar de dirección sin soltar la pieza.',
   'Las piezas no pueden atravesarse ni solaparse.',
   'Pieza con flecha: solo se mueve en esa dirección. Planifica el orden.',
   'Candados 🔒: hay que sacar N piezas antes de poder moverlas.',
   'Las piezas grandes necesitan espacio libre antes de deslizarse.',
   'Primero mueve las pequeñas para abrir corredor a las grandes.',
-  'El ghost azul muestra el rango deslizable de la pieza.',
   'Hardcore: sin undo y con límite de tiempo estricto.',
   'Usa zoom (− / +) en tableros grandes.',
-  'Cada nivel se genera con scramble legal: siempre hay solución.',
+  'Cada nivel se genera con scramble legal y validación de solución.',
 ]
 
 const BASE_CELL = 52
@@ -184,6 +179,8 @@ interface DragState {
   ranges: { minRow: number; maxRow: number; minCol: number; maxCol: number }
   visualRow: number
   visualCol: number
+  lastClientX: number
+  lastClientY: number
 }
 
 function safeGenerate(id: number): BlockCleanerLevel {
@@ -221,18 +218,21 @@ export function BlockCleaner() {
   const [combo, setCombo] = useState(0)
   const [hintId, setHintId] = useState<string | null>(null)
   const [exitingIds, setExitingIds] = useState<string[]>([])
+  const [exitAnims, setExitAnims] = useState<Record<string, { dx: number; dy: number }>>({})
   const [blockStyle, setBlockStyle] = useState<BlockStyle>(() => readJSON(LS.style, 'liquid-glass'))
   const [options, setOptions] = useState<PlayOptions>(() => readJSON(LS.options, DEFAULT_OPTIONS))
   const [tipIndex, setTipIndex] = useState(0)
   const [zoom, setZoom] = useState(1)
-  const [pan] = useState({ x: 0, y: 0 })
   const [draggingId, setDraggingId] = useState<string | null>(null)
+  // Solo actualizamos dragVisual en rAF para fluidez
   const [dragVisual, setDragVisual] = useState<{ row: number; col: number } | null>(null)
 
   const dragRef = useRef<DragState | null>(null)
   const boardRef = useRef<HTMLDivElement | null>(null)
   const timerRef = useRef<number | null>(null)
   const winHandled = useRef(false)
+  const rafRef = useRef<number | null>(null)
+  const pendingVisual = useRef<{ row: number; col: number } | null>(null)
 
   const loadLevel = useCallback((id: number) => {
     const lv = safeGenerate(id)
@@ -245,6 +245,7 @@ export function BlockCleaner() {
     setCombo(0)
     setHintId(null)
     setExitingIds([])
+    setExitAnims({})
     setDraggingId(null)
     setDragVisual(null)
     dragRef.current = null
@@ -307,6 +308,13 @@ export function BlockCleaner() {
     }
   }, [seconds, screen, timerOn, options.hardcore, level.timeLimit, blocks.length])
 
+  // Cleanup rAF
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    }
+  }, [])
+
   const safeBlocks = useMemo(
     () => (Array.isArray(blocks) ? blocks.map(normalizeBlock) : []),
     [blocks]
@@ -326,7 +334,7 @@ export function BlockCleaner() {
   )
 
   const applyMove = useCallback(
-    (blockId: string, toRow: number, toCol: number) => {
+    (blockId: string, toRow: number, toCol: number, forceExit = false) => {
       setBlocks((list) => {
         const block = list.find((b) => b.id === blockId)
         if (!block) return list
@@ -334,9 +342,14 @@ export function BlockCleaner() {
           playSfx('lock')
           return list
         }
+
         const next = list.map((b) =>
           b.id === blockId ? normalizeBlock({ ...b, row: toRow, col: toCol }) : b
         )
+
+        // Comprobar salida
+        let didExit = false
+        let exitSide: Exit['side'] | null = null
         const after = next.filter((b) => {
           if (b.id !== blockId) return true
           for (const e of level.exits ?? []) {
@@ -360,12 +373,28 @@ export function BlockCleaner() {
                   maxR === level.rows - 1 && minC >= e.pos && maxC <= e.pos + e.length - 1
               }
               const footprint = e.side === 'left' || e.side === 'right' ? h : w
-              if (aligned && footprint <= e.length) return false
+              if (aligned && footprint <= e.length) {
+                didExit = true
+                exitSide = e.side
+                return false
+              }
+            }
+          }
+          if (forceExit) {
+            // Salida forzada por drag hacia fuera
+            const exit = (level.exits ?? []).find((e) => e.color === b.color)
+            if (exit) {
+              didExit = true
+              exitSide = exit.side
+              return false
             }
           }
           return true
         })
-        if (after.length !== next.length) {
+
+        if (didExit || after.length !== next.length) {
+          const v = exitSide ? exitPixelVector(exitSide, BASE_CELL) : { dx: 0, dy: -80 }
+          setExitAnims((prev) => ({ ...prev, [blockId]: v }))
           setExitingIds((ids) => [...ids, blockId])
           playSfx('exit')
           setCombo((c) => c + 1)
@@ -374,9 +403,15 @@ export function BlockCleaner() {
           setMoves((m) => m + 1)
           window.setTimeout(() => {
             setExitingIds((ids) => ids.filter((id) => id !== blockId))
-          }, 320)
+            setExitAnims((prev) => {
+              const n = { ...prev }
+              delete n[blockId]
+              return n
+            })
+          }, 380)
           return after
         }
+
         if (toRow !== block.row || toCol !== block.col) {
           playSfx('move')
           setCombo(0)
@@ -389,7 +424,19 @@ export function BlockCleaner() {
     [cleared, level]
   )
 
-  // Drag continuo: visual libre, motor clampa ortogonal + colisiones
+  // ---- Drag fluido ----
+  const scheduleVisualUpdate = useCallback((row: number, col: number) => {
+    pendingVisual.current = { row, col }
+    if (rafRef.current != null) return
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null
+      if (pendingVisual.current) {
+        setDragVisual(pendingVisual.current)
+        pendingVisual.current = null
+      }
+    })
+  }, [])
+
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>, block: Block) => {
     if (screen !== 'play') return
     if (!isBlockMovable(block, cleared)) {
@@ -419,6 +466,8 @@ export function BlockCleaner() {
       ranges,
       visualRow: block.row,
       visualCol: block.col,
+      lastClientX: e.clientX,
+      lastClientY: e.clientY,
     }
     setDraggingId(block.id)
     setDragVisual({ row: block.row, col: block.col })
@@ -434,8 +483,31 @@ export function BlockCleaner() {
     const deltaCol = dxPx / BASE_CELL
     const deltaRow = dyPx / BASE_CELL
 
-    // Motor: un eje dominante (sin diagonal), clamp a rangos físicos
-    const visual = computeContinuousDragPosition(
+    // Recalcular rangos dinámicos desde la posición visual actual (permite cambiar de eje)
+    const block = safeBlocks.find((b) => b.id === drag.id)
+    if (block) {
+      const dynamicRanges = computeDynamicSlideRanges(
+        block,
+        drag.visualRow,
+        drag.visualCol,
+        safeBlocks,
+        level.obstacles ?? [],
+        level.rows,
+        level.cols,
+        cleared
+      )
+      // Combinar: el rango real es la intersección con el rango desde origen
+      // para no saltar a través de obstáculos. Usamos el más restrictivo.
+      drag.ranges = {
+        minRow: Math.max(dynamicRanges.minRow, drag.ranges.minRow - 0.01),
+        maxRow: Math.min(dynamicRanges.maxRow, drag.ranges.maxRow + 0.01),
+        minCol: Math.max(dynamicRanges.minCol, drag.ranges.minCol - 0.01),
+        maxCol: Math.min(dynamicRanges.maxCol, drag.ranges.maxCol + 0.01),
+      }
+    }
+
+    // Movimiento fluido ortogonal (ambos ejes clampados)
+    const visual = computeFluidDragPosition(
       drag.originRow,
       drag.originCol,
       deltaRow,
@@ -445,7 +517,38 @@ export function BlockCleaner() {
 
     drag.visualRow = visual.row
     drag.visualCol = visual.col
-    setDragVisual({ row: visual.row, col: visual.col })
+    drag.lastClientX = e.clientX
+    drag.lastClientY = e.clientY
+    scheduleVisualUpdate(visual.row, visual.col)
+
+    // Detectar salida durante el drag (sin soltar)
+    if (block) {
+      const exit = canExitByDrag(
+        block,
+        visual.row,
+        visual.col,
+        level.exits ?? [],
+        level.rows,
+        level.cols,
+        cleared
+      )
+      if (exit) {
+        // Si el usuario está empujando hacia fuera de la puerta, disparar salida
+        const pushingOut =
+          (exit.side === 'left' && deltaCol < -0.25) ||
+          (exit.side === 'right' && deltaCol > 0.25) ||
+          (exit.side === 'top' && deltaRow < -0.25) ||
+          (exit.side === 'bottom' && deltaRow > 0.25)
+
+        if (pushingOut) {
+          // Terminar drag y salir
+          dragRef.current = null
+          setDraggingId(null)
+          setDragVisual(null)
+          applyMove(drag.id, Math.round(visual.row), Math.round(visual.col), true)
+        }
+      }
+    }
   }
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -456,13 +559,34 @@ export function BlockCleaner() {
     } catch {
       /* noop */
     }
+
     const visual = { row: drag.visualRow, col: drag.visualCol }
+    const block = safeBlocks.find((b) => b.id === drag.id)
+
+    // Comprobar si al soltar está en posición de salida o empujando fuera
+    let forceExit = false
+    if (block) {
+      const exit = canExitByDrag(
+        block,
+        visual.row,
+        visual.col,
+        level.exits ?? [],
+        level.rows,
+        level.cols,
+        cleared
+      )
+      if (exit) {
+        forceExit = true
+      }
+    }
+
     dragRef.current = null
     setDraggingId(null)
     setDragVisual(null)
+
     const snapped = snapToGrid(visual.row, visual.col, drag.ranges)
-    if (snapped.row !== drag.originRow || snapped.col !== drag.originCol) {
-      applyMove(drag.id, snapped.row, snapped.col)
+    if (forceExit || snapped.row !== drag.originRow || snapped.col !== drag.originCol) {
+      applyMove(drag.id, snapped.row, snapped.col, forceExit)
     }
   }
 
@@ -497,7 +621,7 @@ export function BlockCleaner() {
     if (!move) return
     playSfx('hint')
     setHintId(move.blockId)
-    applyMove(move.blockId, move.toRow, move.toCol)
+    applyMove(move.blockId, move.toRow, move.toCol, !!move.isExit)
     window.setTimeout(() => setHintId(null), 600)
   }
 
@@ -589,7 +713,7 @@ export function BlockCleaner() {
         <div className="bc-hub">
           <button className="bc-back" onClick={() => navigate('/categoria/logica')} aria-label="Volver">←</button>
           <h1 className="bc-title">Block Cleaner</h1>
-          <p className="bc-sub">Color Block Jam · v11.2</p>
+          <p className="bc-sub">Color Block Jam · v12.0</p>
           <div className="bc-hub-actions">
             <button className="bc-btn primary" onClick={() => loadLevel(levelId)}>Continuar · Niv. {levelId}</button>
             <button className="bc-btn" onClick={() => setScreen('levels')}>Niveles</button>
@@ -783,7 +907,7 @@ export function BlockCleaner() {
           style={{
             width: boardW,
             height: boardH,
-            transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)`,
+            transform: `scale(${zoom})`,
             transformOrigin: 'center center',
           }}
         >
@@ -847,14 +971,12 @@ export function BlockCleaner() {
               }
               const width = w * BASE_CELL + (w - 1) * GAP
               const height = h * BASE_CELL + (h - 1) * GAP
-              let exitAnim = {}
-              if (isExit) {
-                const exit = (level.exits ?? []).find((e) => e.color === b.color)
-                if (exit) {
-                  const v = exitPixelVector(exit.side, BASE_CELL)
-                  exitAnim = { x: v.dx, y: v.dy, opacity: 0, scale: 0.85 }
-                }
-              }
+
+              const exitAnim = exitAnims[b.id]
+              const animateProps = isExit && exitAnim
+                ? { x: exitAnim.dx, y: exitAnim.dy, opacity: 0, scale: 0.7 }
+                : { x: 0, y: 0, opacity: 1, scale: 1 }
+
               return (
                 <motion.div
                   key={b.id}
@@ -862,17 +984,19 @@ export function BlockCleaner() {
                   style={{
                     ...blockStyleCss(b.color, blockStyle),
                     width, height, left, top,
-                    zIndex: isDrag ? 20 : 5,
+                    zIndex: isDrag ? 20 : isExit ? 15 : 5,
                     transition: isDrag ? 'none' : undefined,
                     touchAction: 'none',
                     cursor: isBlockMovable(b, cleared) ? 'grab' : 'not-allowed',
                     opacity: b.lockedUntilClears && cleared < b.lockedUntilClears ? 0.55 : 1,
                   }}
-                  animate={isExit ? exitAnim : { x: 0, y: 0, opacity: 1, scale: 1 }}
+                  animate={animateProps}
                   transition={
-                    isDrag ? { duration: 0 }
-                      : isExit ? { duration: 0.32, ease: 'easeIn' }
-                      : { type: 'spring', stiffness: 520, damping: 36 }
+                    isDrag
+                      ? { duration: 0 }
+                      : isExit
+                        ? { duration: 0.36, ease: [0.22, 1, 0.36, 1] }
+                        : { type: 'spring', stiffness: 480, damping: 34 }
                   }
                   onPointerDown={(e) => handlePointerDown(e, b)}
                   onPointerMove={handlePointerMove}
@@ -1145,8 +1269,8 @@ const CSS = `
 .bc-ghost {
   position: absolute;
   border-radius: 12px;
-  background: color-mix(in srgb, #3AA0FF 12%, transparent);
-  border: 1px dashed color-mix(in srgb, #3AA0FF 45%, transparent);
+  background: color-mix(in srgb, #3AA0FF 10%, transparent);
+  border: 1px dashed color-mix(in srgb, #3AA0FF 35%, transparent);
   pointer-events: none;
   z-index: 3;
 }
@@ -1159,7 +1283,7 @@ const CSS = `
   font-weight: 700;
   font-size: 0.75rem;
   color: #0a0a12;
-  will-change: left, top, transform;
+  will-change: left, top, transform, opacity;
   touch-action: none;
 }
 .bc-block.dragging {

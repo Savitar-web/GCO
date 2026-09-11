@@ -214,10 +214,10 @@ const BANK: Riddle[] = [
     id: 'a17',
     kind: 'linguistica',
     q: '¿Qué número sigue en la serie: 2, 3, 3, 5, 4, 4, 3, 5, 5, 4…?',
-    options: ['6', '4', '3 (letras de «seis»)', '2'],
+    options: ['6', '3', '4', '2'],
     correct: 2,
     hint: 'No es una serie aritmética: cuenta propiedades del nombre del número en español.',
-    explain: 'Cada término es el número de letras del nombre: uno(3), dos(3), tres(4)… La serie dada corresponde a conteos de letras; “seis” tiene 3 letras.',
+    explain: 'Cada término es el número de letras del nombre: uno(3), dos(3), tres(4)… La serie dada corresponde a conteos de letras; “seis” tiene 4 letras.',
   },
   {
     id: 'a18',

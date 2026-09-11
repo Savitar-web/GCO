@@ -1924,7 +1924,7 @@ export function HistoriasGame() {
                   Banco mixto: lógica e historia de la ciencia, más un bloque amplio de <strong>casos policiales e
                   investigaciones reales</strong> (Francia, Reino Unido, EE. UU., Argentina, España, Colombia, Japón,
                   Cono Sur, URSS, India…). Cada caso incluye fuente tipo APA. Al acertar, el caso queda marcado y no se
-                  repite. Al fallar no se revela la respuesta: solo un consejo de método.
+                  repite. Al fallar, se muestra un consejo del método.
                   {bestForLevel != null && bestForLevel > 0 && (
                     <>
                       {' '}
@@ -2131,7 +2131,7 @@ export function HistoriasGame() {
                     }}
                   >
                     <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--gco-secondary)', marginBottom: 4 }}>
-                      CONSEJO (sin revelar la respuesta)
+                      CONSEJO
                     </p>
                     <p style={{ fontSize: '0.86rem', color: 'var(--gco-ink-muted)', margin: 0, lineHeight: 1.45 }}>
                       {item.failAdvice}

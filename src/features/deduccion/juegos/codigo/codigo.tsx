@@ -14,9 +14,9 @@ import {
 
 const GAME_CAT = 'deduccion' as const
 const GAME_ID = 'codigo'
-const TOTAL_LEVELS = 300
+const TOTAL_LEVELS = 600
 const TIMER_BASE = 80
-const COMPLETED_KEY = 'gco_codigo_completed_v3'
+const COMPLETED_KEY = 'gco_codigo_completed_v4'
 const HILL_ENABLED_KEY = 'gco_codigo_hill_enabled'
 
 // ============================================================================
@@ -36,6 +36,10 @@ type CipherKind =
   | 'hill'
   | 'affine'
   | 'scytale'
+  | 'playfair'
+  | 'columnar'
+  | 'beaufort'
+  | 'polybius'
 
 type Item = {
   id: string
@@ -51,8 +55,9 @@ type Item = {
   question: string
   options: string[]
   correct: number
-  /** Para Hill: matriz y teclado mostrados */
+  /** Para Hill: matriz y tamaño */
   hillMatrix?: number[][]
+  hillSize?: number
   hillKeyboard?: string
 }
 
@@ -210,7 +215,7 @@ function fromMorse(s: string): string {
     .join('')
 }
 
-/** Rail fence (zig-zag) con 2 o 3 rieles. */
+/** Rail fence (zig-zag) con 2, 3 o 4 rieles. */
 function railFenceEncrypt(s: string, rails: number): string {
   const t = onlyLetters(s)
   if (rails < 2) return t
@@ -235,7 +240,6 @@ function keywordCipher(plain: string, keyword: string): string {
       alpha += c
     }
   }
-  // alpha is cipher alphabet mapped from ABC
   return onlyLetters(plain)
     .split('')
     .map((c) => alpha[ABC.indexOf(c)])
@@ -261,36 +265,122 @@ function scytaleEncrypt(s: string, diameter: number): string {
   for (let i = 0; i < t.length; i++) {
     grid[i % diameter] += t[i]
   }
-  // pad to rectangular if needed (not strictly classical, but consistent)
   return grid.join('')
 }
 
-// --- Hill cipher (2×2) ---
-// Teclado fijo compartido por todos los niveles Hill:
-// Posición en matriz de botón → letra. El jugador ve este teclado.
-const HILL_KEYBOARD = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-// Para Hill usamos bloques de 2 letras; relleno X si hace falta.
-
-function mod26(n: number): number {
-  return ((n % 26) + 26) % 26
-}
-
-function hillEncrypt2(plain: string, matrix: number[][]): string {
-  const t = onlyLetters(plain)
-  const padded = t.length % 2 === 0 ? t : t + 'X'
+// --- Columnar transposition ---
+function columnarEncrypt(s: string, key: string): string {
+  const t = onlyLetters(s)
+  const k = onlyLetters(key)
+  const cols = k.length
+  if (cols < 2) return t
+  const order = k
+    .split('')
+    .map((c, i) => ({ c, i }))
+    .sort((a, b) => (a.c === b.c ? a.i - b.i : a.c.localeCompare(b.c)))
+    .map((o) => o.i)
+  const rows = Math.ceil(t.length / cols)
+  const padded = t.padEnd(rows * cols, 'X')
   let out = ''
-  for (let i = 0; i < padded.length; i += 2) {
-    const a = padded.charCodeAt(i) - 65
-    const b = padded.charCodeAt(i + 1) - 65
-    const x = mod26(matrix[0][0] * a + matrix[0][1] * b)
-    const y = mod26(matrix[1][0] * a + matrix[1][1] * b)
-    out += ABC[x] + ABC[y]
+  for (const col of order) {
+    for (let r = 0; r < rows; r++) {
+      out += padded[r * cols + col]
+    }
   }
   return out
 }
 
-function det2(m: number[][]): number {
-  return mod26(m[0][0] * m[1][1] - m[0][1] * m[1][0])
+// --- Beaufort (variant of Vigenère) ---
+function beaufortEncrypt(s: string, key: string): string {
+  const t = onlyLetters(s)
+  const k = onlyLetters(key)
+  if (!k.length) return t
+  return t
+    .split('')
+    .map((c, i) => {
+      const x = c.charCodeAt(0) - 65
+      const y = k[i % k.length].charCodeAt(0) - 65
+      return ABC[mod26(y - x)]
+    })
+    .join('')
+}
+
+// --- Polybius square (5x5, I/J combined) ---
+const POLYBIUS: Record<string, string> = (() => {
+  const map: Record<string, string> = {}
+  let n = 1
+  for (const c of ABC) {
+    if (c === 'J') {
+      map[c] = map['I']
+      continue
+    }
+    const row = Math.ceil(n / 5)
+    const col = ((n - 1) % 5) + 1
+    map[c] = `${row}${col}`
+    n++
+  }
+  return map
+})()
+
+function polybiusEncode(s: string): string {
+  return onlyLetters(s)
+    .split('')
+    .map((c) => POLYBIUS[c === 'J' ? 'I' : c] || '')
+    .filter(Boolean)
+    .join(' ')
+}
+
+// --- Playfair (simplified 5x5, I/J) ---
+function buildPlayfairSquare(key: string): string[][] {
+  const seen = new Set<string>()
+  const flat: string[] = []
+  for (const c of onlyLetters(key) + ABC) {
+    const ch = c === 'J' ? 'I' : c
+    if (!seen.has(ch) && ch !== 'J') {
+      seen.add(ch)
+      flat.push(ch)
+    }
+  }
+  const sq: string[][] = []
+  for (let i = 0; i < 5; i++) sq.push(flat.slice(i * 5, i * 5 + 5))
+  return sq
+}
+
+function playfairEncrypt(plain: string, key: string): string {
+  const sq = buildPlayfairSquare(key)
+  const pos: Record<string, [number, number]> = {}
+  for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) pos[sq[r][c]] = [r, c]
+  let t = onlyLetters(plain).replace(/J/g, 'I')
+  // digraphs with X padding
+  const digs: string[] = []
+  let i = 0
+  while (i < t.length) {
+    const a = t[i]
+    let b = t[i + 1]
+    if (!b || a === b) {
+      digs.push(a + 'X')
+      i += 1
+    } else {
+      digs.push(a + b)
+      i += 2
+    }
+  }
+  return digs
+    .map((d) => {
+      const [r1, c1] = pos[d[0]]
+      const [r2, c2] = pos[d[1]]
+      if (r1 === r2) return sq[r1][(c1 + 1) % 5] + sq[r2][(c2 + 1) % 5]
+      if (c1 === c2) return sq[(r1 + 1) % 5][c1] + sq[(r2 + 1) % 5][c2]
+      return sq[r1][c2] + sq[r2][c1]
+    })
+    .join('')
+}
+
+// --- Hill cipher (2×2, 3×3, 4×4) ---
+const HILL_KEYBOARD = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+function mod26(n: number): number {
+  return ((n % 26) + 26) % 26
 }
 
 function modInverse26(a: number): number | null {
@@ -301,69 +391,141 @@ function modInverse26(a: number): number | null {
   return null
 }
 
-/** Inversa modular de matriz 2×2 mod 26. Devuelve null si no es invertible. */
-function hillInverse2(m: number[][]): number[][] | null {
-  const d = det2(m)
+/** Determinante de matriz n×n mod 26 (n<=4). */
+function detN(m: number[][]): number {
+  const n = m.length
+  if (n === 1) return mod26(m[0][0])
+  if (n === 2) return mod26(m[0][0] * m[1][1] - m[0][1] * m[1][0])
+  // Laplace expansion for 3 and 4
+  let d = 0
+  for (let j = 0; j < n; j++) {
+    const minor = m.slice(1).map((row) => row.filter((_, cj) => cj !== j))
+    const sign = j % 2 === 0 ? 1 : -1
+    d += sign * m[0][j] * detN(minor)
+  }
+  return mod26(d)
+}
+
+/** Inversa modular de matriz n×n mod 26. null si no invertible. */
+function matrixInverseMod26(m: number[][]): number[][] | null {
+  const n = m.length
+  const d = detN(m)
   const invDet = modInverse26(d)
   if (invDet == null) return null
-  // adjugate
-  const adj = [
-    [m[1][1], -m[0][1]],
-    [-m[1][0], m[0][0]],
-  ]
-  return [
-    [mod26(invDet * adj[0][0]), mod26(invDet * adj[0][1])],
-    [mod26(invDet * adj[1][0]), mod26(invDet * adj[1][1])],
-  ]
+
+  // adjugate via cofactors
+  const adj: number[][] = Array.from({ length: n }, () => Array(n).fill(0))
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const minor = m
+        .filter((_, ri) => ri !== i)
+        .map((row) => row.filter((_, cj) => cj !== j))
+      const cof = ((i + j) % 2 === 0 ? 1 : -1) * detN(minor)
+      adj[j][i] = mod26(cof) // transpose
+    }
+  }
+  return adj.map((row) => row.map((v) => mod26(v * invDet)))
 }
 
-function hillDecrypt2(cipher: string, matrix: number[][]): string | null {
-  const inv = hillInverse2(matrix)
+function hillEncryptN(plain: string, matrix: number[][]): string {
+  const n = matrix.length
+  let t = onlyLetters(plain)
+  while (t.length % n !== 0) t += 'X'
+  let out = ''
+  for (let i = 0; i < t.length; i += n) {
+    const vec = Array.from({ length: n }, (_, k) => t.charCodeAt(i + k) - 65)
+    for (let r = 0; r < n; r++) {
+      let sum = 0
+      for (let c = 0; c < n; c++) sum += matrix[r][c] * vec[c]
+      out += ABC[mod26(sum)]
+    }
+  }
+  return out
+}
+
+function hillDecryptN(cipher: string, matrix: number[][]): string | null {
+  const inv = matrixInverseMod26(matrix)
   if (!inv) return null
-  return hillEncrypt2(cipher, inv) // same multiply, just with inverse
+  return hillEncryptN(cipher, inv)
 }
 
-/** Matrices 2×2 invertibles mod 26 (det coprimo con 26). */
-const HILL_MATRICES: number[][][] = [
+/** Matrices 2×2 invertibles mod 26 */
+const HILL_2X2: number[][][] = [
+  [[3, 3], [2, 5]],
+  [[5, 8], [17, 3]],
+  [[9, 4], [5, 7]],
+  [[11, 8], [3, 7]],
+  [[6, 5], [5, 7]],
+  [[15, 17], [4, 9]],
+  [[7, 8], [11, 11]],
+  [[2, 3], [5, 7]],
+  [[4, 5], [3, 4]],
+  [[8, 5], [3, 4]],
+  [[1, 2], [3, 5]],
+  [[3, 5], [1, 2]],
+  [[7, 3], [2, 5]],
+  [[9, 2], [5, 3]],
+  [[11, 5], [2, 3]],
+  [[13, 4], [5, 7]],
+  [[15, 2], [7, 3]],
+  [[17, 5], [3, 4]],
+  [[19, 3], [4, 5]],
+  [[21, 4], [5, 3]],
+]
+
+/** Matrices 3×3 invertibles mod 26 */
+const HILL_3X3: number[][][] = [
+  [[1, 2, 3], [0, 1, 4], [5, 6, 0]],
+  [[2, 3, 1], [1, 0, 2], [3, 1, 4]],
+  [[1, 1, 1], [1, 2, 3], [1, 4, 9]],
+  [[3, 1, 2], [2, 3, 1], [1, 2, 3]],
+  [[5, 2, 1], [1, 3, 2], [2, 1, 4]],
+  [[1, 0, 1], [0, 1, 1], [1, 1, 0]],
+  [[2, 1, 0], [1, 2, 1], [0, 1, 2]],
+  [[4, 1, 2], [1, 3, 1], [2, 1, 3]],
+  [[1, 3, 2], [2, 1, 3], [3, 2, 1]],
+  [[6, 1, 2], [1, 5, 1], [2, 1, 4]],
+  [[1, 2, 0], [0, 1, 2], [2, 0, 1]],
+  [[3, 2, 1], [1, 4, 2], [2, 1, 3]],
+]
+
+/** Matrices 4×4 invertibles mod 26 */
+const HILL_4X4: number[][][] = [
   [
-    [3, 3],
-    [2, 5],
+    [1, 0, 0, 1],
+    [0, 1, 1, 0],
+    [0, 1, 0, 1],
+    [1, 0, 1, 0],
   ],
   [
-    [5, 8],
-    [17, 3],
+    [2, 1, 0, 0],
+    [1, 2, 1, 0],
+    [0, 1, 2, 1],
+    [0, 0, 1, 2],
   ],
   [
-    [9, 4],
-    [5, 7],
+    [1, 1, 0, 0],
+    [0, 1, 1, 0],
+    [0, 0, 1, 1],
+    [1, 0, 0, 1],
   ],
   [
-    [11, 8],
-    [3, 7],
+    [3, 1, 0, 1],
+    [1, 2, 1, 0],
+    [0, 1, 3, 1],
+    [1, 0, 1, 2],
   ],
   [
-    [6, 5],
-    [5, 7],
+    [1, 2, 0, 1],
+    [0, 1, 2, 0],
+    [1, 0, 1, 2],
+    [2, 1, 0, 1],
   ],
   [
-    [15, 17],
-    [4, 9],
-  ],
-  [
-    [7, 8],
-    [11, 11],
-  ],
-  [
-    [2, 3],
-    [5, 7],
-  ],
-  [
-    [4, 5],
-    [3, 4],
-  ],
-  [
-    [8, 5],
-    [3, 4],
+    [5, 1, 0, 0],
+    [1, 5, 1, 0],
+    [0, 1, 5, 1],
+    [0, 0, 1, 5],
   ],
 ]
 
@@ -379,167 +541,175 @@ const AFFINE_PAIRS: [number, number][] = [
   [3, 11],
   [9, 13],
   [25, 6],
+  [5, 3],
+  [7, 9],
+  [11, 2],
+  [15, 11],
+  [17, 8],
+  [19, 5],
+  [21, 7],
+  [3, 4],
+  [9, 6],
+  [25, 13],
 ]
 
 // ============================================================================
-// Banco de textos en claro (progresivamente más largos / menos obvios)
-// Incluye grupos de palabras/frases muy parecidas para generar distractores difíciles.
+// Banco de textos en claro (amplio, con grupos semánticos para distractores creíbles)
 // ============================================================================
 
 const PLAIN_BANK = [
-  // cortos – grupos de confusión
+  // saludos / cortesía
   'HOLA',
-  'OLA',
-  'HALO',
-  'HOAL',
-  'ALOH',
-  'HOLAS',
-  'CLAVE',
-  'CALVE',
-  'CLAVA',
-  'VALE',
+  'SALUDOS',
+  'BIENVENIDO',
+  'BIENVENIDA',
+  'ADIOS',
+  'HASTA LUEGO',
+  'HASTA PRONTO',
+  'BUEN DIA',
+  'BUENAS TARDES',
+  'BUENAS NOCHES',
+  // direcciones / orientación
   'NORTE',
-  'NOTRE',
-  'TENOR',
-  'LUZ',
-  'ZUL',
-  'PAZ',
-  'ZAP',
-  'REY',
-  'YER',
-  'SOL',
-  'LOS',
-  'MAR',
-  'RAM',
-  'ARM',
-  'FIN',
-  'INF',
-  'MES',
-  'SEM',
-  'DIA',
-  'IDA',
-  'AID',
-  'CASA',
-  'SACA',
-  'ASCA',
-  'MAPA',
-  'PAMA',
-  'AMAP',
-  'RUTA',
-  'TURA',
-  'ATRU',
-  'FOCO',
-  'COFO',
-  'IDEA',
-  'AIDE',
-  'DEIA',
-  'CASO',
-  'OSCA',
-  'META',
-  'TEMA',
-  'AMET',
-  'BASE',
-  'SEBA',
-  'ABES',
-  // medios – confusiones frecuentes
-  'MENSAJE',
-  'MENSAJES',
-  'MENSAJA',
-  'SECRETO',
-  'SECRETOS',
-  'SECRETA',
-  'LOGICA',
-  'LOGICO',
-  'LOGICAS',
-  'RAZON',
-  'RAZONES',
-  'RAZONA',
-  'PRUEBA',
-  'PRUEBAS',
-  'PRUEBE',
-  'CODIGO',
-  'CODIGOS',
-  'CODIGA',
-  'CIFRA',
-  'CIFRAS',
-  'CIFRE',
-  'PATRON',
-  'PATRONES',
-  'PATRONA',
-  'ENIGMA',
-  'ENIGMAS',
-  'ENIGME',
+  'SUR',
+  'ESTE',
+  'OESTE',
+  'NORESTE',
+  'NOROESTE',
+  'SURESTE',
+  'SUROESTE',
+  'CENTRO',
+  'DERECHA',
+  'IZQUIERDA',
+  'ARRIBA',
+  'ABAJO',
+  // objetos cotidianos
+  'CLAVE',
+  'LLAVE',
   'PUERTA',
-  'PUERTAS',
-  'PUERTO',
-  'VERDAD',
-  'VERDADES',
-  'VERDA',
-  'ERROR',
-  'ERRORES',
-  'ERRA',
-  'SISTEMA',
-  'SISTEMAS',
-  'SISTEME',
-  'METODO',
-  'METODOS',
-  'METODA',
-  'PISTA',
-  'PISTAS',
-  'PISTE',
-  'AGENTE',
-  'AGENTES',
-  'AGENDA',
+  'VENTANA',
+  'MESA',
+  'SILLA',
+  'LIBRO',
+  'PAPEL',
+  'LAPIZ',
+  'CUADERNO',
+  'CARTERA',
+  'RELOJ',
+  'MAPA',
+  'PLANO',
+  'BRUJULA',
+  // acciones / verbos frecuentes
+  'ABRE',
+  'CIERRA',
+  'ENTRA',
+  'SALE',
+  'ESPERA',
+  'AVANZA',
+  'RETROCEDE',
+  'GIRA',
+  'SUBE',
+  'BAJA',
+  'CORRE',
+  'CAMINA',
+  'ESCUCHA',
+  'OBSERVA',
+  'ESCONDE',
+  'REVELA',
+  // comunicación / espionaje
+  'MENSAJE',
+  'SECRETO',
+  'CODIGO',
+  'CIFRA',
+  'PATRON',
+  'ENIGMA',
   'SENAL',
-  'SENALES',
-  'SENALA',
   'CANAL',
-  'CANALES',
-  'CANALA',
   'ARCHIVO',
-  'ARCHIVOS',
-  'ARCHIVA',
-  'CLAVEZ',
-  'CLAVES',
-  // frases cortas (solo letras se cifran) – variantes cercanas
+  'AGENTE',
+  'CONTACTO',
+  'PROTOCOLO',
+  'OPERACION',
+  'MISION',
+  'OBJETIVO',
+  'INFORME',
+  'DATOS',
+  'FUENTE',
+  'ORIGEN',
+  'DESTINO',
+  // tiempo
+  'MANANA',
+  'TARDE',
+  'NOCHE',
+  'AMANECER',
+  'ANOCHECER',
+  'MEDIODIA',
+  'MEDIANOCHE',
+  'SEMANA',
+  'MES',
+  'ANO',
+  'HORA',
+  'MINUTO',
+  'SEGUNDO',
+  // naturaleza
+  'SOL',
+  'LUNA',
+  'ESTRELLA',
+  'CIELO',
+  'MAR',
+  'RIO',
+  'MONTE',
+  'VALLE',
+  'BOSQUE',
+  'DESIERTO',
+  'PLAYA',
+  'ISLA',
+  'NUBE',
+  'LLUVIA',
+  'VIENTO',
+  // conceptos abstractos
+  'VERDAD',
+  'MENTIRA',
+  'ERROR',
+  'ACIERTO',
+  'LOGICA',
+  'RAZON',
+  'PRUEBA',
+  'IDEA',
+  'METODO',
+  'SISTEMA',
+  'PROCESO',
+  'RESULTADO',
+  'CAUSA',
+  'EFECTO',
+  // frases cortas temáticas
   'ABRE LA PUERTA',
-  'ABRE LAS PUERTAS',
-  'ABRE EL PUERTO',
+  'CIERRA LA VENTANA',
   'CITA AL ALBA',
-  'CITA EN EL ALBA',
   'CITA AL ANOCHECER',
   'NORTE SEGURO',
-  'NORTE SEGUROS',
-  'SUR SEGURO',
+  'SUR PELIGROSO',
   'CAMBIO DE RUTA',
-  'CAMBIO DE RUTAS',
   'CAMBIO DE RUMBO',
   'EVITA EL PUENTE',
-  'EVITA LOS PUENTES',
   'EVITA EL PUERTO',
   'CODIGO VALIDO',
-  'CODIGO VALIDOS',
   'CODIGO INVALIDO',
   'MENSAJE OCULTO',
-  'MENSAJE OCULTOS',
   'MENSAJE SECRETO',
   'CLAVE MAESTRA',
-  'CLAVE MAESTRO',
-  'CLAVE MAESTRES',
+  'CLAVE SECUNDARIA',
   'PUNTO DE ENCUENTRO',
-  'PUNTO DE ENCUENTROS',
   'PUNTO DE PARTIDA',
   'SIN RASTRO',
-  'SIN RASTROS',
   'SIN HUELLA',
   'OPERACION LUNA',
   'OPERACION SOL',
   'OPERACION MARTE',
+  'OPERACION SILENCIO',
   'FOCO EN EL MAPA',
-  'FOCO EN LA MAPA',
   'FOCO EN EL PLANO',
   'RUTA ALTERNATIVA',
-  'RUTA ALTERNATIVAS',
   'RUTA PRINCIPAL',
   'SENAL DEBIL',
   'SENAL FUERTE',
@@ -547,7 +717,26 @@ const PLAIN_BANK = [
   'ARCHIVO CERRADO',
   'ARCHIVO ABIERTO',
   'ARCHIVO OCULTO',
-  // más largos – con variantes sutiles
+  'ARCHIVO CLASIFICADO',
+  'CODIGO ROJO ACTIVO',
+  'PUNTO CIEGO NORTE',
+  'CLAVE DE RESPALDO',
+  'SENAL INTERMITENTE',
+  'RUTA DE EVASION',
+  'AGENTE DOBLE',
+  'CONTACTO SEGURO',
+  'PROTOCOLO ALFA',
+  'PROTOCOLO BRAVO',
+  'PROTOCOLO CHARLIE',
+  'MENSAJE PRIORITARIO',
+  'CIFRA ROTATIVA',
+  'TECLADO COMPARTIDO',
+  'MATRIZ INVERTIBLE',
+  'BLOQUE DE DOS',
+  'RELLENO CON X',
+  'ANALISIS DE FRECUENCIA',
+  'SUSTITUCION MONOALFABETICA',
+  // frases medias
   'EL AGENTE CRUZA EL RIO AL AMANECER',
   'EL AGENTE CRUZA EL RIO AL ANOCHECER',
   'EL AGENTE CRUZA EL MAR AL AMANECER',
@@ -578,27 +767,197 @@ const PLAIN_BANK = [
   'DESCIFRA ANTES DEL ANOCHECER',
   'DESCIFRA ANTES DEL AMANECER',
   'DESCIFRA ANTES DE LA NOCHE',
-  // extras profesionales / temáticos
-  'OPERACION SILENCIO',
-  'CODIGO ROJO ACTIVO',
-  'PUNTO CIEGO NORTE',
-  'CLAVE DE RESPALDO',
-  'ARCHIVO CLASIFICADO',
-  'SENAL INTERMITENTE',
-  'RUTA DE EVASION',
-  'AGENTE DOBLE',
-  'CONTACTO SEGURO',
-  'PROTOCOLO ALFA',
-  'PROTOCOLO BRAVO',
-  'PROTOCOLO CHARLIE',
-  'MENSAJE PRIORITARIO',
-  'CIFRA ROTATIVA',
-  'TECLADO COMPARTIDO',
-  'MATRIZ INVERTIBLE',
-  'BLOQUE DE DOS',
-  'RELLENO CON X',
-  'ANALISIS DE FRECUENCIA',
-  'SUSTITUCION MONOALFABETICA',
+  'MANTEN EL SILENCIO ABSOLUTO',
+  'MANTEN LA POSICION ACTUAL',
+  'MANTEN EL CONTACTO ACTIVO',
+  'EL OBJETIVO SE MUEVE AL ESTE',
+  'EL OBJETIVO SE MUEVE AL OESTE',
+  'EL OBJETIVO PERMANECE QUIETO',
+  'LA FUENTE CONFIRMA EL DATO',
+  'LA FUENTE NIEGA EL DATO',
+  'LA FUENTE SOLICITA TIEMPO',
+  'PREPARA LA EXTRACCION YA',
+  'PREPARA LA EXTRACCION MANANA',
+  'CANCELA LA EXTRACCION HOY',
+  'EL PAQUETE ESTA EN CAMINO',
+  'EL PAQUETE FUE INTERCEPTADO',
+  'EL PAQUETE LLEGO INTACTO',
+  'USA LA RUTA SECUNDARIA',
+  'USA LA RUTA PRINCIPAL',
+  'ABANDONA LA RUTA ACTUAL',
+  // más frases profesionales
+  'CONFIRMA RECEPCION DEL MENSAJE',
+  'NIEGA RECEPCION DEL MENSAJE',
+  'SOLICITA REPETICION DEL MENSAJE',
+  'EL SISTEMA ESTA COMPROMETIDO',
+  'EL SISTEMA FUNCIONA NORMAL',
+  'EL SISTEMA REQUIERE REVISION',
+  'ACTIVA EL PROTOCOLO DE EMERGENCIA',
+  'DESACTIVA EL PROTOCOLO DE EMERGENCIA',
+  'ESPERA ORDENES ADICIONALES',
+  'PROCEDE SEGUN PLAN ORIGINAL',
+  'MODIFICA EL PLAN ORIGINAL',
+  'EL HORARIO SE MANTIENE FIRME',
+  'EL HORARIO CAMBIA A LAS DIEZ',
+  'EL HORARIO CAMBIA A LAS SEIS',
+  'REUNION EN EL LUGAR HABITUAL',
+  'REUNION EN LUGAR ALTERNATIVO',
+  'REUNION CANCELADA POR SEGURIDAD',
+  'TRAEMOS INFORMACION VALIOSA',
+  'TRAEMOS INFORMACION FALSA',
+  'NO TRAEMOS INFORMACION NUEVA',
+  'LA RED SIGUE OPERATIVA',
+  'LA RED ESTA CAIDA',
+  'LA RED NECESITA REPARACION',
+  'CIFRA CON LA CLAVE DIARIA',
+  'CIFRA CON LA CLAVE SEMANAL',
+  'CIFRA CON LA CLAVE MENSUAL',
+  'EL ENEMIGO CONOCE LA RUTA',
+  'EL ENEMIGO IGNORA LA RUTA',
+  'EL ENEMIGO SOSPECHA LA RUTA',
+  'CAMBIA TODAS LAS CLAVES YA',
+  'MANTEN LAS CLAVES ACTUALES',
+  'REVISA LAS CLAVES ANTIGUAS',
+  // grupos de palabras cercanas semánticamente (para distractores de calidad)
+  'LUZ',
+  'SOMBRA',
+  'OSCURIDAD',
+  'CLARIDAD',
+  'BRILLO',
+  'REY',
+  'REINA',
+  'PRINCIPE',
+  'PRINCESA',
+  'CORONA',
+  'MAR',
+  'OCEANO',
+  'LAGO',
+  'LAGUNA',
+  'PLAYA',
+  'FIN',
+  'INICIO',
+  'PRINCIPIO',
+  'FINAL',
+  'CIERRE',
+  'DIA',
+  'NOCHE',
+  'AURORA',
+  'CREPUSCULO',
+  'OCASO',
+  'CASA',
+  'HOGAR',
+  'VIVIENDA',
+  'REFUGIO',
+  'ESCONDITE',
+  'RUTA',
+  'CAMINO',
+  'SENDERO',
+  'VIA',
+  'TRAYECTO',
+  'FOCO',
+  'CENTRO',
+  'NUCLEO',
+  'PUNTO',
+  'MARCA',
+  'IDEA',
+  'CONCEPTO',
+  'PENSAMIENTO',
+  'NOCION',
+  'VISION',
+  'CASO',
+  'ASUNTO',
+  'TEMA',
+  'MATERIA',
+  'CUESTION',
+  'META',
+  'OBJETIVO',
+  'PROPOSITO',
+  'FIN',
+  'META',
+  'BASE',
+  'FUNDAMENTO',
+  'PILAR',
+  'SOSTEN',
+  'APOYO',
+  'PRUEBA',
+  'EVIDENCIA',
+  'TESTIGO',
+  'PRUEBA',
+  'DEMOSTRACION',
+  'ERROR',
+  'FALLO',
+  'FALTA',
+  'EQUIVOCACION',
+  'DESACIERTO',
+  'SISTEMA',
+  'ESTRUCTURA',
+  'ORGANIZACION',
+  'RED',
+  'MARCO',
+  'METODO',
+  'TECNICA',
+  'PROCEDIMIENTO',
+  'FORMA',
+  'MANERA',
+  'PISTA',
+  'INDICIO',
+  'SENAL',
+  'HUELLA',
+  'RASTRO',
+  'AGENTE',
+  'OPERATIVO',
+  'ESPION',
+  'INFORMANTE',
+  'FUENTE',
+  'SENAL',
+  'INDICADOR',
+  'ALERTA',
+  'AVISO',
+  'ANUNCIO',
+  'CANAL',
+  'VIA',
+  'MEDIO',
+  'CONDUCTO',
+  'RUTA',
+  'ARCHIVO',
+  'DOCUMENTO',
+  'EXPEDIENTE',
+  'REGISTRO',
+  'FICHA',
+  // extras largos
+  'LA OPERACION DEBE COMPLETARSE ANTES DEL AMANECER',
+  'LA OPERACION DEBE COMPLETARSE ANTES DEL ANOCHECER',
+  'LA OPERACION PUEDE ESPERAR HASTA MANANA',
+  'TODOS LOS AGENTES DEBEN MANTENER SILENCIO RADIO',
+  'TODOS LOS AGENTES DEBEN REPORTAR POSICION',
+  'TODOS LOS AGENTES DEBEN REGRESAR A BASE',
+  'EL PAQUETE CONTIENE DOCUMENTOS CLASIFICADOS',
+  'EL PAQUETE CONTIENE MATERIAL SENSIBLE',
+  'EL PAQUETE FUE SUSTITUIDO EN TRANSITO',
+  'COORDINA CON EL EQUIPO LOCAL INMEDIATAMENTE',
+  'COORDINA CON EL EQUIPO CENTRAL PRIMERO',
+  'NO COORDINES CON NADIE POR AHORA',
+  'LA CLAVE CAMBIA CADA VEINTICUATRO HORAS',
+  'LA CLAVE CAMBIA CADA DOCE HORAS',
+  'LA CLAVE PERMANECE SIN CAMBIOS',
+  'VERIFICA LA AUTENTICIDAD DEL MENSAJE RECIBIDO',
+  'VERIFICA LA INTEGRIDAD DEL ARCHIVO ADJUNTO',
+  'VERIFICA LA IDENTIDAD DEL EMISOR',
+  'EL ENEMIGO HA INTERCEPTADO COMUNICACIONES PREVIAS',
+  'EL ENEMIGO NO HA INTERCEPTADO NADA AUN',
+  'EL ENEMIGO SOSPECHA DE NUESTRA RED',
+  'PREPARA PLAN DE CONTINGENCIA NUMERO TRES',
+  'PREPARA PLAN DE CONTINGENCIA NUMERO CINCO',
+  'ACTIVA PLAN DE CONTINGENCIA INMEDIATO',
+  'EL PUNTO DE EXTRACCION SE MANTIENE IGUAL',
+  'EL PUNTO DE EXTRACCION SE HA MOVIDO',
+  'EL PUNTO DE EXTRACCION ESTA COMPROMETIDO',
+  'TRANSMITE SOLO EN HORARIO NOCTURNO',
+  'TRANSMITE SOLO EN HORARIO DIURNO',
+  'TRANSMITE CUANDO SEA SEGURO',
+  'DESTRUYE TODO MATERIAL COMPROMETEDOR YA',
+  'CONSERVA TODO MATERIAL PARA ANALISIS',
+  'OCULTA TODO MATERIAL EN LUGAR SEGURO',
 ]
 
 // ============================================================================
@@ -633,111 +992,73 @@ function shuffle<T>(arr: T[], seed: number): T[] {
   return a
 }
 
-/** Genera distractores inteligentes y cercanos al correcto para maximizar dificultad. */
+/**
+ * Genera distractores creíbles: palabras/frases reales o muy plausibles,
+ * cercanas en significado, dominio o forma, nunca basura tipográfica obvia.
+ * El jugador debe aplicar el método; adivinar por "parece un error tipográfico" no ayuda.
+ */
 function generateSmartDistractors(correct: string, seed: number, extra: string[] = []): string[] {
   const rnd = mulberry32(seed)
   const c = onlyLetters(correct)
   const len = c.length
   const pool = new Set<string>()
 
-  // 1. Variantes de un carácter (inserción / sustitución / eliminación)
-  if (len >= 2) {
-    for (let i = 0; i < len; i++) {
-      // swap adjacent
-      if (i < len - 1) {
-        const arr = c.split('')
-        ;[arr[i], arr[i + 1]] = [arr[i + 1], arr[i]]
-        pool.add(arr.join(''))
-      }
-      // replace with nearby letter
-      const arr2 = c.split('')
-      const idx = ABC.indexOf(arr2[i])
-      arr2[i] = ABC[(idx + 1) % 26]
-      pool.add(arr2.join(''))
-      arr2[i] = ABC[(idx + 25) % 26]
-      pool.add(arr2.join(''))
-    }
-    // drop last / first
-    pool.add(c.slice(0, -1))
-    pool.add(c.slice(1))
-    // duplicate last
-    pool.add(c + c[len - 1])
+  // 1. Variantes semánticas / del banco de misma longitud o ±2
+  const bank = PLAIN_BANK.map(onlyLetters)
+  const sameLen = bank.filter((p) => p !== c && Math.abs(p.length - len) <= 2 && p.length >= 2)
+  // priorizar las que comparten prefijo/sufijo o letras comunes
+  const scored = sameLen
+    .map((p) => {
+      let score = 0
+      if (p.slice(0, 2) === c.slice(0, 2)) score += 3
+      if (p.slice(-2) === c.slice(-2)) score += 2
+      const setC = new Set(c.split(''))
+      const common = p.split('').filter((ch) => setC.has(ch)).length
+      score += common / Math.max(len, 1)
+      return { p, score }
+    })
+    .sort((a, b) => b.score - a.score)
+
+  for (let i = 0; i < Math.min(12, scored.length); i++) {
+    pool.add(scored[i].p)
   }
 
-  // 2. Reverse / rotations
-  pool.add(reverseStr(c))
-  if (len >= 3) {
-    pool.add(c.slice(1) + c[0])
-    pool.add(c[len - 1] + c.slice(0, -1))
-    pool.add(c.slice(2) + c.slice(0, 2))
-  }
-
-  // 3. Common Spanish look-alikes / morphological variants
-  const morphs: Record<string, string[]> = {
-    HOLA: ['OLA', 'HALO', 'HOAL', 'ALOH', 'HOLAS', 'AHOL'],
-    CLAVE: ['CALVE', 'CLAVA', 'VALE', 'CLAVES', 'CLAVEZ'],
-    NORTE: ['NOTRE', 'TENOR', 'NORTES', 'SURTE'],
-    PUERTA: ['PUERTAS', 'PUERTO', 'PUERTE', 'PUERTA X'],
-    MENSAJE: ['MENSAJES', 'MENSAJA', 'MENSAJE X'],
-    SECRETO: ['SECRETOS', 'SECRETA', 'SECRETO X'],
-    CODIGO: ['CODIGOS', 'CODIGA', 'CODIGO X'],
-    PATRON: ['PATRONES', 'PATRONA', 'PATRON X'],
-    ENIGMA: ['ENIGMAS', 'ENIGME'],
-    AGENTE: ['AGENTES', 'AGENDA', 'AGENTE X'],
-    ARCHIVO: ['ARCHIVOS', 'ARCHIVA'],
-    RUTA: ['RUTAS', 'RUMBO', 'RUTA X'],
-    MAPA: ['MAPAS', 'PLANO', 'MAPA X'],
-  }
-  if (morphs[c]) {
-    morphs[c].forEach((m) => pool.add(m))
-  }
-
-  // 4. Caesar / Atbash of the plain (common wrong assumptions)
+  // 2. Transformaciones criptográficas comunes (el jugador podría aplicar el método equivocado)
   pool.add(caesar(c, 1))
   pool.add(caesar(c, 3))
   pool.add(caesar(c, 13))
   pool.add(atbash(c))
-  pool.add(reverseStr(caesar(c, 1)))
+  pool.add(reverseStr(c))
+  if (len >= 3) {
+    pool.add(c.slice(1) + c[0])
+    pool.add(c[len - 1] + c.slice(0, -1))
+  }
 
-  // 5. Extra provided distractors
+  // 3. Extra proporcionados por el constructor del nivel
   extra.forEach((e) => {
     const t = onlyLetters(e)
     if (t && t !== c) pool.add(t)
   })
 
-  // 6. From the bank: same length or length ±1
-  const bankCandidates = PLAIN_BANK.map(onlyLetters).filter(
-    (p) => p !== c && Math.abs(p.length - len) <= 2 && p.length >= 2,
-  )
-  // pick a few randomly
-  for (let i = 0; i < 6 && bankCandidates.length > 0; i++) {
-    const j = Math.floor(rnd() * bankCandidates.length)
-    pool.add(bankCandidates[j])
-    bankCandidates.splice(j, 1)
+  // 4. Relleno de calidad desde el banco (frases cortas o palabras de longitud parecida)
+  const fillers = bank.filter((p) => p.length >= 3 && p.length <= Math.max(12, len + 3) && p !== c)
+  for (let i = 0; i < 8 && fillers.length > 0; i++) {
+    const j = Math.floor(rnd() * fillers.length)
+    pool.add(fillers[j])
+    fillers.splice(j, 1)
   }
 
-  // 7. Fillers that look cipher-ish
-  const fillers = [
-    'XXXX',
-    'ERROR',
-    'NULO',
-    'VACIO',
-    'CLAVE',
-    'CODIGO',
-    'TEST',
-    'ALFA',
-    'BRAVO',
-    'DELTA',
-    'OMEGA',
-    'NULL',
-    'FAIL',
-    'RETRY',
+  // 5. Términos temáticos genéricos que siempre "suenan" a respuesta posible
+  const thematic = [
+    'MENSAJE', 'SECRETO', 'CODIGO', 'CLAVE', 'PATRON', 'SENAL', 'AGENTE',
+    'ARCHIVO', 'RUTA', 'MAPA', 'PUERTA', 'NORTE', 'OPERACION', 'PROTOCOLO',
+    'CONTACTO', 'OBJETIVO', 'FUENTE', 'CANAL', 'CIFRA', 'ENIGMA',
+    'ALFA', 'BRAVO', 'CHARLIE', 'DELTA', 'OMEGA', 'SIGMA',
   ]
-  fillers.forEach((f) => {
-    if (f !== c) pool.add(f)
+  thematic.forEach((t) => {
+    if (t !== c && Math.abs(t.length - len) <= 4) pool.add(t)
   })
 
-  // Remove exact correct and empty
   pool.delete(c)
   pool.delete('')
 
@@ -756,9 +1077,13 @@ function buildOptions(
     if (t && t !== uniq[0] && !uniq.includes(t)) uniq.push(t)
     if (uniq.length >= 10) break
   }
-  // relleno final si faltan
-  const fillers = ['XXXX', 'ERROR', 'NULO', 'VACIO', 'CLAVE', 'CODIGO', 'TEST', 'ALFA', 'BRAVO', 'OMEGA']
-  for (const f of fillers) {
+  // relleno final de calidad
+  const qualityFillers = [
+    'MENSAJE', 'SECRETO', 'CODIGO', 'CLAVE', 'PATRON', 'SENAL',
+    'AGENTE', 'ARCHIVO', 'RUTA', 'MAPA', 'OPERACION', 'PROTOCOLO',
+    'CONTACTO', 'OBJETIVO', 'NORTE', 'PUERTA', 'CIFRA', 'ENIGMA',
+  ]
+  for (const f of qualityFillers) {
     if (uniq.length >= 8) break
     if (!uniq.includes(f)) uniq.push(f)
   }
@@ -807,7 +1132,7 @@ function makeCaesar(levelIndex: number): Item {
       `Ejemplo de técnica: si ves una letra frecuente en español cifrado, pruébala como E o A y calcula el salto.\n` +
       `En este nivel la pista ya te da el salto: no hace falta fuerza bruta completa.`,
     failAdvice:
-      'Recorre el alfabeto mentalmente con el desplazamiento indicado. Comprueba vocales frecuentes (E, A, O) tras el corrimiento inverso. No asumas que la primera opción es la buena; muchas son anagramas o casi idénticas.',
+      'Recorre el alfabeto mentalmente con el desplazamiento indicado. Comprueba vocales frecuentes (E, A, O) tras el corrimiento inverso.',
     question: '¿Cuál es el texto en claro (solo letras, mayúsculas)?',
     options,
     correct,
@@ -844,7 +1169,7 @@ function makeReverse(levelIndex: number): Item {
       'Ejemplo: si el cifrado es OTIRAD, el claro es DARITO.\n' +
       'A veces se combina con mayúsculas o sin espacios; aquí solo hay letras.',
     failAdvice:
-      'Escribe el cifrado al revés letra a letra en un papel. No busques desplazamientos: el orden es el truco. Ojo: varias opciones son casi el mismo texto con una letra de más o menos.',
+      'Escribe el cifrado al revés letra a letra. No busques desplazamientos: el orden es el truco.',
     question: '¿Cuál es el texto en claro?',
     options,
     correct,
@@ -861,6 +1186,10 @@ function makeVariable(levelIndex: number): Item {
     [3, 1, 2],
     [1, 2, 3, 4],
     [2, 3, 1],
+    [1, 2, 1, 3],
+    [3, 2, 1],
+    [4, 1, 2, 3],
+    [2, 4, 1, 3],
   ]
   const pattern = patterns[levelIndex % patterns.length]
   const cipher = variableShift(plain, pattern)
@@ -890,7 +1219,7 @@ function makeVariable(levelIndex: number): Item {
       `Para descifrar: aplica el negativo del patrón según el índice (empezando en 0).\n` +
       'Es un pariente didáctico del espíritu Vigenère, pero con patrón numérico fijo, no con palabra clave.',
     failAdvice:
-      'Numera las letras del cifrado y resta el patrón indicado. Si una resta baja de A, da la vuelta por Z. Las opciones incorrectas suelen ser el resultado de aplicar un patrón distinto o un César fijo.',
+      'Numera las letras del cifrado y resta el patrón indicado. Si una resta baja de A, da la vuelta por Z.',
     question: '¿Cuál es el texto en claro más plausible?',
     options,
     correct,
@@ -905,6 +1234,8 @@ function makeVowelSub(levelIndex: number): Item {
     { A: 'X', E: 'Y', I: 'Z', O: 'P', U: 'Q' },
     { A: 'Z', E: 'Y', I: 'X', O: 'W', U: 'V' },
     { A: 'B', E: 'C', I: 'D', O: 'F', U: 'G' },
+    { A: 'K', E: 'L', I: 'M', O: 'N', U: 'P' },
+    { A: 'S', E: 'T', I: 'U', O: 'V', U: 'W' },
   ]
   const map = maps[levelIndex % maps.length]
   const cipher = vowelSub(plain, map)
@@ -939,7 +1270,7 @@ function makeVowelSub(levelIndex: number): Item {
       `${invEntries}.\n` +
       'Ojo: algunas letras del cifrado pueden ser vocales del claro que se mapearon. Las consonantes se leen tal cual.',
     failAdvice:
-      'No es un César: no desplaces todo el alfabeto. Sustituye solo las letras del mapa de vocales; deja el resto igual. Muchas opciones difieren solo en una o dos vocales.',
+      'No es un César: no desplaces todo el alfabeto. Sustituye solo las letras del mapa de vocales; deja el resto igual.',
     question: '¿Cuál es el texto en claro?',
     options,
     correct,
@@ -948,7 +1279,7 @@ function makeVowelSub(levelIndex: number): Item {
 
 function makeA1Z26(levelIndex: number): Item {
   const plainRaw = plainForLevel(levelIndex + 11)
-  const plain = onlyLetters(plainRaw).slice(0, 10) // evita cadenas numéricas enormes
+  const plain = onlyLetters(plainRaw).slice(0, 12)
   const cipher = a1z26Encode(plain)
   const seed = hashStr(`a1-${levelIndex}-${cipher}`)
   const { options, correct } = buildOptions(
@@ -976,7 +1307,7 @@ function makeA1Z26(levelIndex: number): Item {
       'Ejemplo: 8-15-12-1 → HOLA.\n' +
       'Si ves 27 o 0, hay error de lectura; el alfabeto solo llega a 26.',
     failAdvice:
-      'Separa por guiones y traduce número a número. No interpretes el bloque entero como un solo valor. Las opciones incorrectas suelen ser el mismo texto con una letra cambiada o el orden invertido.',
+      'Separa por guiones y traduce número a número. No interpretes el bloque entero como un solo valor.',
     question: '¿Cuál es el texto en claro?',
     options,
     correct,
@@ -1013,7 +1344,7 @@ function makeAtbash(levelIndex: number): Item {
       'Ejemplo: ABC → ZYX. Es involutivo: aplicar Atbash dos veces devuelve el claro.\n' +
       'Históricamente asociado a prácticas hebreas sobre el alefato; aquí usamos el alfabeto latino.',
     failAdvice:
-      'Construye la pareja A-Z, B-Y, C-X… y traduce letra a letra. No es un desplazamiento constante como César. Varias opciones son el Atbash de textos parecidos.',
+      'Construye la pareja A-Z, B-Y, C-X… y traduce letra a letra. No es un desplazamiento constante como César.',
     question: '¿Cuál es el texto en claro?',
     options,
     correct,
@@ -1022,18 +1353,15 @@ function makeAtbash(levelIndex: number): Item {
 
 function makeMorse(levelIndex: number): Item {
   const plainRaw = plainForLevel(levelIndex + 17)
-  // Morse legible: palabras cortas
-  const plain = onlyLetters(plainRaw).slice(0, 8)
+  const plain = onlyLetters(plainRaw).slice(0, 9)
   const cipher = toMorse(plain)
-  // Verificación con fromMorse (uso real de la función)
   const verified = fromMorse(cipher)
   if (verified !== plain) {
-    // fallback seguro (no debería ocurrir)
+    // fallback seguro
   }
   const seed = hashStr(`morse-${levelIndex}-${cipher}`)
-  // Distractores: decodificaciones erróneas y textos cercanos
   const wrongMorseAttempts = [
-    fromMorse(cipher.replace(/\./g, '-').replace(/-/g, '.')), // invertir puntos/rayas
+    fromMorse(cipher.replace(/\./g, '-').replace(/-/g, '.')),
     fromMorse(cipher.split(' / ').reverse().join(' / ')),
     plain.slice(0, Math.max(1, plain.length - 1)),
     plain + 'X',
@@ -1056,7 +1384,7 @@ function makeMorse(levelIndex: number): Item {
       'Ejemplo: ··· / −−− / ··· → SOS.\n' +
       'No confundas separador de letras con espacio de palabra: aquí solo hay letras separadas por “ / ”.',
     failAdvice:
-      'Traduce símbolo a símbolo con la tabla. Empieza por letras cortas (E, T, A, N, I, M) para anclar el mensaje. Las opciones incorrectas suelen diferir en una sola letra o ser el Morse invertido.',
+      'Traduce símbolo a símbolo con la tabla. Empieza por letras cortas (E, T, A, N, I, M) para anclar el mensaje.',
     question: '¿Qué texto en claro codifica este Morse?',
     options,
     correct,
@@ -1065,8 +1393,8 @@ function makeMorse(levelIndex: number): Item {
 
 function makeRail(levelIndex: number): Item {
   const plainRaw = plainForLevel(levelIndex + 23)
-  const plain = onlyLetters(plainRaw).slice(0, 12)
-  const rails = levelIndex % 2 === 0 ? 2 : 3
+  const plain = onlyLetters(plainRaw).slice(0, 14)
+  const rails = 2 + (levelIndex % 3) // 2, 3 o 4
   const cipher = railFenceEncrypt(plain, rails)
   const seed = hashStr(`rail-${levelIndex}-${cipher}`)
   const { options, correct } = buildOptions(
@@ -1094,7 +1422,7 @@ function makeRail(levelIndex: number): Item {
       'Para descifrar: calcula el patrón de posiciones del zig-zag y recoloca las letras del cifrado en esas posiciones.\n' +
       'Ejemplo (2 rieles): HOLA → filas H L / O A → cifrado HLOA.',
     failAdvice:
-      'Dibuja el zig-zag vacío con la longitud del mensaje y reparte el cifrado por filas según el patrón. Luego lee en diagonal zig-zag. Ojo a las opciones que usan otro número de rieles.',
+      'Dibuja el zig-zag vacío con la longitud del mensaje y reparte el cifrado por filas según el patrón. Luego lee en diagonal zig-zag.',
     question: '¿Cuál es el texto en claro?',
     options,
     correct,
@@ -1103,8 +1431,12 @@ function makeRail(levelIndex: number): Item {
 
 function makeKeyword(levelIndex: number): Item {
   const plainRaw = plainForLevel(levelIndex + 29)
-  const plain = onlyLetters(plainRaw).slice(0, 10)
-  const keys = ['CLAVE', 'NORTE', 'SOLAR', 'MANGO', 'BRISA', 'FUENTE', 'DELTA', 'OMEGA', 'SIGMA', 'ALPHA']
+  const plain = onlyLetters(plainRaw).slice(0, 12)
+  const keys = [
+    'CLAVE', 'NORTE', 'SOLAR', 'MANGO', 'BRISA', 'FUENTE', 'DELTA', 'OMEGA',
+    'SIGMA', 'ALPHA', 'BRAVO', 'CHARLIE', 'TANGO', 'VICTOR', 'XRAY',
+    'YANKEE', 'ZULU', 'LUNAR', 'MARTE', 'VENUS',
+  ]
   const keyword = keys[levelIndex % keys.length]
   const cipher = keywordCipher(plain, keyword)
   const seed = hashStr(`kw-${levelIndex}-${cipher}`)
@@ -1133,7 +1465,7 @@ function makeKeyword(levelIndex: number): Item {
       'Cada letra del claro se sustituye por la del cifrado en la misma posición.\n' +
       'Para descifrar: invierte el mapa (cifrado→claro) y traduce.',
     failAdvice:
-      'Construye el alfabeto cifrado con la palabra clave de la pista y alinea con A–Z. Traduce el mensaje con el mapa inverso. Las opciones incorrectas suelen usar otra clave o un César.',
+      'Construye el alfabeto cifrado con la palabra clave de la pista y alinea con A–Z. Traduce el mensaje con el mapa inverso.',
     question: '¿Cuál es el texto en claro?',
     options,
     correct,
@@ -1141,67 +1473,87 @@ function makeKeyword(levelIndex: number): Item {
 }
 
 function makeHill(levelIndex: number): Item {
-  const plainRaw = plainForLevel(levelIndex + 31)
-  let plain = onlyLetters(plainRaw).slice(0, 6)
-  if (plain.length % 2 === 1) plain += 'X'
-  if (plain.length < 2) plain = 'AB'
-  const matrix = HILL_MATRICES[levelIndex % HILL_MATRICES.length]
-  const cipher = hillEncrypt2(plain, matrix)
-
-  // Uso real de det2 + modInverse26 vía hillInverse2 / hillDecrypt2
-  const decrypted = hillDecrypt2(cipher, matrix)
-  // verified should equal plain (or plain without trailing X in some cases, but we keep consistent)
-  if (decrypted && onlyLetters(decrypted).startsWith(onlyLetters(plain).replace(/X$/, ''))) {
-    // ok
+  // Size cycles: mostly 2x2, then 3x3, occasionally 4x4
+  const sizeRoll = levelIndex % 10
+  let size: number
+  let matrix: number[][]
+  if (sizeRoll < 5) {
+    size = 2
+    matrix = HILL_2X2[levelIndex % HILL_2X2.length]
+  } else if (sizeRoll < 8) {
+    size = 3
+    matrix = HILL_3X3[levelIndex % HILL_3X3.length]
+  } else {
+    size = 4
+    matrix = HILL_4X4[levelIndex % HILL_4X4.length]
   }
 
-  const seed = hashStr(`hill-${levelIndex}-${cipher}`)
-  const otherMatrix = HILL_MATRICES[(levelIndex + 1) % HILL_MATRICES.length]
+  const plainRaw = plainForLevel(levelIndex + 31)
+  let plain = onlyLetters(plainRaw).slice(0, size * 3) // enough letters
+  while (plain.length % size !== 0) plain += 'X'
+  if (plain.length < size) plain = 'A'.repeat(size)
+
+  const cipher = hillEncryptN(plain, matrix)
+  const decrypted = hillDecryptN(cipher, matrix)
+  // sanity (ignore trailing X differences)
+  void decrypted
+
+  const seed = hashStr(`hill-${size}-${levelIndex}-${cipher}`)
+  const otherMatrix =
+    size === 2
+      ? HILL_2X2[(levelIndex + 1) % HILL_2X2.length]
+      : size === 3
+        ? HILL_3X3[(levelIndex + 1) % HILL_3X3.length]
+        : HILL_4X4[(levelIndex + 1) % HILL_4X4.length]
+
   const { options, correct } = buildOptions(
     plain,
     [
       reverseStr(plain),
       caesar(plain, 3),
       atbash(plain),
-      plain.slice(2) + plain.slice(0, 2),
-      hillEncrypt2(plain, otherMatrix),
+      plain.slice(size) + plain.slice(0, size),
+      hillEncryptN(plain, otherMatrix),
       cipher,
       'MATRIX',
-      hillDecrypt2(cipher, otherMatrix) || 'ERROR',
-      plain.replace(/X$/, '') || plain,
+      hillDecryptN(cipher, otherMatrix) || 'ERROR',
+      plain.replace(/X+$/, '') || plain,
     ],
     seed,
   )
-  const matStr = `[${matrix[0][0]} ${matrix[0][1]} ; ${matrix[1][0]} ${matrix[1][1]}]`
-  const d = det2(matrix)
+
+  const matStr = matrix.map((row) => `[${row.join(' ')}]`).join(' ')
+  const d = detN(matrix)
+
   return {
-    id: `hill-${levelIndex}`,
+    id: `hill${size}-${levelIndex}`,
     kind: 'hill',
     cipher,
     plain,
     hint:
-      `Cifrado de Hill 2×2. Matriz K = ${matStr} (mod 26, det=${d}). Teclado fijo: ${HILL_KEYBOARD.slice(0, 13)}… (A=0 … Z=25). Bloques de 2 letras; relleno X si hace falta.`,
+      `Cifrado de Hill ${size}×${size}. Matriz K = ${matStr} (mod 26, det=${d}). Teclado fijo A=0 … Z=25. Bloques de ${size} letras; relleno X si hace falta.`,
     explain:
-      'Método (resumen operativo):\n' +
-      '1) Pasa cada letra a número A=0 … Z=25 (teclado fijo del juego).\n' +
-      '2) Agrupa en pares (p1, p2).\n' +
-      '3) Multiplica por la matriz K módulo 26: (c1,c2)ᵀ = K · (p1,p2)ᵀ mod 26.\n' +
-      '4) Vuelve de número a letra.\n' +
-      'Para descifrar necesitas K⁻¹ mod 26 (la matriz inversa modular). Este nivel pide el claro a partir del cifrado y de K; usa la relación inversa o comprueba opciones con el mismo teclado.\n' +
-      '⚠️ Es el método más exigente del juego: álgebra modular 2×2.',
+      `Método (resumen operativo):\n` +
+      `1) Pasa cada letra a número A=0 … Z=25.\n` +
+      `2) Agrupa en bloques de ${size} letras.\n` +
+      `3) Multiplica por la matriz K módulo 26: c = K · p mod 26.\n` +
+      `4) Vuelve de número a letra.\n` +
+      `Para descifrar necesitas K⁻¹ mod 26. Este nivel pide el claro a partir del cifrado y de K.\n` +
+      `⚠️ Álgebra modular ${size}×${size}.`,
     failAdvice:
-      'No es un César ni un Morse. Trabaja por pares de letras, con A=0…Z=25 y la matriz de la pista. Verifica cada opción formando pares y cifrando con K, o aplica la inversa si la calculas. Muchas opciones son textos muy parecidos o resultados con otra matriz.',
-    question: '¿Cuál es el texto en claro (bloques de 2, posible X final de relleno)?',
+      `Trabaja por bloques de ${size} letras, con A=0…Z=25 y la matriz de la pista. Verifica cada opción cifrando con K, o aplica la inversa si la calculas.`,
+    question: `¿Cuál es el texto en claro (bloques de ${size}, posible X final de relleno)?`,
     options,
     correct,
     hillMatrix: matrix,
+    hillSize: size,
     hillKeyboard: HILL_KEYBOARD,
   }
 }
 
 function makeAffine(levelIndex: number): Item {
   const plainRaw = plainForLevel(levelIndex + 37)
-  const plain = onlyLetters(plainRaw).slice(0, 10)
+  const plain = onlyLetters(plainRaw).slice(0, 12)
   const [a, b] = AFFINE_PAIRS[levelIndex % AFFINE_PAIRS.length]
   const cipher = affineEncrypt(plain, a, b)
   const seed = hashStr(`aff-${levelIndex}-${cipher}`)
@@ -1230,7 +1582,7 @@ function makeAffine(levelIndex: number): Item {
       `Para descifrar necesitas el inverso modular de a módulo 26 y luego x = a⁻¹·(y − b) mod 26.\n` +
       'Es una generalización del César (cuando a=1).',
     failAdvice:
-      'No es un desplazamiento simple. Calcula para cada opción o aplica la fórmula inversa. Las opciones incorrectas suelen usar otro a/b o un César con el mismo b.',
+      'No es un desplazamiento simple. Calcula para cada opción o aplica la fórmula inversa.',
     question: '¿Cuál es el texto en claro?',
     options,
     correct,
@@ -1239,8 +1591,8 @@ function makeAffine(levelIndex: number): Item {
 
 function makeScytale(levelIndex: number): Item {
   const plainRaw = plainForLevel(levelIndex + 41)
-  const plain = onlyLetters(plainRaw).slice(0, 12)
-  const diameter = 2 + (levelIndex % 3) // 2, 3 o 4
+  const plain = onlyLetters(plainRaw).slice(0, 14)
+  const diameter = 2 + (levelIndex % 4) // 2..5
   const cipher = scytaleEncrypt(plain, diameter)
   const seed = hashStr(`scy-${levelIndex}-${cipher}`)
   const { options, correct } = buildOptions(
@@ -1268,7 +1620,171 @@ function makeScytale(levelIndex: number): Item {
       'Para descifrar: reparte el cifrado en filas de longitud adecuada y lee por columnas.\n' +
       'Es una transposición clásica griega; no sustituye letras.',
     failAdvice:
-      'Calcula cuántas columnas caben y reconstruye la rejilla. Prueba diámetros cercanos si el primero no da palabras. Varias opciones usan otro diámetro o un rail-fence.',
+      'Calcula cuántas columnas caben y reconstruye la rejilla. Prueba diámetros cercanos si el primero no da palabras.',
+    question: '¿Cuál es el texto en claro?',
+    options,
+    correct,
+  }
+}
+
+function makePlayfair(levelIndex: number): Item {
+  const plainRaw = plainForLevel(levelIndex + 47)
+  const plain = onlyLetters(plainRaw).slice(0, 10).replace(/J/g, 'I')
+  const keys = ['CLAVE', 'NORTE', 'SOLAR', 'DELTA', 'OMEGA', 'LUNAR', 'MARTE', 'VENUS']
+  const keyword = keys[levelIndex % keys.length]
+  const cipher = playfairEncrypt(plain, keyword)
+  const seed = hashStr(`pf-${levelIndex}-${cipher}`)
+  const { options, correct } = buildOptions(
+    plain,
+    [
+      caesar(plain, 2),
+      reverseStr(plain),
+      atbash(plain),
+      playfairEncrypt(plain, keys[(levelIndex + 1) % keys.length]),
+      plain + 'X',
+      cipher,
+      'PLAYFAIR',
+      keywordCipher(plain, keyword),
+    ],
+    seed,
+  )
+  return {
+    id: `pf-${levelIndex}`,
+    kind: 'playfair',
+    cipher,
+    plain,
+    hint: `Playfair 5×5 (I/J juntos). Clave “${keyword}”: forma el cuadrado y cifra por pares (misma fila → derecha, misma columna → abajo, rectángulo → esquinas opuestas).`,
+    explain:
+      `Método: construye el cuadrado 5×5 con la clave sin repetir + resto del alfabeto (J=I).\n` +
+      'Parte el claro en digramas (si letras iguales inserta X).\n' +
+      'Misma fila: cada letra una posición a la derecha (cíclico).\n' +
+      'Misma columna: una posición abajo.\n' +
+      'Rectángulo: intercambia columnas manteniendo filas.',
+    failAdvice:
+      'Construye el cuadrado con la clave de la pista. Trabaja siempre por pares. No es un César ni un simple keyword.',
+    question: '¿Cuál es el texto en claro?',
+    options,
+    correct,
+  }
+}
+
+function makeColumnar(levelIndex: number): Item {
+  const plainRaw = plainForLevel(levelIndex + 53)
+  const plain = onlyLetters(plainRaw).slice(0, 14)
+  const keys = ['CLAVE', 'NORTE', 'SOL', 'MAR', 'LUZ', 'RIO', 'SOLAR', 'DELTA']
+  const keyword = keys[levelIndex % keys.length]
+  const cipher = columnarEncrypt(plain, keyword)
+  const seed = hashStr(`col-${levelIndex}-${cipher}`)
+  const { options, correct } = buildOptions(
+    plain,
+    [
+      reverseStr(plain),
+      caesar(plain, 2),
+      columnarEncrypt(plain, keys[(levelIndex + 1) % keys.length]),
+      railFenceEncrypt(plain, 3),
+      atbash(plain),
+      plain.slice(2) + plain.slice(0, 2),
+      cipher,
+      'COLUMNAR',
+    ],
+    seed,
+  )
+  return {
+    id: `col-${levelIndex}`,
+    kind: 'columnar',
+    cipher,
+    plain,
+    hint: `Transposición columnar con clave “${keyword}”: se escribe el texto en filas bajo la clave y se lee por columnas ordenadas alfabéticamente.`,
+    explain:
+      `Método: escribe el claro en una tabla de tantas columnas como letras tiene la clave.\n` +
+      'Ordena las columnas según el orden alfabético de la clave (empates por posición).\n' +
+      'El cifrado es la lectura de las columnas en ese orden.\n' +
+      'Para descifrar: calcula cuántas filas hay y rellena las columnas en el orden de la clave.',
+    failAdvice:
+      'Dibuja la rejilla con la longitud de la clave. Reparte el cifrado en columnas según el orden alfabético de la clave y lee por filas.',
+    question: '¿Cuál es el texto en claro?',
+    options,
+    correct,
+  }
+}
+
+function makeBeaufort(levelIndex: number): Item {
+  const plainRaw = plainForLevel(levelIndex + 59)
+  const plain = onlyLetters(plainRaw).slice(0, 12)
+  const keys = ['CLAVE', 'NORTE', 'SOLAR', 'DELTA', 'OMEGA', 'LUNAR', 'MARTE', 'ALPHA']
+  const keyword = keys[levelIndex % keys.length]
+  const cipher = beaufortEncrypt(plain, keyword)
+  const seed = hashStr(`bf-${levelIndex}-${cipher}`)
+  const { options, correct } = buildOptions(
+    plain,
+    [
+      caesar(plain, 3),
+      reverseStr(plain),
+      beaufortEncrypt(plain, keys[(levelIndex + 1) % keys.length]),
+      atbash(plain),
+      variableShift(plain, [1, 2, 3]),
+      plain + 'X',
+      cipher,
+      'BEAUFORT',
+    ],
+    seed,
+  )
+  return {
+    id: `bf-${levelIndex}`,
+    kind: 'beaufort',
+    cipher,
+    plain,
+    hint: `Cifrado de Beaufort con clave “${keyword}”: cada letra c = (k − p) mod 26. Es involutivo (cifrar = descifrar).`,
+    explain:
+      `Método: para cada posición, toma la letra de la clave (cíclica) y la del claro.\n` +
+      'c = (k − p) mod 26, con A=0…Z=25.\n' +
+      'Como es involutivo, aplicar el mismo proceso al cifrado recupera el claro.\n' +
+      'Variante histórica del Vigenère usada en algunos sistemas del siglo XIX.',
+    failAdvice:
+      'Aplica la fórmula (k − c) o (k − p) según la dirección. Recuerda que Beaufort es su propio inverso.',
+    question: '¿Cuál es el texto en claro?',
+    options,
+    correct,
+  }
+}
+
+function makePolybius(levelIndex: number): Item {
+  const plainRaw = plainForLevel(levelIndex + 61)
+  const plain = onlyLetters(plainRaw).slice(0, 10).replace(/J/g, 'I')
+  const cipher = polybiusEncode(plain)
+  const seed = hashStr(`pb-${levelIndex}-${cipher}`)
+  const { options, correct } = buildOptions(
+    plain,
+    [
+      reverseStr(plain),
+      caesar(plain, 2),
+      atbash(plain),
+      plain.slice(0, -1),
+      plain + 'X',
+      'POLYBIUS',
+      onlyLetters(plainForLevel(levelIndex + 63)).slice(0, plain.length),
+      a1z26Encode(plain).replace(/-/g, ''),
+    ],
+    seed,
+  )
+  return {
+    id: `pb-${levelIndex}`,
+    kind: 'polybius',
+    cipher,
+    plain,
+    hint: 'Cuadrado de Polibio 5×5 (I/J juntos). Cada letra se representa por fila+columna (11=A, 12=B … 55=Z).',
+    explain:
+      'Método: localiza cada letra en el cuadrado estándar:\n' +
+      '  1 2 3 4 5\n' +
+      '1 A B C D E\n' +
+      '2 F G H I K\n' +
+      '3 L M N O P\n' +
+      '4 Q R S T U\n' +
+      '5 V W X Y Z\n' +
+      'El cifrado son los pares de dígitos separados por espacio.\n' +
+      'Para descifrar: cada par → letra del cuadrado.',
+    failAdvice:
+      'Traduce cada par de números usando el cuadrado de Polibio estándar. J se trata como I.',
     question: '¿Cuál es el texto en claro?',
     options,
     correct,
@@ -1290,19 +1806,34 @@ const BUILDERS_NO_HILL: Builder[] = [
   makeKeyword,
   makeAffine,
   makeScytale,
+  makePlayfair,
+  makeColumnar,
+  makeBeaufort,
+  makePolybius,
   makeCaesar,
   makeMorse,
   makeAtbash,
   makeVariable,
   makeKeyword,
+  makeAffine,
+  makeRail,
+  makeScytale,
+  makePlayfair,
+  makeColumnar,
+  makeBeaufort,
 ]
 
-const BUILDERS_WITH_HILL: Builder[] = [...BUILDERS_NO_HILL, makeHill, makeHill, makeHill]
+const BUILDERS_WITH_HILL: Builder[] = [
+  ...BUILDERS_NO_HILL,
+  makeHill,
+  makeHill,
+  makeHill,
+  makeHill,
+]
 
 function buildLevel(levelIndex: number, hillEnabled: boolean): Item {
   const pool = hillEnabled ? BUILDERS_WITH_HILL : BUILDERS_NO_HILL
   const builder = pool[levelIndex % pool.length]
-  // Dificultad: a mayor nivel, textos del banco más avanzados (offset)
   const boosted = levelIndex + Math.floor(levelIndex / 10) * 3
   return builder(boosted)
 }
@@ -1316,14 +1847,14 @@ const CIPHER_GUIDE: Guide[] = [
     id: 'intro',
     title: 'Cómo usar este módulo',
     body:
-      'Cada nivel presenta un criptograma y varias opciones de texto en claro. La opción correcta está repartida al azar (no es siempre la A).\n\n' +
+      'Cada nivel presenta un criptograma y varias opciones de texto en claro. La opción correcta está repartida al azar.\n\n' +
       'Flujo recomendado:\n' +
       '1) Lee la PISTA del nivel (tipo de cifra y parámetros).\n' +
       '2) Abre “Explicación” si necesitas el procedimiento.\n' +
-      '3) Descarta opciones incompatibles con el método.\n' +
+      '3) Aplica el método y descarta opciones incompatibles.\n' +
       '4) Al completar un nivel, queda marcado y no se vuelve a servir el mismo reto.\n\n' +
-      'Al fallar no se muestra la respuesta: solo un consejo de método. Puedes reintentar el mismo nivel con otro mensaje del mismo tipo.\n\n' +
-      'Las opciones están diseñadas para ser muy parecidas entre sí (anagramas, una letra de diferencia, variantes morfológicas). No adivines: aplica el método.',
+      'Al fallar, se muestra un consejo del método. Puedes reintentar el mismo nivel con otro mensaje del mismo tipo.\n\n' +
+      'Hay cientos de niveles y muchos tipos de cifra. Estudia las guías antes de empezar.',
   },
   {
     id: 'caesar',
@@ -1455,6 +1986,42 @@ const CIPHER_GUIDE: Guide[] = [
       'Reparte el cifrado en el número de filas indicado y lee por columnas (o reconstruye la rejilla y lee en el orden de escritura).',
   },
   {
+    id: 'playfair',
+    title: 'Playfair',
+    body:
+      'Origen e historia\n' +
+      'Inventado por Charles Wheatstone (1854) y popularizado por Lord Playfair. Fue usado por fuerzas británicas y otras en la Primera Guerra Mundial y aún en la Segunda para mensajes tácticos de valor temporal. Es una cifra de digramas: cifra pares de letras, lo que complica el análisis de frecuencias simple.\n\n' +
+      'Cómo resolver\n' +
+      'Construye el cuadrado 5×5 con la clave. Parte en digramas (X de relleno si hace falta). Aplica las tres reglas: misma fila, misma columna o rectángulo.',
+  },
+  {
+    id: 'columnar',
+    title: 'Transposición columnar',
+    body:
+      'Origen e historia\n' +
+      'Una de las familias de transposición más usadas en la criptografía clásica y en la Primera Guerra Mundial (con variantes de doble transposición). El texto se escribe en filas bajo una clave y se lee por columnas según el orden alfabético de esa clave.\n\n' +
+      'Cómo resolver\n' +
+      'Determina el número de columnas (longitud de la clave). Calcula filas. Rellena las columnas en el orden que dicta la clave y lee por filas.',
+  },
+  {
+    id: 'beaufort',
+    title: 'Beaufort',
+    body:
+      'Origen e historia\n' +
+      'Variante del Vigenère atribuida a Sir Francis Beaufort. La operación es c = (k − p) mod 26. Tiene la propiedad conveniente de ser involutiva: el mismo procedimiento sirve para cifrar y descifrar.\n\n' +
+      'Cómo resolver\n' +
+      'Aplica la resta modular con la clave cíclica. Como es involutivo, puedes “cifrar” el criptograma con la misma clave para recuperar el claro.',
+  },
+  {
+    id: 'polybius',
+    title: 'Cuadrado de Polibio',
+    body:
+      'Origen e historia\n' +
+      'Atribuido a Polibio (s. II a. C.). Sistema de coordenadas en una cuadrícula 5×5 que permite transmitir letras mediante señales de antorchas, golpes o cualquier canal binario/ternario. Es más un código de representación que una cifra de secreto, pero aparece en muchos sistemas compuestos.\n\n' +
+      'Cómo resolver\n' +
+      'Cada par de dígitos indica fila y columna del cuadrado estándar (I/J compartidos). Traduce par a letra.',
+  },
+  {
     id: 'hill',
     title: 'Cifrado de Hill (AVANZADO)',
     hard: true,
@@ -1468,12 +2035,12 @@ const CIPHER_GUIDE: Guide[] = [
       '• El claro se parte en vectores de n letras; cifrado = K · vector mod 26.\n' +
       '• Descifrado = K⁻¹ · vector_cifrado mod 26.\n\n' +
       'En este módulo\n' +
-      'Solo usamos n=2 y matrices de un catálogo invertible. Todos los niveles Hill comparten el mismo teclado A=0…Z=25. Si el número de letras es impar, se rellena con X.\n\n' +
+      'Soportamos n=2, n=3 y n=4. Matrices de un catálogo invertible. Todos los niveles Hill comparten el mismo teclado A=0…Z=25. Si el número de letras no es múltiplo de n, se rellena con X.\n\n' +
       'Cómo abordar un nivel\n' +
       '1) Anota la matriz K de la pista.\n' +
       '2) Para cada opción de claro, cifra con K y compara con el criptograma; o calcula K⁻¹ y descifra el criptograma una sola vez.\n' +
       '3) Recuerda el relleno X final si aplica.\n\n' +
-      'Ejemplo mínimo\n' +
+      'Ejemplo mínimo (2×2)\n' +
       'K = [3 3; 2 5], claro “HI” → H=7,I=8 → (3·7+3·8, 2·7+5·8) mod 26 = (45,54) mod 26 = (19,2) → TC.',
   },
 ]
@@ -1558,15 +2125,12 @@ export function CodigoGame() {
   const pickItemForLevel = useCallback(
     (lv: number, nonce: number): Item => {
       const base = buildLevel(lv - 1, hillEnabled)
-      // Variantes: desplazar el índice de construcción para no repetir el mismo id
       for (let k = 0; k < 40; k++) {
         const candidate = buildLevel(lv - 1 + (nonce + k) * 17, hillEnabled)
-        // Fuerza id distinto por nivel+nonce
         const id = `${candidate.kind}-L${lv}-n${nonce + k}`
         const item: Item = { ...candidate, id }
         if (!completed.has(id)) return item
       }
-      // Fallback: nuevo id aunque el contenido se parezca
       return { ...base, id: `${base.kind}-L${lv}-n${nonce}-${Date.now()}` }
     },
     [completed, hillEnabled],
@@ -1583,9 +2147,18 @@ export function CodigoGame() {
       setPickNonce(nonce)
       setPhase('play')
       setShowLevelPicker(false)
-      setTimeLeft(Math.max(40, TIMER_BASE - Math.floor(lv / 8)))
       startRef.current = Date.now()
       soundStart()
+
+      // Tiempo: Hill tiene tiempos largos según tamaño; resto tiempo ordinario
+      let initialTime = Math.max(40, TIMER_BASE - Math.floor(lv / 8))
+      if (next.kind === 'hill' && next.hillSize) {
+        if (next.hillSize === 2) initialTime = 15 * 60 // 15 min
+        else if (next.hillSize === 3) initialTime = 25 * 60 // 25 min
+        else if (next.hillSize === 4) initialTime = 40 * 60 // 40 min
+      }
+      setTimeLeft(initialTime)
+
       if (useTimer) {
         timerRef.current = window.setInterval(() => {
           setTimeLeft((t) => {
@@ -1647,6 +2220,19 @@ export function CodigoGame() {
     saveHillEnabled(v)
   }
 
+  /** Formato amigable del tiempo restante (mm:ss o h:mm:ss) */
+  const formatTimeLeft = (secs: number) => {
+    if (secs >= 3600) {
+      const h = Math.floor(secs / 3600)
+      const m = Math.floor((secs % 3600) / 60)
+      const s = secs % 60
+      return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    }
+    const m = Math.floor(secs / 60)
+    const s = secs % 60
+    return `${m}:${String(s).padStart(2, '0')}`
+  }
+
   return (
     <div className="app-shell">
       <header
@@ -1675,8 +2261,14 @@ export function CodigoGame() {
         </button>
         <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'center' }}>
           {phase === 'play' && useTimer && (
-            <span className="mono" style={{ color: timeLeft <= 12 ? 'var(--gco-secondary)' : 'var(--gco-ink-muted)' }}>
-              ⏱ {timeLeft}s
+            <span
+              className="mono"
+              style={{
+                color: timeLeft <= 30 ? 'var(--gco-secondary)' : 'var(--gco-ink-muted)',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              ⏱ {formatTimeLeft(timeLeft)}
             </span>
           )}
           {phase === 'setup' && (
@@ -1755,8 +2347,7 @@ export function CodigoGame() {
                 <h2 style={{ textAlign: 'center' }}>🔐 Código cifrado</h2>
                 <p style={{ textAlign: 'center', color: 'var(--gco-ink-muted)', fontSize: '0.9rem', lineHeight: 1.5 }}>
                   Estudia cada método (historia, usos reales y procedimiento). Luego descifra. Las opciones están
-                  mezcladas y diseñadas para ser muy parecidas entre sí: la respuesta correcta no es obvia. Los niveles
-                  completados no se repiten. Hay 300 niveles y más tipos de cifra.
+                  mezcladas. Los niveles completados no se repiten. Hay {TOTAL_LEVELS} niveles y más tipos de cifra.
                 </p>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -1845,11 +2436,11 @@ export function CodigoGame() {
                   }}
                 >
                   <div style={{ flex: 1 }}>
-                    <p style={{ fontWeight: 700, marginBottom: 4 }}>Cifrado de Hill (matrices 2×2)</p>
+                    <p style={{ fontWeight: 700, marginBottom: 4 }}>Cifrado de Hill (matrices 2×2 / 3×3 / 4×4)</p>
                     <p style={{ fontSize: '0.78rem', color: 'var(--gco-ink-muted)', lineHeight: 1.45 }}>
                       Desactivado por defecto. Es el modo más exigente: álgebra modular, teclado A=0…Z=25 y bloques de
-                      2 letras. Actívalo solo si quieres el reto avanzado. Todos los niveles Hill usan el mismo teclado
-                      predefinido.
+                      2, 3 o 4 letras. Actívalo solo si quieres el reto avanzado. Todos los niveles Hill usan el mismo
+                      teclado predefinido.
                     </p>
                   </div>
                   <button
@@ -1956,15 +2547,16 @@ export function CodigoGame() {
             <GlassCard>
               <div style={{ padding: '1.2rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--gco-ink-muted)', margin: 0 }}>CIFRADO · {item.kind}</p>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--gco-ink-muted)' }}>
-                    Opciones mezcladas · difíciles
-                  </span>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--gco-ink-muted)', margin: 0 }}>
+                    CIFRADO · {item.kind}
+                    {item.kind === 'hill' && item.hillSize ? ` ${item.hillSize}×${item.hillSize}` : ''}
+                  </p>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--gco-ink-muted)' }}>Opciones mezcladas</span>
                 </div>
                 <p
                   className="mono"
                   style={{
-                    fontSize: item.kind === 'morse' ? '1.05rem' : '1.35rem',
+                    fontSize: item.kind === 'morse' || item.kind === 'polybius' ? '1.05rem' : '1.35rem',
                     fontWeight: 700,
                     letterSpacing: item.kind === 'morse' ? '0.02em' : '0.08em',
                     marginBottom: 10,
@@ -1975,26 +2567,80 @@ export function CodigoGame() {
                   {item.cipher}
                 </p>
 
+                {/* Hill matrix visual — estilo matriz limpio y cómodo */}
                 {item.kind === 'hill' && item.hillMatrix && (
                   <div
                     style={{
-                      marginBottom: 12,
-                      padding: '0.75rem 0.9rem',
-                      borderRadius: 12,
-                      border: '1px solid rgba(255,180,80,0.35)',
-                      background: 'rgba(255,160,40,0.07)',
-                      fontSize: '0.82rem',
+                      marginBottom: 14,
+                      padding: '1rem 1.1rem',
+                      borderRadius: 14,
+                      border: '1px solid rgba(255,180,80,0.4)',
+                      background: 'linear-gradient(145deg, rgba(255,160,40,0.09), rgba(40,30,10,0.25))',
+                      fontSize: '0.84rem',
                       lineHeight: 1.45,
                     }}
                   >
-                    <p style={{ fontWeight: 700, marginBottom: 6 }}>Teclado Hill (fijo en todos los niveles)</p>
-                    <p className="mono" style={{ marginBottom: 6, letterSpacing: '0.04em' }}>
-                      {HILL_KEYBOARD.split('').map((ch, i) => `${ch}=${i}`).join(' · ')}
+                    <p style={{ fontWeight: 700, marginBottom: 8, letterSpacing: '0.03em' }}>
+                      Matriz K · {item.hillSize}×{item.hillSize} (mod 26)
                     </p>
-                    <p className="mono" style={{ marginBottom: 0 }}>
-                      K = [[{item.hillMatrix[0][0]}, {item.hillMatrix[0][1]}], [{item.hillMatrix[1][0]},{' '}
-                      {item.hillMatrix[1][1]}]] (mod 26)
+
+                    {/* Matriz como cuadrícula centrada */}
+                    <div
+                      style={{
+                        display: 'inline-grid',
+                        gridTemplateColumns: `repeat(${item.hillSize}, 2.4rem)`,
+                        gap: 4,
+                        padding: '0.6rem 0.75rem',
+                        borderRadius: 10,
+                        background: 'rgba(0,0,0,0.25)',
+                        border: '1px solid rgba(255,200,100,0.25)',
+                        marginBottom: 10,
+                        fontFamily: 'var(--font-mono, monospace)',
+                        fontSize: '1.05rem',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {item.hillMatrix.flatMap((row, ri) =>
+                        row.map((val, ci) => (
+                          <div
+                            key={`${ri}-${ci}`}
+                            style={{
+                              width: '2.4rem',
+                              height: '2.4rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              borderRadius: 6,
+                              background: 'rgba(255,255,255,0.06)',
+                              color: 'var(--gco-primary)',
+                            }}
+                          >
+                            {val}
+                          </div>
+                        )),
+                      )}
+                    </div>
+
+                    <p style={{ fontSize: '0.78rem', color: 'var(--gco-ink-muted)', margin: '0 0 6px' }}>
+                      Teclado fijo (A=0 … Z=25)
                     </p>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '0.35rem 0.6rem',
+                        fontFamily: 'var(--font-mono, monospace)',
+                        fontSize: '0.78rem',
+                        opacity: 0.9,
+                      }}
+                    >
+                      {HILL_KEYBOARD.split('').map((ch, i) => (
+                        <span key={ch} style={{ whiteSpace: 'nowrap' }}>
+                          <span style={{ color: 'var(--gco-primary)' }}>{ch}</span>
+                          <span style={{ opacity: 0.55 }}>={i}</span>
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -2110,7 +2756,7 @@ export function CodigoGame() {
                     }}
                   >
                     <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--gco-secondary)', marginBottom: 4 }}>
-                      CONSEJO (sin revelar la respuesta)
+                      CONSEJO
                     </p>
                     <p style={{ fontSize: '0.86rem', color: 'var(--gco-ink-muted)', margin: 0, lineHeight: 1.45 }}>
                       {item.failAdvice}
