@@ -81,6 +81,28 @@ export interface Question {
   correctIndex: number
   explanation: string
   difficulty: 1 | 2 | 3 | 4 | 5
+  /** Raíz / lexema principal para memorizar (descomposición en bloques). */
+  rootFocus?: string
+  /** Etimología o nota nutritiva para el diccionario personal. */
+  etymology?: string
+}
+
+/** Entrada del diccionario personal: niveles superados con contexto de aprendizaje. */
+export interface DictEntry {
+  id: string
+  lang: LangId
+  level: number
+  cefr: CefrLevel
+  mode: GameMode
+  prompt: string
+  correctAnswer: string
+  explanation: string
+  ruleHint: string
+  rootFocus?: string
+  etymology?: string
+  seconds: number
+  attempts: number
+  completedAt: string
 }
 
 export interface Story {
@@ -98,7 +120,17 @@ export interface Story {
   tags: string[]
 }
 
-type Screen = 'hub' | 'learn' | 'play' | 'result' | 'levels' | 'modes' | 'reading' | 'story'
+type Screen =
+  | 'hub'
+  | 'learn'
+  | 'play'
+  | 'result'
+  | 'levels'
+  | 'modes'
+  | 'reading'
+  | 'story'
+  | 'dictionary'
+  | 'dictLang'
 
 const LS = {
   unlocked: 'gco.idiomas.unlocked.v3',
@@ -111,6 +143,7 @@ const LS = {
   attempts: 'gco.idiomas.attempts.v3',
   bestTime: 'gco.idiomas.bestTime.v3',
   completed: 'gco.idiomas.completed.v3',
+  dictionary: 'gco.idiomas.dictionary.v1',
 }
 
 function readJSON<T>(key: string, fallback: T): T {
@@ -699,69 +732,76 @@ interface LexItem {
   target: string
   note: string
   rule?: string
+  /** Raíz o lexema nuclear para memorizar y reutilizar. */
+  root?: string
+  /** Etimología breve / familia de palabras (nutritivo para el diccionario). */
+  etymology?: string
+  /** Bloques morfológicos: prefijo + raíz + sufijo. */
+  lexemes?: string[]
 }
 
 const EN_LEX: LexItem[] = [
-  { es: 'casa', target: 'house', note: 'Sustantivo concreto; no "home" (hogar/sentimiento).' },
-  { es: 'libro', target: 'book', note: 'Cognado parcial; "library" es biblioteca, no librería.' },
-  { es: 'agua', target: 'water', note: 'Germánico; no cognado latino directo en uso común.' },
-  { es: 'amigo', target: 'friend', note: 'False friend informal: "amigo" en inglés coloquial ≠ solo friend formal.' },
-  { es: 'ciudad', target: 'city', note: 'Latín civitas → city; "town" es más pequeño.' },
-  { es: 'tiempo', target: 'time', note: 'También "weather" según contexto (tiempo atmosférico).' },
-  { es: 'mano', target: 'hand', note: 'Germánico; "manual" es cognado latino en adjetivo.' },
-  { es: 'escuela', target: 'school', note: 'Griego via latín; cognado con school.' },
-  { es: 'comida', target: 'food', note: 'No "meal" (comida como ocasión).' },
-  { es: 'trabajo', target: 'work', note: 'También "job" (empleo concreto).' },
-  { es: 'niño', target: 'child', note: 'Plural irregular: children.' },
-  { es: 'mujer', target: 'woman', note: 'Plural irregular: women (pron. /ˈwɪmɪn/).' },
-  { es: 'hombre', target: 'man', note: 'Plural: men. "Human" es más genérico.' },
-  { es: 'día', target: 'day', note: 'Germánico; "diary" es diario personal.' },
-  { es: 'noche', target: 'night', note: 'Cognado germánico con night.' },
-  { es: 'año', target: 'year', note: 'No confundir con "ano" (error ortográfico grave).' },
-  { es: 'mes', target: 'month', note: 'Cognado con month; "mess" es desorden.' },
-  { es: 'semana', target: 'week', note: 'Germánico week.' },
-  { es: 'hoy', target: 'today', note: 'Compuesto to + day.' },
-  { es: 'mañana', target: 'tomorrow', note: 'También "morning" si es la parte del día.' },
-  { es: 'ayer', target: 'yesterday', note: 'Compuesto con day.' },
-  { es: 'grande', target: 'big', note: 'También "large"; "grand" es grandioso.' },
-  { es: 'pequeño', target: 'small', note: 'También "little".' },
-  { es: 'bueno', target: 'good', note: 'Adverbio irregular: well.' },
-  { es: 'malo', target: 'bad', note: 'Adverbio: badly.' },
-  { es: 'rápido', target: 'fast', note: 'También "quick"; "rapid" más formal/técnico.' },
-  { es: 'lento', target: 'slow', note: 'Adverbio: slowly.' },
-  { es: 'caliente', target: 'hot', note: 'Comida o temperatura; "warm" es tibio.' },
-  { es: 'frío', target: 'cold', note: 'Adjetivo y sustantivo.' },
-  { es: 'feliz', target: 'happy', note: 'No "lucky" (afortunado).' },
-  { es: 'triste', target: 'sad', note: 'Cognado no transparente.' },
-  { es: 'hablar', target: 'speak', note: 'También "talk"; "speak" más lenguas/formal.' },
-  { es: 'comer', target: 'eat', note: 'Germánico eat.' },
-  { es: 'beber', target: 'drink', note: 'Verbo y sustantivo.' },
-  { es: 'dormir', target: 'sleep', note: 'Germánico sleep.' },
-  { es: 'correr', target: 'run', note: 'Pasado irregular: ran.' },
-  { es: 'caminar', target: 'walk', note: 'No "path" (camino).' },
-  { es: 'leer', target: 'read', note: 'Pasado homógrafo read /red/.' },
-  { es: 'escribir', target: 'write', note: 'Pasado: wrote; participio written.' },
-  { es: 'pensar', target: 'think', note: 'Pasado: thought.' },
-  { es: 'saber', target: 'know', note: 'Pasado: knew; "know how" = saber hacer.' },
-  { es: 'poder', target: 'can', note: 'Modal; pasado could.' },
-  { es: 'querer', target: 'want', note: 'También "love" en contextos afectivos fuertes.' },
-  { es: 'deber', target: 'must', note: 'También "should" (consejo) / "ought".' },
-  { es: 'hacer', target: 'do', note: 'También "make" (crear/fabricar).' },
-  { es: 'ir', target: 'go', note: 'Pasado: went; participio gone.' },
-  { es: 'venir', target: 'come', note: 'Pasado: came.' },
-  { es: 'ver', target: 'see', note: 'Pasado: saw; "watch" es mirar con atención.' },
-  { es: 'oír', target: 'hear', note: 'Pasado: heard; "listen" es escuchar activamente.' },
-  { es: 'porque', target: 'because', note: 'Causal; "why" es la pregunta.' },
-  { es: 'aunque', target: 'although', note: 'También "though" / "even though".' },
-  { es: 'siempre', target: 'always', note: 'Frecuencia 100%.' },
-  { es: 'nunca', target: 'never', note: 'Doble negación en inglés estándar se evita.' },
-  { es: 'aquí', target: 'here', note: 'Opuesto there.' },
-  { es: 'allí', target: 'there', note: 'Existencial: there is/are.' },
-  { es: 'nación', target: 'nation', note: 'Sufijo -tion de origen latino; cognado transparente.' },
-  { es: 'información', target: 'information', note: 'Incontable en inglés: no "informations".' },
-  { es: 'decisión', target: 'decision', note: 'Sufijo -sion; verbo decide.' },
-  { es: 'posible', target: 'possible', note: 'Sufijo -ible/-able de posibilidad.' },
-  { es: 'realidad', target: 'reality', note: 'Sufijo -ity; adjetivo real.' },
+  { es: 'casa', target: 'house', note: 'Sustantivo concreto; no "home" (hogar/sentimiento).', root: 'hous-', etymology: 'OE hūs < germánico *hūsą. Familia: housing, household, housewife.', lexemes: ['house'] },
+  { es: 'libro', target: 'book', note: 'Cognado parcial; "library" es biblioteca, no librería.', root: 'book', etymology: 'OE bōc (haya/tabla escrita). library < lat. librarium (armario de libros).', lexemes: ['book'] },
+  { es: 'agua', target: 'water', note: 'Germánico; no cognado latino directo en uso común.', root: 'wat-', etymology: 'OE wæter < PIE *wódr̥. Familia: waterfall, waterproof, watery.', lexemes: ['water'] },
+  { es: 'amigo', target: 'friend', note: 'False friend informal: "amigo" en inglés coloquial ≠ solo friend formal.', root: 'friend', etymology: 'OE frēond < *frijōnd- (el que ama). Friendship, friendly, befriend.', lexemes: ['friend'] },
+  { es: 'ciudad', target: 'city', note: 'Latín civitas → city; "town" es más pequeño.', root: 'cit-', etymology: 'OF cité < lat. cīvitās (ciudadanía). citizen, civic, civilization.', lexemes: ['cit', 'y'] },
+  { es: 'tiempo', target: 'time', note: 'También "weather" según contexto (tiempo atmosférico).', root: 'tim-', etymology: 'OE tīma. timeline, timetable, timely. weather < OE weder.', lexemes: ['time'] },
+  { es: 'mano', target: 'hand', note: 'Germánico; "manual" es cognado latino en adjetivo.', root: 'hand', etymology: 'OE hand. handbook, handmade, handle. manual < lat. manus.', lexemes: ['hand'] },
+  { es: 'escuela', target: 'school', note: 'Griego via latín; cognado con school.', root: 'school', etymology: 'gr. skholḗ (ocio dedicado al estudio) → lat. schola. scholar, scholastic.', lexemes: ['school'] },
+  { es: 'comida', target: 'food', note: 'No "meal" (comida como ocasión).', root: 'food', etymology: 'OE fōda. foodstuff, seafood. meal < OE mǣl (tiempo medido).', lexemes: ['food'] },
+  { es: 'trabajo', target: 'work', note: 'También "job" (empleo concreto).', root: 'work', etymology: 'OE weorc. workforce, workplace, workable. job es préstamo posterior.', lexemes: ['work'] },
+  { es: 'niño', target: 'child', note: 'Plural irregular: children.', root: 'child', etymology: 'OE cild. childhood, childish. Plural con -ren (arcaico).', lexemes: ['child'] },
+  { es: 'mujer', target: 'woman', note: 'Plural irregular: women (pron. /ˈwɪmɪn/).', root: 'woman', etymology: 'OE wīfman (mujer-persona). women = plural histórico.', lexemes: ['wo', 'man'] },
+  { es: 'hombre', target: 'man', note: 'Plural: men. "Human" es más genérico.', root: 'man', etymology: 'OE mann (persona). mankind, man-made. human < lat. hūmānus.', lexemes: ['man'] },
+  { es: 'día', target: 'day', note: 'Germánico; "diary" es diario personal.', root: 'day', etymology: 'OE dæg. daytime, everyday. diary < lat. diārium.', lexemes: ['day'] },
+  { es: 'noche', target: 'night', note: 'Cognado germánico con night.', root: 'night', etymology: 'OE niht < PIE *nókʷts. midnight, nightmare, overnight.', lexemes: ['night'] },
+  { es: 'año', target: 'year', note: 'No confundir con "ano" (error ortográfico grave).', root: 'year', etymology: 'OE gēar. yearly, yearbook. annual < lat. annus.', lexemes: ['year'] },
+  { es: 'mes', target: 'month', note: 'Cognado con month; "mess" es desorden.', root: 'month', etymology: 'OE mōnaþ (ligado a moon). monthly. mess ≠ month.', lexemes: ['month'] },
+  { es: 'semana', target: 'week', note: 'Germánico week.', root: 'week', etymology: 'OE wice. weekday, weekend, weekly.', lexemes: ['week'] },
+  { es: 'hoy', target: 'today', note: 'Compuesto to + day.', root: 'to-day', etymology: 'to (preposición) + day. Parallel: tonight, tomorrow.', lexemes: ['to', 'day'] },
+  { es: 'mañana', target: 'tomorrow', note: 'También "morning" si es la parte del día.', root: 'to-morrow', etymology: 'to + morgen (mañana). morning = parte del día.', lexemes: ['to', 'morrow'] },
+  { es: 'ayer', target: 'yesterday', note: 'Compuesto con day.', root: 'yester-day', etymology: 'OE geostran dæg. yester- = el anterior.', lexemes: ['yester', 'day'] },
+  { es: 'grande', target: 'big', note: 'También "large"; "grand" es grandioso.', root: 'big', etymology: 'Origen dialéctico; large < OF large. grand < lat. grandis.', lexemes: ['big'] },
+  { es: 'pequeño', target: 'small', note: 'También "little".', root: 'small', etymology: 'OE smæl. small-scale. little < OE lȳtel.', lexemes: ['small'] },
+  { es: 'bueno', target: 'good', note: 'Adverbio irregular: well.', root: 'good', etymology: 'OE gōd. goodness, goodbye. well < OE wel (adverbio).', lexemes: ['good'] },
+  { es: 'malo', target: 'bad', note: 'Adverbio: badly.', root: 'bad', etymology: 'ME badde. badly, badness. evil es más moral/fuerte.', lexemes: ['bad'] },
+  { es: 'rápido', target: 'fast', note: 'También "quick"; "rapid" más formal/técnico.', root: 'fast', etymology: 'OE fæst (firme → rápido). fasten. rapid < lat. rapidus.', lexemes: ['fast'] },
+  { es: 'lento', target: 'slow', note: 'Adverbio: slowly.', root: 'slow', etymology: 'OE slāw. slowly, slowdown.', lexemes: ['slow'] },
+  { es: 'caliente', target: 'hot', note: 'Comida o temperatura; "warm" es tibio.', root: 'hot', etymology: 'OE hāt. hotspot, hotly. warm < OE wearm.', lexemes: ['hot'] },
+  { es: 'frío', target: 'cold', note: 'Adjetivo y sustantivo.', root: 'cold', etymology: 'OE cald. coldness, cold-blooded.', lexemes: ['cold'] },
+  { es: 'feliz', target: 'happy', note: 'No "lucky" (afortunado).', root: 'happ-', etymology: 'ME hap (suerte) + -y. happiness, happen. lucky = afortunado.', lexemes: ['happ', 'y'] },
+  { es: 'triste', target: 'sad', note: 'Cognado no transparente.', root: 'sad', etymology: 'OE sæd (saciado → serio → triste). sadness, sadden.', lexemes: ['sad'] },
+  { es: 'hablar', target: 'speak', note: 'También "talk"; "speak" más lenguas/formal.', root: 'speak', etymology: 'OE specan. speaker, speech. talk < ME talken.', lexemes: ['speak'] },
+  { es: 'comer', target: 'eat', note: 'Germánico eat.', root: 'eat', etymology: 'OE etan. eater, edible (lat. ed-). past: ate; pp: eaten.', lexemes: ['eat'] },
+  { es: 'beber', target: 'drink', note: 'Verbo y sustantivo.', root: 'drink', etymology: 'OE drincan. drinkable, drunk (pp/adj).', lexemes: ['drink'] },
+  { es: 'dormir', target: 'sleep', note: 'Germánico sleep.', root: 'sleep', etymology: 'OE slǣpan. sleeper, sleepy, asleep.', lexemes: ['sleep'] },
+  { es: 'correr', target: 'run', note: 'Pasado irregular: ran.', root: 'run', etymology: 'OE rinnan. runner, runway. past: ran; pp: run.', lexemes: ['run'] },
+  { es: 'caminar', target: 'walk', note: 'No "path" (camino).', root: 'walk', etymology: 'OE wealcan (rodar). walker, walkway. path = sendero.', lexemes: ['walk'] },
+  { es: 'leer', target: 'read', note: 'Pasado homógrafo read /red/.', root: 'read', etymology: 'OE rǣdan (aconsejar/interpretar). reader, reading, readable.', lexemes: ['read'] },
+  { es: 'escribir', target: 'write', note: 'Pasado: wrote; participio written.', root: 'writ-', etymology: 'OE wrītan (rayar). writer, writing, written. script < lat. scribere.', lexemes: ['writ', 'e'] },
+
+  { es: 'pensar', target: 'think', note: 'Pasado: thought.', root: 'think', etymology: 'OE þencan. thought (n/v), thoughtful, rethink.', lexemes: ['think'] },
+  { es: 'saber', target: 'know', note: 'Pasado: knew; "know how" = saber hacer.', root: 'know', etymology: 'OE cnāwan. knowledge, known, acknowledge.', lexemes: ['know'] },
+  { es: 'poder', target: 'can', note: 'Modal; pasado could.', root: 'can', etymology: 'OE cunnan (saber/poder). could, cannot. capacity < lat.', lexemes: ['can'] },
+  { es: 'querer', target: 'want', note: 'También "love" en contextos afectivos fuertes.', root: 'want', etymology: 'ON vanta (faltar). wanting. desire < lat. dēsīderāre.', lexemes: ['want'] },
+  { es: 'deber', target: 'must', note: 'También "should" (consejo) / "ought".', root: 'must', etymology: 'OE mōste. should < shall; ought < āgan (poseer).', lexemes: ['must'] },
+  { es: 'hacer', target: 'do', note: 'También "make" (crear/fabricar).', root: 'do', etymology: 'OE dōn. does, did, done. make < OE macian (fabricar).', lexemes: ['do'] },
+  { es: 'ir', target: 'go', note: 'Pasado: went; participio gone.', root: 'go', etymology: 'OE gān. going, gone. went < wendan (supletivo).', lexemes: ['go'] },
+  { es: 'venir', target: 'come', note: 'Pasado: came.', root: 'come', etymology: 'OE cuman. coming, become, outcome.', lexemes: ['come'] },
+  { es: 'ver', target: 'see', note: 'Pasado: saw; "watch" es mirar con atención.', root: 'see', etymology: 'OE sēon. sight, foresee. watch < OE wæccan.', lexemes: ['see'] },
+  { es: 'oír', target: 'hear', note: 'Pasado: heard; "listen" es escuchar activamente.', root: 'hear', etymology: 'OE hīeran. hearing, hearsay. listen < OE hlysnan.', lexemes: ['hear'] },
+  { es: 'porque', target: 'because', note: 'Causal; "why" es la pregunta.', root: 'be-cause', etymology: 'by + cause < lat. causa. because of + N.', lexemes: ['be', 'cause'] },
+  { es: 'aunque', target: 'although', note: 'También "though" / "even though".', root: 'al-though', etymology: 'all + though. though < OE þēah.', lexemes: ['al', 'though'] },
+  { es: 'siempre', target: 'always', note: 'Frecuencia 100%.', root: 'al-ways', etymology: 'all + ways (en todo camino). forever más absoluto.', lexemes: ['al', 'ways'] },
+  { es: 'nunca', target: 'never', note: 'Doble negación en inglés estándar se evita.', root: 'n-ever', etymology: 'ne + ever. never ever enfático. not + anything (no double neg).', lexemes: ['n', 'ever'] },
+  { es: 'aquí', target: 'here', note: 'Opuesto there.', root: 'here', etymology: 'OE hēr. hereby, hereafter. there < þǣr.', lexemes: ['here'] },
+  { es: 'allí', target: 'there', note: 'Existencial: there is/are.', root: 'there', etymology: 'OE þǣr. therefore, thereby. there is/are = existencia.', lexemes: ['there'] },
+  { es: 'nación', target: 'nation', note: 'Sufijo -tion de origen latino; cognado transparente.', root: 'nat-', etymology: 'lat. nātiō < nāscī (nacer). national, native, international. -tion = sustantivo abstracto.', lexemes: ['nat', 'ion'] },
+  { es: 'información', target: 'information', note: 'Incontable en inglés: no "informations".', root: 'form-', etymology: 'lat. īnformātiō < īnformāre (dar forma). informative, inform. -ation abstracto; incontable.', lexemes: ['in', 'form', 'ation'] },
+  { es: 'decisión', target: 'decision', note: 'Sufijo -sion; verbo decide.', root: 'cid-/cis-', etymology: 'lat. dēcīsiō < dēcīdere (cortar). decisive, concise. -sion tras base en -d/-t.', lexemes: ['de', 'cis', 'ion'] },
+  { es: 'posible', target: 'possible', note: 'Sufijo -ible/-able de posibilidad.', root: 'poss-', etymology: 'lat. possibilis < posse (poder). possibility, impossible. -ible = capaz de.', lexemes: ['poss', 'ible'] },
+  { es: 'realidad', target: 'reality', note: 'Sufijo -ity; adjetivo real.', root: 'real-', etymology: 'lat. reālitās < rēs (cosa). realistic, realize. -ity = cualidad abstracta.', lexemes: ['real', 'ity'] },
 ]
 
 const FR_LEX: LexItem[] = [
@@ -2268,7 +2308,46 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
   const targetPool = DISTRACTORS[lang] ?? ES_DISTRACTORS
   const esPool = ES_DISTRACTORS
 
-  if (mode === 'translate_to_es' || mode === 'cognate_logic') {
+  const rootHint = item.root
+    ? `Raíz/lexema a memorizar: 「${item.root}」. Descompón en bloques conocidos.`
+    : 'Deduce por cognado, contexto o regla del idioma.'
+  const ety = item.etymology || item.note
+  const lexBlock =
+    item.lexemes && item.lexemes.length
+      ? ` Bloques: ${item.lexemes.join(' + ')}.`
+      : ''
+
+  if (mode === 'morphology' || mode === 'cognate_logic') {
+    const built = buildOptions(item.es, esPool, 8)
+    return {
+      id: `${lang}-morph-${L}`,
+      lang,
+      mode,
+      level: L,
+      cefr,
+      prompt:
+        mode === 'morphology'
+          ? `Morfología: descompón 「${item.target}」. ¿Qué significa en español?`
+          : `Cognado/raíz: 「${item.target}」. ¿Qué significa en español?`,
+      ruleHint: item.rule || rootHint,
+      ruleExplain:
+        (item.note || '') +
+        ' ' +
+        (item.etymology || 'Busca la raíz compartida y el sufijo/prefijo.') +
+        lexBlock +
+        ' Memoriza el lexema para reutilizarlo en palabras nuevas.',
+      failAdvice:
+        'Identifica la raíz primero; luego el prefijo/sufijo. No elijas solo por parecido superficial de letras.',
+      options: built.options,
+      correctIndex: built.correctIndex,
+      explanation: `${item.target} → ${item.es}. ${item.note}${lexBlock}`,
+      difficulty,
+      rootFocus: item.root,
+      etymology: ety,
+    }
+  }
+
+  if (mode === 'translate_to_es') {
     const built = buildOptions(item.es, esPool, 8)
     return {
       id: `${lang}-toes-${L}`,
@@ -2277,13 +2356,18 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
       level: L,
       cefr,
       prompt: `¿Qué significa en español: 「${item.target}」?`,
-      ruleHint: item.rule || 'Deduce por cognado, contexto o regla del idioma.',
-      ruleExplain: item.note + ' Busca raíces, género/número y evita calcos literales.',
+      ruleHint: item.rule || rootHint,
+      ruleExplain:
+        item.note +
+        ' Busca raíces, género/número y evita calcos literales.' +
+        (item.etymology ? ` Etimología: ${item.etymology}` : ''),
       failAdvice: 'Revisa cognados y false friends; no elijas solo por parecido de letras.',
       options: built.options,
       correctIndex: built.correctIndex,
       explanation: `${item.target} → ${item.es}. ${item.note}`,
       difficulty,
+      rootFocus: item.root,
+      etymology: ety,
     }
   }
 
@@ -2291,17 +2375,22 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
   return {
     id: `${lang}-fromes-${L}`,
     lang,
-    mode: 'translate_from_es',
+    mode: mode === 'translate_from_es' ? 'translate_from_es' : mode,
     level: L,
     cefr,
     prompt: `¿Cómo se dice en ${LANG_PROFILES[lang].name}: 「${item.es}」?`,
-    ruleHint: item.rule || 'Correspondencia léxica; evita false friends.',
-    ruleExplain: item.note + ' Atiende artículos, género e irregularidades.',
-      failAdvice: 'Descarta false friends y calcos del español; busca la forma nativa habitual.',
+    ruleHint: item.rule || rootHint,
+    ruleExplain:
+      item.note +
+      ' Atiende artículos, género e irregularidades.' +
+      (item.etymology ? ` Etimología: ${item.etymology}` : ''),
+    failAdvice: 'Descarta false friends y calcos del español; busca la forma nativa habitual.',
     options: built.options,
     correctIndex: built.correctIndex,
     explanation: `${item.es} → ${item.target}. ${item.note}`,
     difficulty,
+    rootFocus: item.root,
+    etymology: ety,
   }
 }
 
@@ -3290,6 +3379,10 @@ export function IdiomasGame() {
     seconds: number
     attempts: number
   } | null>(null)
+  const [dictEntries, setDictEntries] = useState<DictEntry[]>(() =>
+    readJSON(LS.dictionary, [])
+  )
+  const [dictFilterLang, setDictFilterLang] = useState<LangId | 'all'>('all')
   const startedAtRef = useRef<number>(0)
 
   const profile = LANG_PROFILES[lang]
@@ -3396,6 +3489,30 @@ export function IdiomasGame() {
       if (!best[key] || seconds < best[key]) {
         best[key] = seconds
         writeJSON(LS.bestTime, best)
+      }
+      // Diccionario personal: solo se registra al acertar (nivel no repetible)
+      const entryId = `${lang}:${levelId}`
+      const already = dictEntries.some((e) => e.id === entryId)
+      if (!already) {
+        const entry: DictEntry = {
+          id: entryId,
+          lang,
+          level: levelId,
+          cefr: question.cefr,
+          mode: question.mode,
+          prompt: question.prompt,
+          correctAnswer: question.options[question.correctIndex],
+          explanation: question.explanation,
+          ruleHint: question.ruleHint,
+          rootFocus: question.rootFocus,
+          etymology: question.etymology,
+          seconds,
+          attempts,
+          completedAt: new Date().toISOString(),
+        }
+        const nextDict = [...dictEntries, entry]
+        setDictEntries(nextDict)
+        writeJSON(LS.dictionary, nextDict)
       }
     } else {
       setFails((f) => {
@@ -3523,6 +3640,16 @@ export function IdiomasGame() {
           <button className="id-btn" type="button" onClick={() => setScreen('reading')}>
             📖 Modo lectura · Historias del mundo
           </button>
+          <button
+            className="id-btn"
+            type="button"
+            onClick={() => {
+              setDictFilterLang('all')
+              setScreen('dictionary')
+            }}
+          >
+            📚 Mi diccionario · {dictEntries.length} logros
+          </button>
           <p className="id-stats-line">
             Aciertos: {wins} · Fallos: {fails} · Desbloqueado ({profile.name}): {unlocked}/
             {TOTAL_LEVELS} · Completados: {(completedMap[lang] ?? []).length}
@@ -3530,6 +3657,110 @@ export function IdiomasGame() {
           <p className="id-stats-line">
             Modo: {preferredMode === 'auto' ? 'Automático (ciclo)' : MODE_LABELS[preferredMode]}
           </p>
+        </div>
+      </div>
+    )
+  }
+
+  // ---- DICTIONARY ----
+  if (screen === 'dictionary') {
+    const filtered =
+      dictFilterLang === 'all'
+        ? dictEntries
+        : dictEntries.filter((e) => e.lang === dictFilterLang)
+    const sorted = [...filtered].sort((a, b) => {
+      if (a.lang !== b.lang) return a.lang.localeCompare(b.lang)
+      return a.level - b.level
+    })
+    const byLang = LANG_ORDER.map((id) => ({
+      id,
+      count: dictEntries.filter((e) => e.lang === id).length,
+    }))
+    return (
+      <div className="id-root">
+        <style>{CSS}</style>
+        <header className="id-top">
+          <button className="id-icon" onClick={() => setScreen('hub')}>
+            ←
+          </button>
+          <div className="id-top-title">
+            <h1>Mi diccionario</h1>
+            <p>Niveles superados · pregunta, respuesta, tiempo y etimología</p>
+          </div>
+        </header>
+        <section className="id-lang-switch" aria-label="Filtrar por idioma">
+          <button
+            type="button"
+            className={`id-lang-btn ${dictFilterLang === 'all' ? 'active' : ''}`}
+            onClick={() => setDictFilterLang('all')}
+          >
+            Todos ({dictEntries.length})
+          </button>
+          {byLang.map(({ id, count }) => {
+            const p = LANG_PROFILES[id]
+            return (
+              <button
+                key={id}
+                type="button"
+                className={`id-lang-btn ${dictFilterLang === id ? 'active' : ''}`}
+                onClick={() => setDictFilterLang(id)}
+              >
+                <span className="id-flag">{p.flag}</span>
+                <span>
+                  {p.name} ({count})
+                </span>
+              </button>
+            )
+          })}
+        </section>
+        {sorted.length === 0 ? (
+          <div className="id-card" style={{ padding: 16 }}>
+            <p className="id-meta">
+              Aún no hay entradas. Cada nivel que aciertas se guarda aquí con la pregunta, la
+              respuesta correcta, el tiempo y una nota etimológica o de raíz para que midas lo que
+              ya dominas y no se repita.
+            </p>
+          </div>
+        ) : (
+          <div className="id-story-list">
+            {sorted.map((e) => (
+              <article key={e.id} className="id-dict-card">
+                <div className="id-story-head">
+                  <span className="id-flag">{LANG_PROFILES[e.lang].flag}</span>
+                  <strong>
+                    Nv. {e.level} · {e.cefr} · {MODE_LABELS[e.mode]}
+                  </strong>
+                </div>
+                <p className="id-dict-prompt">{e.prompt}</p>
+                <p className="id-dict-answer">
+                  <strong>Respuesta:</strong> {e.correctAnswer}
+                </p>
+                <p className="id-meta">
+                  Tiempo: {e.seconds}s · Intentos: {e.attempts} ·{' '}
+                  {new Date(e.completedAt).toLocaleDateString()}
+                </p>
+                {e.rootFocus && (
+                  <p className="id-rule-hint">
+                    <strong>Raíz / lexema:</strong> {e.rootFocus}
+                  </p>
+                )}
+                {e.etymology && (
+                  <p className="id-rule-explain">
+                    <strong>Etimología / bloques:</strong> {e.etymology}
+                  </p>
+                )}
+                <p className="id-explain">{e.explanation}</p>
+                <p className="id-meta">
+                  <em>Regla:</em> {e.ruleHint}
+                </p>
+              </article>
+            ))}
+          </div>
+        )}
+        <div className="id-actions">
+          <button className="id-btn primary" type="button" onClick={() => setScreen('hub')}>
+            Volver al menú
+          </button>
         </div>
       </div>
     )
@@ -3841,6 +4072,16 @@ export function IdiomasGame() {
             <>
               <h3>Explicación</h3>
               <p className="id-explain">{question.explanation}</p>
+              {question.rootFocus && (
+                <p className="id-rule-hint">
+                  <strong>Memoriza la raíz / lexema:</strong> {question.rootFocus}
+                </p>
+              )}
+              {question.etymology && (
+                <p className="id-rule-explain">
+                  <strong>Etimología / familia:</strong> {question.etymology}
+                </p>
+              )}
               <p className="id-rule-explain">
                 <strong>Regla:</strong> {question.ruleHint}
               </p>
@@ -3851,6 +4092,7 @@ export function IdiomasGame() {
                   {String.fromCharCode(65 + question.correctIndex)}. {question.options[question.correctIndex]}
                 </strong>
               </p>
+              <p className="id-meta">Guardado en Mi diccionario (no se repetirá).</p>
             </>
           ) : (
             <>
@@ -4326,6 +4568,30 @@ const CSS = `
 .id-toggle-btn.active {
   outline: 2px solid #3AA0FF;
   background: color-mix(in srgb, #3AA0FF 18%, transparent);
+}
+.id-dict-card {
+  border: 1px solid color-mix(in srgb, var(--gco-ink, #fff) 14%, transparent);
+  background: color-mix(in srgb, var(--gco-ink, #fff) 6%, transparent);
+  border-radius: 14px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  backdrop-filter: blur(12px);
+}
+.id-dict-prompt {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.id-dict-answer {
+  margin: 0;
+  font-size: 0.9rem;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, #4ADE80 14%, transparent);
+  border: 1px solid color-mix(in srgb, #4ADE80 30%, transparent);
 }
 @media (max-width: 480px) {
   .id-lang-btn { font-size: 0.78rem; padding: 7px 10px; }
