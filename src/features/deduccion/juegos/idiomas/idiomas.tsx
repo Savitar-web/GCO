@@ -3860,7 +3860,7 @@ export function IdiomasGame() {
                 <strong>Pista de regla:</strong> {question.ruleHint}
               </p>
               <p className="id-meta">
-                La respuesta correcta no se muestra al fallar. Reintenta aplicando el consejo.
+                Si fallas, reintenta aplicando el consejo.
               </p>
             </>
           )}
