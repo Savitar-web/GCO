@@ -1,6 +1,6 @@
 /**
  * =============================================================================
- * BlockCleaner.tsx — Color Block Jam style (v16.7 · ALL-IN-ONE)
+ * BlockCleaner.tsx — Color Block Jam style (v18.0 · ALL-IN-ONE)
  * =============================================================================
  * v14.5 — Archivo único: motor + generación + solver + UI.
  * Sin niveles imposibles · candados · axis locks · tableros verticales · 24 colores.
@@ -754,103 +754,95 @@ function shapesForTier(tier: DifficultyTierConfig): Array<{ w: number; h: number
 
 export function getDifficultyTier(level: number): DifficultyTierConfig {
   const L = Math.max(1, level)
-  const step = Math.floor((L - 1) / 3)
-  const vertical = L >= 8 && (L % 4 === 0)
 
-  // Piezas desde el inicio más densas (el usuario pidió más reto temprano)
-  let numBlocks = 5 + step
-  let numColors = 3 + Math.floor(step / 2)
-  let rows = 5
-  let cols = 5
-  let obstacles = 0
-  let maxDim = 2
-  let allowSquares = L >= 6
-  let scramble = 28 + step * 7
-  let axisLock = 0
-  let locked = 0
-  let lockMin = 0
-  let lockMax = 0
-  let timeBase = 200
-  let label = 'Tutorial'
-
-  if (L <= 3) {
-    numBlocks = 9; numColors = 5; rows = 6; cols = 7; scramble = 55; maxDim = 2; label = 'Tutorial'
-  } else if (L <= 6) {
-    numBlocks = 10; numColors = 6; rows = 7; cols = 7; scramble = 62; maxDim = 3; label = 'Tutorial+'
-  } else if (L <= 9) {
-    numBlocks = 11; numColors = 6; rows = 7; cols = 8; scramble = 70; maxDim = 3; label = 'Principiante'
-  } else if (L <= 12) {
-    numBlocks = 12; numColors = 6; rows = 7; cols = 8; scramble = 80; maxDim = 3
-    locked = 0.55; lockMin = 1; lockMax = 2; timeBase = 170; label = 'Principiante+'
-  } else if (L <= 14) {
-    numBlocks = 12; numColors = 7; rows = 8; cols = 8; scramble = 85; maxDim = 3
-    locked = 0.55; lockMin = 1; lockMax = 3; timeBase = 160; label = 'Intermedio'
-  } else if (L <= 18) {
-    numBlocks = 13; numColors = 7; rows = 8; cols = 8; scramble = 90; maxDim = 3
-    obstacles = L >= 15 ? 1 + (L >= 17 ? 1 : 0) : 0
-    locked = 0.5; lockMin = 1; lockMax = 3; timeBase = 155; label = 'Intermedio'
-  } else if (L <= 24) {
-    numBlocks = 14 + Math.floor((L - 19) / 2); numColors = 8; rows = 8; cols = 9; scramble = 100
-    obstacles = 2; maxDim = 3; locked = 0.5; lockMin = 1; lockMax = 3; timeBase = 145; label = 'Intermedio+'
-  } else if (L <= 34) {
-    numBlocks = 15 + Math.floor((L - 25) / 2); numColors = 8; rows = 9; cols = 9; scramble = 110
-    obstacles = 2 + (L >= 30 ? 1 : 0); maxDim = 4; locked = 0.48; lockMin = 1; lockMax = 3; timeBase = 140; label = 'Avanzado'
-  } else if (L <= 43) {
-    // Amenaza de tiempo (bomb) desde 35 — se aplica en generate
-    numBlocks = 12 + Math.floor((L - 35) / 3); numColors = 9; rows = 9; cols = 9; scramble = 100
-    obstacles = 3; maxDim = 4; locked = 0.4; lockMin = 1; lockMax = 4; timeBase = 130; label = 'Avanzado+'
-  } else if (L <= 55) {
-    // Axis lock / dirección forzada desde 44
-    numBlocks = 13 + Math.floor((L - 44) / 3); numColors = 9; rows = 9; cols = 10; scramble = 110
-    obstacles = 3; maxDim = 4; locked = 0.42; lockMin = 2; lockMax = 4
-    axisLock = 0.2; timeBase = 120; label = 'Experto'
-  } else if (L <= 75) {
-    numBlocks = 15 + Math.floor((L - 56) / 4); numColors = 10; rows = 10; cols = 10; scramble = 120
-    obstacles = 4; maxDim = 4; locked = 0.45; lockMin = 2; lockMax = 5
-    axisLock = 0.24; timeBase = 110; label = 'Experto+'
-  } else if (L <= 100) {
-    numBlocks = 17 + Math.floor((L - 76) / 5); numColors = 11; rows = 10; cols = 11; scramble = 130
-    obstacles = 4; maxDim = 4; locked = 0.48; lockMin = 2; lockMax = 5
-    axisLock = 0.26; timeBase = 100; label = 'Maestro'
-  } else {
-    const extra = L - 100
-    rows = clampNum(11 + Math.floor(extra / 30), 11, 13)
+  // Tablero crece de forma visible
+  let rows = 6
+  let cols = 6
+  if (L >= 5) { rows = 6; cols = 7 }
+  if (L >= 9) { rows = 7; cols = 7 }
+  if (L >= 13) { rows = 7; cols = 8 }
+  if (L >= 18) { rows = 8; cols = 8 }
+  if (L >= 24) { rows = 8; cols = 9 }
+  if (L >= 30) { rows = 9; cols = 9 }
+  if (L >= 35) { rows = 9; cols = 10 }
+  if (L >= 45) { rows = 10; cols = 10 }
+  if (L >= 60) { rows = 10; cols = 11 }
+  if (L >= 80) { rows = 11; cols = 11 }
+  if (L >= 100) {
+    rows = clampNum(11 + Math.floor((L - 100) / 30), 11, 13)
     cols = rows
-    numBlocks = clampNum(20 + Math.floor(extra / 8), 20, 30)
-    numColors = clampNum(10 + Math.floor(extra / 20), 10, BLOCK_COLOR_ORDER.length)
-    obstacles = clampNum(5 + Math.floor(extra / 25), 5, 10)
-    maxDim = 4; allowSquares = true
-    scramble = clampNum(125 + extra, 125, 160)
-    locked = 0.5; lockMin = 2; lockMax = 6; axisLock = 0.28
-    timeBase = clampNum(95 - Math.floor(extra / 15), 60, 95)
-    label = extra < 50 ? 'Maestro+' : 'Infinito'
+  }
+  if (L >= 10 && L % 7 === 0) {
+    rows = clampNum(rows + 1, 6, 14)
+    cols = clampNum(Math.max(6, cols - 1), 6, 12)
   }
 
-  if (vertical) {
-    const a = Math.max(rows, cols)
-    const b = Math.min(rows, cols)
-    rows = a + 1
-    cols = Math.max(5, b - 1)
+  // Piezas densas (el 35 debe verse lleno)
+  let numBlocks = 8 + Math.floor(L * 0.5) + Math.floor(L / 5)
+  if (L >= 35) numBlocks = Math.max(numBlocks, 22 + Math.floor((L - 35) / 3))
+  if (L >= 50) numBlocks = Math.max(numBlocks, 28 + Math.floor((L - 50) / 4))
+  numBlocks = clampNum(numBlocks, 8, rows * cols - 4)
+
+  // MUCHOS colores (no solo 4)
+  let numColors = 5 + Math.floor(L / 3)
+  if (L >= 13) numColors = Math.max(numColors, 9)
+  if (L >= 24) numColors = Math.max(numColors, 12)
+  if (L >= 35) numColors = Math.max(numColors, 14)
+  if (L >= 50) numColors = Math.max(numColors, 16)
+  numColors = clampNum(numColors, 5, BLOCK_COLOR_ORDER.length)
+
+  const scrambleMoves = clampNum(50 + L * 3, 50, 240)
+  const maxDim = L < 6 ? 2 : L < 18 ? 3 : 4
+  const allowSquares = L >= 4
+  const timeLimitBase = clampNum(150 + L * 3, 140, 500)
+
+  // Obstáculos desde 15
+  let obstacleCount = 0
+  if (L >= 15) {
+    obstacleCount = 1 + Math.floor((L - 15) / 5)
+    if (L >= 35) obstacleCount = Math.max(obstacleCount, 2)
+    if (L >= 50) obstacleCount = Math.max(obstacleCount, 3)
+    obstacleCount = clampNum(obstacleCount, 1, 8)
   }
 
-  // Gates estrictos
-  if (L < 10) { locked = 0; lockMin = 0; lockMax = 0 }
-  if (L < 15) obstacles = 0
-  if (L < 44) axisLock = 0
+  // Candados desde 10
+  let lockedChance = 0
+  let lockedClearsMin = 0
+  let lockedClearsMax = 0
+  if (L >= 10) {
+    lockedChance = clampNum(0.5 + (L - 10) * 0.01, 0.5, 0.85)
+    lockedClearsMin = 1
+    lockedClearsMax = clampNum(2 + Math.floor((L - 10) / 10), 2, 6)
+  }
 
-  numColors = clampNum(numColors, 3, BLOCK_COLOR_ORDER.length)
-  numBlocks = Math.max(5, numBlocks)
+  let axisLockChance = 0
+  if (L >= 44) axisLockChance = clampNum(0.18 + (L - 44) * 0.005, 0.18, 0.4)
+
+  let label = 'Tutorial'
+  if (L >= 100) label = 'Maestro'
+  else if (L >= 70) label = 'Experto+'
+  else if (L >= 50) label = 'Experto'
+  else if (L >= 44) label = 'Avanzado+'
+  else if (L >= 35) label = 'Avanzado'
+  else if (L >= 24) label = 'Intermedio+'
+  else if (L >= 15) label = 'Intermedio'
+  else if (L >= 10) label = 'Principiante+'
+  else if (L >= 5) label = 'Principiante'
 
   return {
-    rows, cols, numBlocks, numColors,
-    obstacleCount: obstacles,
-    maxDim, allowSquares,
-    scrambleMoves: scramble,
-    axisLockChance: axisLock,
-    lockedChance: locked,
-    lockedClearsMin: lockMin,
-    lockedClearsMax: lockMax,
-    timeLimitBase: timeBase,
+    rows,
+    cols,
+    numBlocks: Math.min(numBlocks, rows * cols - 3 - obstacleCount),
+    numColors,
+    obstacleCount,
+    maxDim,
+    allowSquares,
+    scrambleMoves,
+    axisLockChance,
+    lockedChance,
+    lockedClearsMin,
+    lockedClearsMax,
+    timeLimitBase,
     label,
   }
 }
@@ -952,14 +944,18 @@ function generateLevelOnce(
 ): BlockCleanerLevel | null {
   const rng = mulberry32(seed)
   const { rows, cols } = tier
-  const colors = BLOCK_COLOR_ORDER.slice(0, Math.max(2, tier.numColors))
+  const palette = [...BLOCK_COLOR_ORDER]
+  shuffle(rng, palette)
+  // Priorizar variedad visual: mezclar siempre la paleta completa
+  const colors = palette.slice(0, Math.max(2, tier.numColors))
   const shapes = shapesForTier(tier)
   const sides: Side[] = ['top', 'bottom', 'left', 'right']
 
   type Planned = { color: BlockColor; w: number; h: number }
   const planned: Planned[] = []
   for (let i = 0; i < tier.numBlocks; i++) {
-    const color = pickItem(rng, colors)
+    // Garantizar que aparezcan TODOS los colores del tramo al menos una vez
+    const color = i < colors.length ? colors[i % colors.length]! : pickItem(rng, colors)
     const shape = pickItem(rng, shapes)
     if (shape.w > cols - 1 || shape.h > rows - 1) {
       planned.push({ color, w: 1, h: 1 })
@@ -1178,7 +1174,7 @@ function generateLevelOnce(
   }
 
   // Niveles 35+: amenaza de tiempo ocasional (1 pieza)
-  if (safeId >= 35 && rng() < (safeId >= 60 ? 0.45 : 0.3)) {
+  if (safeId >= 35 && rng() < (safeId >= 50 ? 0.55 : safeId >= 40 ? 0.4 : 0.32)) {
     const movable = blocks.filter((b) => !b.lockedUntilClears)
     if (movable.length) {
       const target = pickItem(rng, movable)
@@ -1189,7 +1185,7 @@ function generateLevelOnce(
   // Niveles 35+: pieza bicolor ocasional (debe usar puerta secundaria al “reaparecer” lógica simplificada:
   // secondaryColor marca que necesita la puerta del 2º color también — UI/motor: sale solo si ambas puertas existen;
   // al salir por color primario, si tiene secondary, se convierte en el secundario en el mismo sitio)
-  if (safeId >= 35 && rng() < (safeId >= 55 ? 0.4 : 0.25)) {
+  if (safeId >= 24 && rng() < (safeId >= 40 ? 0.45 : safeId >= 30 ? 0.35 : 0.28)) {
     const candidates = blocks.filter((b) => !b.threatSeconds)
     if (candidates.length && usedColors.length >= 2) {
       const target = pickItem(rng, candidates)
@@ -1202,7 +1198,7 @@ function generateLevelOnce(
   // Scramble más controlado (menos probabilidad de estados imposibles)
   let current = blocks.map((b) => ({ ...b }))
   let lastId: string | null = null
-  const scrambleSteps = Math.min(tier.scrambleMoves, Math.max(18, tier.numBlocks * 4))
+  const scrambleSteps = Math.min(tier.scrambleMoves, Math.max(20, tier.numBlocks * (safeId >= 25 ? 6 : 4)))
   for (let step = 0; step < scrambleSteps; step++) {
     const pool = current.filter((b) => !b.lockedUntilClears && b.id !== lastId)
     const candidates = pool.length ? pool : current.filter((b) => !b.lockedUntilClears)
@@ -1299,7 +1295,11 @@ function generateLevelOnce(
 
   const parMoves = Math.max(
     1,
-    Math.round((solution ? solution.length : tier.scrambleMoves * 0.4) + current.length * 0.7)
+    Math.round(
+      (solution ? solution.length : tier.scrambleMoves * 0.5) +
+      current.length * (safeId >= 30 ? 1.35 : safeId >= 15 ? 1.05 : 0.8) +
+      (safeId >= 35 ? 8 : safeId >= 20 ? 4 : 0)
+    )
   )
 
   // Empujar piezas lo MÁS LEJOS posible de su puerta (prioridad de dificultad)
@@ -1396,6 +1396,36 @@ function generateLevelOnce(
     }
   }
 
+
+  // Atascar el tablero: empujar piezas hacia el centro / entre sí (menos movilidad)
+  if (safeId >= 12) {
+    for (let pass = 0; pass < (safeId >= 30 ? 5 : 3); pass++) {
+      for (const b of [...current]) {
+        if (b.lockedUntilClears) continue
+        const ranges = computeFreeSlideRanges(b, current, obstacles, rows, cols, 999)
+        // Elegir posición con MENOR movilidad restante (atasco), no la más lejos
+        const opts: Array<{ row: number; col: number }> = [
+          { row: b.row, col: ranges.minCol },
+          { row: b.row, col: ranges.maxCol },
+          { row: ranges.minRow, col: b.col },
+          { row: ranges.maxRow, col: b.col },
+        ]
+        let bestPos = { row: b.row, col: b.col, mob: 999 }
+        for (const o of opts) {
+          if (o.row === b.row && o.col === b.col) continue
+          const trial = normalizeBlock({ ...b, row: o.row, col: o.col })
+          const others = current.map(x => x.id === b.id ? trial : x)
+          const rr = computeFreeSlideRanges(trial, others, obstacles, rows, cols, 999)
+          const mob = (rr.maxRow - rr.minRow) + (rr.maxCol - rr.minCol)
+          if (mob < bestPos.mob) bestPos = { row: o.row, col: o.col, mob }
+        }
+        if (bestPos.mob < 999) {
+          current = current.map(x => x.id === b.id ? normalizeBlock({ ...x, row: bestPos.row, col: bestPos.col }) : x)
+        }
+      }
+    }
+  }
+
   // Rechazar si demasiadas piezas siguen cerca de su puerta (evita niveles fáciles)
   {
     const colorEx = new Map(exits.map(e => [e.color, e] as const))
@@ -1484,13 +1514,63 @@ function generateLevelOnce(
  * Genera nivel garantizado. Más intentos + fallback seguro.
  */
 /** Cache en memoria para no regenerar el mismo nivel en la misma sesión */
-const _levelCache = new Map<number, BlockCleanerLevel>() // v16.3
+const _levelCache = new Map<number, BlockCleanerLevel>() // v18.0 HARD RESET
 
 /**
  * Genera un nivel único por id. Siempre produce distribución distinta (seed).
  * Prioriza jugabilidad: scramble legal + empujar salidas inmediatas.
  * Solver pesado solo en niveles muy pequeños.
  */
+
+/** Puntúa dureza lógica: más alto = más "gimnasio mental" */
+function scoreLevelHardness(level: BlockCleanerLevel): number {
+  const { blocks, exits, obstacles, rows, cols } = level
+  const totalCells = rows * cols
+  const occupied = blocks.reduce((s, b) => s + blockWidth(b) * blockHeight(b), 0) + obstacles.length
+  const fill = occupied / Math.max(1, totalCells)
+  const immediate = countUnlockedExitable(blocks, exits, obstacles, rows, cols)
+
+  // Movilidad media: rangos de deslizamiento (menos = más atascado)
+  let mobility = 0
+  for (const b of blocks) {
+    if (!isBlockMovable(b, 0)) continue
+    const r = computeFreeSlideRanges(b, blocks, obstacles, rows, cols, 0)
+    mobility += (r.maxRow - r.minRow) + (r.maxCol - r.minCol)
+  }
+  const avgMobility = mobility / Math.max(1, blocks.length)
+
+  // Distancia media a puerta
+  let distSum = 0
+  for (const b of blocks) {
+    const ex = exits.find(e => e.color === b.color)
+    if (!ex) continue
+    if (ex.side === 'left') distSum += b.col
+    else if (ex.side === 'right') distSum += cols - blockWidth(b) - b.col
+    else if (ex.side === 'top') distSum += b.row
+    else distSum += rows - blockHeight(b) - b.row
+  }
+  const avgDist = distSum / Math.max(1, blocks.length)
+
+  const locks = blocks.filter(b => b.lockedUntilClears).length
+  const threats = blocks.filter(b => b.threatSeconds != null).length
+  const duals = blocks.filter(b => b.secondaryColor).length
+  const axis = blocks.filter(b => b.axisLock).length
+
+  // Penalizar salidas inmediatas fuerte; recompensar fill, distancia, mecánicas
+  let score = 0
+  score += fill * 4000
+  score += blocks.length * 40
+  score += avgDist * 120
+  score += locks * 80 + threats * 100 + duals * 90 + axis * 70
+  score += obstacles.length * 60
+  score -= immediate * 900
+  score -= avgMobility * 50
+  // Ideal: 0 salidas inmediatas
+  if (immediate === 0) score += 2000
+  else if (immediate === 1) score += 400
+  return score
+}
+
 export function generateLevel(levelId: number): BlockCleanerLevel {
   try {
     const safeId = Math.max(1, Math.floor(Number(levelId)) || 1)
@@ -1499,8 +1579,8 @@ export function generateLevel(levelId: number): BlockCleanerLevel {
 
     const tier = getDifficultyTier(safeId)
     const baseSeed = (safeId * 2654435761 + 41) >>> 0
-    // Pocos intentos: priorizar velocidad de carga (Continuar / Siguiente)
-    const maxAttempts = safeId <= 10 ? 5 : safeId <= 30 ? 4 : 3
+    // Más intentos en niveles altos: elegir el más "gimnasio mental"
+    const maxAttempts = safeId <= 8 ? 4 : safeId <= 20 ? 6 : safeId <= 40 ? 8 : 10
 
     let best: BlockCleanerLevel | null = null
     let bestScore = -Infinity
@@ -1520,16 +1600,17 @@ export function generateLevel(levelId: number): BlockCleanerLevel {
       const immediate = countUnlockedExitable(
         level.blocks, level.exits, level.obstacles, level.rows, level.cols
       )
-      const score =
-        (immediate === 0 ? 5000 : -immediate * 200) +
-        level.blocks.length * 30 +
-        level.exits.length * 5
+      // Niveles altos: rechazar si hay demasiadas salidas gratis
+      if (safeId >= 15 && immediate > 2) continue
+      if (safeId >= 30 && immediate > 1) continue
+
+      const score = scoreLevelHardness(level)
       if (score > bestScore) {
         bestScore = score
         best = level
       }
-      // Aceptar en cuanto haya un nivel jugable sin salida inmediata
-      if (immediate === 0) {
+      // En tutorial aceptar pronto; en avanzado seguir buscando más duro
+      if (immediate === 0 && safeId < 12 && score > 3000) {
         _levelCache.set(safeId, level)
         return level
       }
@@ -1994,7 +2075,7 @@ export function exitPixelVector(
   }
 }
 
-export const ENGINE_VERSION = '16.7.0'
+export const ENGINE_VERSION = '18.0.0'
 export const ENGINE_NAME = 'BlockCleaner / Color Block Jam style'
 
 export const COLOR_DISPLAY_NAMES: Record<BlockColor, string> = {
@@ -2020,9 +2101,9 @@ import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { soundClick } from '@/core/audio/uiSounds'
 const LS = {
-  current: 'bc.v167.current', unlocked: 'bc.v167.unlocked', scores: 'bc.v167.scores', moves: 'bc.v167.moves',
-  times: 'bc.v167.times', defeats: 'bc.v167.defeats', style: 'bc.v167.style', options: 'bc.v167.options',
-  wins: 'bc.v167.wins', totalMoves: 'bc.v167.totalMoves', streak: 'bc.v167.streak', bestStreak: 'bc.v167.bestStreak', bestCombo: 'bc.v167.bestCombo', regen: 'bc.v167.regen',
+  current: 'bc.v180.current', unlocked: 'bc.v180.unlocked', scores: 'bc.v180.scores', moves: 'bc.v180.moves',
+  times: 'bc.v180.times', defeats: 'bc.v180.defeats', style: 'bc.v180.style', options: 'bc.v180.options',
+  wins: 'bc.v180.wins', totalMoves: 'bc.v180.totalMoves', streak: 'bc.v180.streak', bestStreak: 'bc.v180.bestStreak', bestCombo: 'bc.v180.bestCombo', regen: 'bc.v180.regen',
 }
 function readJSON<T>(key: string, fallback: T): T {
   try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback } catch { return fallback }
@@ -2128,7 +2209,7 @@ function playSfx(kind: string) {
   }
 }
 
-export type BlockStyle = 'liquid-glass' | 'metallic' | 'matte' | 'neon' | 'pastel' | 'crystal' | 'candy' | 'obsidian' | 'hologram' | 'velvet' | 'retro' | 'aurora' | 'ice' | 'magma' | 'gold' | 'shadow' | 'bubble' | 'circuit' | 'chrome' | 'wood' | 'paper' | 'emerald' | 'sapphire' | 'ruby' | 'smoke' | 'plasma' | 'neon-grid' | 'sunset' | 'ocean' | 'carbon' | 'prism' | 'ink' | 'lava-glass' | 'mint-frost'
+export type BlockStyle = 'liquid-glass' | 'metallic' | 'matte' | 'neon' | 'pastel' | 'crystal' | 'candy' | 'obsidian' | 'hologram' | 'velvet' | 'retro' | 'aurora' | 'ice' | 'magma' | 'gold' | 'shadow' | 'bubble' | 'circuit' | 'chrome' | 'wood' | 'paper' | 'emerald' | 'sapphire' | 'ruby' | 'smoke' | 'plasma' | 'neon-grid' | 'sunset' | 'ocean' | 'carbon' | 'prism' | 'ink' | 'lava-glass' | 'mint-frost' | 'pulse-neon' | 'ripple' | 'shimmer' | 'orbit' | 'glitch' | 'mosaic' | 'frosted' | 'duotone' | 'spark'
 const BLOCK_STYLES: { id: BlockStyle; label: string; desc: string }[] = [
   { id: 'liquid-glass', label: 'Liquid Glass', desc: 'Reflejo iOS' },
   { id: 'metallic', label: 'Metálico', desc: 'Acero cepillado' },
@@ -2164,6 +2245,15 @@ const BLOCK_STYLES: { id: BlockStyle; label: string; desc: string }[] = [
   { id: 'ink', label: 'Tinta', desc: 'Acuarela oscura' },
   { id: 'lava-glass', label: 'Lava Glass', desc: 'Vidrio fundido' },
   { id: 'mint-frost', label: 'Menta Frost', desc: 'Hielo mentolado' },
+  { id: 'pulse-neon', label: 'Pulse Neon', desc: 'Latido luminoso' },
+  { id: 'ripple', label: 'Ripple', desc: 'Ondas suaves' },
+  { id: 'shimmer', label: 'Shimmer', desc: 'Brillo deslizante' },
+  { id: 'orbit', label: 'Orbit', desc: 'Giro orbital' },
+  { id: 'glitch', label: 'Glitch', desc: 'Fallo digital' },
+  { id: 'mosaic', label: 'Mosaico', desc: 'Baldosas' },
+  { id: 'frosted', label: 'Escarchado', desc: 'Vidrio frío' },
+  { id: 'duotone', label: 'Duotono', desc: 'Dos tonos' },
+  { id: 'spark', label: 'Chispa', desc: 'Destello' },
 ]
 const COLOR_HEX: Record<BlockColor, { base: string; light: string; dark: string; glow: string }> = {
   cyan: { base: '#22E6C5', light: '#9FF8EA', dark: '#0FA88F', glow: 'rgba(34,230,197,0.55)' },
@@ -2245,6 +2335,7 @@ export function BlockCleaner() {
   const [hintId, setHintId] = useState<string | null>(null)
   const [hintsLeft, setHintsLeft] = useState(5)
   const [showRegenModal, setShowRegenModal] = useState(false)
+  const [regenCooldownMsg, setRegenCooldownMsg] = useState<string | null>(null)
   const [exitingMap, setExitingMap] = useState<Record<string, { dx: number; dy: number }>>({})
   const [blockStyle, setBlockStyle] = useState<BlockStyle>(() => readJSON(LS.style, 'liquid-glass'))
   const [options, setOptions] = useState<PlayOptions>(() => readJSON(LS.options, DEFAULT_OPTIONS))
@@ -2467,11 +2558,15 @@ export function BlockCleaner() {
   }, [blocks, screen, moves, seconds, level, levelId, unlocked])
 
   useEffect(() => {
-    if (screen !== 'play' || !timerOn || !options.hardcore) return
+    // Límite de tiempo en todos los niveles (si el reloj está activo)
+    if (screen !== 'play' || !timerOn || !timerStarted) return
     if (seconds >= level.timeLimit && blocks.length > 0) {
-      playSfx('lose'); writeJSON(LS.defeats, readJSON(LS.defeats, 0) + 1); writeJSON(LS.streak, 0); setScreen('lose')
+      playSfx('lose')
+      writeJSON(LS.defeats, readJSON(LS.defeats, 0) + 1)
+      writeJSON(LS.streak, 0)
+      setScreen('lose')
     }
-  }, [seconds, screen, timerOn, options.hardcore, level.timeLimit, blocks.length])
+  }, [seconds, screen, timerOn, timerStarted, level.timeLimit, blocks.length])
 
   useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
 
@@ -2495,46 +2590,68 @@ export function BlockCleaner() {
       const left = COOLDOWN_MS - (Date.now() - st.lastAt)
       if (left > 0) {
         playSfx('lock')
-        const mins = Math.ceil(left / 60000)
-        alert(`Has usado las 4 regeneraciones gratis de hoy. Espera ${mins} min para otra.`)
+        const secs = Math.ceil(left / 1000)
+        const mins = Math.floor(secs / 60)
+        const rem = secs % 60
+        setRegenCooldownMsg(
+          mins > 0
+            ? `Has usado las 4 regeneraciones gratis de hoy. Espera ${mins} min ${rem}s.`
+            : `Has usado las 4 regeneraciones gratis de hoy. Espera ${rem}s.`
+        )
         return
       }
     }
+    setRegenCooldownMsg(null)
     setShowRegenModal(true)
     playSfx('ui')
   }
 
   const confirmRegenerate = useCallback(() => {
     setShowRegenModal(false)
+    setRegenCooldownMsg(null)
     playSfx('regen')
-    setIsLoading(true)
     const id = levelId
     const salt = Date.now()
-    // Consumir cuota de regeneración
-    {
-      const st = getRegenState()
+    try {
+      const st = (function () {
+        const day = new Date().toISOString().slice(0, 10)
+        const cur = readJSON<{ day: string; freeUsed: number; lastAt: number }>(LS.regen, {
+          day,
+          freeUsed: 0,
+          lastAt: 0,
+        })
+        if (cur.day !== day) return { day, freeUsed: 0, lastAt: 0 }
+        return cur
+      })()
       st.freeUsed = (st.freeUsed || 0) + 1
+      st.lastAt = Date.now()
       writeJSON(LS.regen, st)
-    }
-    requestAnimationFrame(() => {
+    } catch { /* */ }
+
+    setIsLoading(true)
+    const run = () => {
       try {
         _levelCache.delete(id)
         const base = getDifficultyTier(id)
-        // Ligero aumento de dificultad al regenerar (sin volverse imposible)
         const tier = {
           ...base,
           numBlocks: Math.min(base.numBlocks + 1, base.rows * base.cols - 4),
-          scrambleMoves: base.scrambleMoves + 10,
-          obstacleCount: id >= 15 ? Math.min(base.obstacleCount + (id >= 20 ? 1 : 0), 3) : 0,
-          lockedChance: Math.min(base.lockedChance + 0.08, 0.7),
+          scrambleMoves: base.scrambleMoves + 12,
+          obstacleCount: id >= 15 ? Math.min(base.obstacleCount + 1, 4) : 0,
+          lockedChance: Math.min(base.lockedChance + 0.1, 0.85),
+          numColors: Math.min(base.numColors + 1, BLOCK_COLOR_ORDER.length),
         }
         let level: BlockCleanerLevel | null = null
-        for (let a = 0; a < 10 && !level; a++) {
-          const seed = (id * 2654435761 + 41 + salt + a * 7919) >>> 0
+        for (let a = 0; a < 14 && !level; a++) {
+          const seed = (id * 2654435761 + salt + a * 7919) >>> 0
           level = generateLevelOnce(id, tier, seed)
         }
         if (!level) {
-          _levelCache.delete(id)
+          for (let a = 0; a < 8 && !level; a++) {
+            level = generateLevelOnce(id, base, (salt + a * 1337) >>> 0)
+          }
+        }
+        if (!level) {
           level = generateLevel(id)
         }
         _levelCache.set(id, level)
@@ -2545,6 +2662,7 @@ export function BlockCleaner() {
         setCleared(0)
         setUndoStack([])
         setCombo(0)
+        setMaxCombo(0)
         setHintId(null)
         setHintsLeft(5)
         setTimerStarted(false)
@@ -2558,8 +2676,10 @@ export function BlockCleaner() {
       } finally {
         setIsLoading(false)
       }
-    })
+    }
+    setTimeout(run, 0)
   }, [levelId])
+
 
   const safeBlocks = useMemo(() => blocks.map(normalizeBlock), [blocks])
   const exitable = useMemo(
@@ -2812,6 +2932,15 @@ export function BlockCleaner() {
     if (style === 'ink') return { background: `radial-gradient(circle at 30% 20%, ${c.light}44, ${c.dark} 70%)`, boxShadow: `0 6px 18px rgba(0,0,0,0.45)`, border: 'none' }
     if (style === 'lava-glass') return { background: `linear-gradient(160deg, #fb923c, ${c.base} 40%, #7f1d1d)`, boxShadow: `0 0 18px rgba(251,146,60,0.45), inset 0 1px 0 #fff3`, border: `1px solid #fdba74` }
     if (style === 'mint-frost') return { background: `linear-gradient(180deg, #ecfdf5, ${c.light} 40%, ${c.base})`, boxShadow: `0 4px 16px rgba(52,211,153,0.35)`, border: `1px solid #a7f3d0` }
+    if (style === 'pulse-neon') return { background: `linear-gradient(145deg, ${c.light}, ${c.base} 50%, ${c.dark})`, boxShadow: `0 0 12px ${c.glow}`, border: `1px solid ${c.light}`, ['--bc-glow' as string]: c.glow }
+    if (style === 'ripple') return { background: `radial-gradient(circle at 50% 50%, ${c.light}, ${c.base} 45%, ${c.dark})`, boxShadow: `0 4px 14px ${c.glow}`, border: 'none' }
+    if (style === 'shimmer') return { background: `linear-gradient(120deg, ${c.dark}, ${c.base} 40%, ${c.light} 50%, ${c.base} 60%, ${c.dark})`, backgroundSize: '200% 200%', boxShadow: `0 4px 14px ${c.glow}`, border: `1px solid ${c.light}66` }
+    if (style === 'orbit') return { background: `conic-gradient(from 0deg, ${c.light}, ${c.base}, ${c.dark}, ${c.light})`, boxShadow: `0 0 16px ${c.glow}`, border: 'none' }
+    if (style === 'glitch') return { background: `linear-gradient(90deg, ${c.base}, ${c.dark})`, boxShadow: `2px 0 ${c.light}, -2px 0 ${c.dark}`, border: `1px solid ${c.light}55` }
+    if (style === 'mosaic') return { background: `repeating-conic-gradient(${c.base} 0% 25%, ${c.dark} 0% 50%) 0 0 / 12px 12px`, boxShadow: `0 4px 12px ${c.glow}`, border: `1px solid ${c.light}44` }
+    if (style === 'frosted') return { background: `linear-gradient(160deg, ${c.light}cc, ${c.base}99)`, backdropFilter: 'blur(6px)', boxShadow: `inset 0 1px 0 #fff6, 0 4px 14px ${c.glow}`, border: `1px solid ${c.light}88` }
+    if (style === 'duotone') return { background: `linear-gradient(135deg, ${c.light} 50%, ${c.dark} 50%)`, boxShadow: `0 4px 14px ${c.glow}`, border: 'none' }
+    if (style === 'spark') return { background: `radial-gradient(circle at 30% 30%, #fff8, ${c.light} 20%, ${c.base} 55%, ${c.dark})`, boxShadow: `0 0 16px ${c.glow}`, border: `1px solid ${c.light}` }
     return { ...base, background: `linear-gradient(145deg, ${c.light}55, ${c.base} 45%, ${c.dark}cc)`, backdropFilter: 'blur(8px)' }
   }
 
@@ -2833,7 +2962,7 @@ export function BlockCleaner() {
       <div className="bc-hub glass-panel">
         <button type="button" className="bc-back" onClick={() => navigate('/categoria/logica')}><span className="bc-back-arrow">←</span> Volver</button>
         <h1 className="bc-title">Block Cleaner</h1>
-        <p className="bc-sub">Libera las piezaas</p>
+        <p className="bc-sub">Libera las piezas</p>
         <div className="bc-hub-actions">
           <button className="bc-btn primary" onClick={() => loadLevelFast(levelId)}>Continuar · Niv. {levelId}</button>
           <button className="bc-btn" onClick={() => setScreen('levels')}>Niveles</button>
@@ -2842,7 +2971,7 @@ export function BlockCleaner() {
           <button className="bc-btn" onClick={() => setScreen('stats')}>Estadísticas</button>
         </div>
         <p className="bc-tip-text">{PRO_TIPS[tipIndex % PRO_TIPS.length]}</p>
-        <button className="bc-link" onClick={() => setTipIndex(i => (i + 1) % PRO_TIPS.length)}>Siguiente regla</button>
+        <button className="bc-link" onClick={() => setTipIndex(i => (i + 1) % PRO_TIPS.length)}>Siguiente tip</button>
       </div>
     </div>
   )
@@ -2872,10 +3001,12 @@ export function BlockCleaner() {
   if (screen === 'options') return (
     <div className="bc-root"><style>{CSS}</style>
       <div className="bc-hub glass-panel">
-        <button className="bc-back" onClick={() => setScreen('hub')}>←</button>
+        <button type="button" className="bc-back" onClick={() => setScreen('hub')}><span className="bc-back-arrow">←</span> Volver</button>
         <h2 className="bc-title">Opciones</h2>
+        <p className="bc-sub">Personaliza la experiencia de juego</p>
         <div className="bc-options-list">
-          {([['hardcore', 'Hardcore', 'Sin undo y límite de tiempo'], ['noHints', 'Sin pistas', 'Desactiva pistas'], ['showExits', 'Mostrar puertas', 'Bordes de color'], ['showPar', 'Mostrar par', 'Objetivo de movimientos'], ['showGhost', 'Ghost de rango', 'Área deslizable']] as const).map(([key, title, desc]) => (
+          <p className="bc-opt-section">Dificultad</p>
+          {([['hardcore', 'Modo estricto', 'Sin deshacer ni pistas'], ['noHints', 'Sin pistas', 'Oculta el botón de pista']] as const).map(([key, title, desc]) => (
             <label key={key} className="bc-opt-glass">
               <div className="bc-opt-text"><strong>{title}</strong><span>{desc}</span></div>
               <div className="bc-toggle">
@@ -2884,8 +3015,19 @@ export function BlockCleaner() {
               </div>
             </label>
           ))}
+          <p className="bc-opt-section">Interfaz</p>
+          {([['showExits', 'Mostrar puertas', 'Barras de color en el borde'], ['showPar', 'Mostrar par', 'Objetivo de movimientos'], ['showGhost', 'Guía de rango', 'Resalta hasta dónde puedes deslizar']] as const).map(([key, title, desc]) => (
+            <label key={key} className="bc-opt-glass">
+              <div className="bc-opt-text"><strong>{title}</strong><span>{desc}</span></div>
+              <div className="bc-toggle">
+                <input type="checkbox" checked={options[key]} onChange={e => { const next = { ...options, [key]: e.target.checked }; setOptions(next); writeJSON(LS.options, next) }} />
+                <span className="bc-toggle-slider" />
+              </div>
+            </label>
+          ))}
+          <p className="bc-opt-section">Tiempo</p>
           <label className="bc-opt-glass">
-            <div className="bc-opt-text"><strong>Contrarreloj</strong><span>Contador de segundos</span></div>
+            <div className="bc-opt-text"><strong>Mostrar reloj</strong><span>Si se desactiva, no hay derrota por tiempo</span></div>
             <div className="bc-toggle">
               <input type="checkbox" checked={timerOn} onChange={e => setTimerOn(e.target.checked)} />
               <span className="bc-toggle-slider" />
@@ -2914,22 +3056,47 @@ export function BlockCleaner() {
     </div>
   )
 
-  if (screen === 'stats') return (
-    <div className="bc-root"><style>{CSS}</style>
-      <div className="bc-hub glass-panel">
-        <button className="bc-back" onClick={() => setScreen('hub')}>←</button>
-        <h2 className="bc-title">Estadísticas</h2>
-        <ul className="bc-stats">
-          <li>Victorias: {readJSON(LS.wins, 0)}</li>
-          <li>Derrotas: {readJSON(LS.defeats, 0)}</li>
-          <li>Movimientos: {readJSON(LS.totalMoves, 0)}</li>
-          <li>Racha: {readJSON(LS.streak, 0)}</li>
-          <li>Mejor racha: {readJSON(LS.bestStreak, 0)}</li>
-          <li>Desbloqueado: {unlocked}</li>
-        </ul>
+  if (screen === 'stats') {
+    const wins = readJSON(LS.wins, 0)
+    const defeats = readJSON(LS.defeats, 0)
+    const total = wins + defeats
+    const winRate = total > 0 ? Math.round((wins / total) * 100) : 0
+    const scores = readJSON<Record<number, number>>(LS.scores, {})
+    const starCounts = [0, 0, 0, 0]
+    for (const s of Object.values(scores)) {
+      if (s >= 1 && s <= 3) starCounts[s]++
+    }
+    const avgStars = Object.keys(scores).length
+      ? (Object.values(scores).reduce((a, b) => a + b, 0) / Object.keys(scores).length).toFixed(2)
+      : '—'
+    const totalMoves = readJSON(LS.totalMoves, 0)
+    const avgMoves = wins > 0 ? Math.round(totalMoves / wins) : 0
+    return (
+      <div className="bc-root"><style>{CSS}</style>
+        <div className="bc-hub glass-panel">
+          <button type="button" className="bc-back" onClick={() => setScreen('hub')}><span className="bc-back-arrow">←</span> Volver</button>
+          <h2 className="bc-title">Estadísticas</h2>
+          <p className="bc-sub">Tu progreso en Block Cleaner</p>
+          <div className="bc-stats-grid">
+            <div className="bc-stat-card"><span className="bc-stat-val">{unlocked}</span><span className="bc-stat-label">Nivel máx.</span></div>
+            <div className="bc-stat-card"><span className="bc-stat-val">{wins}</span><span className="bc-stat-label">Victorias</span></div>
+            <div className="bc-stat-card"><span className="bc-stat-val">{defeats}</span><span className="bc-stat-label">Derrotas</span></div>
+            <div className="bc-stat-card"><span className="bc-stat-val">{winRate}%</span><span className="bc-stat-label">Ratio victoria</span></div>
+            <div className="bc-stat-card"><span className="bc-stat-val">{readJSON(LS.streak, 0)}</span><span className="bc-stat-label">Racha actual</span></div>
+            <div className="bc-stat-card"><span className="bc-stat-val">{readJSON(LS.bestStreak, 0)}</span><span className="bc-stat-label">Mejor racha</span></div>
+            <div className="bc-stat-card"><span className="bc-stat-val">{avgStars}</span><span className="bc-stat-label">★ promedio</span></div>
+            <div className="bc-stat-card"><span className="bc-stat-val">{avgMoves}</span><span className="bc-stat-label">Mov. / victoria</span></div>
+          </div>
+          <div className="bc-stars-breakdown">
+            <p><strong>Desglose de estrellas</strong></p>
+            <p>★★★ {starCounts[3]} · ★★☆ {starCounts[2]} · ★☆☆ {starCounts[1]}</p>
+            <p>Niveles con puntuación: {Object.keys(scores).length}</p>
+            <p>Movimientos totales: {totalMoves}</p>
+          </div>
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   if (screen === 'win') {
     const stars = readJSON<Record<number, number>>(LS.scores, {})[levelId] ?? 1
@@ -2994,7 +3161,7 @@ export function BlockCleaner() {
           <span className="bc-tier">{level.tierLabel}</span>
           {options.showPar && <span>Par {level.parMoves}</span>}
           <span>{moves} mov</span>
-          {timerOn && <span className={seconds > level.timeLimit * 0.8 ? 'bc-time-warn' : ''}>{seconds}s{options.hardcore ? ` / ${level.timeLimit}s` : ''}</span>}
+          {timerOn && <span className={seconds > level.timeLimit * 0.8 ? 'bc-time-warn' : ''}>{seconds}s / {level.timeLimit}s</span>}
           {combo > 1 && <span className="bc-combo">×{combo}</span>}
         </div>
         <div className="bc-play-actions">
@@ -3044,7 +3211,7 @@ export function BlockCleaner() {
               const width = w * cellSize + (w - 1) * GAP, height = h * cellSize + (h - 1) * GAP
               return (
                 <motion.div key={b.id}
-                  className={`bc-block ${isDrag ? 'dragging' : ''} ${canGo ? 'exitable' : ''} ${isHint ? 'hint' : ''} ${isExit ? 'exiting' : ''}`}
+                  className={`bc-block ${isDrag ? 'dragging' : ''} ${canGo ? 'exitable' : ''} ${isHint ? 'hint' : ''} ${isExit ? 'exiting' : ''} ${['pulse-neon','ripple','shimmer','orbit','glitch'].includes(blockStyle) ? `bc-anim-${blockStyle}` : ''}`}
                   style={{
                     ...blockStyleCss(b.color, blockStyle), width, height, left, top,
                     zIndex: isDrag ? 30 : isExit ? 25 : 5, transition: isDrag ? 'none' : undefined,
@@ -3086,6 +3253,17 @@ export function BlockCleaner() {
             })}
           </AnimatePresence>
         </div>
+      {regenCooldownMsg && (
+        <div className="bc-modal-backdrop" onClick={() => setRegenCooldownMsg(null)}>
+          <div className="bc-modal glass-panel" onClick={e => e.stopPropagation()}>
+            <h3>Regeneración en espera</h3>
+            <p>{regenCooldownMsg}</p>
+            <div className="bc-modal-actions">
+              <button type="button" className="bc-btn primary" onClick={() => setRegenCooldownMsg(null)}>Entendido</button>
+            </div>
+          </div>
+        </div>
+      )}
       {showRegenModal && (
         <div className="bc-modal-backdrop" onClick={() => setShowRegenModal(false)}>
           <div className="bc-modal glass-panel" onClick={e => e.stopPropagation()}>
@@ -3115,6 +3293,17 @@ const CSS = `
 .bc-particle{position:absolute;bottom:-20px;border-radius:50%;
   background:radial-gradient(circle,rgba(125,211,252,.9),rgba(167,139,250,.35));
   animation:bc-float linear infinite}
+
+@keyframes bc-pulse-neon{0%,100%{filter:brightness(1);box-shadow:0 0 8px var(--bc-glow,rgba(56,189,248,.5))}50%{filter:brightness(1.25);box-shadow:0 0 18px var(--bc-glow,rgba(56,189,248,.8))}}
+@keyframes bc-ripple{0%{background-size:100% 100%}50%{background-size:140% 140%}100%{background-size:100% 100%}}
+@keyframes bc-shimmer{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+@keyframes bc-orbit{0%{filter:hue-rotate(0deg)}100%{filter:hue-rotate(360deg)}}
+@keyframes bc-glitch{0%,100%{transform:translate(0)}20%{transform:translate(-1px,1px)}40%{transform:translate(1px,-1px)}60%{transform:translate(-1px,0)}80%{transform:translate(1px,1px)}}
+.bc-anim-pulse-neon{animation:bc-pulse-neon 1.6s ease-in-out infinite}
+.bc-anim-ripple{animation:bc-ripple 2.4s ease-in-out infinite}
+.bc-anim-shimmer{animation:bc-shimmer 3s linear infinite;background-size:200% 200%}
+.bc-anim-orbit{animation:bc-orbit 8s linear infinite}
+.bc-anim-glitch{animation:bc-glitch .8s steps(2) infinite}
 @keyframes bc-float{
   0%{transform:translateY(0) translateX(0) scale(1);opacity:0}
   10%{opacity:.7}
