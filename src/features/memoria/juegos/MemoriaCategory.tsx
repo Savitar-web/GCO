@@ -25,9 +25,9 @@ const GAMES = [
   },
   {
     id: 'numeros-asociados',
-    title: 'Números asociados',
+    title: 'Asociaciones Textuales',
     emoji: '🔢',
-    desc: 'Asocia números aleatorios con objetos o conceptos y memorízalos.',
+    desc: 'Asocia números aleatorios con objetos o conceptos; memorízalos y escribelos.',
   },
   {
     id: 'habilidades',

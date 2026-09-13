@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState, useCallback } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
   getAppMode,
   setAppMode,
@@ -14,22 +14,72 @@ const MODES: { id: AppMode; label: string; emoji: string }[] = [
   { id: 'musica', label: 'Música', emoji: '🎵' },
 ]
 
+/** Deriva el modo real desde la ruta actual (fuente de verdad visual). */
+function modeFromPath(pathname: string): AppMode | null {
+  if (pathname.startsWith('/nutricion')) return 'nutricion'
+  if (pathname.startsWith('/musica')) return 'musica'
+  if (
+    pathname === '/' ||
+    pathname.startsWith('/categoria') ||
+    pathname.startsWith('/ajustes') ||
+    pathname.startsWith('/games') ||
+    pathname.startsWith('/gym')
+  ) {
+    return 'gym'
+  }
+  return null
+}
+
 export function ModeSwitch({ fullWidth = false }: { fullWidth?: boolean }) {
   const navigate = useNavigate()
-  const [mode, setModeState] = useState<AppMode>(() => getAppMode())
+  const location = useLocation()
 
+  const resolveMode = useCallback((): AppMode => {
+    const fromUrl = modeFromPath(location.pathname)
+    if (fromUrl) return fromUrl
+    return getAppMode()
+  }, [location.pathname])
+
+  const [mode, setModeState] = useState<AppMode>(() => resolveMode())
+
+  // Sincroniza con URL + storage + eventos de modo
   useEffect(() => {
-    const on = (e: Event) => {
-      const m = (e as CustomEvent<AppMode>).detail ?? getAppMode()
-      setModeState(m)
+    const sync = () => {
+      const next = resolveMode()
+      setModeState((prev) => (prev === next ? prev : next))
+      // Corrige storage si la URL y el modo guardado discrepan
+      try {
+        const stored = getAppMode()
+        if (next !== stored) setAppMode(next)
+      } catch {
+        /* */
+      }
     }
-    window.addEventListener('gco:app-mode', on)
-    return () => window.removeEventListener('gco:app-mode', on)
-  }, [])
+
+    sync()
+
+    const onMode = (e: Event) => {
+      const detail = (e as CustomEvent<AppMode>).detail
+      const fromUrl = modeFromPath(location.pathname)
+      // Prioridad: URL > evento > storage
+      const next = fromUrl ?? detail ?? getAppMode()
+      setModeState(next)
+    }
+
+    const onPop = () => sync()
+
+    window.addEventListener('gco:app-mode', onMode)
+    window.addEventListener('popstate', onPop)
+    return () => {
+      window.removeEventListener('gco:app-mode', onMode)
+      window.removeEventListener('popstate', onPop)
+    }
+  }, [location.pathname, resolveMode])
 
   const idx = Math.max(0, MODES.findIndex((m) => m.id === mode))
 
   const go = (next: AppMode) => {
+    if (next === mode) return
     soundClick()
     setAppMode(next)
     setModeState(next)

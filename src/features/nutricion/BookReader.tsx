@@ -23,6 +23,11 @@ import { soundClick, soundSuccess } from '@/core/audio/uiSounds'
 import { useReaderPlayer } from '@/core/reader/ReaderPlayerContext.tsx'
 import { pickHumanVoice, scoreVoiceHumanness, type SkipSeconds } from '@/hooks/useSpeechReader'
 
+await window.gcoTts?.ready
+window.gcoTts?.speak('Hola', { lang: 'es-ES' })
+window.gcoTts?.pickVoice('es-ES')
+window.gcoTts?.getVoices()
+
 /* ─── Mini-player global fuera; floating persistente en body ─── */
 const GCO_KILL_STYLE_ID = 'gco-kill-mini-player-style'
 const GCO_FP_HOST_ID = 'gco-floating-player-host'

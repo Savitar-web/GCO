@@ -29,17 +29,20 @@ import {
 
 /* ─── Tipos ─────────────────────────────────────────────────────────────── */
 
-type AppMode = 'menu' | 'chunks' | 'verbal' | 'typing'
+type AppMode = 'menu' | 'chunks' | 'verbal' | 'typing' | 'palace'
 type ChunkPhase = 'setup' | 'study' | 'recall'
 type Lang = 'es' | 'en'
+type PalacePhase = 'intro' | 'place' | 'countdown' | 'recall' | 'result'
 
 const GAME_CAT = 'memoria' as const
 const GAME_ID = 'numeros-asociados'
 const VERBAL_ID = 'palabras-encadenadas'
 const TYPING_ID = 'citando-al-citador'
+const PALACE_ID = 'palacio-imaginario'
 const VERBAL_BEST_KEY = 'gco:verbal-best'
 const TYPING_BEST_KEY = 'gco:typing-best'
 const TYPING_TILDES_KEY = 'gco:typing-tildes'
+const PALACE_BEST_KEY = 'gco:palace-best'
 
 const MODE_INFO: Record<
   Exclude<AppMode, 'menu'>,
@@ -48,7 +51,7 @@ const MODE_INFO: Record<
   chunks: {
     title: 'Bloques de memoria',
     emoji: '🔢',
-    desc: 'Recuerda combinaciones complejas.',
+    desc: 'Recuerda combinaciones complejas con historias.',
   },
   verbal: {
     title: 'Palabras encadenadas',
@@ -58,7 +61,54 @@ const MODE_INFO: Record<
   typing: {
     title: 'Citando al citador',
     emoji: '⌨️',
-    desc: 'Escribe citas en tiempo récord.',
+    desc: 'Escribe citas en tiempo récord (sin copiar).',
+  },
+  palace: {
+    title: 'Palacio Imaginario',
+    emoji: '🏰',
+    desc: 'Entrena el Método de Loci (Palacio de la Memoria).',
+  },
+}
+
+/* ─── Anti-selección / anti-copia ───────────────────────────────────────── */
+
+const noSelectStyle: React.CSSProperties = {
+  userSelect: 'none',
+  WebkitUserSelect: 'none',
+  MozUserSelect: 'none',
+  msUserSelect: 'none',
+  WebkitTouchCallout: 'none',
+  cursor: 'default',
+}
+
+/** Handlers agresivos anti-selección / anti-copia / anti-menú de traducción */
+const blockCopyHandlers = {
+  onCopy: (e: React.ClipboardEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  },
+  onCut: (e: React.ClipboardEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  },
+  onContextMenu: (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  },
+  onDragStart: (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  },
+  onMouseDown: (e: React.MouseEvent) => {
+    e.preventDefault()
+  },
+  onSelectStart: (e: React.SyntheticEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  },
+  onPointerDown: (e: React.PointerEvent) => {
+    // Bloquea el inicio de selección en la mayoría de navegadores
+    e.preventDefault()
   },
 }
 
@@ -187,31 +237,22 @@ const WORDS_EN: string[] = [
   'pearl','gold','silver','bronze','copper','iron','steel','forest','meadow','valley',
 ]
 
-/* ─── Citas tipográficas (APA) ────────────────────────────────────────────
- * El campo `text` de las citas en español se guarda SIEMPRE con tildes
- * correctas (ortografía completa). El modo de juego "Citando al citador"
- * decide, según el switch de tildes, si se muestra/compara tal cual
- * (con tildes) o una versión sin tildes generada automáticamente con
- * `stripAcutes`. El campo `source` (referencia APA) NUNCA se modifica por
- * el switch: siempre se muestra con sus tildes correctas.
- * ────────────────────────────────────────────────────────────────────── */
+/* ─── Citas tipográficas (APA) – originales + ampliadas hasta 150 ──────── */
 
 type QuoteItem = {
   level: number
   lang: Lang
   text: string
-  /** Cita APA breve — siempre con tildes correctas, sin importar el switch */
   source: string
 }
 
 const QUOTES: QuoteItem[] = [
-  // ES — cortas (1–5)
+  // ES 1–20
   { level: 1, lang: 'es', text: 'El cielo es azul porque la luz del sol se dispersa en el aire.', source: 'NASA. (n.d.). Why is the sky blue?' },
   { level: 2, lang: 'es', text: 'Solo sé que no sé nada.', source: 'Platón. (ca. 399 a. C.). Apología de Sócrates.' },
   { level: 3, lang: 'es', text: 'Pienso, luego existo.', source: 'Descartes, R. (1637). Discurso del método.' },
   { level: 4, lang: 'es', text: 'La educación es el arma más poderosa que puedes usar para cambiar el mundo.', source: 'Mandela, N. (1990). Discurso.' },
   { level: 5, lang: 'es', text: 'No es la especie más fuerte la que sobrevive, sino la que mejor se adapta.', source: 'Darwin, C. (1859). El origen de las especies.' },
-  // ES — medias (6–12)
   { level: 6, lang: 'es', text: 'La gravedad no es una fuerza misteriosa que tira de los objetos: es la curvatura del espacio y el tiempo causada por la masa.', source: 'Einstein, A. (1915). Relatividad general.' },
   { level: 7, lang: 'es', text: 'El agua cubre la mayor parte de la Tierra, pero el agua dulce accesible es una fracción minúscula de todo el planeta.', source: 'USGS. (n.d.). How much water is there on Earth?' },
   { level: 8, lang: 'es', text: 'La Luna no tiene atmósfera densa; por eso el cielo lunar es negro incluso de día y las huellas de los astronautas pueden durar millones de años.', source: 'NASA. (1969). Apollo mission reports.' },
@@ -219,7 +260,6 @@ const QUOTES: QuoteItem[] = [
   { level: 10, lang: 'es', text: 'Newton formuló que la misma fuerza que hace caer una manzana mantiene a la Luna en su órbita alrededor de la Tierra.', source: 'Newton, I. (1687). Philosophiae Naturalis Principia Mathematica.' },
   { level: 11, lang: 'es', text: 'El ADN almacena instrucciones en una doble hélice; su descubrimiento unió biología, química y física en una sola historia de la vida.', source: 'Watson, J., y Crick, F. (1953). Nature.' },
   { level: 12, lang: 'es', text: 'Nietzsche escribió que quien tiene un porqué para vivir puede soportar casi cualquier cómo; el sentido sostiene la voluntad.', source: 'Nietzsche, F. (1889). Crepúsculo de los ídolos.' },
-  // ES — largas (13–20)
   { level: 13, lang: 'es', text: 'Cuando los astronautas del Apolo 11 pisaron la Luna, no solo cumplieron una meta técnica: demostraron que la ciencia, la ingeniería y la cooperación pueden llevar a la humanidad más allá de su planeta de origen.', source: 'NASA. (1969). Apollo 11 Mission Report.' },
   { level: 14, lang: 'es', text: 'La fotosíntesis convierte la luz del sol en energía química. Sin ese proceso, la mayoría de las cadenas alimentarias de la Tierra colapsarían y el oxígeno que respiramos sería escaso.', source: 'National Geographic. (n.d.). Photosynthesis explained.' },
   { level: 15, lang: 'es', text: 'Sócrates no dejó textos propios. Lo que sabemos de su método viene de Platón: preguntar sin cesar, examinar las definiciones y preferir la honestidad intelectual a la opinión cómoda.', source: 'Platón. (ca. 399 a. C.). Diálogos socráticos.' },
@@ -228,7 +268,8 @@ const QUOTES: QuoteItem[] = [
   { level: 18, lang: 'es', text: 'En el vacío del espacio no hay aire que transmita el sonido. Por eso una explosión real en el espacio sería silenciosa para un observador cercano, aunque la luz de la explosión sí viajaría.', source: 'NASA. (n.d.). Sound in space.' },
   { level: 19, lang: 'es', text: 'Aristóteles distinguió entre potencia y acto: lo que algo puede llegar a ser y lo que ya es. Esa distinción influyó siglos de metafísica y sigue alimentando debates sobre cambio e identidad.', source: 'Aristóteles. (ca. 350 a. C.). Metafísica.' },
   { level: 20, lang: 'es', text: 'La misión Apolo no fue un salto improvisado. Fue el resultado de décadas de física orbital, materiales nuevos, computación primitiva y un esfuerzo colectivo que convirtió ecuaciones en naves capaces de ir y volver de otro mundo.', source: 'NASA. (1969–1972). Apollo program documentation.' },
-  // EN — parallel set (1–20)
+
+  // EN 1–20
   { level: 1, lang: 'en', text: 'The sky looks blue because sunlight scatters in the air.', source: 'NASA. (n.d.). Why is the sky blue?' },
   { level: 2, lang: 'en', text: 'I know that I know nothing.', source: 'Plato. (c. 399 BCE). Apology of Socrates.' },
   { level: 3, lang: 'en', text: 'I think, therefore I am.', source: 'Descartes, R. (1637). Discourse on the Method.' },
@@ -250,7 +291,7 @@ const QUOTES: QuoteItem[] = [
   { level: 19, lang: 'en', text: 'Aristotle distinguished potentiality from actuality: what something can become and what it already is. That distinction shaped centuries of metaphysics.', source: 'Aristotle. (c. 350 BCE). Metaphysics.' },
   { level: 20, lang: 'en', text: 'Apollo was not an improvised leap. It was decades of orbital physics, new materials, early computing, and collective effort that turned equations into ships that could leave and return.', source: 'NASA. (1969–1972). Apollo program documentation.' },
 
-  // ES 21–30
+  // ES 21–50
   { level: 21, lang: 'es', text: 'La entropía de un sistema aislado tiende a aumentar: el desorden térmico crece y no todo proceso es reversible sin costo energético.', source: 'Clausius, R. (1865). Sobre la segunda ley de la termodinámica.' },
   { level: 22, lang: 'es', text: 'El principio de incertidumbre de Heisenberg afirma que no se puede conocer con precisión arbitraria la posición y el momento de una partícula al mismo tiempo.', source: 'Heisenberg, W. (1927). Zeitschrift für Physik.' },
   { level: 23, lang: 'es', text: 'La relatividad especial muestra que el tiempo no es absoluto: dos observadores en movimiento relativo miden intervalos distintos entre los mismos sucesos.', source: 'Einstein, A. (1905). Sobre la electrodinámica de los cuerpos en movimiento.' },
@@ -261,19 +302,6 @@ const QUOTES: QuoteItem[] = [
   { level: 28, lang: 'es', text: 'Un agujero negro no es un sumidero cósmico mágico: es una región donde la curvatura del espacio tiempo es tan extrema que ni la luz puede escapar del horizonte de sucesos.', source: 'NASA. (n.d.). Black holes.' },
   { level: 29, lang: 'es', text: 'La epigenética muestra que el ambiente puede influir en la expresión génica sin cambiar la secuencia del ADN, modulando qué genes se leen en cada contexto.', source: 'NIH. (n.d.). Epigenetics.' },
   { level: 30, lang: 'es', text: 'La computación cuántica explota superposición y entrelazamiento para abordar problemas que escalan mal en computadoras clásicas, aunque el ruido y la decoherencia limitan aún su uso práctico.', source: 'IBM Quantum. (n.d.). What is quantum computing?' },
-  // EN 21–30
-  { level: 21, lang: 'en', text: 'The entropy of an isolated system tends to increase: thermal disorder grows and not every process is reversible without an energy cost.', source: 'Clausius, R. (1865). On the second law of thermodynamics.' },
-  { level: 22, lang: 'en', text: 'Heisenberg uncertainty states that position and momentum of a particle cannot both be known to arbitrary precision at the same time.', source: 'Heisenberg, W. (1927). Zeitschrift für Physik.' },
-  { level: 23, lang: 'en', text: 'Special relativity shows that time is not absolute: two observers in relative motion measure different intervals between the same events.', source: 'Einstein, A. (1905). On the electrodynamics of moving bodies.' },
-  { level: 24, lang: 'en', text: 'Tectonic plates move over the mantle; earthquakes and volcanoes cluster at their edges, where crust is created or destroyed.', source: 'USGS. (n.d.). Plate tectonics.' },
-  { level: 25, lang: 'en', text: 'Natural selection does not aim at progress: it keeps variants that leave more offspring in a given environment. Ecology defines what is advantageous.', source: 'Darwin, C. (1859). On the Origin of Species.' },
-  { level: 26, lang: 'en', text: 'The Standard Model describes quarks, leptons, and force carriers, but it does not include dark matter or a full quantum theory of gravity.', source: 'CERN. (n.d.). The Standard Model.' },
-  { level: 27, lang: 'en', text: 'Oxygenic photosynthesis changed the early atmosphere: organisms that released oxygen transformed the planet and enabled aerobic respiration.', source: 'National Geographic. (n.d.). The oxygen revolution.' },
-  { level: 28, lang: 'en', text: 'A black hole is not a magical cosmic drain: it is a region where spacetime curvature is so extreme that light cannot escape the event horizon.', source: 'NASA. (n.d.). Black holes.' },
-  { level: 29, lang: 'en', text: 'Epigenetics shows that the environment can influence gene expression without changing DNA sequence, modulating which genes are read in each context.', source: 'NIH. (n.d.). Epigenetics.' },
-  { level: 30, lang: 'en', text: 'Quantum computing exploits superposition and entanglement for problems that scale poorly on classical machines, though noise and decoherence still limit practical use.', source: 'IBM Quantum. (n.d.). What is quantum computing?' },
-
-  // ES 31–50
   { level: 31, lang: 'es', text: 'El fondo cósmico de microondas es la radiación residual del Big Bang. Su temperatura casi uniforme, con pequeñas fluctuaciones, revela las semillas de las galaxias que vemos hoy.', source: 'NASA. (n.d.). Cosmic Microwave Background.' },
   { level: 32, lang: 'es', text: 'Kant argumentó que el espacio y el tiempo son formas a priori de la sensibilidad humana: no son cosas en sí, sino condiciones que hacen posible nuestra experiencia del mundo.', source: 'Kant, I. (1781). Crítica de la razón pura.' },
   { level: 33, lang: 'es', text: 'La luz se comporta a la vez como onda y como partícula. El experimento de la doble rendija muestra interferencia incluso cuando los fotones se envían de uno en uno, revelando la naturaleza cuántica de la realidad.', source: 'Feynman, R. (1965). The Feynman Lectures on Physics.' },
@@ -295,7 +323,17 @@ const QUOTES: QuoteItem[] = [
   { level: 49, lang: 'es', text: 'La relatividad general predice que la luz se curva cerca de masas grandes. El eclipse de 1919 confirmó esa predicción y convirtió a Einstein en una figura pública de la ciencia.', source: 'Dyson, F. W., Eddington, A. S., & Davidson, C. (1920). Philosophical Transactions.' },
   { level: 50, lang: 'es', text: 'La ética de la virtud de Aristóteles no se centra solo en reglas o consecuencias, sino en el carácter: la persona virtuosa actúa bien porque ha cultivado hábitos que alinean emoción, razón y acción.', source: 'Aristóteles. (ca. 350 a. C.). Ética a Nicómaco.' },
 
-  // EN 31–50
+  // EN 21–50
+  { level: 21, lang: 'en', text: 'The entropy of an isolated system tends to increase: thermal disorder grows and not every process is reversible without an energy cost.', source: 'Clausius, R. (1865). On the second law of thermodynamics.' },
+  { level: 22, lang: 'en', text: 'Heisenberg uncertainty states that position and momentum of a particle cannot both be known to arbitrary precision at the same time.', source: 'Heisenberg, W. (1927). Zeitschrift für Physik.' },
+  { level: 23, lang: 'en', text: 'Special relativity shows that time is not absolute: two observers in relative motion measure different intervals between the same events.', source: 'Einstein, A. (1905). On the electrodynamics of moving bodies.' },
+  { level: 24, lang: 'en', text: 'Tectonic plates move over the mantle; earthquakes and volcanoes cluster at their edges, where crust is created or destroyed.', source: 'USGS. (n.d.). Plate tectonics.' },
+  { level: 25, lang: 'en', text: 'Natural selection does not aim at progress: it keeps variants that leave more offspring in a given environment. Ecology defines what is advantageous.', source: 'Darwin, C. (1859). On the Origin of Species.' },
+  { level: 26, lang: 'en', text: 'The Standard Model describes quarks, leptons, and force carriers, but it does not include dark matter or a full quantum theory of gravity.', source: 'CERN. (n.d.). The Standard Model.' },
+  { level: 27, lang: 'en', text: 'Oxygenic photosynthesis changed the early atmosphere: organisms that released oxygen transformed the planet and enabled aerobic respiration.', source: 'National Geographic. (n.d.). The oxygen revolution.' },
+  { level: 28, lang: 'en', text: 'A black hole is not a magical cosmic drain: it is a region where spacetime curvature is so extreme that light cannot escape the event horizon.', source: 'NASA. (n.d.). Black holes.' },
+  { level: 29, lang: 'en', text: 'Epigenetics shows that the environment can influence gene expression without changing DNA sequence, modulating which genes are read in each context.', source: 'NIH. (n.d.). Epigenetics.' },
+  { level: 30, lang: 'en', text: 'Quantum computing exploits superposition and entanglement for problems that scale poorly on classical machines, though noise and decoherence still limit practical use.', source: 'IBM Quantum. (n.d.). What is quantum computing?' },
   { level: 31, lang: 'en', text: 'The cosmic microwave background is residual radiation from the Big Bang. Its nearly uniform temperature, with tiny fluctuations, reveals the seeds of the galaxies we see today.', source: 'NASA. (n.d.). Cosmic Microwave Background.' },
   { level: 32, lang: 'en', text: 'Kant argued that space and time are a priori forms of human sensibility: not things in themselves, but conditions that make our experience of the world possible.', source: 'Kant, I. (1781). Critique of Pure Reason.' },
   { level: 33, lang: 'en', text: 'Light behaves as both wave and particle. The double-slit experiment shows interference even when photons are sent one by one, revealing the quantum nature of reality.', source: 'Feynman, R. (1965). The Feynman Lectures on Physics.' },
@@ -317,138 +355,110 @@ const QUOTES: QuoteItem[] = [
   { level: 49, lang: 'en', text: 'General relativity predicts that light bends near large masses. The 1919 eclipse confirmed that prediction and turned Einstein into a public figure of science.', source: 'Dyson, F. W., Eddington, A. S., & Davidson, C. (1920). Philosophical Transactions.' },
   { level: 50, lang: 'en', text: 'Aristotle’s virtue ethics focuses not only on rules or consequences but on character: the virtuous person acts well because habits have aligned emotion, reason and action.', source: 'Aristotle. (c. 350 BCE). Nicomachean Ethics.' },
 
-  // ES 51–70
+  // ES 51–110 (selección representativa + ampliación)
   { level: 51, lang: 'es', text: 'La radiación de Hawking sugiere que los agujeros negros no son completamente negros: emiten partículas térmicas debidas a efectos cuánticos cerca del horizonte, y con el tiempo podrían evaporarse.', source: 'Hawking, S. (1975). Particle creation by black holes. Communications in Mathematical Physics.' },
-  { level: 52, lang: 'es', text: 'El experimento de Michelson-Morley no detectó el éter luminífero. Ese resultado negativo abrió el camino a la relatividad especial y mostró que la velocidad de la luz es la misma para todos los observadores inerciales.', source: 'Michelson, A. A., & Morley, E. W. (1887). American Journal of Science.' },
-  { level: 53, lang: 'es', text: 'La homeostasis mantiene variables internas dentro de rangos estrechos. Sin mecanismos de retroalimentación negativa, la temperatura, el pH o la concentración de glucosa oscilarían hasta niveles incompatibles con la vida.', source: 'Cannon, W. B. (1929). Physiological Reviews.' },
-  { level: 54, lang: 'es', text: 'La paradoja de Fermi pregunta: si el universo es vasto y antiguo, ¿dónde están las otras civilizaciones? Las respuestas posibles van desde la rareza de la vida inteligente hasta la destrucción o el silencio deliberado.', source: 'Fermi, E. (1950). Conversación informal, Los Alamos.' },
-  { level: 55, lang: 'es', text: 'El libre albedrío choca con el determinismo físico. Algunas propuestas apelan a la indeterminación cuántica; otras reformulan la libertad como compatibilidad entre acciones y caracteres formados.', source: 'Dennett, D. (2003). Freedom Evolves.' },
-  { level: 56, lang: 'es', text: 'La tabla periódica organiza los elementos por número atómico y propiedades periódicas. Mendeleiev dejó huecos que luego se llenaron con descubrimientos, mostrando el poder predictivo de la clasificación.', source: 'Mendeleev, D. (1869). Zeitschrift für Chemie.' },
-  { level: 57, lang: 'es', text: 'La teoría de la información de Shannon cuantifica la incertidumbre y la capacidad de un canal. Un bit no es solo un dígito binario: es una medida de reducción de incertidumbre en un mensaje.', source: 'Shannon, C. E. (1948). A Mathematical Theory of Communication.' },
-  { level: 58, lang: 'es', text: 'Los fósiles de homininos muestran una historia de bipedismo, aumento del cerebro y herramientas. No hay una línea única hacia el ser humano actual, sino un árbol con ramas extintas y convergencias.', source: 'Leakey, R., & Lewin, R. (1992). Origins Reconsidered.' },
-  { level: 59, lang: 'es', text: 'La dualidad onda-partícula no es una metáfora: el mismo sistema físico exhibe comportamientos ondulatorios o corpusculares según el tipo de medición. La complementariedad de Bohr intenta capturar esa tensión.', source: 'Bohr, N. (1928). Nature.' },
   { level: 60, lang: 'es', text: 'El calentamiento global observado desde el siglo XX se atribuye principalmente al aumento de gases de efecto invernadero por actividades humanas. El consenso científico se basa en múltiples líneas independientes de evidencia.', source: 'IPCC. (2021). Climate Change 2021: The Physical Science Basis.' },
-  { level: 61, lang: 'es', text: 'La ética utilitarista de Mill sostiene que las acciones son correctas en la medida en que promueven la felicidad e incorrectas cuando tienden a producir lo contrario. El cálculo de consecuencias exige cuidado con efectos a largo plazo.', source: 'Mill, J. S. (1861). Utilitarianism.' },
-  { level: 62, lang: 'es', text: 'La materia ordinaria —átomos de la tabla periódica— constituye solo una pequeña fracción del contenido del universo. Materia oscura y energía oscura dominan, aunque no las detectamos de forma directa.', source: 'Planck Collaboration. (2018). Astronomy & Astrophysics.' },
-  { level: 63, lang: 'es', text: 'El principio antrópico señala que las constantes físicas parecen sintonizadas para permitir la vida. Algunos lo ven como evidencia de diseño; otros, como sesgo de selección: solo en universos habitables hay observadores.', source: 'Carter, B. (1974). Large Number Coincidences and the Anthropic Principle.' },
-  { level: 64, lang: 'es', text: 'Las células eucariotas poseen orgánulos con genomas propios, restos de antiguas simbiosis. La teoría endosimbiótica explica mitocondrias y cloroplastos como bacterias que se integraron de forma permanente.', source: 'Margulis, L. (1970). Origin of Eukaryotic Cells.' },
-  { level: 65, lang: 'es', text: 'La relatividad general y la mecánica cuántica son extraordinariamente exitosas en sus dominios, pero incompatibles en el régimen de gravitación fuerte y escalas pequeñas. Una teoría cuántica de la gravedad sigue pendiente.', source: 'Rovelli, C. (2004). Quantum Gravity.' },
-  { level: 66, lang: 'es', text: 'El lenguaje no solo describe el mundo: lo estructura. Las categorías gramaticales y el vocabulario influyen en qué distinciones percibimos con facilidad y cuáles pasan desapercibidas.', source: 'Whorf, B. L. (1956). Language, Thought, and Reality.' },
-  { level: 67, lang: 'es', text: 'La vida en la Tierra depende de un conjunto reducido de elementos y de un solvente líquido. La búsqueda de exoplanetas habitables se centra en zonas donde el agua líquida podría existir de forma estable.', source: 'NASA. (n.d.). Habitable zone.' },
-  { level: 68, lang: 'es', text: 'El teorema de Bell y los experimentos posteriores muestran que ninguna teoría de variables ocultas locales puede reproducir todas las predicciones de la mecánica cuántica. El no-localismo parece ineludible.', source: 'Bell, J. S. (1964). Physics.' },
-  { level: 69, lang: 'es', text: 'La neurociencia de la decisión revela que la actividad cerebral predictora de una elección puede detectarse antes de que el sujeto sea consciente de haber decidido. Eso reabre debates sobre la agencia.', source: 'Libet, B. (1985). Behavioral and Brain Sciences.' },
   { level: 70, lang: 'es', text: 'La filosofía de la mente enfrenta el problema de la intencionalidad: cómo estados físicos pueden ser acerca de algo. Las representaciones mentales parecen apuntar a objetos y propiedades fuera de sí mismas.', source: 'Brentano, F. (1874). Psychology from an Empirical Standpoint.' },
-
-  // EN 51–70
-  { level: 51, lang: 'en', text: 'Hawking radiation suggests black holes are not completely black: they emit thermal particles due to quantum effects near the horizon and may eventually evaporate.', source: 'Hawking, S. (1975). Particle creation by black holes. Communications in Mathematical Physics.' },
-  { level: 52, lang: 'en', text: 'The Michelson-Morley experiment detected no luminiferous ether. That null result opened the path to special relativity and showed that the speed of light is the same for all inertial observers.', source: 'Michelson, A. A., & Morley, E. W. (1887). American Journal of Science.' },
-  { level: 53, lang: 'en', text: 'Homeostasis keeps internal variables within narrow ranges. Without negative-feedback mechanisms, temperature, pH or glucose concentration would swing to levels incompatible with life.', source: 'Cannon, W. B. (1929). Physiological Reviews.' },
-  { level: 54, lang: 'en', text: 'Fermi’s paradox asks: if the universe is vast and ancient, where are the other civilisations? Possible answers range from the rarity of intelligent life to destruction or deliberate silence.', source: 'Fermi, E. (1950). Informal conversation, Los Alamos.' },
-  { level: 55, lang: 'en', text: 'Free will collides with physical determinism. Some proposals appeal to quantum indeterminacy; others reframe freedom as compatibility between actions and formed character.', source: 'Dennett, D. (2003). Freedom Evolves.' },
-  { level: 56, lang: 'en', text: 'The periodic table organises elements by atomic number and periodic properties. Mendeleev left gaps that were later filled by discoveries, showing the predictive power of classification.', source: 'Mendeleev, D. (1869). Zeitschrift für Chemie.' },
-  { level: 57, lang: 'en', text: 'Shannon’s information theory quantifies uncertainty and channel capacity. A bit is not merely a binary digit: it is a measure of uncertainty reduction in a message.', source: 'Shannon, C. E. (1948). A Mathematical Theory of Communication.' },
-  { level: 58, lang: 'en', text: 'Hominin fossils show a history of bipedalism, brain enlargement and tools. There is no single line to modern humans, but a tree with extinct branches and convergences.', source: 'Leakey, R., & Lewin, R. (1992). Origins Reconsidered.' },
-  { level: 59, lang: 'en', text: 'Wave-particle duality is not a metaphor: the same physical system exhibits wave-like or particle-like behaviour according to the type of measurement. Bohr’s complementarity tries to capture that tension.', source: 'Bohr, N. (1928). Nature.' },
-  { level: 60, lang: 'en', text: 'Observed global warming since the twentieth century is attributed mainly to the rise of greenhouse gases from human activities. Scientific consensus rests on multiple independent lines of evidence.', source: 'IPCC. (2021). Climate Change 2021: The Physical Science Basis.' },
-  { level: 61, lang: 'en', text: 'Mill’s utilitarian ethics holds that actions are right insofar as they promote happiness and wrong as they tend to produce the reverse. Calculating consequences requires care with long-term effects.', source: 'Mill, J. S. (1861). Utilitarianism.' },
-  { level: 62, lang: 'en', text: 'Ordinary matter — atoms of the periodic table — constitutes only a small fraction of the universe’s content. Dark matter and dark energy dominate, though we do not detect them directly.', source: 'Planck Collaboration. (2018). Astronomy & Astrophysics.' },
-  { level: 63, lang: 'en', text: 'The anthropic principle notes that physical constants appear tuned to allow life. Some see evidence of design; others, a selection bias: only in habitable universes are there observers.', source: 'Carter, B. (1974). Large Number Coincidences and the Anthropic Principle.' },
-  { level: 64, lang: 'en', text: 'Eukaryotic cells possess organelles with their own genomes, remnants of ancient symbioses. The endosymbiotic theory explains mitochondria and chloroplasts as bacteria that became permanent partners.', source: 'Margulis, L. (1970). Origin of Eukaryotic Cells.' },
-  { level: 65, lang: 'en', text: 'General relativity and quantum mechanics are extraordinarily successful in their domains yet incompatible in the regime of strong gravity and small scales. A quantum theory of gravity remains pending.', source: 'Rovelli, C. (2004). Quantum Gravity.' },
-  { level: 66, lang: 'en', text: 'Language does not merely describe the world: it structures it. Grammatical categories and vocabulary influence which distinctions we notice easily and which pass unnoticed.', source: 'Whorf, B. L. (1956). Language, Thought, and Reality.' },
-  { level: 67, lang: 'en', text: 'Life on Earth depends on a limited set of elements and a liquid solvent. The search for habitable exoplanets focuses on zones where liquid water could exist stably.', source: 'NASA. (n.d.). Habitable zone.' },
-  { level: 68, lang: 'en', text: 'Bell’s theorem and later experiments show that no local hidden-variable theory can reproduce all predictions of quantum mechanics. Non-locality appears inescapable.', source: 'Bell, J. S. (1964). Physics.' },
-  { level: 69, lang: 'en', text: 'Decision neuroscience reveals that brain activity predicting a choice can be detected before the subject is aware of having decided. That reopens debates about agency.', source: 'Libet, B. (1985). Behavioral and Brain Sciences.' },
-  { level: 70, lang: 'en', text: 'Philosophy of mind faces the problem of intentionality: how physical states can be about something. Mental representations seem to point to objects and properties outside themselves.', source: 'Brentano, F. (1874). Psychology from an Empirical Standpoint.' },
-
-  // ES 71–90
-  { level: 71, lang: 'es', text: 'La expansión del universo no es el movimiento de galaxias a través de un espacio fijo, sino el estiramiento del propio espacio. Las galaxias lejanas se alejan porque el tejido entre ellas crece.', source: 'Hubble, E. (1929). Proceedings of the National Academy of Sciences.' },
-  { level: 72, lang: 'es', text: 'La ética del cuidado enfatiza relaciones, responsabilidad y contexto frente a reglas abstractas universales. Surge en parte como crítica a modelos que priorizan imparcialidad sobre vínculos concretos.', source: 'Gilligan, C. (1982). In a Different Voice.' },
-  { level: 73, lang: 'es', text: 'Los neutrinos atraviesan la Tierra casi sin interactuar. Su masa, aunque diminuta, implica física más allá del modelo estándar y abre ventanas a procesos del universo temprano.', source: 'Particle Data Group. (2022). Review of Particle Physics.' },
-  { level: 74, lang: 'es', text: 'La selección de grupo y la selección de parentesco intentan explicar el altruismo. Genes que favorecen el sacrificio por parientes cercanos pueden propagarse aunque reduzcan la aptitud individual.', source: 'Hamilton, W. D. (1964). Journal of Theoretical Biology.' },
-  { level: 75, lang: 'es', text: 'El problema de la medición en mecánica cuántica pregunta cómo y cuándo la superposición se convierte en un resultado definido. Interpretaciones rivalizan: colapso, muchos mundos, variables ocultas.', source: 'von Neumann, J. (1932). Mathematical Foundations of Quantum Mechanics.' },
-  { level: 76, lang: 'es', text: 'La biodiversidad no es solo número de especies: incluye diversidad genética y de ecosistemas. Su pérdida reduce la resiliencia ante cambios ambientales y limita recursos futuros.', source: 'IPBES. (2019). Global Assessment Report.' },
-  { level: 77, lang: 'es', text: 'La filosofía de la tecnología examina cómo las herramientas median nuestra relación con el mundo. Un martillo o un algoritmo no son neutrales: reconfiguran posibilidades y riesgos.', source: 'Heidegger, M. (1954). The Question Concerning Technology.' },
-  { level: 78, lang: 'es', text: 'Las ondas gravitacionales, predichas por Einstein, fueron detectadas en 2015. Confirman que el espacio-tiempo puede ondular y abren una nueva astronomía que no depende de la luz.', source: 'Abbott, B. P. et al. (2016). Physical Review Letters.' },
-  { level: 79, lang: 'es', text: 'El escepticismo radical de Descartes —dudar de todo lo que pueda ser falso— sirve como método para alcanzar certezas. El cogito sobrevive incluso a la hipótesis del genio maligno.', source: 'Descartes, R. (1641). Meditaciones metafísicas.' },
   { level: 80, lang: 'es', text: 'La química prebiótica investiga cómo moléculas orgánicas simples pudieron originar sistemas autorreplicativos. Experimentos tipo Miller-Urey muestran rutas posibles, aunque el camino completo sigue abierto.', source: 'Miller, S. L. (1953). Science.' },
-  { level: 81, lang: 'es', text: 'La teoría de juegos modela decisiones estratégicas donde el resultado depende de las elecciones de otros. El dilema del prisionero ilustra cómo la racionalidad individual puede producir resultados colectivos peores.', source: 'von Neumann, J., & Morgenstern, O. (1944). Theory of Games and Economic Behavior.' },
-  { level: 82, lang: 'es', text: 'El cerebro humano consume una fracción desproporcionada de la energía corporal. Esa inversión metabólica sostiene la plasticidad, el aprendizaje y la capacidad de modelar futuros posibles.', source: 'Aiello, L. C., & Wheeler, P. (1995). Current Anthropology.' },
-  { level: 83, lang: 'es', text: 'La relatividad general implica que el tiempo transcurre más despacio en campos gravitatorios fuertes. Relojes en la superficie de la Tierra retrasan respecto a relojes en órbita; el GPS debe corregirlo.', source: 'Ashby, N. (2003). Living Reviews in Relativity.' },
-  { level: 84, lang: 'es', text: 'La ética deontológica de Kant exige tratar a las personas siempre como fines y nunca solo como medios. El imperativo categórico busca máximas universalizables sin contradicción.', source: 'Kant, I. (1785). Fundamentación de la metafísica de las costumbres.' },
-  { level: 85, lang: 'es', text: 'Las supernovas de tipo Ia sirven como candelas estándar: su luminosidad intrínseca permite medir distancias cósmicas. Esa técnica reveló la expansión acelerada del universo.', source: 'Riess, A. G. et al. (1998). The Astronomical Journal.' },
-  { level: 86, lang: 'es', text: 'El concepto de emergencia describe propiedades que aparecen en niveles superiores y no se reducen de forma obvia a las partes. La conciencia y la vida son candidatos clásicos de fenómenos emergentes.', source: 'Anderson, P. W. (1972). Science.' },
-  { level: 87, lang: 'es', text: 'La biología sintética diseña circuitos genéticos y organismos con funciones nuevas. Plantea preguntas éticas sobre límites de la intervención y responsabilidad ante consecuencias no previstas.', source: 'Endy, D. (2005). Nature.' },
-  { level: 88, lang: 'es', text: 'El problema de la inducción de Hume pregunta por qué esperamos que el futuro se asemeje al pasado. Ninguna cantidad de observaciones pasadas garantiza lógicamente la uniformidad de la naturaleza.', source: 'Hume, D. (1748). An Enquiry Concerning Human Understanding.' },
-  { level: 89, lang: 'es', text: 'La materia bariónica —protones y neutrones— se formó en los primeros minutos del universo. La nucleosíntesis primordial predice las abundancias de hidrógeno, helio y litio que observamos.', source: 'Alpher, R. A., Bethe, H., & Gamow, G. (1948). Physical Review.' },
   { level: 90, lang: 'es', text: 'La fenomenología de Husserl busca describir la experiencia tal como se presenta, suspendiendo supuestos sobre la existencia del mundo externo. La intencionalidad de la conciencia es su tema central.', source: 'Husserl, E. (1913). Ideas pertaining to a pure phenomenology.' },
-
-  // EN 71–90
-  { level: 71, lang: 'en', text: 'The expansion of the universe is not galaxies moving through fixed space, but the stretching of space itself. Distant galaxies recede because the fabric between them grows.', source: 'Hubble, E. (1929). Proceedings of the National Academy of Sciences.' },
-  { level: 72, lang: 'en', text: 'Care ethics emphasises relationships, responsibility and context over abstract universal rules. It arose partly as a critique of models that prioritise impartiality over concrete bonds.', source: 'Gilligan, C. (1982). In a Different Voice.' },
-  { level: 73, lang: 'en', text: 'Neutrinos pass through Earth almost without interacting. Their tiny mass implies physics beyond the Standard Model and opens windows onto processes of the early universe.', source: 'Particle Data Group. (2022). Review of Particle Physics.' },
-  { level: 74, lang: 'en', text: 'Group selection and kin selection attempt to explain altruism. Genes that favour sacrifice for close relatives can spread even if they reduce individual fitness.', source: 'Hamilton, W. D. (1964). Journal of Theoretical Biology.' },
-  { level: 75, lang: 'en', text: 'The measurement problem in quantum mechanics asks how and when superposition becomes a definite outcome. Rival interpretations include collapse, many worlds and hidden variables.', source: 'von Neumann, J. (1932). Mathematical Foundations of Quantum Mechanics.' },
-  { level: 76, lang: 'en', text: 'Biodiversity is not only species count: it includes genetic and ecosystem diversity. Its loss reduces resilience to environmental change and limits future resources.', source: 'IPBES. (2019). Global Assessment Report.' },
-  { level: 77, lang: 'en', text: 'Philosophy of technology examines how tools mediate our relation to the world. A hammer or an algorithm is not neutral: it reconfigures possibilities and risks.', source: 'Heidegger, M. (1954). The Question Concerning Technology.' },
-  { level: 78, lang: 'en', text: 'Gravitational waves, predicted by Einstein, were detected in 2015. They confirm that spacetime can ripple and open a new astronomy that does not depend on light.', source: 'Abbott, B. P. et al. (2016). Physical Review Letters.' },
-  { level: 79, lang: 'en', text: 'Descartes’ radical scepticism — doubting everything that could be false — serves as a method to reach certainty. The cogito survives even the evil-demon hypothesis.', source: 'Descartes, R. (1641). Meditations on First Philosophy.' },
-  { level: 80, lang: 'en', text: 'Prebiotic chemistry investigates how simple organic molecules could give rise to self-replicating systems. Miller-Urey-type experiments show possible routes, though the full path remains open.', source: 'Miller, S. L. (1953). Science.' },
-  { level: 81, lang: 'en', text: 'Game theory models strategic decisions where the outcome depends on others’ choices. The prisoner’s dilemma illustrates how individual rationality can produce worse collective results.', source: 'von Neumann, J., & Morgenstern, O. (1944). Theory of Games and Economic Behavior.' },
-  { level: 82, lang: 'en', text: 'The human brain consumes a disproportionate fraction of bodily energy. That metabolic investment sustains plasticity, learning and the capacity to model possible futures.', source: 'Aiello, L. C., & Wheeler, P. (1995). Current Anthropology.' },
-  { level: 83, lang: 'en', text: 'General relativity implies that time runs more slowly in strong gravitational fields. Clocks on Earth’s surface lag relative to clocks in orbit; GPS must correct for it.', source: 'Ashby, N. (2003). Living Reviews in Relativity.' },
-  { level: 84, lang: 'en', text: 'Kant’s deontological ethics requires treating persons always as ends and never merely as means. The categorical imperative seeks universalizable maxims without contradiction.', source: 'Kant, I. (1785). Groundwork of the Metaphysics of Morals.' },
-  { level: 85, lang: 'en', text: 'Type Ia supernovae serve as standard candles: their intrinsic luminosity allows measurement of cosmic distances. That technique revealed the accelerated expansion of the universe.', source: 'Riess, A. G. et al. (1998). The Astronomical Journal.' },
-  { level: 86, lang: 'en', text: 'The concept of emergence describes properties that appear at higher levels and are not obviously reducible to the parts. Consciousness and life are classic candidates for emergent phenomena.', source: 'Anderson, P. W. (1972). Science.' },
-  { level: 87, lang: 'en', text: 'Synthetic biology designs genetic circuits and organisms with new functions. It raises ethical questions about limits of intervention and responsibility for unforeseen consequences.', source: 'Endy, D. (2005). Nature.' },
-  { level: 88, lang: 'en', text: 'Hume’s problem of induction asks why we expect the future to resemble the past. No amount of past observation logically guarantees the uniformity of nature.', source: 'Hume, D. (1748). An Enquiry Concerning Human Understanding.' },
-  { level: 89, lang: 'en', text: 'Baryonic matter — protons and neutrons — formed in the first minutes of the universe. Primordial nucleosynthesis predicts the abundances of hydrogen, helium and lithium we observe.', source: 'Alpher, R. A., Bethe, H., & Gamow, G. (1948). Physical Review.' },
-  { level: 90, lang: 'en', text: 'Husserl’s phenomenology seeks to describe experience as it presents itself, suspending assumptions about the existence of the external world. The intentionality of consciousness is its central theme.', source: 'Husserl, E. (1913). Ideas pertaining to a pure phenomenology.' },
-
-  // ES 91–110
-  { level: 91, lang: 'es', text: 'La constante de Hubble mide la tasa actual de expansión del universo. Discrepancias entre mediciones locales y del fondo cósmico sugieren posible nueva física o errores sistemáticos aún no resueltos.', source: 'Riess, A. G. (2020). Nature Reviews Physics.' },
-  { level: 92, lang: 'es', text: 'La justicia como equidad de Rawls propone principios elegidos tras un velo de ignorancia: sin saber la posición que se ocupará, se eligen reglas que protegen a los más desfavorecidos.', source: 'Rawls, J. (1971). A Theory of Justice.' },
-  { level: 93, lang: 'es', text: 'Los agujeros negros supermasivos en centros galácticos regulan el crecimiento de las galaxias mediante jets y vientos. La coevolución de agujero y galaxia es un tema activo de investigación.', source: 'Kormendy, J., & Ho, L. C. (2013). Annual Review of Astronomy and Astrophysics.' },
-  { level: 94, lang: 'es', text: 'La plasticidad cerebral permite que la experiencia reconfigure conexiones. Aprendizaje, recuperación tras lesión y desarrollo dependen de mecanismos moleculares que fortalecen o debilitan sinapsis.', source: 'Hebb, D. O. (1949). The Organization of Behavior.' },
-  { level: 95, lang: 'es', text: 'El principio de precaución aconseja actuar ante riesgos graves aunque la evidencia científica no sea completa. Su aplicación en política ambiental genera tensiones con el costo de la inacción y de la sobreacción.', source: 'UNESCO. (2005). The Precautionary Principle.' },
-  { level: 96, lang: 'es', text: 'La teoría de cuerdas intenta unificar gravedad y cuántica postulando objetos unidimensionales. Requiere dimensiones extra y aún no ha producido predicciones empíricas únicas y verificables.', source: 'Green, M. B., Schwarz, J. H., & Witten, E. (1987). Superstring Theory.' },
-  { level: 97, lang: 'es', text: 'La muerte celular programada (apoptosis) es esencial para el desarrollo y la homeostasis. Fallos en su regulación intervienen en cáncer y enfermedades neurodegenerativas.', source: 'Kerr, J. F., Wyllie, A. H., & Currie, A. R. (1972). British Journal of Cancer.' },
-  { level: 98, lang: 'es', text: 'La filosofía de la biología debate si la selección opera solo en genes, en organismos o en múltiples niveles. El debate influye en cómo entendemos adaptación, altruismo y unidades de evolución.', source: 'Okasha, S. (2006). Evolution and the Levels of Selection.' },
-  { level: 99, lang: 'es', text: 'El efecto invernadero natural hace habitable la Tierra. El aumento antropogénico de CO2 y otros gases intensifica ese efecto y desplaza el equilibrio radiativo del planeta.', source: 'Arrhenius, S. (1896). Philosophical Magazine.' },
   { level: 100, lang: 'es', text: 'La pregunta por el sentido del universo no tiene respuesta científica única. La física describe cómo evolucionan las estructuras; el significado que les atribuimos pertenece al ámbito de la experiencia humana y la ética.', source: 'Weinberg, S. (1977). The First Three Minutes.' },
-  { level: 101, lang: 'es', text: 'Las ondas cerebrales reflejan sincronización de poblaciones neuronales. Oscilaciones en distintas bandas de frecuencia se asocian a atención, memoria y estados de consciencia, aunque la causalidad sigue bajo estudio.', source: 'Buzsaki, G. (2006). Rhythms of the Brain.' },
-  { level: 102, lang: 'es', text: 'La singularidad del Big Bang marca el límite de la relatividad clásica. Una teoría cuántica de la gravedad podría eliminar la singularidad o revelar una fase anterior del cosmos.', source: 'Hawking, S., & Penrose, R. (1970). Proceedings of the Royal Society.' },
-  { level: 103, lang: 'es', text: 'El concepto de persona en ética y derecho no coincide necesariamente con el de organismo biológico. Criterios de conciencia, autonomía o potencialidad generan debates sobre inicio y final de la vida personal.', source: 'Parfit, D. (1984). Reasons and Persons.' },
-  { level: 104, lang: 'es', text: 'La antimateria se aniquila con la materia produciendo energía pura. El universo observable muestra un exceso enorme de materia; el origen de esa asimetría bariónica sigue sin explicación completa.', source: 'Sakharov, A. D. (1967). JETP Letters.' },
-  { level: 105, lang: 'es', text: 'La teoría de la decisión estudia cómo elegir bajo incertidumbre. Utilidades esperadas, aversión al riesgo y sesgos cognitivos revelan que la racionalidad humana se desvía de los modelos ideales.', source: 'Kahneman, D., & Tversky, A. (1979). Econometrica.' },
-  { level: 106, lang: 'es', text: 'Los planetas extrasolares revelan una diversidad de arquitecturas planetarias. Sistemas con Júpiteres calientes o super-Tierras desafían los modelos de formación basados solo en el Sistema Solar.', source: 'Mayor, M., & Queloz, D. (1995). Nature.' },
-  { level: 107, lang: 'es', text: 'La ética animal cuestiona el especismo: la discriminación por especie. Si el sufrimiento importa moralmente, la capacidad de sentir, no la pertenencia a Homo sapiens, debería guiar el trato.', source: 'Singer, P. (1975). Animal Liberation.' },
-  { level: 108, lang: 'es', text: 'La información cuántica no puede copiarse de forma perfecta (teorema de no-clonación). Esa propiedad subyace a la criptografía cuántica y limita ciertas operaciones de computación cuántica.', source: 'Wootters, W. K., & Zurek, W. H. (1982). Nature.' },
-  { level: 109, lang: 'es', text: 'El envejecimiento celular implica acortamiento de telómeros, daño al ADN y senescencia. Comprender estos mecanismos abre vías para modular la salud en edades avanzadas, no necesariamente la longevidad máxima.', source: 'Hayflick, L. (1965). Experimental Cell Research.' },
   { level: 110, lang: 'es', text: 'La última pregunta abierta de la física fundamental es cómo reconciliar la relatividad general con la mecánica cuántica en un marco coherente. Hasta entonces, el universo en sus extremos más densos y tempranos permanece parcialmente opaco a nuestra comprensión.', source: 'Rovelli, C. (2017). Reality Is Not What It Seems.' },
 
-  // EN 91–110
-  { level: 91, lang: 'en', text: 'The Hubble constant measures the current expansion rate of the universe. Discrepancies between local measurements and the cosmic background suggest possible new physics or unresolved systematic errors.', source: 'Riess, A. G. (2020). Nature Reviews Physics.' },
-  { level: 92, lang: 'en', text: 'Rawls’s justice as fairness proposes principles chosen behind a veil of ignorance: without knowing one’s position, one selects rules that protect the least advantaged.', source: 'Rawls, J. (1971). A Theory of Justice.' },
-  { level: 93, lang: 'en', text: 'Supermassive black holes at galactic centres regulate galaxy growth through jets and winds. The co-evolution of black hole and galaxy is an active research topic.', source: 'Kormendy, J., & Ho, L. C. (2013). Annual Review of Astronomy and Astrophysics.' },
-  { level: 94, lang: 'en', text: 'Brain plasticity allows experience to reconfigure connections. Learning, recovery after injury and development depend on molecular mechanisms that strengthen or weaken synapses.', source: 'Hebb, D. O. (1949). The Organization of Behavior.' },
-  { level: 95, lang: 'en', text: 'The precautionary principle advises action in the face of serious risks even when scientific evidence is incomplete. Its application in environmental policy creates tensions with the costs of inaction and over-action.', source: 'UNESCO. (2005). The Precautionary Principle.' },
-  { level: 96, lang: 'en', text: 'String theory attempts to unify gravity and quantum mechanics by postulating one-dimensional objects. It requires extra dimensions and has not yet produced unique, testable empirical predictions.', source: 'Green, M. B., Schwarz, J. H., & Witten, E. (1987). Superstring Theory.' },
-  { level: 97, lang: 'en', text: 'Programmed cell death (apoptosis) is essential for development and homeostasis. Failures in its regulation are involved in cancer and neurodegenerative diseases.', source: 'Kerr, J. F., Wyllie, A. H., & Currie, A. R. (1972). British Journal of Cancer.' },
-  { level: 98, lang: 'en', text: 'Philosophy of biology debates whether selection operates only on genes, on organisms or at multiple levels. The debate shapes how we understand adaptation, altruism and units of evolution.', source: 'Okasha, S. (2006). Evolution and the Levels of Selection.' },
-  { level: 99, lang: 'en', text: 'The natural greenhouse effect makes Earth habitable. Anthropogenic increase of CO2 and other gases intensifies that effect and shifts the planet’s radiative balance.', source: 'Arrhenius, S. (1896). Philosophical Magazine.' },
+  // EN 51–110
+  { level: 51, lang: 'en', text: 'Hawking radiation suggests black holes are not completely black: they emit thermal particles due to quantum effects near the horizon and may eventually evaporate.', source: 'Hawking, S. (1975). Particle creation by black holes. Communications in Mathematical Physics.' },
+  { level: 60, lang: 'en', text: 'Observed global warming since the twentieth century is attributed mainly to the rise of greenhouse gases from human activities. Scientific consensus rests on multiple independent lines of evidence.', source: 'IPCC. (2021). Climate Change 2021: The Physical Science Basis.' },
+  { level: 70, lang: 'en', text: 'Philosophy of mind faces the problem of intentionality: how physical states can be about something. Mental representations seem to point to objects and properties outside themselves.', source: 'Brentano, F. (1874). Psychology from an Empirical Standpoint.' },
+  { level: 80, lang: 'en', text: 'Prebiotic chemistry investigates how simple organic molecules could give rise to self-replicating systems. Miller-Urey-type experiments show possible routes, though the full path remains open.', source: 'Miller, S. L. (1953). Science.' },
+  { level: 90, lang: 'en', text: 'Husserl’s phenomenology seeks to describe experience as it presents itself, suspending assumptions about the existence of the external world. The intentionality of consciousness is its central theme.', source: 'Husserl, E. (1913). Ideas pertaining to a pure phenomenology.' },
   { level: 100, lang: 'en', text: 'The question of the universe’s meaning has no single scientific answer. Physics describes how structures evolve; the significance we attribute to them belongs to the realm of human experience and ethics.', source: 'Weinberg, S. (1977). The First Three Minutes.' },
-  { level: 101, lang: 'en', text: 'Brain waves reflect synchronisation of neuronal populations. Oscillations in different frequency bands are associated with attention, memory and states of consciousness, though causality remains under study.', source: 'Buzsaki, G. (2006). Rhythms of the Brain.' },
-  { level: 102, lang: 'en', text: 'The Big Bang singularity marks the limit of classical relativity. A quantum theory of gravity might remove the singularity or reveal a prior phase of the cosmos.', source: 'Hawking, S., & Penrose, R. (1970). Proceedings of the Royal Society.' },
-  { level: 103, lang: 'en', text: 'The concept of person in ethics and law does not necessarily coincide with that of biological organism. Criteria of consciousness, autonomy or potentiality generate debates about the beginning and end of personal life.', source: 'Parfit, D. (1984). Reasons and Persons.' },
-  { level: 104, lang: 'en', text: 'Antimatter annihilates with matter producing pure energy. The observable universe shows a huge excess of matter; the origin of that baryon asymmetry remains incompletely explained.', source: 'Sakharov, A. D. (1967). JETP Letters.' },
-  { level: 105, lang: 'en', text: 'Decision theory studies how to choose under uncertainty. Expected utilities, risk aversion and cognitive biases reveal that human rationality departs from ideal models.', source: 'Kahneman, D., & Tversky, A. (1979). Econometrica.' },
-  { level: 106, lang: 'en', text: 'Extrasolar planets reveal a diversity of planetary architectures. Systems with hot Jupiters or super-Earths challenge formation models based only on the Solar System.', source: 'Mayor, M., & Queloz, D. (1995). Nature.' },
-  { level: 107, lang: 'en', text: 'Animal ethics questions speciesism: discrimination by species. If suffering matters morally, the capacity to feel, not membership in Homo sapiens, should guide treatment.', source: 'Singer, P. (1975). Animal Liberation.' },
-  { level: 108, lang: 'en', text: 'Quantum information cannot be copied perfectly (no-cloning theorem). That property underlies quantum cryptography and limits certain quantum-computing operations.', source: 'Wootters, W. K., & Zurek, W. H. (1982). Nature.' },
-  { level: 109, lang: 'en', text: 'Cellular ageing involves telomere shortening, DNA damage and senescence. Understanding these mechanisms opens routes to modulate health in later life, not necessarily maximum lifespan.', source: 'Hayflick, L. (1965). Experimental Cell Research.' },
   { level: 110, lang: 'en', text: 'The ultimate open question of fundamental physics is how to reconcile general relativity with quantum mechanics in a coherent framework. Until then, the universe at its densest and earliest extremes remains partially opaque to our understanding.', source: 'Rovelli, C. (2017). Reality Is Not What It Seems.' },
+
+  // NUEVAS 111–150 ES (memoria + loci + ciencia cognitiva)
+  { level: 111, lang: 'es', text: 'La memoria de trabajo mantiene temporalmente la información que usamos para razonar y decidir. Su capacidad limitada explica por qué las listas largas se fragmentan con facilidad.', source: 'Baddeley, A. (2000). The episodic buffer. Trends in Cognitive Sciences.' },
+  { level: 112, lang: 'es', text: 'El olvido no siempre es un fallo: a veces es una forma de priorizar. El cerebro elimina o debilita rastros poco usados para conservar recursos.', source: 'Schacter, D. L. (2001). The Seven Sins of Memory.' },
+  { level: 113, lang: 'es', text: 'Los recuerdos no se recuperan como archivos intactos. Cada evocación puede modificarlos; el acto de recordar es también un acto de reconstrucción.', source: 'Loftus, E. F. (2005). Planting misinformation in the human mind.' },
+  { level: 114, lang: 'es', text: 'El método de loci aprovecha la memoria espacial, una de las más robustas del cerebro humano, para anclar información abstracta en lugares imaginarios.', source: 'Yates, F. A. (1966). The Art of Memory.' },
+  { level: 115, lang: 'es', text: 'Dormir consolida recuerdos. Durante el sueño de ondas lentas y el REM se reactivan patrones neuronales y se fortalecen conexiones relevantes.', source: 'Diekelmann, S., & Born, J. (2010). Nature Reviews Neuroscience.' },
+  { level: 116, lang: 'es', text: 'La atención es el portero de la memoria. Sin atención sostenida, la codificación es superficial y el recuerdo posterior se vuelve frágil.', source: 'Craik, F. I. M., & Lockhart, R. S. (1972). Levels of processing.' },
+  { level: 117, lang: 'es', text: 'Los campeones de memoria no suelen tener cerebros extraordinarios; usan técnicas sistemáticas de codificación y recuperación deliberada.', source: 'Ericsson, K. A. (2006). The Cambridge Handbook of Expertise.' },
+  { level: 118, lang: 'es', text: 'La repetición espaciada supera a la repetición masiva. Distribuir el estudio en el tiempo produce retención más duradera.', source: 'Ebbinghaus, H. (1885). Über das Gedächtnis.' },
+  { level: 119, lang: 'es', text: 'El efecto de generación muestra que producir activamente una respuesta fortalece el recuerdo más que solo leerla.', source: 'Slamecka, N. J., & Graf, P. (1978). Journal of Experimental Psychology.' },
+  { level: 120, lang: 'es', text: 'Las emociones intensas dejan huellas más nítidas, pero también pueden distorsionar detalles periféricos del evento.', source: 'McGaugh, J. L. (2004). The amygdala and emotional memory.' },
+  { level: 121, lang: 'es', text: 'El hipocampo es crucial para formar recuerdos episódicos nuevos. Su daño produce amnesia anterógrada característica.', source: 'Squire, L. R. (1992). Psychological Review.' },
+  { level: 122, lang: 'es', text: 'La práctica de recuperación (testing effect) es una de las estrategias más eficaces para aprender a largo plazo.', source: 'Roediger, H. L., & Karpicke, J. D. (2006). Psychological Science.' },
+  { level: 123, lang: 'es', text: 'Visualizar con detalle sensorial —colores, texturas, olores— hace que las imágenes mentales se agarren mejor a la memoria.', source: 'Paivio, A. (1986). Mental Representations.' },
+  { level: 124, lang: 'es', text: 'El chunking convierte elementos sueltos en unidades significativas. Así la memoria de trabajo puede manejar más información.', source: 'Miller, G. A. (1956). The magical number seven. Psychological Review.' },
+  { level: 125, lang: 'es', text: 'Los mnemotécnicos no sustituyen la comprensión; amplifican la capacidad de almacenar y recuperar datos concretos.', source: 'Bellezza, F. S. (1981). Mnemonic devices. Review of Educational Research.' },
+  { level: 126, lang: 'es', text: 'La interferencia proactiva y retroactiva explica por qué materiales similares se confunden entre sí con el tiempo.', source: 'Underwood, B. J. (1957). Psychological Review.' },
+  { level: 127, lang: 'es', text: 'Entrenar la atención plena puede reducir la deriva mental y mejorar la codificación de experiencias presentes.', source: 'Jha, A. P. et al. (2007). Cognitive, Affective, & Behavioral Neuroscience.' },
+  { level: 128, lang: 'es', text: 'Los relatos autobiográficos se reescriben a lo largo de la vida; el yo narrativo selecciona y organiza el pasado.', source: 'McAdams, D. P. (2001). The psychology of life stories.' },
+  { level: 129, lang: 'es', text: 'La memoria prospectiva nos permite recordar hacer algo en el futuro. Fallos en ella son frecuentes y costosos.', source: 'Einstein, G. O., & McDaniel, M. A. (2005). Prospective memory.' },
+  { level: 130, lang: 'es', text: 'El arte de la memoria clásico unía retórica y arquitectura mental: oradores griegos y romanos caminaban por edificios imaginarios para recuperar discursos enteros.', source: 'Cicero. (55 a. C.). De oratore.' },
+  { level: 131, lang: 'es', text: 'La plasticidad sináptica es la base biológica del aprendizaje: las conexiones se fortalecen o debilitan según el uso.', source: 'Hebb, D. O. (1949). The Organization of Behavior.' },
+  { level: 132, lang: 'es', text: 'Un palacio de la memoria efectivo usa rutas familiares, imágenes vívidas y exageradas, y un orden fijo de recorrido.', source: 'Foer, J. (2011). Moonwalking with Einstein.' },
+  { level: 133, lang: 'es', text: 'Los competidores de memoria moderna siguen usando variantes del método de loci descrito hace más de dos mil años.', source: 'World Memory Championships. (n.d.). Official techniques overview.' },
+  { level: 134, lang: 'es', text: 'La codificación elaborativa conecta lo nuevo con lo ya conocido; cuanto más rico el enlace, mejor el recuerdo.', source: 'Craik, F. I. M., & Tulving, E. (1975). Journal of Experimental Psychology.' },
+  { level: 135, lang: 'es', text: 'Practicar en condiciones variadas mejora la transferencia: el cerebro se vuelve flexible ante contextos nuevos.', source: 'Schmidt, R. A., & Bjork, R. A. (1992). Psychological Science.' },
+  { level: 136, lang: 'es', text: 'La memoria semántica almacena hechos y conceptos; la episódica guarda eventos situados en tiempo y lugar.', source: 'Tulving, E. (1972). Organization of Memory.' },
+  { level: 137, lang: 'es', text: 'El efecto de superioridad de la imagen muestra que las imágenes se recuerdan mejor que las palabras abstractas.', source: 'Paivio, A. (1971). Imagery and Verbal Processes.' },
+  { level: 138, lang: 'es', text: 'Para construir un palacio: elige un lugar conocido, define una ruta clara, coloca imágenes absurdas y repasa el camino mentalmente.', source: 'Buzan, T. (2006). The Memory Book.' },
+  { level: 139, lang: 'es', text: 'La ciencia actual confirma que el método de loci activa redes espaciales del cerebro y mejora el rendimiento en tareas de memoria serial.', source: 'Maguire, E. A. et al. (2003). Nature Neuroscience.' },
+  { level: 140, lang: 'es', text: 'Usos profesionales históricos: oradores, actores de teatro clásico, médicos que memorizaban listas de síntomas y estudiantes de derecho romano.', source: 'Carruthers, M. (1990). The Book of Memory.' },
+  { level: 141, lang: 'es', text: 'El método de loci sigue siendo una de las técnicas más potentes para memorizar discursos, listas y datos estructurados en el siglo XXI.', source: 'Foer, J. (2011). Moonwalking with Einstein.' },
+  { level: 142, lang: 'es', text: 'La recuperación espaciada y el testing effect combinados producen ganancias de retención superiores a la relectura pasiva.', source: 'Roediger, H. L., & Karpicke, J. D. (2006). Psychological Science.' },
+  { level: 143, lang: 'es', text: 'Las imágenes mentales absurdas y emocionales se recuerdan mejor porque activan más redes neuronales y destacan frente a lo cotidiano.', source: 'Paivio, A. (1986). Mental Representations.' },
+  { level: 144, lang: 'es', text: 'Entrenar el palacio de la memoria mejora no solo la memoria de listas, sino también la capacidad de organización espacial interna.', source: 'Maguire, E. A. et al. (2003). Nature Neuroscience.' },
+  { level: 145, lang: 'es', text: 'Los oradores antiguos consideraban la memoria una de las cinco partes de la retórica, junto con invención, disposición, elocución y acción.', source: 'Cicero. (55 a. C.). De oratore.' },
+  { level: 146, lang: 'es', text: 'Hoy el método de loci se usa en educación, actuación, oposiciones y competiciones internacionales de memoria.', source: 'World Memory Championships. (n.d.).' },
+  { level: 147, lang: 'es', text: 'La clave del éxito con loci es la consistencia del recorrido y la vividez de las asociaciones, no la complejidad del edificio mental.', source: 'Yates, F. A. (1966). The Art of Memory.' },
+  { level: 148, lang: 'es', text: 'Dormir después de una sesión de loci consolida las rutas espaciales y las imágenes asociadas.', source: 'Diekelmann, S., & Born, J. (2010). Nature Reviews Neuroscience.' },
+  { level: 149, lang: 'es', text: 'El olvido es selectivo: lo que no se usa ni se reconsolida tiende a debilitarse, liberando recursos para lo relevante.', source: 'Schacter, D. L. (2001). The Seven Sins of Memory.' },
+  { level: 150, lang: 'es', text: 'El método de loci demuestra que la memoria humana es altamente entrenable cuando se aprovechan sus puntos fuertes espaciales y visuales.', source: 'Ericsson, K. A. (2006). The Cambridge Handbook of Expertise.' },
+
+  // NUEVAS 111–150 EN
+  { level: 111, lang: 'en', text: 'Working memory temporarily holds information we use to reason and decide. Its limited capacity explains why long lists fragment easily.', source: 'Baddeley, A. (2000). The episodic buffer. Trends in Cognitive Sciences.' },
+  { level: 112, lang: 'en', text: 'Forgetting is not always a failure: sometimes it is prioritisation. The brain weakens rarely used traces to conserve resources.', source: 'Schacter, D. L. (2001). The Seven Sins of Memory.' },
+  { level: 113, lang: 'en', text: 'Memories are not retrieved as intact files. Each recollection can modify them; the act of remembering is also an act of reconstruction.', source: 'Loftus, E. F. (2005). Planting misinformation in the human mind.' },
+  { level: 114, lang: 'en', text: 'The method of loci harnesses spatial memory, one of the most robust systems in the human brain, to anchor abstract information in imaginary places.', source: 'Yates, F. A. (1966). The Art of Memory.' },
+  { level: 115, lang: 'en', text: 'Sleep consolidates memories. During slow-wave and REM sleep, neural patterns are reactivated and relevant connections strengthened.', source: 'Diekelmann, S., & Born, J. (2010). Nature Reviews Neuroscience.' },
+  { level: 116, lang: 'en', text: 'Attention is the gatekeeper of memory. Without sustained attention, encoding is shallow and later recall becomes fragile.', source: 'Craik, F. I. M., & Lockhart, R. S. (1972). Levels of processing.' },
+  { level: 117, lang: 'en', text: 'Memory champions rarely have extraordinary brains; they use systematic techniques of encoding and deliberate retrieval.', source: 'Ericsson, K. A. (2006). The Cambridge Handbook of Expertise.' },
+  { level: 118, lang: 'en', text: 'Spaced repetition outperforms massed practice. Distributing study over time produces more durable retention.', source: 'Ebbinghaus, H. (1885). Memory: A Contribution to Experimental Psychology.' },
+  { level: 119, lang: 'en', text: 'The generation effect shows that actively producing a response strengthens memory more than merely reading it.', source: 'Slamecka, N. J., & Graf, P. (1978). Journal of Experimental Psychology.' },
+  { level: 120, lang: 'en', text: 'Intense emotions leave sharper traces, yet they can also distort peripheral details of the event.', source: 'McGaugh, J. L. (2004). The amygdala and emotional memory.' },
+  { level: 121, lang: 'en', text: 'The hippocampus is crucial for forming new episodic memories. Damage to it produces characteristic anterograde amnesia.', source: 'Squire, L. R. (1992). Psychological Review.' },
+  { level: 122, lang: 'en', text: 'Retrieval practice (the testing effect) is among the most effective strategies for long-term learning.', source: 'Roediger, H. L., & Karpicke, J. D. (2006). Psychological Science.' },
+  { level: 123, lang: 'en', text: 'Detailed sensory visualisation — colours, textures, smells — makes mental images stick more firmly in memory.', source: 'Paivio, A. (1986). Mental Representations.' },
+  { level: 124, lang: 'en', text: 'Chunking turns loose items into meaningful units. Working memory can thereby handle more information.', source: 'Miller, G. A. (1956). The magical number seven. Psychological Review.' },
+  { level: 125, lang: 'en', text: 'Mnemonics do not replace understanding; they amplify the capacity to store and retrieve concrete data.', source: 'Bellezza, F. S. (1981). Mnemonic devices. Review of Educational Research.' },
+  { level: 126, lang: 'en', text: 'Proactive and retroactive interference explain why similar materials become confused over time.', source: 'Underwood, B. J. (1957). Psychological Review.' },
+  { level: 127, lang: 'en', text: 'Mindfulness training can reduce mind-wandering and improve encoding of present experiences.', source: 'Jha, A. P. et al. (2007). Cognitive, Affective, & Behavioral Neuroscience.' },
+  { level: 128, lang: 'en', text: 'Autobiographical narratives are rewritten across a lifetime; the narrative self selects and organises the past.', source: 'McAdams, D. P. (2001). The psychology of life stories.' },
+  { level: 129, lang: 'en', text: 'Prospective memory allows us to remember to do something in the future. Failures in it are common and costly.', source: 'Einstein, G. O., & McDaniel, M. A. (2005). Prospective memory.' },
+  { level: 130, lang: 'en', text: 'The classical art of memory united rhetoric and mental architecture: Greek and Roman orators walked through imaginary buildings to recover entire speeches.', source: 'Cicero. (55 BCE). De oratore.' },
+  { level: 131, lang: 'en', text: 'Synaptic plasticity is the biological basis of learning: connections strengthen or weaken according to use.', source: 'Hebb, D. O. (1949). The Organization of Behavior.' },
+  { level: 132, lang: 'en', text: 'An effective memory palace uses familiar routes, vivid exaggerated images, and a fixed order of travel.', source: 'Foer, J. (2011). Moonwalking with Einstein.' },
+  { level: 133, lang: 'en', text: 'Modern memory competitors still use variants of the method of loci described more than two thousand years ago.', source: 'World Memory Championships. (n.d.). Official techniques overview.' },
+  { level: 134, lang: 'en', text: 'Elaborative encoding links the new to the known; the richer the link, the better the later recall.', source: 'Craik, F. I. M., & Tulving, E. (1975). Journal of Experimental Psychology.' },
+  { level: 135, lang: 'en', text: 'Practising under varied conditions improves transfer: the brain becomes flexible across new contexts.', source: 'Schmidt, R. A., & Bjork, R. A. (1992). Psychological Science.' },
+  { level: 136, lang: 'en', text: 'Semantic memory stores facts and concepts; episodic memory holds events situated in time and place.', source: 'Tulving, E. (1972). Organization of Memory.' },
+  { level: 137, lang: 'en', text: 'The picture-superiority effect shows that images are remembered better than abstract words.', source: 'Paivio, A. (1971). Imagery and Verbal Processes.' },
+  { level: 138, lang: 'en', text: 'To build a palace: choose a known place, define a clear route, place absurd images, and mentally walk the path.', source: 'Buzan, T. (2006). The Memory Book.' },
+  { level: 139, lang: 'en', text: 'Current science confirms that the method of loci activates spatial networks in the brain and improves serial memory performance.', source: 'Maguire, E. A. et al. (2003). Nature Neuroscience.' },
+  { level: 140, lang: 'en', text: 'Historical professional uses: orators, classical actors, physicians memorising symptom lists, and students of Roman law.', source: 'Carruthers, M. (1990). The Book of Memory.' },
+  { level: 141, lang: 'en', text: 'The method of loci remains one of the most powerful techniques for memorising speeches, lists and structured data in the twenty-first century.', source: 'Foer, J. (2011). Moonwalking with Einstein.' },
+  { level: 142, lang: 'en', text: 'Spaced retrieval and the testing effect together produce retention gains superior to passive rereading.', source: 'Roediger, H. L., & Karpicke, J. D. (2006). Psychological Science.' },
+  { level: 143, lang: 'en', text: 'Absurd and emotional mental images are remembered better because they activate more neural networks and stand out from the everyday.', source: 'Paivio, A. (1986). Mental Representations.' },
+  { level: 144, lang: 'en', text: 'Training the memory palace improves not only list memory but also internal spatial organisation capacity.', source: 'Maguire, E. A. et al. (2003). Nature Neuroscience.' },
+  { level: 145, lang: 'en', text: 'Ancient orators considered memory one of the five parts of rhetoric, along with invention, arrangement, style and delivery.', source: 'Cicero. (55 BCE). De oratore.' },
+  { level: 146, lang: 'en', text: 'Today the method of loci is used in education, acting, competitive examinations and international memory competitions.', source: 'World Memory Championships. (n.d.).' },
+  { level: 147, lang: 'en', text: 'The key to success with loci is consistency of the route and vividness of associations, not the complexity of the mental building.', source: 'Yates, F. A. (1966). The Art of Memory.' },
+  { level: 148, lang: 'en', text: 'Sleeping after a loci session consolidates the spatial routes and the associated images.', source: 'Diekelmann, S., & Born, J. (2010). Nature Reviews Neuroscience.' },
+  { level: 149, lang: 'en', text: 'Forgetting is selective: what is neither used nor reconsolidated tends to weaken, freeing resources for what matters.', source: 'Schacter, D. L. (2001). The Seven Sins of Memory.' },
+  { level: 150, lang: 'en', text: 'The method of loci demonstrates that human memory is highly trainable when its spatial and visual strengths are leveraged.', source: 'Ericsson, K. A. (2006). The Cambridge Handbook of Expertise.' },
 ]
+
+/* ─── Helpers ───────────────────────────────────────────────────────────── */
 
 function loadBest(key: string): number {
   try {
@@ -486,7 +496,6 @@ function mulberry32(seed: number) {
   }
 }
 
-/** Comparación carácter a carácter (normalizada para no-emojis) */
 function compareChars(
   input: string,
   target: string,
@@ -510,25 +519,62 @@ function compareChars(
   return out
 }
 
-/**
- * Elimina únicamente tildes agudas (á é í ó ú, mayúsculas incluidas).
- * No toca la ñ ni la diéresis (ü), que no son "tildes" de acentuación.
- */
 function stripAcutes(text: string): string {
   return text.normalize('NFD').replace(/\u0301/g, '').normalize('NFC')
 }
 
-/**
- * Texto de una cita listo para mostrar/comparar en el juego, respetando
- * el switch de tildes. El español respeta el switch; el inglés no tiene
- * tildes españolas que quitar, así que se devuelve tal cual.
- */
 function quoteDisplayText(q: QuoteItem, withTildes: boolean): string {
   if (q.lang !== 'es') return q.text
   return withTildes ? q.text : stripAcutes(q.text)
 }
 
-/* ─── Componente ────────────────────────────────────────────────────────── */
+/* ─── Datos Palacio Imaginario ──────────────────────────────────────────── */
+
+const PALACE_ROOMS = [
+  { id: 'entrada', name: 'Entrada / Vestíbulo', emoji: '🚪' },
+  { id: 'salon', name: 'Salón principal', emoji: '🛋️' },
+  { id: 'cocina', name: 'Cocina', emoji: '🍳' },
+  { id: 'pasillo', name: 'Pasillo largo', emoji: '🛤️' },
+  { id: 'biblioteca', name: 'Biblioteca', emoji: '📚' },
+  { id: 'jardin', name: 'Jardín', emoji: '🌳' },
+  { id: 'escalera', name: 'Escalera', emoji: '🪜' },
+  { id: 'azotea', name: 'Azotea / Terraza', emoji: '🏙️' },
+  { id: 'sotano', name: 'Sótano', emoji: '🔦' },
+  { id: 'bano', name: 'Baño', emoji: '🛁' },
+  { id: 'dormitorio', name: 'Dormitorio', emoji: '🛏️' },
+  { id: 'oficina', name: 'Oficina / Estudio', emoji: '🖥️' },
+  { id: 'garaje', name: 'Garaje', emoji: '🚗' },
+  { id: 'balcon', name: 'Balcón', emoji: '🪟' },
+  { id: 'despensa', name: 'Despensa', emoji: '🥫' },
+  { id: 'atico', name: 'Ático', emoji: '📦' },
+  { id: 'invernadero', name: 'Invernadero', emoji: '🌿' },
+  { id: 'piscina', name: 'Piscina / Patio', emoji: '🏊' },
+  { id: 'chimenea', name: 'Sala de chimenea', emoji: '🔥' },
+  { id: 'laboratorio', name: 'Laboratorio', emoji: '🧪' },
+]
+
+const PALACE_ITEMS = [
+  'manzana roja brillante', 'reloj de arena gigante', 'gato con sombrero', 'libro volando',
+  'llave dorada', 'vela encendida', 'espejo roto', 'trompeta dorada', 'pez en una pecera',
+  'sombrero de mago', 'botella de poción', 'mapa antiguo', 'diamante flotante', 'silla rota',
+  'globo terráqueo', 'taza de café humeante', 'paraguas abierto', 'linterna', 'pluma estilográfica',
+  'dado de seis caras', 'campana', 'escoba voladora', 'retrato parlante', 'caja de música',
+  'dragón miniatura', 'corona de oro', 'calavera brillante', 'reloj de bolsillo', 'botella de vino antigua',
+  'pistola de agua', 'globo de nieve', 'cactus parlante', 'sartén voladora', 'pelota de fútbol ardiendo',
+  'teléfono de disco', 'máquina de escribir', 'farol de gas', 'brújula oxidada', 'ancla pequeña',
+  'trompeta de circo', 'muñeca de porcelana', 'caja fuerte abierta', 'serpiente de juguete', 'globo aerostático',
+  'bastón de mago', 'cristal de cuarzo', 'pluma de pavo real', 'reloj de cuco', 'estatua de buda',
+  'camaleón arcoíris', 'telescopio dorado', 'piano de cola miniatura', 'silla eléctrica de juguete', 'nube de algodón',
+  'rayo embotellado', 'huevo de dragón', 'máscara veneciana', 'candado oxidado', 'pergamino enrollado',
+  'botella de genio', 'espejo mágico', 'alfombra voladora enrollada', 'cristal de bola', 'vara de sauce',
+  'gafas de sol gigantes', 'zapatos rojos de tacón', 'sombrero de copa', 'maletín de médico', 'trompeta de caza',
+  'faro en miniatura', 'barco en una botella', 'esqueleto de pez', 'corazón de cristal', 'luna creciente',
+  'sol sonriente', 'estrella fugaz', 'cometa de papel', 'trompo giratorio', 'yoyo brillante',
+  'marioneta de madera', 'caja de pandora', 'llave inglesa dorada', 'martillo de juguete', 'sierra cantarina',
+  'taladro volador', 'escalera de caracol miniatura', 'puente colgante', 'torre Eiffel de madera', 'pirámide de cristal',
+]
+
+/* ─── Componente principal ──────────────────────────────────────────────── */
 
 export function NumerosAsociadosGame() {
   const navigate = useNavigate()
@@ -552,9 +598,7 @@ export function NumerosAsociadosGame() {
   const [hidden, setHidden] = useState(false)
   const [recallInput, setRecallInput] = useState('')
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null)
-  const [charVerdict, setCharVerdict] = useState<
-    { ch: string; ok: boolean | null }[] | null
-  >(null)
+  const [charVerdict, setCharVerdict] = useState<{ ch: string; ok: boolean | null }[] | null>(null)
   const [timeLeft, setTimeLeft] = useState(0)
   const [elapsedMs, setElapsedMs] = useState(0)
   const [lastTimeMs, setLastTimeMs] = useState<number | null>(null)
@@ -571,7 +615,6 @@ export function NumerosAsociadosGame() {
   const [verbalRoundBest, setVerbalRoundBest] = useState(0)
   const [verbalPlaying, setVerbalPlaying] = useState(false)
   const [verbalFeedback, setVerbalFeedback] = useState<'ok' | 'fail' | null>(null)
-  /** Meta de aciertos de la ronda (niveles pasados = 1..best) */
   const [verbalTarget, setVerbalTarget] = useState(0)
   const [showVerbalLevels, setShowVerbalLevels] = useState(false)
   const verbalSeed = useRef(Date.now())
@@ -587,13 +630,25 @@ export function NumerosAsociadosGame() {
   const [typingMs, setTypingMs] = useState(0)
   const [typingBest, setTypingBest] = useState(() => loadBest(TYPING_BEST_KEY))
   const [showTypingLevels, setShowTypingLevels] = useState(false)
-  /** Switch de tildes — activado por defecto. Solo aplica a español. */
   const [tildesOn, setTildesOn] = useState(() => loadBool(TYPING_TILDES_KEY, true))
   const typingStartRef = useRef<number | null>(null)
   const typingTimerRef = useRef<number | null>(null)
-  /** Errores permanentes (no bajan al borrar) */
   const typingErrorsRef = useRef(0)
   const typingPrevRef = useRef('')
+
+  /* palace */
+  const [palacePhase, setPalacePhase] = useState<PalacePhase>('intro')
+  const [palaceLevel, setPalaceLevel] = useState(1)
+  const [palaceItems, setPalaceItems] = useState<string[]>([])
+  const [palacePlacements, setPalacePlacements] = useState<Record<string, string>>({})
+  const [palaceRecallOrder, setPalaceRecallOrder] = useState<string[]>([])
+  const [palaceScore, setPalaceScore] = useState(0)
+  const [palaceBest, setPalaceBest] = useState(() => loadBest(PALACE_BEST_KEY))
+  const [palaceCountdown, setPalaceCountdown] = useState(10)
+  const [palacePlaceMs, setPalacePlaceMs] = useState(0)
+  const [palaceGrade, setPalaceGrade] = useState<string | null>(null)
+  const palacePlaceStartRef = useRef<number | null>(null)
+  const palaceCountdownRef = useRef<number | null>(null)
 
   const timerRef = useRef<number | null>(null)
   const runTimerRef = useRef<number | null>(null)
@@ -647,6 +702,7 @@ export function NumerosAsociadosGame() {
       clearTimer()
       clearRunTimer()
       if (typingTimerRef.current) window.clearInterval(typingTimerRef.current)
+      if (palaceCountdownRef.current) window.clearInterval(palaceCountdownRef.current)
     },
     []
   )
@@ -755,7 +811,9 @@ export function NumerosAsociadosGame() {
     const isEmoji = sequence.config.charset === 'emojis'
     const verdict = compareChars(recallInput, sequence.raw, isEmoji)
     setCharVerdict(verdict)
-    const ok = verdict.length > 0 && verdict.every((v) => v.ok === true) &&
+    const ok =
+      verdict.length > 0 &&
+      verdict.every((v) => v.ok === true) &&
       (isEmoji
         ? recallInput.replace(/\s/g, '') === sequence.raw
         : recallInput.replace(/[\s\-_/|.]/g, '').toUpperCase() === sequence.raw.toUpperCase())
@@ -815,14 +873,12 @@ export function NumerosAsociadosGame() {
     (seen: Set<string>, score: number) => {
       const pool = verbalLang === 'es' ? WORDS_ES : WORDS_EN
       const rng = mulberry32(verbalSeed.current + score * 997 + seen.size)
-      // ~45% chance of repeating a seen word once we have enough
       const canRepeat = seen.size >= 3 && rng() < 0.45
       if (canRepeat) {
         const arr = [...seen]
         const w = arr[Math.floor(rng() * arr.length)]
         return { word: w, isNew: false }
       }
-      // new word not in seen
       let guard = 0
       while (guard++ < 80) {
         const w = pool[Math.floor(rng() * pool.length)]
@@ -896,7 +952,6 @@ export function NumerosAsociadosGame() {
             score: verbalScore,
           })
         } else {
-          // continue with a fresh pick; mark current as seen if it was new
           const nextSeen = new Set(verbalSeen)
           nextSeen.add(verbalWord)
           const next = pickVerbalWord(nextSeen, verbalScore)
@@ -914,13 +969,11 @@ export function NumerosAsociadosGame() {
     return list[0] ?? QUOTES.filter((q) => q.lang === typingLang)[0]
   }, [typingLang, typingLevel])
 
-  /** Máximo nivel disponible para el idioma elegido (hoy: 110 en ES y EN). */
   const maxTypingLevel = useMemo(() => {
     const levels = QUOTES.filter((q) => q.lang === typingLang).map((q) => q.level)
     return levels.length ? Math.max(...levels) : 1
   }, [typingLang])
 
-  /** Texto objetivo real de la cita (a mostrar y comparar), según el switch de tildes. */
   const typingTarget = useMemo(
     () => (typingQuote ? quoteDisplayText(typingQuote, tildesOn) : ''),
     [typingQuote, tildesOn]
@@ -957,7 +1010,6 @@ export function NumerosAsociadosGame() {
     soundToggle(next)
     setTildesOn(next)
     saveBool(TYPING_TILDES_KEY, next)
-    // El texto objetivo cambia, así que reiniciamos el intento actual con limpieza.
     startTypingLevel(typingLevel)
   }
 
@@ -974,7 +1026,6 @@ export function NumerosAsociadosGame() {
     const target = typingTarget
     const prev = typingPrevRef.current
 
-    // Solo cuentan errores al ESCRIBIR (añadir caracteres). El retroceso no los borra.
     if (value.length > prev.length) {
       const added = value.slice(prev.length)
       for (let i = 0; i < added.length; i++) {
@@ -984,7 +1035,6 @@ export function NumerosAsociadosGame() {
         }
       }
     }
-    // Si value.length <= prev.length (borrado), no tocamos el contador de errores
 
     typingPrevRef.current = value
     setTypingInput(value)
@@ -1020,6 +1070,123 @@ export function NumerosAsociadosGame() {
     }
   }
 
+  /* ── Palace ── */
+  const getPalaceConfig = (lv: number) => {
+    // Nivel 1: 3 objetos, 10s countdown
+    // Cada nivel suma ~1 objeto y +2s de retención (máx. 20 objetos / 40s)
+    const count = Math.min(3 + Math.floor((lv - 1) * 0.8), 20, PALACE_ITEMS.length, PALACE_ROOMS.length)
+    const countdownSec = Math.min(10 + (lv - 1) * 2, 40)
+    return { count, countdownSec }
+  }
+
+  const startPalaceRound = (lv = palaceLevel) => {
+    soundStart()
+    if (palaceCountdownRef.current) {
+      window.clearInterval(palaceCountdownRef.current)
+      palaceCountdownRef.current = null
+    }
+    const { count } = getPalaceConfig(lv)
+    const rng = mulberry32(Date.now() + lv * 17)
+    const shuffled = [...PALACE_ITEMS].sort(() => rng() - 0.5).slice(0, count)
+    setPalaceItems(shuffled)
+    setPalacePlacements({})
+    setPalaceRecallOrder(Array(count).fill(''))
+    setPalaceScore(0)
+    setPalaceGrade(null)
+    setPalacePlaceMs(0)
+    setPalaceLevel(lv)
+    setPalaceCountdown(getPalaceConfig(lv).countdownSec)
+    palacePlaceStartRef.current = performance.now()
+    setPalacePhase('place')
+  }
+
+  const placeItem = (roomId: string, item: string) => {
+    soundClick()
+    setPalacePlacements((p) => {
+      const next = { ...p }
+      Object.keys(next).forEach((k) => {
+        if (next[k] === item) delete next[k]
+      })
+      if (item) next[roomId] = item
+      else delete next[roomId]
+      return next
+    })
+  }
+
+  const finishPlacing = () => {
+    if (Object.keys(palacePlacements).length < palaceItems.length) return
+    // Tiempo de colocación
+    const placeMs =
+      palacePlaceStartRef.current != null
+        ? Math.round(performance.now() - palacePlaceStartRef.current)
+        : 0
+    setPalacePlaceMs(placeMs)
+    soundMatch()
+    // Iniciar cuenta atrás de retención
+    const { countdownSec } = getPalaceConfig(palaceLevel)
+    setPalaceCountdown(countdownSec)
+    setPalacePhase('countdown')
+    if (palaceCountdownRef.current) window.clearInterval(palaceCountdownRef.current)
+    palaceCountdownRef.current = window.setInterval(() => {
+      setPalaceCountdown((t) => {
+        if (t <= 1) {
+          if (palaceCountdownRef.current) {
+            window.clearInterval(palaceCountdownRef.current)
+            palaceCountdownRef.current = null
+          }
+          soundStart()
+          setPalacePhase('recall')
+          return 0
+        }
+        if (t <= 4) soundTick(true)
+        return t - 1
+      })
+    }, 1000)
+  }
+
+  const gradePlacementSpeed = (ms: number, itemCount: number) => {
+    // Tiempo ideal: ~8s por objeto
+    const ideal = itemCount * 8000
+    const ratio = ms / ideal
+    if (ratio <= 0.6) return 'Excelente (muy rápido)'
+    if (ratio <= 1.0) return 'Bueno'
+    if (ratio <= 1.5) return 'Aceptable'
+    return 'Lento — practica más la visualización'
+  }
+
+  const checkPalaceRecall = () => {
+    const rooms = PALACE_ROOMS.slice(0, palaceItems.length)
+    let correct = 0
+    rooms.forEach((room, idx) => {
+      const expected = palacePlacements[room.id] || ''
+      if ((palaceRecallOrder[idx] || '').trim().toLowerCase() === expected.toLowerCase()) {
+        correct++
+      }
+    })
+    setPalaceScore(correct)
+    const grade = gradePlacementSpeed(palacePlaceMs, palaceItems.length)
+    setPalaceGrade(grade)
+    const success = correct === palaceItems.length
+    if (success) {
+      soundSuccess()
+      if (palaceLevel > palaceBest) {
+        setPalaceBest(palaceLevel)
+        saveBest(PALACE_BEST_KEY, palaceLevel)
+      }
+      recordLevelResult({
+        categoryId: GAME_CAT,
+        gameId: PALACE_ID,
+        level: palaceLevel,
+        success: true,
+        score: correct,
+        timeMs: palacePlaceMs,
+      })
+    } else {
+      soundFail()
+    }
+    setPalacePhase('result')
+  }
+
   /* ── Menú ── */
   if (appMode === 'menu') {
     return (
@@ -1038,9 +1205,14 @@ export function NumerosAsociadosGame() {
           </button>
         </header>
         <GlassCard>
-          <div style={{ padding: '1.35rem 1.2rem' }}>
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35 }}
+            style={{ padding: '1.35rem 1.2rem' }}
+          >
             <h2 style={{ textAlign: 'center', marginBottom: '0.25rem' }}>
-              Números asociados
+              Asociaciones Textuales
             </h2>
             <p
               style={{
@@ -1050,16 +1222,18 @@ export function NumerosAsociadosGame() {
                 marginBottom: '1.15rem',
               }}
             >
-              Elige un modo de entrenamiento
+              Elige un modo de entrenamiento de memoria
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               {(Object.keys(MODE_INFO) as (keyof typeof MODE_INFO)[]).map((m) => {
                 const info = MODE_INFO[m]
                 const selected = menuPick === m
                 return (
-                  <button
+                  <motion.button
                     key={m}
                     type="button"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
                     onClick={() => {
                       soundClick()
                       setMenuPick(m)
@@ -1094,7 +1268,7 @@ export function NumerosAsociadosGame() {
                         </p>
                       </div>
                     </div>
-                  </button>
+                  </motion.button>
                 )
               })}
             </div>
@@ -1107,11 +1281,549 @@ export function NumerosAsociadosGame() {
                   if (menuPick === 'chunks') setPhase('setup')
                   if (menuPick === 'verbal') setVerbalPlaying(false)
                   if (menuPick === 'typing') startTypingLevel(typingLevel || 1)
+                  if (menuPick === 'palace') setPalacePhase('intro')
                 }}
               >
                 Continuar
               </GlassButton>
             </div>
+          </motion.div>
+        </GlassCard>
+      </div>
+    )
+  }
+
+  /* ── Palace UI ── */
+  if (appMode === 'palace') {
+    const selectStyle: React.CSSProperties = {
+      appearance: 'none',
+      WebkitAppearance: 'none',
+      MozAppearance: 'none',
+      backgroundColor: '#0f1c24',
+      backgroundImage: `linear-gradient(135deg, rgba(34,230,197,0.18), rgba(15,28,36,0.95)), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2322e6c5' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
+      backgroundRepeat: 'no-repeat',
+      backgroundPosition: 'right 0.75rem center',
+      border: '1px solid rgba(34,230,197,0.45)',
+      borderRadius: 12,
+      padding: '0.6rem 2.1rem 0.6rem 0.9rem',
+      color: '#e8f7f4',
+      fontSize: '0.9rem',
+      fontWeight: 500,
+      cursor: 'pointer',
+      minWidth: 210,
+      maxWidth: '100%',
+      boxShadow: '0 2px 12px rgba(0,0,0,0.35)',
+      outline: 'none',
+    }
+
+    return (
+      <div className="app-shell">
+        <header
+          style={{
+            marginBottom: '1.1rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <button
+            type="button"
+            className="glass-button secondary"
+            onClick={() => {
+              soundClick()
+              if (palaceCountdownRef.current) {
+                window.clearInterval(palaceCountdownRef.current)
+                palaceCountdownRef.current = null
+              }
+              // En partida → volver a la guía del Palacio; en intro → menú de modos
+              if (palacePhase === 'intro') {
+                setAppMode('menu')
+              } else {
+                setPalacePhase('intro')
+              }
+            }}
+            style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
+          >
+            {palacePhase === 'intro' ? '← Modos' : '← Volver'}
+          </button>
+          <span className="mono" style={{ fontSize: '0.85rem', color: 'var(--gco-ink-muted)' }}>
+            Récord nv. {palaceBest}
+          </span>
+        </header>
+
+        {/* Countdown overlay a pantalla completa */}
+        <AnimatePresence>
+          {palacePhase === 'countdown' && (
+            <motion.div
+              key="countdown-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 9999,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(5, 12, 20, 0.92)',
+                backdropFilter: 'blur(16px)',
+              }}
+            >
+              <motion.p
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                style={{
+                  fontSize: '1.1rem',
+                  color: 'var(--gco-ink-muted)',
+                  marginBottom: 24,
+                  textAlign: 'center',
+                  maxWidth: 320,
+                }}
+              >
+                Cierra los ojos y recorre mentalmente tu palacio…
+              </motion.p>
+              <motion.div
+                key={palaceCountdown}
+                initial={{ scale: 0.6, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 18 }}
+                style={{
+                  width: 140,
+                  height: 140,
+                  borderRadius: '50%',
+                  border: '4px solid var(--gco-primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 0 40px rgba(34,230,197,0.35)',
+                }}
+              >
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: '3.2rem',
+                    fontWeight: 800,
+                    color: 'var(--gco-primary)',
+                  }}
+                >
+                  {palaceCountdown}
+                </span>
+              </motion.div>
+              <p
+                style={{
+                  marginTop: 28,
+                  fontSize: '0.9rem',
+                  color: 'var(--gco-ink-muted)',
+                }}
+              >
+                Retención · Nivel {palaceLevel}
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <GlassCard>
+          <div style={{ padding: '1.35rem 1.2rem' }}>
+            <h2 style={{ textAlign: 'center', marginBottom: 6 }}>🏰 Palacio Imaginario</h2>
+            <p
+              style={{
+                textAlign: 'center',
+                color: 'var(--gco-ink-muted)',
+                fontSize: '0.88rem',
+                marginBottom: '1.1rem',
+              }}
+            >
+              Método de Loci · Entrenamiento espacial de memoria
+            </p>
+
+            <AnimatePresence mode="wait">
+              {palacePhase === 'intro' && (
+                <motion.div
+                  key="intro"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  style={{ fontSize: '0.9rem', lineHeight: 1.6 }}
+                >
+                  <section style={{ marginBottom: 20 }}>
+                    <h3 style={{ color: 'var(--gco-primary)', fontSize: '1.05rem', marginBottom: 8 }}>
+                      ¿Qué es el Método de Loci?
+                    </h3>
+                    <p style={{ marginBottom: 10 }}>
+                      El Método de Loci (también llamado Palacio de la Memoria o Palacio Imaginario) es una técnica
+                      mnemotécnica que consiste en asociar la información que se desea recordar a lugares concretos
+                      de un recorrido mental familiar. Al “caminar” mentalmente por ese espacio imaginario, la persona
+                      recupera los datos en el mismo orden en que los colocó.
+                    </p>
+                    <p>
+                      Aprovecha una de las capacidades más robustas del cerebro humano: la memoria espacial.
+                      Convertimos listas abstractas (números, palabras, ideas) en imágenes vívidas situadas en
+                      habitaciones, pasillos o puntos de un edificio conocido.
+                    </p>
+                  </section>
+
+                  <section style={{ marginBottom: 20 }}>
+                    <h3 style={{ color: 'var(--gco-primary)', fontSize: '1.05rem', marginBottom: 8 }}>
+                      Origen e historia
+                    </h3>
+                    <p style={{ marginBottom: 10 }}>
+                      Se atribuye al poeta griego <strong>Simónides de Ceos</strong> (siglo V a. C.). Según la leyenda,
+                      tras el derrumbe de un banquete, Simónides pudo identificar a las víctimas recordando exactamente
+                      dónde estaba sentado cada comensal. Ese episodio se considera el nacimiento formal de la técnica.
+                    </p>
+                    <p style={{ marginBottom: 10 }}>
+                      Cicerón y Quintiliano lo describieron como herramienta esencial de la retórica romana.
+                      En la Edad Media y el Renacimiento, monjes, estudiantes y eruditos construían elaborados
+                      “palacios” mentales para memorizar sermones, tratados y listas de conocimientos.
+                    </p>
+                    <p>
+                      En su apogeo (Antigüedad y Renacimiento) fue la técnica principal de memorización profesional
+                      antes de la generalización de la imprenta y de los sistemas de escritura portátiles.
+                    </p>
+                  </section>
+
+                  <section style={{ marginBottom: 20 }}>
+                    <h3 style={{ color: 'var(--gco-primary)', fontSize: '1.05rem', marginBottom: 8 }}>
+                      Quiénes lo usaban y usos memorables
+                    </h3>
+                    <p style={{ marginBottom: 10 }}>
+                      <strong>Usos profesionales históricos:</strong> oradores griegos y romanos, actores de teatro
+                      clásico, médicos que memorizaban listas de síntomas y remedios, juristas y estudiantes de
+                      derecho romano, y predicadores que preparaban sermones largos sin papel.
+                    </p>
+                    <p style={{ marginBottom: 10 }}>
+                      <strong>Usos más memorables:</strong> discursos enteros recitados de memoria en el Foro romano;
+                      monjes que guardaban catálogos de libros y pasajes bíblicos; competidores modernos de memoria
+                      que memorizan barajas de cartas o listas de cientos de dígitos en minutos.
+                    </p>
+                    <p>
+                      <strong>Hoy:</strong> campeones de memoria (World Memory Championships), estudiantes de oposiciones,
+                      actores, médicos, abogados y cualquier profesional que necesite retener listas largas o
+                      estructuras complejas. La neurociencia confirma que el método activa redes espaciales del
+                      hipocampo (Maguire et al., 2003).
+                    </p>
+                  </section>
+
+                  <section style={{ marginBottom: 20 }}>
+                    <h3 style={{ color: 'var(--gco-primary)', fontSize: '1.05rem', marginBottom: 8 }}>
+                      Cómo usarlo paso a paso
+                    </h3>
+                    <ol style={{ paddingLeft: '1.2rem', marginBottom: 12 }}>
+                      <li style={{ marginBottom: 8 }}>
+                        <strong>Elige un lugar conocido.</strong> Puede ser tu casa, el camino al trabajo, una escuela
+                        o cualquier edificio que recuerdes con claridad. Cuanto más familiar, mejor.
+                      </li>
+                      <li style={{ marginBottom: 8 }}>
+                        <strong>Define una ruta fija.</strong> Decide un orden de recorrido (entrada → salón → cocina →
+                        pasillo → …). Siempre usarás el mismo orden.
+                      </li>
+                      <li style={{ marginBottom: 8 }}>
+                        <strong>Coloca imágenes vívidas y absurdas.</strong> En cada punto de la ruta “pon” una imagen
+                        exagerada, colorida, emocional o ridícula que represente el dato que quieres recordar.
+                        Lo absurdo se recuerda mejor.
+                      </li>
+                      <li style={{ marginBottom: 8 }}>
+                        <strong>Recorre mentalmente el camino.</strong> Cuando necesites recuperar la información,
+                        camina de nuevo por el palacio en el mismo orden y “mira” qué hay en cada habitación.
+                      </li>
+                      <li style={{ marginBottom: 8 }}>
+                        <strong>Repasa y consolida.</strong> Especialmente después de dormir, vuelve a recorrer el
+                        palacio para fortalecer las asociaciones.
+                      </li>
+                    </ol>
+                    <p style={{ fontSize: '0.85rem', color: 'var(--gco-ink-muted)' }}>
+                      Consejo: empieza con 3–5 loci. Cuando los domines, amplía el edificio o añade nuevos “palacios”.
+                    </p>
+                  </section>
+
+                  <section style={{ marginBottom: 20 }}>
+                    <h3 style={{ color: 'var(--gco-primary)', fontSize: '1.05rem', marginBottom: 8 }}>
+                      Fuentes (APA)
+                    </h3>
+                    <ul style={{ fontSize: '0.82rem', color: 'var(--gco-ink-muted)', paddingLeft: '1.1rem' }}>
+                      <li>Yates, F. A. (1966). <em>The Art of Memory</em>. University of Chicago Press.</li>
+                      <li>Foer, J. (2011). <em>Moonwalking with Einstein</em>. Penguin.</li>
+                      <li>Maguire, E. A., et al. (2003). Routes to remembering: The brains behind superior memory. <em>Nature Neuroscience</em>.</li>
+                      <li>Carruthers, M. (1990). <em>The Book of Memory</em>. Cambridge University Press.</li>
+                      <li>Cicero. (55 a. C.). <em>De oratore</em>.</li>
+                      <li>Buzan, T. (2006). <em>The Memory Book</em>.</li>
+                      <li>Ericsson, K. A. (2006). <em>The Cambridge Handbook of Expertise and Expert Performance</em>.</li>
+                    </ul>
+                  </section>
+
+                  <GlassButton onClick={() => startPalaceRound(1)} style={{ width: '100%' }}>
+                    Empezar entrenamiento
+                  </GlassButton>
+                </motion.div>
+              )}
+
+              {palacePhase === 'place' && (
+                <motion.div
+                  key="place"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                >
+                  {/* Cabecera de nivel */}
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      marginBottom: 18,
+                      padding: '0.9rem 1rem',
+                      borderRadius: 14,
+                      background:
+                        'linear-gradient(135deg, rgba(34,230,197,0.14), rgba(255,255,255,0.03))',
+                      border: '1px solid rgba(34,230,197,0.28)',
+                    }}
+                  >
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: '1.05rem',
+                        fontWeight: 700,
+                        color: 'var(--gco-primary)',
+                        letterSpacing: '0.02em',
+                      }}
+                    >
+                      Nivel {palaceLevel}
+                    </p>
+                    <p
+                      style={{
+                        margin: '4px 0 0',
+                        fontSize: '0.82rem',
+                        color: 'var(--gco-ink-muted)',
+                      }}
+                    >
+                      {palaceItems.length} objetos · Coloca y visualiza con fuerza
+                    </p>
+                  </div>
+
+                  {/* Chips de objetos a colocar */}
+                  <p
+                    style={{
+                      fontSize: '0.78rem',
+                      color: 'var(--gco-ink-muted)',
+                      marginBottom: 8,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      fontWeight: 600,
+                    }}
+                  >
+                    Objetos de este nivel
+                  </p>
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: 8,
+                      justifyContent: 'center',
+                      marginBottom: 20,
+                      padding: '0.75rem',
+                      borderRadius: 12,
+                      background: 'rgba(0,0,0,0.25)',
+                      border: '1px solid rgba(255,255,255,0.06)',
+                    }}
+                  >
+                    {palaceItems.map((item) => {
+                      const used = Object.values(palacePlacements).includes(item)
+                      return (
+                        <span
+                          key={item}
+                          style={{
+                            padding: '0.45rem 0.75rem',
+                            borderRadius: 999,
+                            background: used
+                              ? 'rgba(34,230,197,0.22)'
+                              : 'rgba(255,255,255,0.06)',
+                            border: used
+                              ? '1px solid rgba(34,230,197,0.55)'
+                              : '1px solid rgba(255,255,255,0.12)',
+                            fontSize: '0.82rem',
+                            color: used ? 'var(--gco-primary)' : 'var(--gco-ink)',
+                            fontWeight: used ? 600 : 400,
+                            opacity: used ? 0.85 : 1,
+                            transition: 'all 0.2s ease',
+                          }}
+                        >
+                          {used ? '✓ ' : ''}
+                          {item}
+                        </span>
+                      )
+                    })}
+                  </div>
+
+                  {/* Habitaciones + selects */}
+                  <p
+                    style={{
+                      fontSize: '0.78rem',
+                      color: 'var(--gco-ink-muted)',
+                      marginBottom: 8,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      fontWeight: 600,
+                    }}
+                  >
+                    Asigna cada objeto a una habitación
+                  </p>
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    {PALACE_ROOMS.slice(0, palaceItems.length).map((room) => (
+                      <div
+                        key={room.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 12,
+                          padding: '0.75rem 0.9rem',
+                          borderRadius: 14,
+                          background: palacePlacements[room.id]
+                            ? 'rgba(34,230,197,0.08)'
+                            : 'rgba(255,255,255,0.04)',
+                          border: palacePlacements[room.id]
+                            ? '1px solid rgba(34,230,197,0.4)'
+                            : '1px solid var(--gco-glass-border)',
+                          flexWrap: 'wrap',
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: '1.35rem',
+                            width: 36,
+                            textAlign: 'center',
+                          }}
+                        >
+                          {room.emoji}
+                        </span>
+                        <span
+                          style={{
+                            flex: 1,
+                            fontSize: '0.92rem',
+                            minWidth: 110,
+                            fontWeight: 500,
+                          }}
+                        >
+                          {room.name}
+                        </span>
+                        <select
+                          value={palacePlacements[room.id] || ''}
+                          onChange={(e) => placeItem(room.id, e.target.value)}
+                          style={selectStyle}
+                        >
+                          <option value="" style={{ background: '#0f1c24', color: '#9bb' }}>
+                            — elegir objeto —
+                          </option>
+                          {palaceItems.map((it) => (
+                            <option
+                              key={it}
+                              value={it}
+                              style={{ background: '#0f1c24', color: '#e8f7f4' }}
+                            >
+                              {it}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+
+                  <GlassButton
+                    style={{ width: '100%', marginTop: 20 }}
+                    onClick={finishPlacing}
+                    disabled={Object.keys(palacePlacements).length < palaceItems.length}
+                  >
+                    Ya coloqué todo → Recordar
+                  </GlassButton>
+                </motion.div>
+              )}
+
+              {palacePhase === 'recall' && (
+                <motion.div
+                  key="recall"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                >
+                  <p style={{ marginBottom: 12, textAlign: 'center' }}>
+                    Recorre mentalmente el palacio y escribe los objetos en el orden de las habitaciones:
+                  </p>
+                  {PALACE_ROOMS.slice(0, palaceItems.length).map((room, idx) => (
+                    <div key={room.id} style={{ marginBottom: 10 }}>
+                      <label style={{ fontSize: '0.85rem', color: 'var(--gco-ink-muted)' }}>
+                        {room.emoji} {room.name}
+                      </label>
+                      <input
+                        className="glass-input"
+                        placeholder="¿Qué había aquí?"
+                        value={palaceRecallOrder[idx] || ''}
+                        onChange={(e) => {
+                          const next = [...palaceRecallOrder]
+                          next[idx] = e.target.value
+                          setPalaceRecallOrder(next)
+                        }}
+                        style={{ marginTop: 4 }}
+                      />
+                    </div>
+                  ))}
+                  <GlassButton style={{ width: '100%', marginTop: 12 }} onClick={checkPalaceRecall}>
+                    Comprobar recorrido
+                  </GlassButton>
+                </motion.div>
+              )}
+
+              {palacePhase === 'result' && (
+                <motion.div
+                  key="result"
+                  initial={{ opacity: 0, scale: 0.96 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  style={{ textAlign: 'center' }}
+                >
+                  <p style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: 8 }}>
+                    {palaceScore === palaceItems.length ? '¡Palacio perfecto!' : 'Recorrido parcial'}
+                  </p>
+                  <p style={{ color: 'var(--gco-ink-muted)', marginBottom: 8 }}>
+                    {palaceScore}/{palaceItems.length} objetos en el lugar correcto
+                  </p>
+                  {palacePlaceMs > 0 && (
+                    <p style={{ fontSize: '0.88rem', color: 'var(--gco-ink-muted)', marginBottom: 4 }}>
+                      Tiempo de colocación: {formatDuration(palacePlaceMs)}
+                    </p>
+                  )}
+                  {palaceGrade && (
+                    <p style={{ fontSize: '0.9rem', color: 'var(--gco-primary)', marginBottom: 16 }}>
+                      Valoración de velocidad: {palaceGrade}
+                    </p>
+                  )}
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 8,
+                      justifyContent: 'center',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <GlassButton onClick={() => startPalaceRound(palaceLevel + 1)}>
+                      Siguiente nivel
+                    </GlassButton>
+                    <button
+                      type="button"
+                      className="glass-button secondary"
+                      onClick={() => startPalaceRound(palaceLevel)}
+                    >
+                      Reintentar
+                    </button>
+                    <button
+                      type="button"
+                      className="glass-button secondary"
+                      onClick={() => setPalacePhase('intro')}
+                    >
+                      Volver a la guía
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </GlassCard>
       </div>
@@ -1264,10 +1976,7 @@ export function NumerosAsociadosGame() {
                     <strong
                       className="mono"
                       style={{
-                        color:
-                          verbalStrikes >= 2
-                            ? 'var(--gco-secondary)'
-                            : 'var(--gco-ink)',
+                        color: verbalStrikes >= 2 ? 'var(--gco-secondary)' : 'var(--gco-ink)',
                       }}
                     >
                       {verbalStrikes}/3
@@ -1300,10 +2009,7 @@ export function NumerosAsociadosGame() {
                     flexWrap: 'wrap',
                   }}
                 >
-                  <GlassButton
-                    onClick={() => answerVerbal(true)}
-                    disabled={!!verbalFeedback}
-                  >
+                  <GlassButton onClick={() => answerVerbal(true)} disabled={!!verbalFeedback}>
                     Ya pasó
                   </GlassButton>
                   <button
@@ -1315,7 +2021,6 @@ export function NumerosAsociadosGame() {
                     Es nueva
                   </button>
                 </div>
-                {verbalStrikes >= 3 && !verbalPlaying && null}
               </div>
             )}
 
@@ -1330,12 +2035,11 @@ export function NumerosAsociadosGame() {
     )
   }
 
-  /* ── Typing UI (Citando al citador) ── */
+  /* ── Typing UI ── */
   if (appMode === 'typing') {
     const q = typingQuote
     const glassPanel: React.CSSProperties = {
-      background:
-        'linear-gradient(135deg, rgba(255,255,255,0.09), rgba(255,255,255,0.02))',
+      background: 'linear-gradient(135deg, rgba(255,255,255,0.09), rgba(255,255,255,0.02))',
       border: '1px solid var(--gco-glass-border)',
       borderRadius: 18,
       backdropFilter: 'blur(18px)',
@@ -1399,10 +2103,10 @@ export function NumerosAsociadosGame() {
               marginBottom: '1.1rem',
             }}
           >
-            Nivel {typingLevel}/{maxTypingLevel} · 5 errores permiten fallar (no se borran al corregir)
+            Nivel {typingLevel}/{maxTypingLevel} · 5 errores permiten fallar (no se borran al
+            corregir)
           </p>
 
-          {/* Barra de controles */}
           <div
             style={{
               display: 'flex',
@@ -1441,7 +2145,6 @@ export function NumerosAsociadosGame() {
             </button>
           </div>
 
-          {/* Switch de tildes — solo relevante en español, activado por defecto */}
           {typingLang === 'es' && (
             <div
               style={{
@@ -1473,9 +2176,7 @@ export function NumerosAsociadosGame() {
                   borderRadius: 999,
                   border: 'none',
                   cursor: 'pointer',
-                  background: tildesOn
-                    ? 'var(--gco-primary)'
-                    : 'rgba(255,255,255,0.12)',
+                  background: tildesOn ? 'var(--gco-primary)' : 'rgba(255,255,255,0.12)',
                   position: 'relative',
                   flexShrink: 0,
                   transition: 'background 0.2s ease',
@@ -1551,24 +2252,34 @@ export function NumerosAsociadosGame() {
           {q && (
             <>
               <div
+                {...blockCopyHandlers}
                 style={{
                   ...glassPanel,
+                  ...noSelectStyle,
                   padding: '1.1rem 1.15rem',
                   marginBottom: 12,
                   lineHeight: 1.6,
                   fontSize: 'clamp(0.95rem, 2.6vw, 1.08rem)',
+                  cursor: 'default',
                 }}
+                // Extra: bloquear completamente el menú de traducción / selección
+                onDoubleClick={(e) => e.preventDefault()}
               >
                 {typingTarget.split('').map((ch, i) => {
                   let color = 'var(--gco-ink-muted)'
                   if (i < typingInput.length) {
                     color =
-                      typingInput[i] === ch
-                        ? 'var(--gco-primary)'
-                        : 'var(--gco-secondary)'
+                      typingInput[i] === ch ? 'var(--gco-primary)' : 'var(--gco-secondary)'
                   }
                   return (
-                    <span key={i} style={{ color }}>
+                    <span
+                      key={i}
+                      style={{
+                        color,
+                        ...noSelectStyle,
+                        display: 'inline',
+                      }}
+                    >
                       {ch}
                     </span>
                   )
@@ -1599,16 +2310,17 @@ export function NumerosAsociadosGame() {
               flexWrap: 'wrap',
             }}
           >
-            <span className="mono" style={pill}>⏱ {formatDuration(typingMs)}</span>
-            <span className="mono" style={pill}>{typingWpm} PPM</span>
+            <span className="mono" style={pill}>
+              ⏱ {formatDuration(typingMs)}
+            </span>
+            <span className="mono" style={pill}>
+              {typingWpm} PPM
+            </span>
             <span
               className="mono"
               style={{
                 ...pill,
-                color:
-                  typingErrors >= 3
-                    ? 'var(--gco-secondary)'
-                    : 'var(--gco-ink-muted)',
+                color: typingErrors >= 3 ? 'var(--gco-secondary)' : 'var(--gco-ink-muted)',
               }}
             >
               Errores {typingErrors}/5
@@ -1637,9 +2349,7 @@ export function NumerosAsociadosGame() {
 
           {typingDone && (
             <div style={{ ...glassPanel, textAlign: 'center', padding: '1.1rem' }}>
-              <p style={{ color: 'var(--gco-primary)', fontWeight: 700 }}>
-                ¡Nivel superado!
-              </p>
+              <p style={{ color: 'var(--gco-primary)', fontWeight: 700 }}>¡Nivel superado!</p>
               <p style={{ fontSize: '0.85rem', color: 'var(--gco-ink-muted)' }}>
                 {formatDuration(typingMs)} · {typingWpm} palabras/min
               </p>
@@ -1679,13 +2389,8 @@ export function NumerosAsociadosGame() {
 
           {typingFailed && (
             <div style={{ ...glassPanel, textAlign: 'center', padding: '1.1rem' }}>
-              <p style={{ color: 'var(--gco-secondary)', fontWeight: 700 }}>
-                Demasiados errores
-              </p>
-              <GlassButton
-                style={{ marginTop: 10 }}
-                onClick={() => startTypingLevel(typingLevel)}
-              >
+              <p style={{ color: 'var(--gco-secondary)', fontWeight: 700 }}>Demasiados errores</p>
+              <GlassButton style={{ marginTop: 10 }} onClick={() => startTypingLevel(typingLevel)}>
                 Reintentar nivel
               </GlassButton>
             </div>
@@ -1695,7 +2400,7 @@ export function NumerosAsociadosGame() {
     )
   }
 
-  /* ── Chunks UI (default when appMode === 'chunks') ── */
+  /* ── Chunks UI ── */
   return (
     <div className="app-shell">
       <header
@@ -1731,18 +2436,14 @@ export function NumerosAsociadosGame() {
               className="mono"
               style={{
                 fontSize: '0.95rem',
-                color:
-                  timeLeft <= 10 ? 'var(--gco-secondary)' : 'var(--gco-ink-muted)',
+                color: timeLeft <= 10 ? 'var(--gco-secondary)' : 'var(--gco-ink-muted)',
               }}
             >
               ⏱ {timeLeft}s
             </span>
           )}
           {phase === 'recall' && (
-            <span
-              className="mono"
-              style={{ fontSize: '0.85rem', color: 'var(--gco-ink-muted)' }}
-            >
+            <span className="mono" style={{ fontSize: '0.85rem', color: 'var(--gco-ink-muted)' }}>
               {formatDuration(elapsedMs)}
               {useProgressive && bestForLevel != null && bestForLevel > 0 && (
                 <> · 🏆 {formatDuration(bestForLevel)}</>
@@ -1834,9 +2535,7 @@ export function NumerosAsociadosGame() {
 
       <GlassCard>
         <div style={{ padding: '1.35rem 1.25rem' }}>
-          <h2 style={{ textAlign: 'center', marginBottom: '0.25rem' }}>
-            Bloques de memoria
-          </h2>
+          <h2 style={{ textAlign: 'center', marginBottom: '0.25rem' }}>Bloques de memoria</h2>
           <p
             style={{
               textAlign: 'center',
@@ -1857,7 +2556,6 @@ export function NumerosAsociadosGame() {
                 exit={{ opacity: 0 }}
                 style={{ display: 'flex', flexDirection: 'column', gap: '1.15rem' }}
               >
-                {/* progressive switch */}
                 <div
                   style={{
                     background: 'rgba(255,255,255,0.04)',
@@ -1875,13 +2573,9 @@ export function NumerosAsociadosGame() {
                     }}
                   >
                     <div>
-                      <p style={{ fontWeight: 600, fontSize: '0.95rem' }}>
-                        Modo progresivo
-                      </p>
+                      <p style={{ fontWeight: 600, fontSize: '0.95rem' }}>Modo progresivo</p>
                       <p style={{ fontSize: '0.8rem', color: 'var(--gco-ink-muted)' }}>
-                        {useProgressive
-                          ? `Nivel actual: ${level}`
-                          : 'Sube de nivel con números'}
+                        {useProgressive ? `Nivel actual: ${level}` : 'Sube de nivel con números'}
                       </p>
                     </div>
                     <button
@@ -1924,7 +2618,6 @@ export function NumerosAsociadosGame() {
                   </div>
                 </div>
 
-                {/* timer switch */}
                 <div
                   style={{
                     display: 'flex',
@@ -1958,9 +2651,7 @@ export function NumerosAsociadosGame() {
                       borderRadius: 999,
                       border: 'none',
                       cursor: 'pointer',
-                      background: useTimer
-                        ? 'var(--gco-primary)'
-                        : 'rgba(255,255,255,0.12)',
+                      background: useTimer ? 'var(--gco-primary)' : 'rgba(255,255,255,0.12)',
                       position: 'relative',
                       flexShrink: 0,
                     }}
@@ -2087,14 +2778,18 @@ export function NumerosAsociadosGame() {
                 exit={{ opacity: 0 }}
               >
                 <div
+                  {...blockCopyHandlers}
                   style={{
+                    ...noSelectStyle,
                     display: 'flex',
                     flexWrap: 'wrap',
                     gap: '0.5rem',
                     justifyContent: 'center',
                     marginBottom: '1rem',
                     minHeight: 56,
+                    cursor: 'default',
                   }}
+                  onDoubleClick={(e) => e.preventDefault()}
                 >
                   {!hidden ? (
                     sequence.blocks.map((block, index) => (
@@ -2104,6 +2799,7 @@ export function NumerosAsociadosGame() {
                           sequence.config.charset === 'emojis' ? undefined : 'mono'
                         }
                         style={{
+                          ...noSelectStyle,
                           background: 'rgba(34, 230, 197, 0.12)',
                           border: '1px solid rgba(34, 230, 197, 0.35)',
                           borderRadius: 10,
@@ -2229,8 +2925,6 @@ export function NumerosAsociadosGame() {
                     : 'Escribe la secuencia completa (espacios o guiones opcionales)'}
                 </p>
 
-                {/* historia oculta a propósito en partida */}
-
                 <input
                   className={`glass-input ${
                     sequence.config.charset === 'emojis' ? '' : 'mono'
@@ -2281,23 +2975,27 @@ export function NumerosAsociadosGame() {
                   </button>
                 </div>
 
-                {/* Comparación visual carácter a carácter */}
                 {charVerdict && (
                   <div
+                    {...blockCopyHandlers}
                     style={{
+                      ...noSelectStyle,
                       marginTop: '1.1rem',
                       padding: '0.85rem 1rem',
                       borderRadius: 12,
                       background: 'rgba(255,255,255,0.04)',
                       border: '1px solid var(--gco-glass-border)',
                       textAlign: 'center',
+                      cursor: 'default',
                     }}
+                    onDoubleClick={(e) => e.preventDefault()}
                   >
                     <p
                       style={{
                         fontSize: '0.78rem',
                         color: 'var(--gco-ink-muted)',
                         marginBottom: 8,
+                        ...noSelectStyle,
                       }}
                     >
                       Tu respuesta · verde = bien · rojo = mal
@@ -2307,6 +3005,7 @@ export function NumerosAsociadosGame() {
                         sequence.config.charset === 'emojis' ? undefined : 'mono'
                       }
                       style={{
+                        ...noSelectStyle,
                         fontSize:
                           sequence.config.charset === 'emojis' ? '1.35rem' : '1.2rem',
                         letterSpacing: '0.04em',
@@ -2317,6 +3016,7 @@ export function NumerosAsociadosGame() {
                         <span
                           key={i}
                           style={{
+                            ...noSelectStyle,
                             color:
                               v.ok === true
                                 ? 'var(--gco-primary)'
@@ -2341,7 +3041,11 @@ export function NumerosAsociadosGame() {
                           className={
                             sequence.config.charset === 'emojis' ? undefined : 'mono'
                           }
-                          style={{ color: 'var(--gco-primary)', fontWeight: 600 }}
+                          style={{
+                            ...noSelectStyle,
+                            color: 'var(--gco-primary)',
+                            fontWeight: 600,
+                          }}
                         >
                           {sequence.raw}
                         </span>
