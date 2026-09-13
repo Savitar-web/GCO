@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { GlassCard } from '../../components/ui/GlassCard'
@@ -89,8 +89,132 @@ const PARTICLES: {
  * Edge Win10 · Android 8 (Redmi 2018) · iOS · Linux · Win11
  * ========================================================================= */
 
-const PRELOAD_BOOT_KEY = 'gco:pwa-preload-boot-v4'
+const PRELOAD_BOOT_KEY = 'gco:pwa-preload-boot-v5'
 const GLOBAL_MARK = '__gcoPwaPreloadActive'
+const EMOJI_STYLE_KEY = 'gco:emoji-style'
+export type EmojiStylePref =
+  | 'ios'
+  | 'ios-modern'
+  | 'samsung'
+  | 'facebook'
+  | 'google'
+  | 'twitter'
+  | 'system'
+  | 'off'
+
+/** Estilos que usan sustitución por imágenes Twemoji en TODA la app */
+function usesTwemoji(style: EmojiStylePref): boolean {
+  return (
+    style === 'ios' ||
+    style === 'ios-modern' ||
+    style === 'facebook' ||
+    style === 'twitter' ||
+    style === 'google'
+  )
+}
+
+function getEmojiStyle(): EmojiStylePref {
+  try {
+    const v = localStorage.getItem(EMOJI_STYLE_KEY)
+    if (
+      v === 'system' ||
+      v === 'off' ||
+      v === 'ios' ||
+      v === 'ios-modern' ||
+      v === 'samsung' ||
+      v === 'facebook' ||
+      v === 'google' ||
+      v === 'twitter'
+    )
+      return v as EmojiStylePref
+  } catch {
+    /* */
+  }
+  return 'ios'
+}
+
+/**
+ * Restaura texto desde <img class="emoji|gco-emoji"> (Twemoji)
+ * para poder volver a nativo o re-parsear.
+ */
+function stripTwemojiImages(root?: ParentNode | null) {
+  if (typeof document === 'undefined') return
+  const el =
+    (root instanceof HTMLElement ? root : null) ||
+    (document.getElementById('root') as HTMLElement | null) ||
+    document.body
+  if (!el) return
+  const imgs = el.querySelectorAll('img.emoji, img.gco-emoji, img.gco-twemoji')
+  imgs.forEach((img) => {
+    const alt = (img.getAttribute('alt') || '').trim()
+    if (!alt) {
+      img.remove()
+      return
+    }
+    const text = document.createTextNode(alt)
+    img.parentNode?.replaceChild(text, img)
+  })
+}
+
+/**
+ * Aplica el estilo de emoji a TODO el documento (todas las rutas SPA).
+ * Llamar al cambiar preferencia y al montar páginas.
+ */
+function applyEmojiStyleGlobally(style?: EmojiStylePref) {
+  const s = style ?? getEmojiStyle()
+  try {
+    document.documentElement.setAttribute('data-gco-emoji', s)
+  } catch {
+    /* */
+  }
+
+  // 1) Quitar imgs Twemoji previas (evita mezcla / permite volver a nativo)
+  try {
+    stripTwemojiImages(document.body)
+  } catch {
+    /* */
+  }
+
+  // 2) Si el estilo pide imágenes unificadas, re-parsear todo el DOM
+  if (usesTwemoji(s)) {
+    try {
+      parseTwemojiRoot(document.body)
+    } catch {
+      /* */
+    }
+    // Pasadas extra por si React re-renderiza justo después
+    ;[80, 320, 900].forEach((ms) => {
+      window.setTimeout(() => {
+        if (usesTwemoji(getEmojiStyle())) {
+          try {
+            parseTwemojiRoot(document.body)
+          } catch {
+            /* */
+          }
+        }
+      }, ms)
+    })
+  }
+}
+
+function setEmojiStyle(style: EmojiStylePref) {
+  try {
+    localStorage.setItem(EMOJI_STYLE_KEY, style)
+  } catch {
+    /* */
+  }
+  applyEmojiStyleGlobally(style)
+  window.dispatchEvent(new CustomEvent('gco:emoji-style', { detail: style }))
+}
+
+if (typeof window !== 'undefined') {
+  window.gcoSetEmojiStyle = setEmojiStyle
+  window.gcoGetEmojiStyle = getEmojiStyle
+  ;(window as unknown as { gcoApplyEmojiStyle?: typeof applyEmojiStyleGlobally }).gcoApplyEmojiStyle =
+    applyEmojiStyleGlobally
+}
+
+
 
 declare global {
   interface Window {
@@ -101,6 +225,8 @@ declare global {
       ) => void
     }
     gcoTts?: GcoTtsApi
+    gcoSetEmojiStyle?: (style: EmojiStylePref) => void
+    gcoGetEmojiStyle?: () => EmojiStylePref
     [GLOBAL_MARK]?: boolean
     __gcoEmojiObs?: MutationObserver
     __gcoTtsVoicesCache?: SpeechSynthesisVoice[]
@@ -897,6 +1023,7 @@ async function loadTwemojiScript(): Promise<boolean> {
 }
 
 function parseTwemojiRoot(root?: ParentNode | null) {
+  if (!usesTwemoji(getEmojiStyle())) return
   const tw = window.twemoji
   if (!tw || typeof tw.parse !== 'function') return
   const el =
@@ -962,6 +1089,7 @@ function ensureEmojiObserver() {
 
   let scheduled = false
   const obs = new MutationObserver(() => {
+    if (!usesTwemoji(getEmojiStyle())) return
     if (scheduled) return
     scheduled = true
     requestAnimationFrame(() => {
@@ -1194,23 +1322,50 @@ function installGcoTts(voicesPromise: Promise<SpeechSynthesisVoice[]>) {
     ready: voicesPromise,
     listMeta: () => FALLBACK_VOICES,
   }
+  window.gcoSetEmojiStyle = setEmojiStyle
+  window.gcoGetEmojiStyle = getEmojiStyle
+  ;(window as unknown as { gcoApplyEmojiStyle?: typeof applyEmojiStyleGlobally }).gcoApplyEmojiStyle =
+    applyEmojiStyleGlobally
   window.dispatchEvent(new CustomEvent('gco:tts-api-ready'))
 }
 
 async function warmMediaLibraries() {
   try {
     const mod = await import('@/core/storage/mediaLibrary')
+
     const tasks: Promise<unknown>[] = []
-    if (typeof mod.listBooks === 'function') tasks.push(mod.listBooks().catch(() => []))
-    if (typeof mod.listFolders === 'function') tasks.push(mod.listFolders().catch(() => []))
-    if (typeof mod.listTracks === 'function') tasks.push(mod.listTracks().catch(() => []))
-    if (typeof mod.listPlaylists === 'function') tasks.push(mod.listPlaylists().catch(() => []))
+
+    if (typeof mod.listBooks === 'function') {
+      tasks.push(mod.listBooks().catch(() => []))
+    }
+
+    if (typeof mod.listFolders === 'function') {
+      tasks.push(mod.listFolders().catch(() => []))
+    }
+
+    if (typeof mod.listTracks === 'function') {
+      tasks.push(mod.listTracks().catch(() => []))
+    }
+
+    if (typeof mod.listPlaylists === 'function') {
+      tasks.push(mod.listPlaylists().catch(() => []))
+    }
+
     await Promise.all(tasks)
+
     window.dispatchEvent(new CustomEvent('gco:library'))
     window.dispatchEvent(new CustomEvent('gco:media-warmed'))
   } catch {
-    /* */
+    /* La biblioteca no debe bloquear la aplicación */
   }
+
+  // Precarga explícita de módulos de página.
+  // Vite necesita rutas estáticas para incluir estos chunks correctamente.
+
+  await Promise.all([
+    import('../nutricion/NutricionHome').catch(() => null),
+    import('../musica/MusicaHome').catch(() => null),
+  ])
 }
 
 /**
@@ -1220,8 +1375,8 @@ async function warmMediaLibraries() {
 export function ensurePwaGlobalPreload() {
   if (typeof window === 'undefined') return
   if (window[GLOBAL_MARK]) {
-    // Ya activo: solo re-parse emoji (navegación SPA)
-    parseTwemojiRoot(document.body)
+    // Ya activo: re-aplicar estilo actual (navegación SPA / nueva pantalla)
+    applyEmojiStyleGlobally(getEmojiStyle())
     return
   }
   window[GLOBAL_MARK] = true
@@ -1229,28 +1384,31 @@ export function ensurePwaGlobalPreload() {
   try {
     localStorage.setItem('gco:tts-fallback-voices', JSON.stringify(FALLBACK_VOICES))
     sessionStorage.setItem('gco:tts-fallback-voices', JSON.stringify(FALLBACK_VOICES))
+    if (!localStorage.getItem(EMOJI_STYLE_KEY)) {
+      localStorage.setItem(EMOJI_STYLE_KEY, 'ios')
+    }
+    document.documentElement.setAttribute('data-gco-emoji', getEmojiStyle())
   } catch {
     /* */
   }
 
   const voicesP = waitForVoices(10000)
   installGcoTts(voicesP)
-  void setupGlobalEmoji()
+  void setupGlobalEmoji().then(() => {
+    applyEmojiStyleGlobally(getEmojiStyle())
+  }).catch(() => applyEmojiStyleGlobally(getEmojiStyle()))
 
-  let mediaDone = false
+  // Media YA (no solo idle) para evitar flash vacío al abrir Nutrición
+  void warmMediaLibraries()
   try {
-    mediaDone = sessionStorage.getItem(PRELOAD_BOOT_KEY) === '1'
+    sessionStorage.setItem(PRELOAD_BOOT_KEY, '1')
   } catch {
     /* */
   }
-  if (!mediaDone) {
-    try {
-      sessionStorage.setItem(PRELOAD_BOOT_KEY, '1')
-    } catch {
-      /* */
-    }
-    runWhenIdle(() => void warmMediaLibraries(), 1200)
-  }
+
+  window.addEventListener('gco:emoji-style', () => {
+    applyEmojiStyleGlobally(getEmojiStyle())
+  })
 
   // Visibilidad: al volver a la pestaña, re-sync voces (Edge a veces las pierde)
   document.addEventListener('visibilitychange', () => {
@@ -1261,7 +1419,7 @@ export function ensurePwaGlobalPreload() {
       } catch {
         /* */
       }
-      parseTwemojiRoot(document.body)
+      applyEmojiStyleGlobally(getEmojiStyle())
     }
   })
 }
@@ -1275,16 +1433,71 @@ if (typeof window !== 'undefined') {
   }
 }
 
+
+/** Anillo de marco compacto para el botón de perfil del header */
+function profileFrameRing(frame: string): React.CSSProperties {
+  const base: React.CSSProperties = { borderRadius: '50%', boxSizing: 'border-box' }
+  if (frame === 'neon')
+    return { ...base, padding: 2, background: 'var(--gco-primary, #22E6C5)', boxShadow: '0 0 10px var(--gco-primary, #22E6C5)' }
+  if (frame === 'metal')
+    return { ...base, padding: 2, background: 'linear-gradient(135deg,#f0f2f5,#8b93a7,#3a4154,#cfd5e0)' }
+  if (frame === 'gold')
+    return { ...base, padding: 2, background: 'linear-gradient(145deg,#fff6c8,#e8c547,#b8860b,#c9a227)' }
+  if (frame === 'holographic' || frame === 'rainbow')
+    return { ...base, padding: 2, background: 'conic-gradient(from 210deg,#ff6bcb,#7ec8ff,#22e6c5,#8b7cf6,#ff6bcb)' }
+  if (frame === 'cyber')
+    return { ...base, padding: 2, background: 'linear-gradient(90deg,#22e6c5,#0B1220,#8b7cf6)', boxShadow: '0 0 0 1px #22e6c5' }
+  if (frame === 'glass' || frame === 'frutiger-aero')
+    return { ...base, padding: 2, background: 'linear-gradient(145deg,rgba(255,255,255,0.55),rgba(34,230,197,0.25))', boxShadow: '0 0 0 1px rgba(255,255,255,0.35)' }
+  if (frame === 'pulse' || frame === 'rose')
+    return { ...base, padding: 2, background: 'linear-gradient(145deg,#ff6b9d,#ff3d7f)' }
+  if (frame === 'aurora' || frame === 'violet')
+    return { ...base, padding: 2, background: 'linear-gradient(120deg,#22e6c5,#5b8cff,#c084fc)' }
+  if (frame === 'sunset' || frame === 'lava')
+    return { ...base, padding: 2, background: 'linear-gradient(160deg,#ffb347,#ff6b6b,#b71c1c)' }
+  if (frame === 'ice' || frame === 'mint' || frame === 'emerald')
+    return { ...base, padding: 2, background: 'linear-gradient(160deg,#e8f7ff,#22e6c5,#0d9488)' }
+  if (frame === 'chrome')
+    return { ...base, padding: 2, background: 'linear-gradient(135deg,#fff,#bbb,#666,#ddd)' }
+  if (frame === 'orbit' || frame === 'pixel')
+    return { ...base, padding: 2, background: 'conic-gradient(from 0deg,#22e6c5,transparent 40%,#8b5cf6,transparent 80%,#22e6c5)' }
+  if (frame === 'matte')
+    return { ...base, padding: 3, background: 'rgba(255,255,255,0.2)' }
+  return { ...base, padding: 2, background: 'var(--gco-glass-border, rgba(255,255,255,0.2))' }
+}
+
 export function CategoryMenu() {
   const navigate = useNavigate()
   const profile = getProfile()
   const started = useRef(false)
+  const [avatar, setAvatar] = useState<string | null>(() => profile?.avatarDataUrl ?? null)
+  const [avatarFrame, setAvatarFrame] = useState<string>(() => (profile?.avatarFrame as string) || 'none')
 
   useEffect(() => {
     if (started.current) return
     started.current = true
     ensurePwaGlobalPreload()
   }, [])
+
+  useEffect(() => {
+    setAvatar(profile?.avatarDataUrl ?? null)
+    setAvatarFrame((profile?.avatarFrame as string) || 'none')
+    const onProfile = () => {
+      try {
+        const p = getProfile()
+        setAvatar(p?.avatarDataUrl ?? null)
+        setAvatarFrame((p?.avatarFrame as string) || 'none')
+      } catch {
+        /* */
+      }
+    }
+    window.addEventListener('gco:profile', onProfile)
+    window.addEventListener('storage', onProfile)
+    return () => {
+      window.removeEventListener('gco:profile', onProfile)
+      window.removeEventListener('storage', onProfile)
+    }
+  }, [profile?.avatarDataUrl, profile?.avatarFrame])
 
   return (
     <div className="app-shell">
@@ -1363,6 +1576,43 @@ export function CategoryMenu() {
           animation-timing-function: ease-out;
           animation-iteration-count: infinite;
         }
+        .gco-profile-btn {
+          width: 44px;
+          height: 44px;
+          min-width: 44px;
+          min-height: 44px;
+          padding: 0;
+          border: none;
+          background: transparent;
+          cursor: pointer;
+          display: block;
+          flex-shrink: 0;
+          line-height: 0;
+          overflow: visible;
+          Webkit-tap-highlight-color: transparent;
+        }
+        .gco-profile-ring {
+          display: block;
+          width: 100%;
+          height: 100%;
+          border-radius: 50%;
+          box-sizing: border-box;
+        }
+        .gco-profile-inner {
+          display: block;
+          width: 100%;
+          height: 100%;
+          border-radius: 50%;
+          overflow: hidden;
+          background: var(--gco-glass-bg, rgba(255,255,255,0.08));
+        }
+        .gco-profile-btn img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+          border-radius: 50%;
+        }
       `}</style>
 
       <header style={{ marginBottom: '1.5rem' }}>
@@ -1408,11 +1658,43 @@ export function CategoryMenu() {
             <ThemeToggle />
             <button
               type="button"
+              className="gco-profile-btn"
+              aria-label="Abrir perfil"
+              title="Perfil"
+              onClick={() => {
+                soundClick()
+                navigate('/ajustes', { state: { section: 'perfil' } })
+              }}
+            >
+              <span className="gco-profile-ring" style={profileFrameRing(avatarFrame)}>
+                <span className="gco-profile-inner">
+                  {avatar ? (
+                    <img src={avatar} alt="" draggable={false} />
+                  ) : (
+                    <span
+                      style={{
+                        display: 'grid',
+                        placeItems: 'center',
+                        width: '100%',
+                        height: '100%',
+                        fontSize: '1.05rem',
+                        color: 'var(--gco-ink-muted)',
+                      }}
+                      aria-hidden
+                    >
+                      👤
+                    </span>
+                  )}
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
               className="theme-cycle-btn"
               aria-label="Abrir ajustes"
               onClick={() => {
                 soundClick()
-                navigate('/ajustes')
+                navigate('../ajustes/PerfilSettings.tsx')
               }}
               style={{ width: 44, height: 44, padding: 0, borderRadius: 12 }}
             >

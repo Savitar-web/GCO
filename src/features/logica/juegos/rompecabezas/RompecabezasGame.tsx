@@ -32,28 +32,63 @@ function levelSeed(level: number, salt: number): number {
   return (h ^ (h >>> 16)) >>> 0
 }
 
-export type PieceShape = 'classic' | 'round' | 'pointed' | 'wavy' | 'soft' | 'square'
+export type PieceShape =
+  | 'classic' | 'round' | 'pointed' | 'wavy' | 'soft' | 'square'
+  | 'zigzag' | 'scallop' | 'arrow' | 'diamond' | 'cloud' | 'notch'
+  | 'double' | 'smooth' | 'spike' | 'petal'
+  | 'bevel' | 'ripple' | 'crest' | 'valley' | 'blade' | 'knob'
+  | 'tile' | 'mosaic' | 'bubble' | 'flame' | 'leaf' | 'star'
+  | 'cross' | 'wave2' | 'puzzle' | 'brick'
 export interface PieceShapeMeta { id: PieceShape; label: string; emoji: string; desc: string }
 export const PIECE_SHAPES: PieceShapeMeta[] = [
   { id: 'classic', label: 'Clásica', emoji: '🧩', desc: 'Pestañas tradicionales' },
-  { id: 'round', label: 'Redonda', emoji: '⭘', desc: 'Bordes suaves' },
+  { id: 'round', label: 'Redonda', emoji: '⭘', desc: 'Bordes en arco' },
   { id: 'pointed', label: 'Puntiaguda', emoji: '✦', desc: 'Puntas geométricas' },
   { id: 'wavy', label: 'Ondulada', emoji: '〰', desc: 'Curvas fluidas' },
   { id: 'soft', label: 'Suave', emoji: '☁️', desc: 'Pestañas amplias' },
-  { id: 'square', label: 'Cuadrada', emoji: '⬜', desc: 'Pestañas mínimas' },
+  { id: 'square', label: 'Cuadrada', emoji: '⬜', desc: 'Pestañas rectas' },
+  { id: 'zigzag', label: 'Zigzag', emoji: '⚡', desc: 'Dientes angulosos' },
+  { id: 'scallop', label: 'Vieira', emoji: '🐚', desc: 'Ondas de concha' },
+  { id: 'arrow', label: 'Flecha', emoji: '➤', desc: 'Pestañas en flecha' },
+  { id: 'diamond', label: 'Diamante', emoji: '◆', desc: 'Rombo central' },
+  { id: 'cloud', label: 'Nube', emoji: '☁', desc: 'Bordes esponjosos' },
+  { id: 'notch', label: 'Muesca', emoji: '▮', desc: 'Corte rectangular' },
+  { id: 'double', label: 'Doble', emoji: '∞', desc: 'Dos pestañas' },
+  { id: 'smooth', label: 'Lisa', emoji: '◯', desc: 'Casi plana' },
+  { id: 'spike', label: 'Púa', emoji: '▲', desc: 'Punta aguda' },
+  { id: 'petal', label: 'Pétalo', emoji: '🌸', desc: 'Forma floral' },
+  { id: 'bevel', label: 'Bisel', emoji: '⬡', desc: 'Corte en ángulo' },
+  { id: 'ripple', label: 'Rizo', emoji: '≈', desc: 'Ondas suaves dobles' },
+  { id: 'crest', label: 'Cresta', emoji: '⌢', desc: 'Arco alto' },
+  { id: 'valley', label: 'Valle', emoji: '⌣', desc: 'Hoyo amplio' },
+  { id: 'blade', label: 'Hoja', emoji: '🗡️', desc: 'Filo alargado' },
+  { id: 'knob', label: 'Pomo', emoji: '🔘', desc: 'Botón circular' },
+  { id: 'tile', label: 'Baldosa', emoji: '▦', desc: 'Corte de azulejo' },
+  { id: 'mosaic', label: 'Mosaico', emoji: '🟫', desc: 'Escalonado' },
+  { id: 'bubble', label: 'Burbuja', emoji: '🫧', desc: 'Globo suave' },
+  { id: 'flame', label: 'Llama', emoji: '🔥', desc: 'Punta ondulada' },
+  { id: 'leaf', label: 'Hoja', emoji: '🍃', desc: 'Curva vegetal' },
+  { id: 'star', label: 'Estrella', emoji: '⭐', desc: 'Puntas de estrella' },
+  { id: 'cross', label: 'Cruz', emoji: '✚', desc: 'Saliente cruzado' },
+  { id: 'wave2', label: 'Marea', emoji: '🌊', desc: 'Doble ola' },
+  { id: 'puzzle', label: 'Puzzle', emoji: '🧩', desc: 'Clásica marcada' },
+  { id: 'brick', label: 'Ladrillo', emoji: '🧱', desc: 'Corte de muro' },
 ]
 
 export type Difficulty = 'facil' | 'normal' | 'dificil'
 export const DIFFICULTY_META: Record<Difficulty, { label: string; emoji: string; desc: string }> = {
   facil: { label: 'Fácil', emoji: '🌱', desc: 'Sin rotación' },
   normal: { label: 'Normal', emoji: '⚡', desc: 'Piezas rotadas; toca para girar' },
-  dificil: { label: 'Difícil', emoji: '🔥', desc: 'Rotación + giro automático' },
+  dificil: { label: 'Difícil', emoji: '🔥', desc: 'Rotación + giro automático cada 20 s' },
 }
 
 export type ImageCategory = 'naturaleza' | 'animales' | 'libros' | 'ilustraciones' | 'abstracto' | 'custom'
 export interface PuzzleImage {
   id: string; name: string; category: ImageCategory; src: string
   isCustom?: boolean; fallbackHue: number; fallbackHue2: number
+  /** Dimensiones naturales para respetar el aspect ratio real de la imagen */
+  naturalWidth?: number
+  naturalHeight?: number
 }
 export const CATEGORY_LABELS: Record<ImageCategory, string> = {
   naturaleza: 'Naturaleza', animales: 'Animales', libros: 'Libros antiguos',
@@ -70,6 +105,7 @@ export const DEFAULT_IMAGES: PuzzleImage[] = [
   { id: 'imgrom4', name: 'Aurora boreal', category: 'naturaleza', src: '/puzzles/imgrom4.webp', fallbackHue: 170, fallbackHue2: 260 },
   { id: 'imgrom5', name: 'Zorro del bosque', category: 'animales', src: '/puzzles/imgrom5.webp', fallbackHue: 20, fallbackHue2: 35 },
   { id: 'imgrom6', name: 'Gato curioso', category: 'animales', src: '/puzzles/imgrom6.webp', fallbackHue: 35, fallbackHue2: 45 },
+  { id: 'imgrom21', name: 'Muchos gatos jugando', category: 'animales', src: '/puzzles/imgrom21.webp', fallbackHue: 35, fallbackHue2: 140 },
   { id: 'imgrom7', name: 'Búho nocturno', category: 'animales', src: '/puzzles/imgrom7.webp', fallbackHue: 250, fallbackHue2: 220 },
   { id: 'imgrom8', name: 'Ciervo en el claro', category: 'animales', src: '/puzzles/imgrom8.webp', fallbackHue: 30, fallbackHue2: 100 },
   { id: 'imgrom9', name: 'Dragón antiguo', category: 'ilustraciones', src: '/puzzles/imgrom9.webp', fallbackHue: 280, fallbackHue2: 320 },
@@ -84,6 +120,8 @@ export const DEFAULT_IMAGES: PuzzleImage[] = [
   { id: 'imgrom18', name: 'Ondas de color', category: 'abstracto', src: '/puzzles/imgrom18.webp', fallbackHue: 200, fallbackHue2: 320 },
   { id: 'imgrom19', name: 'Geometría fluida', category: 'abstracto', src: '/puzzles/imgrom19.webp', fallbackHue: 265, fallbackHue2: 190 },
   { id: 'imgrom20', name: 'Textura orgánica', category: 'abstracto', src: '/puzzles/imgrom20.webp', fallbackHue: 150, fallbackHue2: 90 },
+  { id: 'imgrom21', name: 'Gatitos', category: 'animales', src: '/puzzles/imgrom21.webp', fallbackHue: 35, fallbackHue2: 140 },
+{ id: 'imgrom22', name: 'Sistema Solar', category: 'naturaleza', src: '/puzzles/imgrom22.webp', fallbackHue: 220, fallbackHue2: 280 }
 ]
 export function imagesByCategory(pool: PuzzleImage[]): Partial<Record<ImageCategory, PuzzleImage[]>> {
   const out: Partial<Record<ImageCategory, PuzzleImage[]>> = {}
@@ -135,52 +173,104 @@ export function gridForPieces(pieces: number): { cols: number; rows: number } {
   return { cols: bestCols, rows: bestRows }
 }
 export function shapeForLevel(level: number): PieceShape {
-  const cycle: PieceShape[] = ['classic', 'classic', 'round', 'classic', 'pointed', 'wavy', 'soft']
-  return cycle[Math.max(1, Math.floor(level)) % cycle.length]
-}
-export function imageForLevel(level: number, pool: PuzzleImage[]): PuzzleImage {
+  const cycle: PieceShape[] = PIECE_SHAPES.map((s) => s.id)
+  // Mezcla determinista: no siempre en orden fijo
   const lv = Math.max(1, Math.floor(level))
-  const defaults = pool.filter((p) => !p.isCustom)
-  const custom = pool.filter((p) => p.isCustom)
-  const rng = mulberry32(levelSeed(lv, 6600))
-  const useCustom = custom.length > 0 && rng() < 0.18
-  const from = useCustom ? custom : defaults.length ? defaults : pool
-  if (!from.length) return DEFAULT_IMAGES[0]
-  return from[Math.floor(rng() * from.length)]
+  const idx = (lv * 7 + Math.floor(lv / 3) * 3) % cycle.length
+  return cycle[idx]
+}
+/**
+ * Imagen fija por nivel de Progresión (determinista).
+ * No usa imágenes custom ni azar: el mismo nivel siempre muestra la misma foto.
+ */
+export function imageForLevel(level: number, _pool?: PuzzleImage[]): PuzzleImage {
+  const lv = Math.max(1, Math.floor(level))
+  if (!DEFAULT_IMAGES.length) {
+    return {
+      id: 'fallback', name: 'Puzzle', category: 'abstracto', src: '',
+      fallbackHue: 180, fallbackHue2: 220,
+    }
+  }
+  const idx = levelSeed(lv, 6600) % DEFAULT_IMAGES.length
+  return DEFAULT_IMAGES[idx]
 }
 
 export interface JigsawLevel {
   level: number; pieces: number; cols: number; rows: number; shape: PieceShape
   image: PuzzleImage; targetSeconds: number; hints: number; seed: number; goal: string
   difficulty: Difficulty
+  /** width/height de la imagen (1 = cuadrada). El tablero respeta esta proporción. */
+  imageAspect: number
 }
 export function hintsForPieces(pieces: number): number { return Math.max(3, Math.round(Math.sqrt(pieces) * 0.5)) }
-export function targetSecondsForPieces(pieces: number, level = 1): number {
-  // Escala con piezas y un poco con el nivel (progresión más exigente)
-  const base = 25 + pieces * 1.15
-  const levelFactor = 1 + Math.min(0.35, Math.max(0, level - 1) * 0.012)
-  return Math.max(30, Math.round(base * levelFactor))
+/**
+ * Tiempo del nivel en Progresión.
+ * Nivel 1 → 60 s, nivel 2 → 80 s, y sube ~20 s por nivel + extra por piezas.
+ * La dificultad multiplica: fácil 1× · normal 1.25× · difícil 1.5×.
+ */
+export function targetSecondsForPieces(
+  pieces: number,
+  level = 1,
+  difficulty: Difficulty = 'facil',
+): number {
+  const lv = Math.max(1, Math.floor(level))
+  const n = Math.max(4, pieces)
+  // Nivel 1 = 60s, nivel 2 = 80s, nivel 3 = 100s...
+  const levelBase = 60 + (lv - 1) * 20
+  // Extra por piezas más allá de 4 (~3.2 s/pieza) + suavizado log
+  const pieceExtra = Math.max(0, n - 4) * 3.2 + Math.log2(n) * 8
+  const raw = levelBase + pieceExtra
+  const diffMult = difficulty === 'dificil' ? 1.5 : difficulty === 'normal' ? 1.25 : 1.0
+  return Math.max(60, Math.round(raw * diffMult))
 }
-/** Recomendación de límite para Modo Creativo (misma curva que progresión). */
-export function recommendTimeLimitSeconds(pieces: number): number {
-  return targetSecondsForPieces(pieces, 1)
+
+/**
+ * Tiempo sugerido en Creativo: más generoso, crece con piezas y dificultad.
+ * 12 pz fácil ≈ 2.5 min · 30 pz ≈ 5 min · 100 pz ≈ 12 min · difícil ×1.5
+ */
+export function recommendTimeLimitSeconds(pieces: number, difficulty: Difficulty = 'facil'): number {
+  const n = Math.max(4, pieces)
+  const base = 75 + n * 5.5 + Math.sqrt(n) * 10
+  const diffMult = difficulty === 'dificil' ? 1.55 : difficulty === 'normal' ? 1.28 : 1.0
+  return Math.max(90, Math.round(base * diffMult))
 }
-export const TIME_LIMIT_SUGGESTIONS = [0, 60, 120, 180, 300, 600, 900, 1200, 1800] as const // 0 = infinito
-export function getJigsawDifficulty(level: number) {
+
+export const TIME_LIMIT_SUGGESTIONS = [0, 60, 90, 120, 180, 240, 300, 480, 600, 900, 1200, 1800, 2700, 3600] as const
+
+export function imageAspectOf(img: PuzzleImage): number {
+  const w = img.naturalWidth
+  const h = img.naturalHeight
+  if (w && h && w > 0 && h > 0) return w / h
+  return 1
+}
+export function getJigsawDifficulty(level: number, difficulty: Difficulty = 'facil') {
   const pieces = piecesForLevel(level)
   const { cols, rows } = gridForPieces(pieces)
   const total = cols * rows
-  return { pieces: total, cols, rows, shape: shapeForLevel(level), targetSeconds: targetSecondsForPieces(total, level), hints: hintsForPieces(total) }
+  return {
+    pieces: total,
+    cols,
+    rows,
+    shape: shapeForLevel(level),
+    targetSeconds: targetSecondsForPieces(total, level, difficulty),
+    hints: hintsForPieces(total),
+  }
 }
 export function generateJigsawLevel(level: number, pool: PuzzleImage[], opts?: { seedSalt?: number; difficulty?: Difficulty }): JigsawLevel {
   const lv = Math.max(1, Math.floor(level))
-  const d = getJigsawDifficulty(lv)
+  const difficulty = opts?.difficulty ?? 'facil'
+  const d = getJigsawDifficulty(lv, difficulty)
+  const limitLabel = d.targetSeconds >= 60
+    ? `${Math.floor(d.targetSeconds / 60)} min ${d.targetSeconds % 60}s`
+    : `${d.targetSeconds}s`
+  const image = imageForLevel(lv, pool)
   return {
     level: lv, pieces: d.pieces, cols: d.cols, rows: d.rows, shape: d.shape,
-    image: imageForLevel(lv, pool), targetSeconds: d.targetSeconds, hints: d.hints,
+    image, targetSeconds: d.targetSeconds, hints: d.hints,
     seed: levelSeed(lv, 6200 + (opts?.seedSalt ?? 0)),
-    goal: `Arma el rompecabezas de ${d.pieces} piezas (${d.cols}×${d.rows}).`,
-    difficulty: opts?.difficulty ?? 'facil',
+    goal: `Arma el rompecabezas de ${d.pieces} piezas (${d.cols}×${d.rows}) en hasta ${limitLabel}.`,
+    difficulty,
+    imageAspect: imageAspectOf(image),
   }
 }
 export function generateCreativeJigsaw(opts: {
@@ -196,7 +286,8 @@ export function generateCreativeJigsaw(opts: {
   const { cols, rows } = gridForPieces(pieces)
   const total = cols * rows
   const salt = opts.seedSalt ?? Math.floor(Math.random() * 99999)
-  const recommended = recommendTimeLimitSeconds(total)
+  const difficulty = opts.difficulty ?? 'facil'
+  const recommended = recommendTimeLimitSeconds(total, difficulty)
   const limit = opts.timeLimitSeconds
   const targetSeconds = limit === undefined ? recommended : Math.max(0, Math.floor(limit))
   const timeGoal = targetSeconds > 0
@@ -207,7 +298,8 @@ export function generateCreativeJigsaw(opts: {
     targetSeconds, hints: hintsForPieces(total),
     seed: levelSeed(total, 6900 + salt),
     goal: `Arma el rompecabezas de ${total} piezas (${cols}×${rows})${timeGoal}.`,
-    difficulty: opts.difficulty ?? 'facil',
+    difficulty,
+    imageAspect: imageAspectOf(opts.image),
   }
 }
 
@@ -239,8 +331,15 @@ export function isBorderPiece(edges: PieceEdges): boolean {
   return edges.top === 0 || edges.right === 0 || edges.bottom === 0 || edges.left === 0
 }
 function tabSizeFor(cellW: number, cellH: number, shape: PieceShape): number {
-  const factor = shape === 'round' || shape === 'soft' ? 0.28 : shape === 'pointed' ? 0.27 : shape === 'wavy' ? 0.25 : shape === 'square' ? 0.14 : 0.26
-  return Math.min(cellW, cellH) * factor
+  const factors: Partial<Record<PieceShape, number>> = {
+    classic: 0.26, round: 0.28, pointed: 0.27, wavy: 0.25, soft: 0.3, square: 0.14,
+    zigzag: 0.24, scallop: 0.26, arrow: 0.28, diamond: 0.27, cloud: 0.3, notch: 0.18,
+    double: 0.22, smooth: 0.12, spike: 0.3, petal: 0.28,
+    bevel: 0.22, ripple: 0.24, crest: 0.28, valley: 0.26, blade: 0.3, knob: 0.27,
+    tile: 0.16, mosaic: 0.2, bubble: 0.29, flame: 0.3, leaf: 0.27, star: 0.28,
+    cross: 0.24, wave2: 0.25, puzzle: 0.27, brick: 0.15,
+  }
+  return Math.min(cellW, cellH) * (factors[shape] ?? 0.26)
 }
 export function pieceTabPad(cellW: number, cellH: number, shape: PieceShape): number {
   return Math.ceil(tabSizeFor(cellW, cellH, shape) * 1.9)
@@ -252,34 +351,138 @@ function edgeCommand(x0: number, y0: number, x1: number, y1: number, dir: EdgeTa
   const ux = dx / len, uy = dy / len, px = uy, py = -ux
   const pt = (t: number, o: number): [number, number] => [x0 + dx * t + px * o * dir, y0 + dy * t + py * o * dir]
   const jr = (jitter - 0.5) * 2, s = size
-  if (shape === 'classic' || shape === 'soft') {
-    const neckW = (shape === 'soft' ? 0.28 : 0.22) + 0.05 * jr
+
+  if (shape === 'classic' || shape === 'soft' || shape === 'puzzle' || shape === 'knob') {
+    // Pestaña tipo puzzle clásica: cuello estrecho + cabeza redondeada (mejor ajuste visual)
+    const neckW = (shape === 'soft' || shape === 'knob' ? 0.30 : shape === 'puzzle' ? 0.23 : 0.21) + 0.04 * jr
     const n1t = 0.5 - neckW / 2, n2t = 0.5 + neckW / 2
-    const peakO = s * (shape === 'soft' ? 1.2 + 0.1 * jr : 1.38 + 0.15 * jr)
+    const peakO = s * (shape === 'soft' || shape === 'knob' ? 1.18 + 0.08 * jr : 1.42 + 0.12 * jr)
     const [n1x, n1y] = pt(n1t, 0), [n2x, n2y] = pt(n2t, 0), [peakX, peakY] = pt(0.5, peakO)
-    const [c1x, c1y] = pt(n1t - 0.025, s * 0.95), [c2x, c2y] = pt(0.5 - 0.155, peakO * 1.02)
-    const [c3x, c3y] = pt(0.5 + 0.155, peakO * 1.02), [c4x, c4y] = pt(n2t + 0.025, s * 0.95)
-    return `L ${f(n1x)} ${f(n1y)} C ${f(c1x)} ${f(c1y)} ${f(c2x)} ${f(c2y)} ${f(peakX)} ${f(peakY)} C ${f(c3x)} ${f(c3y)} ${f(c4x)} ${f(c4y)} ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
+    // Control points afinados para un “knob” más circular y legible a cualquier escala
+    const [c1x, c1y] = pt(n1t - 0.02, s * 0.55)
+    const [c2x, c2y] = pt(0.5 - 0.18, peakO * 0.92)
+    const [c3x, c3y] = pt(0.5 + 0.18, peakO * 0.92)
+    const [c4x, c4y] = pt(n2t + 0.02, s * 0.55)
+    const [s1x, s1y] = pt(n1t, s * 0.22)
+    const [s2x, s2y] = pt(n2t, s * 0.22)
+    return `L ${f(n1x)} ${f(n1y)} L ${f(s1x)} ${f(s1y)} C ${f(c1x)} ${f(c1y)} ${f(c2x)} ${f(c2y)} ${f(peakX)} ${f(peakY)} C ${f(c3x)} ${f(c3y)} ${f(c4x)} ${f(c4y)} ${f(s2x)} ${f(s2y)} L ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
   }
-  if (shape === 'round' || shape === 'wavy') {
-    const neckW = (shape === 'wavy' ? 0.5 : 0.46) + 0.04 * jr
+  if (shape === 'round' || shape === 'wavy' || shape === 'cloud' || shape === 'petal' || shape === 'bubble' || shape === 'crest' || shape === 'ripple' || shape === 'wave2' || shape === 'leaf') {
+    const neckW = (shape === 'wavy' || shape === 'wave2' ? 0.52 : shape === 'cloud' || shape === 'bubble' ? 0.56 : shape === 'petal' || shape === 'leaf' ? 0.40 : shape === 'crest' ? 0.48 : 0.46) + 0.04 * jr
     const n1t = 0.5 - neckW / 2, n2t = 0.5 + neckW / 2
     const [n1x, n1y] = pt(n1t, 0), [n2x, n2y] = pt(n2t, 0)
-    if (shape === 'wavy') {
-      const [m1x, m1y] = pt(0.35, s * 0.4 * dir), [m2x, m2y] = pt(0.65, -s * 0.25 * dir)
-      return `L ${f(n1x)} ${f(n1y)} C ${f(m1x)} ${f(m1y)} ${f(m2x)} ${f(m2y)} ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
+    if (shape === 'wavy' || shape === 'wave2' || shape === 'ripple') {
+      const amp = shape === 'wave2' ? 0.58 : shape === 'ripple' ? 0.32 : 0.42
+      const [m1x, m1y] = pt(0.32, s * amp)
+      const [m2x, m2y] = pt(0.5, -s * amp * 0.35)
+      const [m3x, m3y] = pt(0.68, s * amp * 0.85)
+      return `L ${f(n1x)} ${f(n1y)} C ${f(m1x)} ${f(m1y)} ${f(m2x)} ${f(m2y)} ${f(m3x)} ${f(m3y)} L ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
     }
-    const rx = ((n2t - n1t) * len) / 2, ry = s * (1.05 + 0.1 * jr), sweep = dir > 0 ? 1 : 0
+    if (shape === 'cloud') {
+      const [a1x, a1y] = pt(0.32, s * 0.5), [a2x, a2y] = pt(0.42, s * 0.95)
+      const [a3x, a3y] = pt(0.5, s * 1.12), [a4x, a4y] = pt(0.58, s * 0.95), [a5x, a5y] = pt(0.68, s * 0.5)
+      return `L ${f(n1x)} ${f(n1y)} Q ${f(a1x)} ${f(a1y)} ${f(a2x)} ${f(a2y)} Q ${f(a3x)} ${f(a3y)} ${f(a4x)} ${f(a4y)} Q ${f(a5x)} ${f(a5y)} ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
+    }
+    if (shape === 'petal' || shape === 'leaf') {
+      const peak = shape === 'leaf' ? 1.22 : 1.18
+      const [px1, py1] = pt(0.42, s * 0.55), [px2, py2] = pt(0.5, s * peak), [px3, py3] = pt(0.58, s * 0.55)
+      return `L ${f(n1x)} ${f(n1y)} C ${f(px1)} ${f(py1)} ${f(px2)} ${f(py2)} ${f(px2)} ${f(py2)} C ${f(px3)} ${f(py3)} ${f(n2x)} ${f(n2y)} ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
+    }
+    if (shape === 'crest') {
+      const [c1x, c1y] = pt(0.35, s * 0.4), [peakX, peakY] = pt(0.5, s * 1.25), [c2x, c2y] = pt(0.65, s * 0.4)
+      return `L ${f(n1x)} ${f(n1y)} C ${f(c1x)} ${f(c1y)} ${f(peakX)} ${f(peakY)} ${f(peakX)} ${f(peakY)} C ${f(c2x)} ${f(c2y)} ${f(n2x)} ${f(n2y)} ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
+    }
+    const rx = ((n2t - n1t) * len) / 2, ry = s * (1.08 + 0.1 * jr), sweep = dir > 0 ? 1 : 0
     return `L ${f(n1x)} ${f(n1y)} A ${f(rx)} ${f(ry)} 0 0 ${sweep} ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
   }
-  if (shape === 'square') {
-    const neckW = 0.18, n1t = 0.5 - neckW / 2, n2t = 0.5 + neckW / 2, peakO = s * 0.85
-    const [n1x, n1y] = pt(n1t, 0), [n2x, n2y] = pt(n2t, 0), [p1x, p1y] = pt(n1t, peakO), [p2x, p2y] = pt(n2t, peakO)
+  if (shape === 'square' || shape === 'notch' || shape === 'smooth' || shape === 'tile' || shape === 'brick' || shape === 'bevel' || shape === 'mosaic') {
+    const neckW = shape === 'smooth' ? 0.12 : shape === 'notch' || shape === 'bevel' ? 0.22 : shape === 'tile' || shape === 'brick' ? 0.15 : shape === 'mosaic' ? 0.2 : 0.18
+    const n1t = 0.5 - neckW / 2, n2t = 0.5 + neckW / 2
+    const peakO = s * (shape === 'smooth' ? 0.5 : shape === 'notch' ? 0.98 : shape === 'bevel' ? 0.92 : 0.88)
+    const [n1x, n1y] = pt(n1t, 0), [n2x, n2y] = pt(n2t, 0)
+    if (shape === 'bevel') {
+      const [p1x, p1y] = pt(n1t + 0.04, peakO), [p2x, p2y] = pt(n2t - 0.04, peakO)
+      return `L ${f(n1x)} ${f(n1y)} L ${f(p1x)} ${f(p1y)} L ${f(p2x)} ${f(p2y)} L ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
+    }
+    if (shape === 'mosaic') {
+      const mid = 0.5
+      const [a1x, a1y] = pt(n1t, peakO * 0.55), [a2x, a2y] = pt(mid, peakO), [a3x, a3y] = pt(n2t, peakO * 0.55)
+      return `L ${f(n1x)} ${f(n1y)} L ${f(a1x)} ${f(a1y)} L ${f(a2x)} ${f(a2y)} L ${f(a3x)} ${f(a3y)} L ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
+    }
+    const [p1x, p1y] = pt(n1t, peakO), [p2x, p2y] = pt(n2t, peakO)
     return `L ${f(n1x)} ${f(n1y)} L ${f(p1x)} ${f(p1y)} L ${f(p2x)} ${f(p2y)} L ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
   }
-  const neckW = 0.32, n1t = 0.5 - neckW / 2, n2t = 0.5 + neckW / 2, peakO = s * (1.2 + 0.1 * jr)
-  const [n1x, n1y] = pt(n1t, 0), [n2x, n2y] = pt(n2t, 0), [m1x, m1y] = pt(0.5 - 0.08, peakO * 0.5)
-  const [peakX, peakY] = pt(0.5, peakO), [m2x, m2y] = pt(0.5 + 0.08, peakO * 0.5)
+  if (shape === 'zigzag') {
+    const pts = [0.18, 0.28, 0.38, 0.48, 0.58, 0.68, 0.78]
+    let dpath = `L ${f(pt(0.12, 0)[0])} ${f(pt(0.12, 0)[1])} `
+    pts.forEach((t, i) => {
+      const o = i % 2 === 0 ? s * 1.08 : 0
+      const [px, py] = pt(t, o)
+      dpath += `L ${f(px)} ${f(py)} `
+    })
+    return dpath + `L ${f(x1)} ${f(y1)}`
+  }
+  if (shape === 'scallop') {
+    const [n1x, n1y] = pt(0.22, 0), [n2x, n2y] = pt(0.78, 0)
+    const [m1x, m1y] = pt(0.32, s * 0.75), [m2x, m2y] = pt(0.5, s * 0.28), [m3x, m3y] = pt(0.68, s * 0.75)
+    return `L ${f(n1x)} ${f(n1y)} Q ${f(m1x)} ${f(m1y)} ${f(m2x)} ${f(m2y)} Q ${f(m3x)} ${f(m3y)} ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
+  }
+  if (shape === 'star') {
+    const pts: [number, number][] = [
+      pt(0.26, 0), pt(0.34, s * 0.5), pt(0.42, s * 0.15), pt(0.5, s * 1.28),
+      pt(0.58, s * 0.15), pt(0.66, s * 0.5), pt(0.74, 0),
+    ]
+    let dpath = ''
+    for (const [px, py] of pts) dpath += `L ${f(px)} ${f(py)} `
+    return dpath + `L ${f(x1)} ${f(y1)}`
+  }
+  if (shape === 'flame') {
+    const [n1x, n1y] = pt(0.28, 0), [n2x, n2y] = pt(0.72, 0)
+    const [m1x, m1y] = pt(0.36, s * 0.65), [peakX, peakY] = pt(0.48, s * 1.38)
+    const [m2x, m2y] = pt(0.55, s * 0.9), [m3x, m3y] = pt(0.62, s * 0.45)
+    return `L ${f(n1x)} ${f(n1y)} C ${f(m1x)} ${f(m1y)} ${f(peakX)} ${f(peakY)} ${f(peakX)} ${f(peakY)} C ${f(m2x)} ${f(m2y)} ${f(m3x)} ${f(m3y)} ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
+  }
+  if (shape === 'arrow' || shape === 'spike' || shape === 'blade') {
+    const neckW = shape === 'blade' ? 0.18 : shape === 'spike' ? 0.24 : 0.28
+    const n1t = 0.5 - neckW / 2, n2t = 0.5 + neckW / 2
+    const peakO = s * (shape === 'spike' || shape === 'blade' ? 1.42 : 1.18)
+    const [n1x, n1y] = pt(n1t, 0), [n2x, n2y] = pt(n2t, 0), [peakX, peakY] = pt(0.5, peakO)
+    if (shape === 'blade') {
+      const [m1x, m1y] = pt(0.5 - 0.06, peakO * 0.55)
+      return `L ${f(n1x)} ${f(n1y)} L ${f(m1x)} ${f(m1y)} L ${f(peakX)} ${f(peakY)} L ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
+    }
+    return `L ${f(n1x)} ${f(n1y)} L ${f(peakX)} ${f(peakY)} L ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
+  }
+  if (shape === 'diamond' || shape === 'cross' || shape === 'valley') {
+    if (shape === 'valley') {
+      const [n1x, n1y] = pt(0.3, 0), [n2x, n2y] = pt(0.7, 0)
+      const [midX, midY] = pt(0.5, s * 0.95), [in1x, in1y] = pt(0.38, s * 0.35), [in2x, in2y] = pt(0.62, s * 0.35)
+      return `L ${f(n1x)} ${f(n1y)} L ${f(in1x)} ${f(in1y)} L ${f(midX)} ${f(midY)} L ${f(in2x)} ${f(in2y)} L ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
+    }
+    if (shape === 'cross') {
+      const [n1x, n1y] = pt(0.38, 0), [n2x, n2y] = pt(0.62, 0)
+      const [a1x, a1y] = pt(0.38, s * 0.35), [a2x, a2y] = pt(0.28, s * 0.35)
+      const [a3x, a3y] = pt(0.28, s * 0.7), [a4x, a4y] = pt(0.72, s * 0.7)
+      const [a5x, a5y] = pt(0.72, s * 0.35), [a6x, a6y] = pt(0.62, s * 0.35)
+      return `L ${f(n1x)} ${f(n1y)} L ${f(a1x)} ${f(a1y)} L ${f(a2x)} ${f(a2y)} L ${f(a3x)} ${f(a3y)} L ${f(a4x)} ${f(a4y)} L ${f(a5x)} ${f(a5y)} L ${f(a6x)} ${f(a6y)} L ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
+    }
+    const [n1x, n1y] = pt(0.34, 0), [n2x, n2y] = pt(0.66, 0)
+    const [midX, midY] = pt(0.5, s * 1.15), [in1x, in1y] = pt(0.42, s * 0.48), [in2x, in2y] = pt(0.58, s * 0.48)
+    return `L ${f(n1x)} ${f(n1y)} L ${f(in1x)} ${f(in1y)} L ${f(midX)} ${f(midY)} L ${f(in2x)} ${f(in2y)} L ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
+  }
+  if (shape === 'double') {
+    const peaks = [0.32, 0.68]
+    let d = ''
+    for (const t of peaks) {
+      const [a0] = [pt(t - 0.09, 0)], [b0] = [pt(t, s * 1.0)], [c0] = [pt(t + 0.09, 0)]
+      d += `L ${f(a0[0])} ${f(a0[1])} L ${f(b0[0])} ${f(b0[1])} L ${f(c0[0])} ${f(c0[1])} `
+    }
+    return d + `L ${f(x1)} ${f(y1)}`
+  }
+  // pointed default
+  const neckW = 0.30, n1t = 0.5 - neckW / 2, n2t = 0.5 + neckW / 2, peakO = s * (1.22 + 0.1 * jr)
+  const [n1x, n1y] = pt(n1t, 0), [n2x, n2y] = pt(n2t, 0), [m1x, m1y] = pt(0.5 - 0.07, peakO * 0.48)
+  const [peakX, peakY] = pt(0.5, peakO), [m2x, m2y] = pt(0.5 + 0.07, peakO * 0.48)
   return `L ${f(n1x)} ${f(n1y)} L ${f(m1x)} ${f(m1y)} L ${f(peakX)} ${f(peakY)} L ${f(m2x)} ${f(m2y)} L ${f(n2x)} ${f(n2y)} L ${f(x1)} ${f(y1)}`
 }
 export function buildPiecePath(cellW: number, cellH: number, pad: number, edges: PieceEdges, shape: PieceShape): string {
@@ -377,6 +580,12 @@ export function removeCustomImage(id: string): PuzzleImage[] {
   saveCustomImages(list)
   return list
 }
+export function renameCustomImage(id: string, name: string): PuzzleImage[] {
+  const clean = name.trim().slice(0, 48) || 'Mi imagen'
+  const list = loadCustomImages().map((x) => (x.id === id ? { ...x, name: clean } : x))
+  saveCustomImages(list)
+  return list
+}
 export function compressImageFile(file: File, maxSide = 1400, quality = 0.85): Promise<string> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file)
@@ -461,16 +670,27 @@ interface CompletionInfo {
   timedOut?: boolean
 }
 interface HistoryEntry {
-  id: string; at: number; mode: 'normal' | 'creativo'
-  level: number; pieces: number; stars: 0 | 1 | 2 | 3
-  timeMs: number; difficulty: Difficulty
-  avgMsPerPiece: number; fastestSnapMs: number | null
-  creativeLevelId?: string; creativeLevelName?: string
-  /** Imagen del nivel para el detalle del historial */
+  id: string
+  at: number
+  mode: 'normal' | 'creativo'
+  level: number
+  pieces: number
+  stars: 0 | 1 | 2 | 3
+  /** Tiempo que tardó el jugador en completar */
+  timeMs: number
+  difficulty: Difficulty
+  avgMsPerPiece: number
+  fastestSnapMs: number | null
+  creativeLevelId?: string
+  creativeLevelName?: string
+  /** Snapshot completo para repetir la partida idéntica (puede faltar en entradas antiguas) */
   image?: PuzzleImage
   shape?: PieceShape
+  /** Límite de tiempo de esa partida (0 = infinito) */
   timeLimitSeconds?: number
-  /** Si esta partida superó un récord anterior en el challenge */
+  cols?: number
+  rows?: number
+  seed?: number
   beatRecord?: boolean
   challengeVsMs?: number
 }
@@ -537,14 +757,62 @@ function stepFor(pieces: number): number {
   if (pieces < 500) return 25
   return 100
 }
-function fitCellPx(cols: number, rows: number, availW: number, availH: number, trayRows: number): number {
-  const padBudget = 48
-  const w = Math.max(120, availW - padBudget)
-  const h = Math.max(120, availH - padBudget)
-  const totalRows = rows + trayRows * 1.15 + 1.4
-  const byW = Math.floor(w / Math.max(cols, 1))
-  const byH = Math.floor(h / Math.max(totalRows, 1))
-  return Math.max(28, Math.min(Math.min(byW, byH), 120))
+/**
+ * El tablero completo tiene la misma proporción que la imagen (panorámica → tablero panorámico).
+ * boardW/boardH = imageAspect = naturalWidth/naturalHeight
+ * Cada pieza muestra exactamente 1/(cols*rows) del área de la imagen.
+ */
+function fitBoardCells(
+  cols: number,
+  rows: number,
+  availW: number,
+  availH: number,
+  trayRows: number,
+  imageAspect = 1,
+): { cellW: number; cellH: number } {
+  const padBudget = 36
+  const maxW = Math.max(160, availW - padBudget)
+  const maxH = Math.max(160, availH - padBudget)
+  const aspect = imageAspect > 0.12 && imageAspect < 10 ? imageAspect : 1
+  const trayFactor = trayRows * 1.1 + 1.25
+
+  // Empezar ocupando el ancho disponible
+  let boardW = maxW
+  let boardH = boardW / aspect
+  // Espacio para bandeja estimado con lado medio
+  let meanCell = Math.sqrt((boardW / cols) * (boardH / rows))
+  let totalH = boardH + trayFactor * meanCell
+
+  if (totalH > maxH) {
+    // Limitar por altura disponible (tablero + bandeja)
+    // boardH + trayFactor * sqrt((boardW/cols)*(boardH/rows)) ≈ maxH
+    // boardW = boardH * aspect
+    boardH = maxH * 0.72 // deja hueco a la bandeja
+    boardW = boardH * aspect
+    if (boardW > maxW) {
+      boardW = maxW
+      boardH = boardW / aspect
+    }
+  }
+
+  let cellW = boardW / Math.max(1, cols)
+  let cellH = boardH / Math.max(1, rows)
+
+  // Límites de legibilidad en móvil
+  const minSide = 16
+  const maxSide = 160
+  if (cellW < minSide || cellH < minSide) {
+    const scale = minSide / Math.min(cellW, cellH)
+    cellW *= scale
+    cellH *= scale
+  }
+  if (cellW > maxSide || cellH > maxSide) {
+    const scale = maxSide / Math.max(cellW, cellH)
+    cellW *= scale
+    cellH *= scale
+  }
+
+  return { cellW, cellH }
 }
 
 const NAV_ITEMS: { id: Screen; label: string; emoji: string; sub?: string }[] = [
@@ -610,40 +878,93 @@ function useJigsawSound(enabled: boolean) {
     playSnap: () => {
       tone(720, 0.07, 'sine', 0.13, 0)
       tone(980, 0.05, 'triangle', 0.08, 0.04)
+      noiseBurst(0.025, 0.03, 0.01)
     },
     playGroup: () => {
       tone(440, 0.06, 'triangle', 0.1, 0)
       tone(660, 0.08, 'sine', 0.11, 0.05)
+      tone(880, 0.07, 'sine', 0.08, 0.1)
+      noiseBurst(0.03, 0.035, 0.02)
     },
     playRotate: () => {
-      tone(320, 0.04, 'sine', 0.08, 0)
-      tone(480, 0.05, 'sine', 0.07, 0.03)
+      tone(280, 0.05, 'triangle', 0.09, 0)
+      tone(420, 0.06, 'sine', 0.1, 0.04)
+      tone(560, 0.05, 'sine', 0.07, 0.08)
+    },
+    playRotateGroup: () => {
+      tone(260, 0.05, 'triangle', 0.08, 0)
+      tone(390, 0.06, 'sine', 0.09, 0.04)
+      tone(520, 0.06, 'sine', 0.08, 0.08)
+      tone(650, 0.05, 'triangle', 0.06, 0.12)
     },
     playLock: () => {
       tone(600, 0.05, 'square', 0.06, 0)
       tone(900, 0.08, 'sine', 0.1, 0.04)
+      tone(1200, 0.06, 'triangle', 0.07, 0.08)
       noiseBurst(0.04, 0.04, 0.02)
     },
     playHint: () => {
       tone(880, 0.1, 'sine', 0.1, 0)
       tone(1100, 0.12, 'triangle', 0.08, 0.08)
+      tone(1320, 0.1, 'sine', 0.06, 0.16)
     },
     playTick: () => tone(900, 0.03, 'sine', 0.05, 0),
     playTimeWarn: () => {
       tone(400, 0.08, 'sawtooth', 0.07, 0)
       tone(350, 0.1, 'sawtooth', 0.06, 0.1)
+      tone(300, 0.12, 'sawtooth', 0.05, 0.2)
+    },
+    playTimeCritical: () => {
+      tone(480, 0.06, 'square', 0.08, 0)
+      tone(360, 0.08, 'sawtooth', 0.07, 0.07)
+      tone(280, 0.1, 'sawtooth', 0.06, 0.14)
     },
     playComplete: () => {
       tone(523.25, 0.14, 'triangle', 0.13, 0)
       tone(659.25, 0.14, 'triangle', 0.13, 0.09)
       tone(783.99, 0.18, 'triangle', 0.14, 0.18)
       tone(1046.5, 0.28, 'sine', 0.12, 0.28)
+      tone(1318.5, 0.22, 'sine', 0.08, 0.42)
+      noiseBurst(0.06, 0.04, 0.3)
     },
     playFail: () => {
       tone(300, 0.15, 'sawtooth', 0.08, 0)
       tone(220, 0.2, 'triangle', 0.07, 0.12)
+      tone(180, 0.22, 'sawtooth', 0.05, 0.28)
     },
-    playPickup: () => tone(520, 0.04, 'sine', 0.06, 0),
+    playPickup: () => {
+      tone(520, 0.04, 'sine', 0.06, 0)
+      tone(680, 0.03, 'triangle', 0.04, 0.03)
+    },
+    playDrop: () => {
+      tone(380, 0.04, 'triangle', 0.05, 0)
+      noiseBurst(0.02, 0.025, 0.01)
+    },
+    playZoom: () => tone(640, 0.03, 'sine', 0.04, 0),
+    playPause: () => {
+      tone(440, 0.06, 'sine', 0.07, 0)
+      tone(330, 0.08, 'triangle', 0.05, 0.06)
+    },
+    playResume: () => {
+      tone(330, 0.05, 'triangle', 0.06, 0)
+      tone(440, 0.07, 'sine', 0.07, 0.05)
+    },
+    playAutoRotate: () => {
+      tone(200, 0.08, 'sawtooth', 0.05, 0)
+      tone(280, 0.07, 'triangle', 0.06, 0.06)
+      tone(360, 0.06, 'sine', 0.04, 0.12)
+    },
+    playWhoosh: () => {
+      noiseBurst(0.08, 0.05, 0)
+      tone(180, 0.1, 'sine', 0.04, 0.02)
+    },
+    playUI: () => tone(760, 0.025, 'sine', 0.04, 0),
+    playRecord: () => {
+      tone(523.25, 0.1, 'triangle', 0.1, 0)
+      tone(659.25, 0.1, 'triangle', 0.1, 0.08)
+      tone(783.99, 0.12, 'sine', 0.11, 0.16)
+      tone(1046.5, 0.18, 'sine', 0.09, 0.26)
+    },
   }
 }
 
@@ -684,7 +1005,7 @@ const SCOPED_STYLES = `
 .pz-icon-btn { width: 36px; height: 36px; min-width: 36px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.14); background: linear-gradient(165deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04)); color: var(--pz-ink); display: grid; place-items: center; cursor: pointer; font-size: 0.95rem; }
 .pz-icon-btn:hover { border-color: rgba(34,230,197,0.45); background: rgba(34,230,197,0.12); }
 .pz-content { flex: 1 1 0%; min-height: 0 !important; min-width: 0; width: 100%; overflow-x: hidden !important; overflow-y: scroll !important; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; touch-action: pan-y; padding: 0.7rem 1rem 1.25rem; scrollbar-width: thin; position: relative; z-index: 1; }
-.pz-main.is-playing .pz-content { display: flex; flex-direction: column; flex: 1 1 0%; min-height: 0; padding: 0.45rem 0.65rem 0.55rem; overflow: hidden !important; }
+.pz-main.is-playing .pz-content { display: flex; flex-direction: column; flex: 1 1 0%; min-height: 0; padding: 0.4rem 0.5rem 0.45rem; overflow: hidden !important; overscroll-behavior: none; touch-action: manipulation; }
 .pz-scroll-inner { width: 100%; max-width: 100%; min-height: min-content; padding-bottom: 0.5rem; }
 .pz-welcome { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; width: 100%; }
 .pz-welcome-text { font-size: 0.9rem; color: var(--pz-muted); }
@@ -712,7 +1033,22 @@ const SCOPED_STYLES = `
 .pz-preview-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--pz-border); background: rgba(11,18,32,0.75); color: #fff; cursor: pointer; display: grid; place-items: center; z-index: 2; }
 .pz-preview-nav.prev { left: 8px; } .pz-preview-nav.next { right: 8px; }
 .pz-select { display: flex; align-items: center; justify-content: space-between; gap: 0.45rem; padding: 0.58rem 0.75rem; border-radius: 12px; border: 1px solid var(--pz-border); background: var(--gco-input-bg, rgba(0,0,0,0.28)); color: var(--pz-ink); font: inherit; font-weight: 600; font-size: 0.84rem; cursor: pointer; text-align: left; width: 100%; }
-.pz-shape-grid, .pz-diff-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; width: 100%; }
+.pz-shape-slider {
+  display: grid;
+  grid-template-rows: repeat(3, auto);
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(72px, 84px);
+  gap: 0.35rem;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 2px 10px;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+}
+.pz-shape-slider .pz-shape-card { scroll-snap-align: start; min-height: 64px; }
+.pz-shape-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.35rem; width: 100%; }
+.pz-diff-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; width: 100%; }
 .pz-shape-card, .pz-diff-card { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; padding: 0.7rem 0.3rem; border-radius: 14px; border: 1px solid rgba(255,255,255,0.12); background: linear-gradient(165deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02)); color: var(--pz-muted); cursor: pointer; font: inherit; }
 .pz-shape-card.is-on, .pz-diff-card.is-on { border-color: rgba(34,230,197,0.5); background: linear-gradient(165deg, rgba(34,230,197,0.22), rgba(34,230,197,0.08)); color: var(--pz-neon); }
 .pz-shape-emoji, .pz-diff-emoji { font-size: 1.15rem; }
@@ -725,24 +1061,141 @@ const SCOPED_STYLES = `
 .pz-img-cover { aspect-ratio: 4/3; border-radius: 12px; background-size: cover; background-position: center; border: 1.5px solid transparent; width: 100%; }
 .pz-img-card.is-on .pz-img-cover { border-color: var(--pz-neon); box-shadow: 0 0 14px rgba(34,230,197,0.2); }
 .pz-img-name { font-size: 0.72rem; color: var(--pz-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pz-play { display: flex; flex-direction: column; gap: 0.4rem; flex: 1; min-height: 0; width: 100%; overflow: hidden; }
-.pz-play.is-fs { position: fixed; inset: 0; z-index: 150; background: var(--gco-bg, #0B1220); padding: calc(0.4rem + var(--pz-safe-t)) 0.5rem calc(0.4rem + var(--pz-safe-b)); }
-.pz-toolbar { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; width: 100%; flex-shrink: 0; }
-.pz-tool { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.38rem 0.6rem; border-radius: 999px; border: 1px solid var(--pz-border); background: var(--pz-glass); color: var(--pz-muted); font: inherit; font-size: 0.74rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
-.pz-tool.is-on { border-color: var(--pz-neon); background: var(--pz-neon-dim); color: var(--pz-neon); }
-.pz-tool:disabled { opacity: 0.4; cursor: not-allowed; }
-.pz-zoom { display: flex; align-items: center; gap: 0.25rem; margin-left: auto; font-size: 0.72rem; color: var(--pz-muted); }
-.pz-prog { display: flex; align-items: center; gap: 0.45rem; width: 100%; flex-shrink: 0; }
-.pz-prog-bar { flex: 1; height: 5px; border-radius: 6px; background: rgba(255,255,255,0.08); overflow: hidden; min-width: 0; }
-.pz-prog-fill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--pz-neon), var(--pz-accent)); transition: width .25s ease; }
-.pz-prog-count { font-size: 0.74rem; color: var(--pz-muted); font-variant-numeric: tabular-nums; }
-.pz-arena-scroll { flex: 1; min-height: 0; width: 100%; overflow: scroll; border-radius: 14px; background: radial-gradient(ellipse at 25% 15%, rgba(34,230,197,0.07), transparent 50%), radial-gradient(ellipse at 80% 85%, rgba(139,124,246,0.06), transparent 45%), rgba(0,0,0,0.22); border: 1px solid var(--pz-border); position: relative; -webkit-overflow-scrolling: touch; overscroll-behavior: auto; touch-action: pan-x pan-y; scrollbar-width: thin; }
-.pz-arena { position: relative; transform-origin: top left; touch-action: none; margin: 8px; }
-.pz-board { position: absolute; left: 0; top: 0; border: 2px dashed rgba(34,230,197,0.3); border-radius: 6px; overflow: hidden; background: rgba(0,0,0,0.16); }
+.pz-play {
+  display: flex; flex-direction: column; gap: 0.45rem;
+  flex: 1; min-height: 0; width: 100%; overflow: hidden;
+  --play-glass: linear-gradient(145deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 45%, rgba(255,255,255,0.02) 100%);
+  --play-edge: rgba(255,255,255,0.14);
+  --play-glow: 0 0 24px rgba(34,230,197,0.12);
+}
+.pz-play.is-fs {
+  position: fixed; inset: 0; z-index: 150;
+  background:
+    radial-gradient(ellipse 90% 50% at 50% -20%, rgba(34,230,197,0.14), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 100%, rgba(139,124,246,0.1), transparent 50%),
+    radial-gradient(ellipse 40% 30% at 0% 80%, rgba(34,230,197,0.06), transparent 45%),
+    #070d18;
+  padding: calc(0.4rem + var(--pz-safe-t)) 0.55rem calc(0.45rem + var(--pz-safe-b));
+}
+.pz-toolbar {
+  display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; width: 100%; flex-shrink: 0;
+  padding: 0.4rem 0.5rem; border-radius: 18px;
+  background: var(--play-glass);
+  border: 1px solid var(--play-edge);
+  backdrop-filter: blur(28px) saturate(1.6);
+  -webkit-backdrop-filter: blur(28px) saturate(1.6);
+  box-shadow: var(--play-glow), inset 0 1px 0 rgba(255,255,255,0.12), 0 8px 28px rgba(0,0,0,0.25);
+}
+.pz-tool {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.3rem;
+  min-height: 34px; padding: 0.38rem 0.7rem; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0.02));
+  color: rgba(243,245,250,0.72); font: inherit; font-size: 0.72rem; font-weight: 650;
+  cursor: pointer; white-space: nowrap;
+  transition: transform .12s ease, border-color .15s, background .15s, color .15s, box-shadow .15s;
+}
+.pz-tool:hover {
+  border-color: rgba(34,230,197,0.45); color: #fff;
+  background: linear-gradient(180deg, rgba(34,230,197,0.18), rgba(34,230,197,0.06));
+}
+.pz-tool:active { transform: scale(0.96); }
+.pz-tool.is-on {
+  border-color: rgba(34,230,197,0.65);
+  background: linear-gradient(180deg, rgba(34,230,197,0.28), rgba(34,230,197,0.1));
+  color: #5CFFE0;
+  box-shadow: 0 0 16px rgba(34,230,197,0.25), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.pz-tool:disabled { opacity: 0.38; cursor: not-allowed; transform: none; }
+.pz-zoom {
+  display: flex; align-items: center; gap: 0.3rem; margin-left: auto;
+  padding: 0.15rem 0.25rem 0.15rem 0.45rem; border-radius: 999px;
+  background: rgba(0,0,0,0.22); border: 1px solid rgba(255,255,255,0.08);
+  font-size: 0.72rem; color: rgba(243,245,250,0.7); font-variant-numeric: tabular-nums; font-weight: 650;
+}
+.pz-prog { display: flex; align-items: center; gap: 0.55rem; width: 100%; flex-shrink: 0; padding: 0 0.2rem; }
+.pz-prog-bar {
+  flex: 1; height: 7px; border-radius: 999px; min-width: 0;
+  background: rgba(255,255,255,0.06);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.35);
+  overflow: hidden; position: relative;
+}
+.pz-prog-fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, #22E6C5 0%, #5B8CFF 55%, #8B7CF6 100%);
+  background-size: 200% 100%;
+  animation: pz-prog-shine 3s linear infinite;
+  transition: width .4s cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow: 0 0 14px rgba(34,230,197,0.45);
+}
+@keyframes pz-prog-shine {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+.pz-prog-count {
+  font-size: 0.75rem; color: rgba(243,245,250,0.65);
+  font-variant-numeric: tabular-nums; font-weight: 700; min-width: 3.2rem; text-align: right;
+}
+.pz-board {
+  border: 2px solid rgba(34,230,197,0.35) !important;
+  border-radius: 14px !important;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.06),
+    0 0 40px rgba(34,230,197,0.12),
+    0 16px 48px rgba(0,0,0,0.4),
+    inset 0 0 80px rgba(0,0,0,0.2) !important;
+  background:
+    linear-gradient(145deg, rgba(34,230,197,0.07), transparent 42%),
+    rgba(4, 10, 20, 0.55) !important;
+}
+.pz-arena-scroll {
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.07),
+    0 12px 40px rgba(0,0,0,0.3);
+  border-radius: 20px !important;
+}
+.pz-hud {
+  border-radius: 16px !important;
+  padding: 0.45rem 0.9rem !important;
+  background: linear-gradient(160deg, rgba(255,255,255,0.16), rgba(10,16,28,0.82)) !important;
+  border: 1px solid rgba(34,230,197,0.4) !important;
+  backdrop-filter: blur(24px) saturate(1.5) !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.45), 0 0 20px rgba(34,230,197,0.15) !important;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+.pz-piece.is-dragging {
+  filter: drop-shadow(0 12px 24px rgba(0,0,0,0.5)) drop-shadow(0 0 14px rgba(34,230,197,0.4)) !important;
+}
+.pz-piece.is-locked {
+  filter: drop-shadow(0 0 6px rgba(34,230,197,0.25));
+}
+
+
+.pz-arena-scroll {
+  flex: 1; min-height: 0; width: 100%;
+  overflow-x: auto; overflow-y: auto;
+  border-radius: 16px;
+  background:
+    radial-gradient(ellipse at 30% 10%, rgba(34,230,197,0.08), transparent 50%),
+    radial-gradient(ellipse at 80% 90%, rgba(139,124,246,0.07), transparent 45%),
+    linear-gradient(180deg, rgba(12,18,32,0.5), rgba(0,0,0,0.35));
+  border: 1px solid rgba(255,255,255,0.1);
+  position: relative;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  /* pan-x + pan-y permite deslizar el tablero en horizontal y vertical en móvil */
+  touch-action: pan-x pan-y;
+  scrollbar-width: thin;
+}
+.pz-arena-scroll.is-pinching,
+.pz-arena-scroll.is-dragging-piece { touch-action: none; overflow: hidden; }
+.pz-arena { position: relative; transform-origin: top left; touch-action: none; margin: 8px; will-change: transform; }
+.pz-board { position: absolute; left: 0; top: 0; border: 2px solid rgba(34,230,197,0.28); border-radius: 10px; overflow: hidden; background: linear-gradient(145deg, rgba(34,230,197,0.05), rgba(0,0,0,0.22)); box-shadow: 0 8px 32px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.04); }
 .pz-ghost { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0.3; pointer-events: none; }
-.pz-piece { position: absolute; touch-action: none; will-change: left, top, transform; cursor: grab; transition: filter .2s ease; }
+.pz-piece { position: absolute; touch-action: none; will-change: left, top, transform; cursor: grab; transition: filter .15s ease; contain: layout style; user-select: none; -webkit-user-select: none; }
 .pz-piece.is-locked { cursor: default; pointer-events: none; animation: pz-lock-pop .28s cubic-bezier(0.34, 1.4, 0.64, 1); }
-.pz-piece.is-dragging { z-index: 9999 !important; cursor: grabbing; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.45)) drop-shadow(0 0 10px rgba(34,230,197,0.3)); }
+.pz-piece.is-dragging { z-index: 9999 !important; cursor: grabbing; filter: drop-shadow(0 8px 18px rgba(0,0,0,0.45)) drop-shadow(0 0 10px rgba(34,230,197,0.3)); transition: none; }
 .pz-piece.is-hint { filter: drop-shadow(0 0 12px var(--pz-neon)); animation: pz-hint-pulse 1s ease-in-out; }
 @keyframes pz-lock-pop {
   0% { transform: scale(1.08); }
@@ -787,7 +1240,7 @@ const SCOPED_STYLES = `
 .pz-chip { padding: 0.42rem 0.12rem; border-radius: 10px; border: 1px solid var(--pz-border); background: var(--pz-glass); color: var(--pz-muted); font: inherit; font-size: 0.76rem; font-weight: 700; cursor: pointer; }
 .pz-chip.is-on { border-color: var(--pz-neon); background: var(--pz-neon-dim); color: var(--pz-neon); }
 .pz-complete { text-align: center; padding: 1.25rem 1.15rem 1.4rem; max-width: min(440px, 100%); width: 100%; }
-.pz-complete-art { width: 100%; aspect-ratio: 16 / 10; border-radius: 14px; overflow: hidden; margin: 0.5rem 0; border: 1px solid rgba(34,230,197,0.3); box-shadow: 0 0 28px rgba(34,230,197,0.15); background-size: cover; background-position: center; position: relative; }
+.pz-complete-art { width: 100%; border-radius: 14px; overflow: hidden; margin: 0.5rem 0; border: 1px solid rgba(34,230,197,0.3); box-shadow: 0 0 28px rgba(34,230,197,0.15); position: relative; background: rgba(0,0,0,0.25); }
 .pz-complete-emoji { font-size: 2.4rem; margin-bottom: 0.25rem; }
 .pz-stars { display: flex; justify-content: center; gap: 0.28rem; font-size: 1.55rem; margin: 0.45rem 0; }
 .pz-star { opacity: 0.25; filter: grayscale(1); }
@@ -856,44 +1309,190 @@ function ImageCover({ image, className, style }: { image: PuzzleImage; className
   )
 }
 
-const PieceView = memo(function PieceView({
-  piece, cellPx, pad, shape, imageSrc, fallbackHue, boardPxW, boardPxH, showBorders, isHinted, dragging,
+
+/** Vista de la imagen completa con bordes de la forma de piezas de esa partida. */
+function AssembledPuzzlePreview({
+  image,
+  cols,
+  rows,
+  shape,
+  seed,
+  showBorders,
 }: {
-  piece: JigsawPiece; cellPx: number; pad: number; shape: PieceShape; imageSrc: string
-  fallbackHue: number; boardPxW: number; boardPxH: number; showBorders: boolean; isHinted: boolean; dragging: boolean
+  image: PuzzleImage
+  cols: number
+  rows: number
+  shape: PieceShape
+  seed: number
+  showBorders: boolean
 }) {
-  const w = cellPx + pad * 2
-  const h = cellPx + pad * 2
-  const path = useMemo(() => buildPiecePath(cellPx, cellPx, pad, piece.edges, shape), [cellPx, pad, piece.edges, shape])
+  const aspect = imageAspectOf(image)
+  const safeAspect = aspect > 0.15 && aspect < 8 ? aspect : 16 / 10
+  const edgeMap = useMemo(() => buildEdgeMap(cols, rows, seed), [cols, rows, seed])
+  // Celdas de 100×100 para trazos visibles de bordes de pieza
+  const U = 100
+  const borderPaths = useMemo(() => {
+    const list: { d: string; c: number; r: number }[] = []
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        list.push({ d: buildPiecePath(U, U, 0, edgeMap[r][c], shape), c, r })
+      }
+    }
+    return list
+  }, [cols, rows, edgeMap, shape])
+
+  return (
+    <div
+      style={{
+        position: 'relative',
+        width: '100%',
+        aspectRatio: `${safeAspect}`,
+        borderRadius: 14,
+        overflow: 'hidden',
+        background: `hsl(${image.fallbackHue} 40% 16%)`,
+        boxShadow: 'inset 0 0 0 1px rgba(34,230,197,0.25)',
+      }}
+    >
+      <img
+        src={image.src}
+        alt={image.name}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          objectFit: 'fill',
+          display: 'block',
+        }}
+        onError={(e) => {
+          ;(e.target as HTMLImageElement).style.opacity = '0'
+        }}
+      />
+      {showBorders && (
+        <svg
+          viewBox={`0 0 ${cols * U} ${rows * U}`}
+          preserveAspectRatio="none"
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+        >
+          {borderPaths.map((p) => (
+            <path
+              key={`${p.r}-${p.c}`}
+              d={p.d}
+              transform={`translate(${p.c * U}, ${p.r * U})`}
+              fill="rgba(34,230,197,0.04)"
+              stroke="rgba(34,230,197,0.95)"
+              strokeWidth={2.2}
+              strokeLinejoin="round"
+            />
+          ))}
+        </svg>
+      )}
+    </div>
+  )
+}
+
+const PieceView = memo(function PieceView({
+  piece, cellW, cellH, pad, shape, imageSrc, fallbackHue, boardPxW, boardPxH, showBorders, isHinted, dragging, lite,
+}: {
+  piece: JigsawPiece
+  cellW: number
+  cellH: number
+  pad: number
+  shape: PieceShape
+  imageSrc: string
+  fallbackHue: number
+  boardPxW: number
+  boardPxH: number
+  showBorders: boolean
+  isHinted: boolean
+  dragging: boolean
+  /** Modo ligero: menos efectos SVG para miles de piezas en móvil */
+  lite?: boolean
+}) {
+  const w = cellW + pad * 2
+  const h = cellH + pad * 2
+  const path = useMemo(
+    () => buildPiecePath(cellW, cellH, pad, piece.edges, shape),
+    [cellW, cellH, pad, piece.edges, shape],
+  )
   const clipId = `clip-${piece.id}`
+  const imgX = pad - piece.col * cellW
+  const imgY = pad - piece.row * cellH
+  const rot = piece.rotation
+  const scale = dragging && !lite ? 1.04 : 1
+  const transform =
+    rot || scale !== 1
+      ? `${rot ? `rotate(${rot}deg)` : ''}${scale !== 1 ? ` scale(${scale})` : ''}`.trim()
+      : undefined
+
   return (
     <div
       className={`pz-piece${piece.locked ? ' is-locked' : ''}${dragging ? ' is-dragging' : ''}${isHinted ? ' is-hint' : ''}`}
       data-piece-id={piece.id}
       style={{
-        left: piece.x * cellPx - pad,
-        top: piece.y * cellPx - pad,
+        left: piece.x * cellW - pad,
+        top: piece.y * cellH - pad,
         width: w,
         height: h,
         zIndex: piece.locked ? 1 : piece.z,
-        transform: [
-          piece.rotation ? `rotate(${piece.rotation}deg)` : '',
-          dragging ? 'scale(1.05)' : '',
-        ].filter(Boolean).join(' ') || undefined,
+        transform,
         transformOrigin: 'center center',
+        // Evita pintar piezas fuera de pantalla (mejor en listas grandes)
+        contentVisibility: 'auto',
+        containIntrinsicSize: `${w}px ${h}px`,
       }}
     >
-      <svg width={w} height={h} style={{ display: 'block', overflow: 'visible' }}>
-        <defs><clipPath id={clipId}><path d={path} /></clipPath></defs>
+      <svg width={w} height={h} style={{ display: 'block', overflow: 'visible', pointerEvents: 'none' }}>
+        <defs>
+          <clipPath id={clipId}>
+            <path d={path} />
+          </clipPath>
+        </defs>
         <g clipPath={`url(#${clipId})`}>
-          <rect x={pad - piece.col * cellPx} y={pad - piece.row * cellPx} width={boardPxW} height={boardPxH} fill={`hsl(${fallbackHue} 40% 22%)`} />
-          <image href={imageSrc} x={pad - piece.col * cellPx} y={pad - piece.row * cellPx} width={boardPxW} height={boardPxH} preserveAspectRatio="xMidYMid slice" />
+          {!lite && (
+            <rect x={imgX} y={imgY} width={boardPxW} height={boardPxH} fill={`hsl(${fallbackHue} 40% 22%)`} />
+          )}
+          <image
+            href={imageSrc}
+            x={imgX}
+            y={imgY}
+            width={boardPxW}
+            height={boardPxH}
+            preserveAspectRatio="none"
+          />
         </g>
-        {showBorders && (
-          <path d={path} fill="none" stroke={piece.locked ? 'rgba(34,230,197,0.55)' : 'rgba(255,255,255,0.4)'} strokeWidth={1.15} />
+        {showBorders && !lite && (
+          <path
+            d={path}
+            fill="none"
+            stroke={piece.locked ? 'rgba(34,230,197,0.5)' : 'rgba(255,255,255,0.35)'}
+            strokeWidth={1}
+          />
+        )}
+        {showBorders && lite && (
+          <path d={path} fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth={0.8} />
         )}
       </svg>
     </div>
+  )
+}, (prev, next) => {
+  // Comparación fina: evita re-render de piezas quietas durante el drag
+  return (
+    prev.piece === next.piece ||
+    (prev.piece.x === next.piece.x &&
+      prev.piece.y === next.piece.y &&
+      prev.piece.z === next.piece.z &&
+      prev.piece.locked === next.piece.locked &&
+      prev.piece.rotation === next.piece.rotation &&
+      prev.dragging === next.dragging &&
+      prev.isHinted === next.isHinted &&
+      prev.showBorders === next.showBorders &&
+      prev.cellW === next.cellW &&
+      prev.cellH === next.cellH &&
+      prev.pad === next.pad &&
+      prev.shape === next.shape &&
+      prev.imageSrc === next.imageSrc &&
+      prev.lite === next.lite)
   )
 })
 
@@ -917,6 +1516,7 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
   /** 0 = infinito en creativo */
   const [creativeTimeLimit, setCreativeTimeLimit] = useState(0)
   const [historyDetail, setHistoryDetail] = useState<HistoryEntry | null>(null)
+  const [historyFilter, setHistoryFilter] = useState<'todos' | 'normal' | 'creativo'>('todos')
   /** Reto: superar un récord previo (ms del récord a batir) */
   const [challengeMs, setChallengeMs] = useState<number | null>(null)
   const [timeUp, setTimeUp] = useState(false)
@@ -950,11 +1550,30 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
   const timerAccumRef = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const arenaScrollRef = useRef<HTMLDivElement>(null)
-  const dragRef = useRef<{ id: string; startX: number; startY: number; originX: number; originY: number; pointerId: number; moved: boolean } | null>(null)
+  const dragRef = useRef<{
+    id: string; startX: number; startY: number; originX: number; originY: number
+    pointerId: number; moved: boolean; groupOrigins?: Record<string, { x: number; y: number }>
+  } | null>(null)
   const piecesRef = useRef(pieces)
   piecesRef.current = pieces
+  const groupOfRef = useRef(groupOf)
+  groupOfRef.current = groupOf
+  const zoomRef = useRef(zoom)
+  zoomRef.current = zoom
+  const cellSizeRef = useRef({ cellW: 40, cellH: 40 })
   const pinchRef = useRef<{ dist: number; zoom: number } | null>(null)
   const timeWarnRef = useRef(false)
+  const dragLiveRef = useRef<{
+    id: string
+    startX: number
+    startY: number
+    originX: number
+    originY: number
+    pointerId: number
+    moved: boolean
+    /** Posiciones de origen de todo el grupo al iniciar el drag (para tracking estable) */
+    groupOrigins: Record<string, { x: number; y: number }>
+  } | null>(null)
 
   useEffect(() => { setIsTouch(isTouchDevice()) }, [])
   const sound = useJigsawSound(settings.sound)
@@ -990,19 +1609,42 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
     return () => clearInterval(id)
   }, [screen, paused, completion])
 
+  // Modo difícil: rotación automática cada 20 s (solo piezas sueltas; grupos giran juntos)
   useEffect(() => {
     if (screen !== 'play' || !activeLevel || activeLevel.difficulty !== 'dificil' || paused || completion) return
     const id = window.setInterval(() => {
-      setPieces((prev) =>
-        prev.map((p) => {
-          if (p.locked || p.id === draggingId) return p
-          if (Math.random() > 0.35) return p
+      setPieces((prev) => {
+        const groups = groupOfRef.current
+        const rotatedIds = new Set<string>()
+        const next = prev.map((p) => {
+          if (p.locked || p.id === draggingId || rotatedIds.has(p.id)) return p
+          // Solo gira un subconjunto aleatorio de piezas/grupos (~40 %)
+          if (Math.random() > 0.4) return p
+          const gid = groups[p.id]
+          if (gid) {
+            // Grupo conectado: girar todas las piezas del grupo a la vez
+            const members = prev.filter((x) => !x.locked && groups[x.id] === gid)
+            for (const m of members) rotatedIds.add(m.id)
+            return { ...p, rotation: ((p.rotation + 90) % 360) as PieceRotation }
+          }
+          rotatedIds.add(p.id)
           return { ...p, rotation: ((p.rotation + 90) % 360) as PieceRotation }
         })
-      )
-    }, 2800)
+        // Segunda pasada: aplicar la misma rotación a hermanos de grupo ya marcados
+        return next.map((p) => {
+          if (p.locked || !rotatedIds.has(p.id)) return p
+          const gid = groups[p.id]
+          if (!gid) return p
+          // Asegurar misma rotación que el primer miembro del grupo
+          const first = next.find((x) => groups[x.id] === gid && rotatedIds.has(x.id))
+          if (!first) return p
+          return { ...p, rotation: first.rotation }
+        })
+      })
+      sound.playAutoRotate()
+    }, 20000)
     return () => clearInterval(id)
-  }, [screen, activeLevel, paused, completion, draggingId])
+  }, [screen, activeLevel, paused, completion, draggingId, sound])
 
   // Aviso sonoro cuando quedan < 15s
   useEffect(() => {
@@ -1108,13 +1750,23 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
     setStats((st) => {
       const entry: HistoryEntry = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        at: Date.now(), mode: playOrigin, level: activeLevel.level, pieces: activeLevel.pieces,
-        stars, timeMs, difficulty, avgMsPerPiece, fastestSnapMs,
+        at: Date.now(),
+        mode: playOrigin,
+        level: activeLevel.level,
+        pieces: activeLevel.pieces,
+        stars,
+        timeMs,
+        difficulty,
+        avgMsPerPiece,
+        fastestSnapMs,
         creativeLevelId: activeCreativeId ?? undefined,
         creativeLevelName: activeCreativeId ? savedLevels.find((l) => l.id === activeCreativeId)?.name : undefined,
         image: activeLevel.image,
         shape: activeLevel.shape,
         timeLimitSeconds: activeLevel.targetSeconds,
+        cols: activeLevel.cols,
+        rows: activeLevel.rows,
+        seed: activeLevel.seed,
         beatRecord: beatRecord === true ? true : beatRecord === false ? false : undefined,
         challengeVsMs: challengeMs ?? undefined,
       }
@@ -1213,32 +1865,116 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
     resetTimer(); setScreen('play')
   }, [creativeImage, creativePieces, creativeShape, creativeDifficulty, creativeTimeLimit, editingLevelId])
 
+  /** Repite una partida del historial con la misma imagen, forma, piezas, dificultad y límite de tiempo. */
+  const startFromHistory = useCallback((h: HistoryEntry, withChallenge = true) => {
+    const image = h.image ?? DEFAULT_IMAGES[0]
+    const shape = h.shape ?? 'classic'
+    const difficulty = h.difficulty ?? 'facil'
+    const pieces = h.pieces
+    const timeLimitSeconds = h.timeLimitSeconds ?? 0
+    const { cols, rows } = gridForPieces(pieces)
+    const total = cols * rows
+    const seed = levelSeed(h.level > 0 ? h.level : total, 9100 + (h.at % 9999))
+    const data: JigsawLevel = {
+      level: h.mode === 'normal' ? h.level : 0,
+      pieces: total,
+      cols,
+      rows,
+      shape,
+      image,
+      targetSeconds: timeLimitSeconds,
+      hints: hintsForPieces(total),
+      seed,
+      goal: timeLimitSeconds > 0
+        ? `Repite la partida: ${total} piezas · límite ${Math.floor(timeLimitSeconds / 60)}m ${timeLimitSeconds % 60}s`
+        : `Repite la partida: ${total} piezas sin límite de tiempo`,
+      difficulty,
+      imageAspect: imageAspectOf(image),
+    }
+    const pcs = createPieces(data, seed + 41, difficulty)
+    setActiveLevel(data)
+    setPieces(pcs)
+    setPlayOrigin(h.mode)
+    setActiveCreativeId(h.creativeLevelId ?? null)
+    setHintsUsed(0)
+    setHintPieceId(null)
+    setShowPreview(false)
+    setShowBorders(true)
+    setZoom(1)
+    setPaused(false)
+    setCompletion(null)
+    setDraggingId(null)
+    setFullscreen(false)
+    setGroupOf({})
+    setChallengeMs(withChallenge ? h.timeMs : null)
+    setTimeUp(false)
+    // Sincroniza creativo por si vuelve al menú
+    setCreativeImage(image)
+    setCreativePieces(total)
+    setCreativeShape(shape)
+    setCreativeDifficulty(difficulty)
+    setCreativeTimeLimit(timeLimitSeconds)
+    if (h.mode === 'normal') setNormalDifficulty(difficulty)
+    resetTimer()
+    setScreen('play')
+  }, [])
+
   const togglePause = () => setPaused((p) => !p)
 
   const trayCols = activeLevel ? Math.max(3, Math.min(activeLevel.cols + 2, Math.ceil(Math.sqrt(activeLevel.pieces * 1.5)))) : 4
   const trayRows = activeLevel ? Math.ceil(activeLevel.pieces / trayCols) : 2
-  const cellPx = useMemo(() => {
-    if (!activeLevel) return 40
-    return fitCellPx(activeLevel.cols, activeLevel.rows, arenaSize.w, arenaSize.h, trayRows)
+  const { cellW, cellH } = useMemo(() => {
+    if (!activeLevel) return { cellW: 40, cellH: 40 }
+    return fitBoardCells(
+      activeLevel.cols,
+      activeLevel.rows,
+      arenaSize.w,
+      arenaSize.h,
+      trayRows,
+      activeLevel.imageAspect || imageAspectOf(activeLevel.image),
+    )
   }, [activeLevel, arenaSize, trayRows])
   const padPx = useMemo(() => {
     if (!activeLevel) return 10
-    return pieceTabPad(cellPx, cellPx, activeLevel.shape)
-  }, [activeLevel, cellPx])
-  const boardPxW = activeLevel ? activeLevel.cols * cellPx : 0
-  const boardPxH = activeLevel ? activeLevel.rows * cellPx : 0
-  const arenaWidthPx = boardPxW + padPx * 2 + 24
-  const arenaHeightPx = boardPxH + padPx * 2 + trayRows * cellPx * 1.2 + 56
+    return pieceTabPad(cellW, cellH, activeLevel.shape)
+  }, [activeLevel, cellW, cellH])
+  const boardPxW = activeLevel ? activeLevel.cols * cellW : 0
+  const boardPxH = activeLevel ? activeLevel.rows * cellH : 0
+  const arenaWidthPx = boardPxW + padPx * 2 + 48
+  const arenaHeightPx = boardPxH + padPx * 2 + trayRows * Math.min(cellW, cellH) * 1.25 + 72
 
+  // Actualiza medidas de celda para el drag (evita valores stale de React)
+  cellSizeRef.current = { cellW, cellH }
+
+  /**
+   * Rota una pieza o, si forma parte de un grupo conectado, rota el grupo entero
+   * a la vez. Las piezas locked en el tablero no rotan nunca.
+   */
   const rotatePiece = (id: string) => {
     if (!activeLevel || activeLevel.difficulty === 'facil') return
+    const groups = groupOfRef.current
+    const gid = groups[id]
+    const memberIds = new Set<string>()
+    if (gid) {
+      for (const [pid, g] of Object.entries(groups)) {
+        if (g === gid) memberIds.add(pid)
+      }
+    } else {
+      memberIds.add(id)
+    }
+    let didRotate = false
     setPieces((prev) =>
       prev.map((p) => {
-        if (p.id !== id || p.locked) return p
+        if (p.locked || !memberIds.has(p.id)) return p
+        didRotate = true
         return { ...p, rotation: ((p.rotation + 90) % 360) as PieceRotation }
-      })
+      }),
     )
-    sound.playRotate()
+    if (didRotate) {
+      if (memberIds.size > 1) sound.playRotateGroup()
+      else sound.playRotate()
+      if (settings.haptics && isTouch) vibrate(6)
+    }
   }
 
   const handleArenaPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -1249,58 +1985,86 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
     if (!id) return
     const piece = piecesRef.current.find((p) => p.id === id)
     if (!piece || piece.locked) return
+    e.preventDefault()
     e.currentTarget.setPointerCapture(e.pointerId)
-    dragRef.current = { id, startX: e.clientX, startY: e.clientY, originX: piece.x, originY: piece.y, pointerId: e.pointerId, moved: false }
+    const groups = groupOfRef.current
+    const gid = groups[id]
+    const groupOrigins: Record<string, { x: number; y: number }> = {}
+    for (const p of piecesRef.current) {
+      if (p.locked) continue
+      if (p.id === id || (gid && groups[p.id] === gid)) {
+        groupOrigins[p.id] = { x: p.x, y: p.y }
+      }
+    }
+    const live = {
+      id,
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: piece.x,
+      originY: piece.y,
+      pointerId: e.pointerId,
+      moved: false,
+      groupOrigins,
+    }
+    dragRef.current = live
+    dragLiveRef.current = live
     setDraggingId(id)
+    arenaScrollRef.current?.classList.add('is-dragging-piece')
     sound.playPickup()
     setPieces((prev) => {
       const maxZ = Math.max(...prev.map((p) => p.z), 1)
-      const gid = groupOf[id]
-      return prev.map((p) => (p.id === id || (gid && groupOf[p.id] === gid) ? { ...p, z: maxZ + 1 } : p))
+      return prev.map((p) =>
+        p.id === id || (gid && groups[p.id] === gid) ? { ...p, z: maxZ + 1 } : p,
+      )
     })
   }
 
   const handleArenaPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current
+    const drag = dragLiveRef.current
     if (!drag || drag.pointerId !== e.pointerId) return
-    const dx = (e.clientX - drag.startX) / (cellPx * zoom)
-    const dy = (e.clientY - drag.startY) / (cellPx * zoom)
-    if (Math.abs(dx) > 0.02 || Math.abs(dy) > 0.02) drag.moved = true
-    const gid = groupOf[drag.id]
-    setPieces((prev) => {
-      const origin = prev.find((p) => p.id === drag.id)
-      if (!origin) return prev
-      const primaryNewX = drag.originX + dx, primaryNewY = drag.originY + dy
-      const shiftX = primaryNewX - origin.x, shiftY = primaryNewY - origin.y
-      return prev.map((p) => {
+    e.preventDefault()
+    const { cellW: cw, cellH: ch } = cellSizeRef.current
+    const z = zoomRef.current || 1
+    // Coordenadas en unidades de celda: el arena está escalado con CSS transform
+    const dx = (e.clientX - drag.startX) / (cw * z)
+    const dy = (e.clientY - drag.startY) / (ch * z)
+    if (Math.abs(dx) > 0.015 || Math.abs(dy) > 0.015) drag.moved = true
+    // Posiciona desde orígenes fijos del inicio del drag → la pieza sigue al puntero sin deriva
+    setPieces((prev) =>
+      prev.map((p) => {
         if (p.locked) return p
-        if (p.id === drag.id) return { ...p, x: primaryNewX, y: primaryNewY }
-        if (gid && groupOf[p.id] === gid) return { ...p, x: p.x + shiftX, y: p.y + shiftY }
-        return p
-      })
-    })
+        const o = drag.groupOrigins[p.id]
+        if (!o) return p
+        return { ...p, x: o.x + dx, y: o.y + dy }
+      }),
+    )
   }
 
   const finishDrag = useCallback((pointerId: number) => {
-    const drag = dragRef.current
+    const drag = dragLiveRef.current ?? dragRef.current
     if (!drag || drag.pointerId !== pointerId || !activeLevel) return
     const wasTap = !drag.moved
     dragRef.current = null
+    dragLiveRef.current = null
     setDraggingId(null)
+    arenaScrollRef.current?.classList.remove('is-dragging-piece')
 
     if (wasTap && (activeLevel.difficulty === 'normal' || activeLevel.difficulty === 'dificil')) {
       rotatePiece(drag.id)
       return
     }
 
+    sound.playDrop()
+
+    const groupsSnap = groupOfRef.current
     setPieces((prev) => {
       const piece = prev.find((p) => p.id === drag.id)
       if (!piece || piece.locked) return prev
 
       const gids = (() => {
-        const gid = groupOf[drag.id]
+        const gid = groupsSnap[drag.id]
         if (!gid) return [drag.id]
-        const members = prev.filter((p) => !p.locked && groupOf[p.id] === gid).map((p) => p.id)
+        const members = prev.filter((p) => !p.locked && groupsSnap[p.id] === gid).map((p) => p.id)
         return members.length ? members : [drag.id]
       })()
 
@@ -1349,7 +2113,7 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
       }
 
       let nextPieces = prev
-      let nextGroups = { ...groupOf }
+      let nextGroups = { ...groupsSnap }
       const THRESH = SNAP_THRESHOLD_CELLS * 1.08
       const isOrthogonalNeighbor = (a: { row: number; col: number }, b: { row: number; col: number }) => {
         const dr = Math.abs(a.row - b.row), dc = Math.abs(a.col - b.col)
@@ -1390,24 +2154,91 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
       setGroupOf(nextGroups)
       return nextPieces
     })
-  }, [activeLevel, groupOf, hintsUsed, settings.haptics, sound, isTouch, finishLevel])
+  }, [activeLevel, hintsUsed, settings.haptics, sound, isTouch, finishLevel])
 
   const handleArenaPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => { finishDrag(e.pointerId) }
 
+  const panTouchRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
+
+  // Listeners nativos no-pasivos: pan horizontal/vertical + pellizco sin zoom de la PWA
+  useEffect(() => {
+    const el = arenaScrollRef.current
+    if (!el || screen !== 'play') return
+    const onMove = (ev: TouchEvent) => {
+      if (ev.touches.length >= 2) {
+        ev.preventDefault()
+        return
+      }
+      // Pan manual (horizontal y vertical) cuando no se arrastra una pieza
+      if (ev.touches.length === 1 && panTouchRef.current && !dragLiveRef.current) {
+        ev.preventDefault()
+        const t = ev.touches[0]
+        const dx = t.clientX - panTouchRef.current.x
+        const dy = t.clientY - panTouchRef.current.y
+        el.scrollLeft = panTouchRef.current.left - dx
+        el.scrollTop = panTouchRef.current.top - dy
+      }
+    }
+    el.addEventListener('touchmove', onMove, { passive: false })
+    return () => el.removeEventListener('touchmove', onMove)
+  }, [screen, fullscreen])
+
+
   const onArenaTouchStart = (e: ReactTouchEvent<HTMLDivElement>) => {
     if (e.touches.length === 2) {
-      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY)
-      pinchRef.current = { dist: d, zoom }
+      panTouchRef.current = null
+      const d = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY,
+      )
+      pinchRef.current = { dist: Math.max(1, d), zoom: zoomRef.current }
+      arenaScrollRef.current?.classList.add('is-pinching')
+      return
+    }
+    if (e.touches.length === 1) {
+      const t = e.touches[0]
+      const target = (t.target as HTMLElement).closest?.('[data-piece-id]')
+      // Si no toca una pieza, habilita pan del scroll (X e Y)
+      if (!target && arenaScrollRef.current && !dragLiveRef.current) {
+        panTouchRef.current = {
+          x: t.clientX,
+          y: t.clientY,
+          left: arenaScrollRef.current.scrollLeft,
+          top: arenaScrollRef.current.scrollTop,
+        }
+      } else {
+        panTouchRef.current = null
+      }
     }
   }
   const onArenaTouchMove = (e: ReactTouchEvent<HTMLDivElement>) => {
     if (e.touches.length === 2 && pinchRef.current) {
-      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY)
+      e.preventDefault()
+      e.stopPropagation()
+      const d = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY,
+      )
       const ratio = d / pinchRef.current.dist
-      setZoom(Math.max(0.35, Math.min(2.8, +(pinchRef.current.zoom * ratio).toFixed(2))))
+      setZoom(Math.max(0.35, Math.min(3.2, +(pinchRef.current.zoom * ratio).toFixed(2))))
+      return
+    }
+    if (e.touches.length === 1 && panTouchRef.current && arenaScrollRef.current && !dragLiveRef.current) {
+      e.preventDefault()
+      const t = e.touches[0]
+      const dx = t.clientX - panTouchRef.current.x
+      const dy = t.clientY - panTouchRef.current.y
+      arenaScrollRef.current.scrollLeft = panTouchRef.current.left - dx
+      arenaScrollRef.current.scrollTop = panTouchRef.current.top - dy
     }
   }
-  const onArenaTouchEnd = () => { pinchRef.current = null }
+  const onArenaTouchEnd = (e: ReactTouchEvent<HTMLDivElement>) => {
+    if (e.touches.length < 2) {
+      pinchRef.current = null
+      arenaScrollRef.current?.classList.remove('is-pinching')
+    }
+    if (e.touches.length === 0) panTouchRef.current = null
+  }
 
   const useHint = () => {
     if (!activeLevel || completion) return
@@ -1461,22 +2292,71 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
 
   const handleImportFiles = async (files: FileList | null) => {
     if (!files?.length) return
-    setImporting(true); setImportError(null)
-    try {
-      for (const file of Array.from(files)) {
-        if (!/^image\/(jpeg|png|webp)$/i.test(file.type)) { setImportError('Solo JPG, PNG o WEBP.'); continue }
-        const dataUrl = await compressImageFile(file)
+    setImporting(true)
+    setImportError(null)
+    const accepted: File[] = []
+    const rejected: string[] = []
+    for (const file of Array.from(files)) {
+      const okType = /^image\/(jpeg|jpg|png|webp|heic|heif|gif|bmp)$/i.test(file.type)
+        || /\.(jpe?g|png|webp|gif|bmp)$/i.test(file.name)
+      if (!okType) {
+        rejected.push(file.name)
+        continue
+      }
+      accepted.push(file)
+    }
+    if (!accepted.length) {
+      setImportError('Ningún archivo válido. Usa JPG, PNG o WEBP.')
+      setImporting(false)
+      return
+    }
+    let lastImg: PuzzleImage | null = null
+    let okCount = 0
+    const errors: string[] = []
+    // Importa en serie para no saturar memoria en móvil
+    for (let i = 0; i < accepted.length; i++) {
+      const file = accepted[i]
+      try {
+        const dataUrl = await compressImageFile(file, 1600, 0.82)
+        const dims = await new Promise<{ w: number; h: number }>((resolve) => {
+          const im = new Image()
+          im.onload = () => resolve({ w: im.naturalWidth || im.width, h: im.naturalHeight || im.height })
+          im.onerror = () => resolve({ w: 1, h: 1 })
+          im.src = dataUrl
+        })
+        const hue = Math.floor(Math.random() * 360)
         const img: PuzzleImage = {
-          id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          name: file.name.replace(/\.[^.]+$/, '').slice(0, 40) || 'Mi imagen',
-          category: 'custom', src: dataUrl, isCustom: true, fallbackHue: 200, fallbackHue2: 260,
+          id: `custom-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
+          name: file.name.replace(/\.[^.]+$/, '').slice(0, 48) || `Imagen ${okCount + 1}`,
+          category: 'custom',
+          src: dataUrl,
+          isCustom: true,
+          fallbackHue: hue,
+          fallbackHue2: (hue + 40) % 360,
+          naturalWidth: dims.w,
+          naturalHeight: dims.h,
         }
         const list = addCustomImage(img)
         setCustomImages(list)
-        setCreativeImage(img)
+        lastImg = img
+        okCount++
+      } catch {
+        errors.push(file.name)
       }
-    } catch { setImportError('No se pudo importar la imagen (¿cuota de almacenamiento?).') }
-    finally { setImporting(false) }
+    }
+    if (lastImg) setCreativeImage(lastImg)
+    if (okCount > 0 && errors.length === 0 && rejected.length === 0) {
+      setImportError(null)
+    } else if (okCount > 0) {
+      setImportError(
+        `Importadas ${okCount}. ` +
+          (rejected.length ? `Omitidas: ${rejected.slice(0, 3).join(', ')}. ` : '') +
+          (errors.length ? `Fallaron: ${errors.slice(0, 3).join(', ')}.` : ''),
+      )
+    } else {
+      setImportError('No se pudo importar. Puede que el almacenamiento del navegador esté lleno.')
+    }
+    setImporting(false)
   }
 
   const handleDeleteCustomImage = (id: string) => {
@@ -1535,7 +2415,8 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
           </div>
           <p style={{ fontSize: '0.76rem', color: 'var(--pz-muted)', textAlign: 'center', margin: 0 }}>
             Escalón {tierInfo.tierIndex + 1} · {tierInfo.pieces} piezas
-            · límite ~{formatTime(targetSecondsForPieces(tierInfo.pieces, current) * 1000)}
+            · límite ~{formatTime(targetSecondsForPieces(tierInfo.pieces, current, normalDifficulty) * 1000)}
+            · {DIFFICULTY_META[normalDifficulty].label}
             {!tierInfo.isMaxTier && ` · ${tierInfo.levelsUntilNextTier ?? 0} para el siguiente`}
           </p>
         </div>
@@ -1588,10 +2469,10 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
           <button type="button" className="pz-select" onClick={() => setPiecesModalOpen(true)}>
             <span><span style={{ color: 'var(--pz-muted)', fontWeight: 500 }}>Piezas </span>{creativePieces}</span><span>▾</span>
           </button>
-          <div className="pz-section-title">Forma</div>
-          <div className="pz-shape-grid">
+          <div className="pz-section-title">Forma · desliza →</div>
+          <div className="pz-shape-slider">
             {PIECE_SHAPES.map((s) => (
-              <button key={s.id} type="button" className={`pz-shape-card${creativeShape === s.id ? ' is-on' : ''}`} onClick={() => setCreativeShape(s.id)}>
+              <button key={s.id} type="button" className={`pz-shape-card${creativeShape === s.id ? ' is-on' : ''}`} onClick={() => setCreativeShape(s.id)} title={s.desc}>
                 <span className="pz-shape-emoji">{s.emoji}</span>
                 <span className="pz-shape-label">{s.label}</span>
               </button>
@@ -1607,19 +2488,66 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
             ))}
           </div>
           <div className="pz-section-title">Límite de tiempo</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
             <button type="button" className={`pz-chip${creativeTimeLimit === 0 ? ' is-on' : ''}`} onClick={() => setCreativeTimeLimit(0)}>∞ Infinito</button>
-            <button type="button" className={`pz-chip${creativeTimeLimit === recommendTimeLimitSeconds(creativePieces) ? ' is-on' : ''}`} onClick={() => setCreativeTimeLimit(recommendTimeLimitSeconds(creativePieces))}>
-              Sugerido ({formatTime(recommendTimeLimitSeconds(creativePieces) * 1000)})
+            <button
+              type="button"
+              className="pz-chip"
+              onClick={() => setCreativeTimeLimit(recommendTimeLimitSeconds(creativePieces, creativeDifficulty))}
+            >
+              Usar sugerido
             </button>
-            {[60, 120, 180, 300, 600, 900].map((s) => (
-              <button key={s} type="button" className={`pz-chip${creativeTimeLimit === s ? ' is-on' : ''}`} onClick={() => setCreativeTimeLimit(s)}>
-                {s < 60 ? `${s}s` : `${Math.floor(s / 60)}m`}
-              </button>
-            ))}
+            <span style={{ fontSize: '0.75rem', color: 'var(--pz-muted)' }}>
+              Sugerido: {formatTime(recommendTimeLimitSeconds(creativePieces, creativeDifficulty) * 1000)}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.84rem' }}>
+              <span style={{ color: 'var(--pz-muted)' }}>Min</span>
+              <input
+                type="number"
+                min={0}
+                max={180}
+                value={creativeTimeLimit === 0 ? 0 : Math.floor(creativeTimeLimit / 60)}
+                onChange={(e) => {
+                  const mins = Math.max(0, Math.min(180, Number(e.target.value) || 0))
+                  const secs = creativeTimeLimit === 0 ? 0 : creativeTimeLimit % 60
+                  const total = mins * 60 + secs
+                  setCreativeTimeLimit(total)
+                }}
+                style={{
+                  width: 64, padding: '0.45rem 0.5rem', borderRadius: 10,
+                  border: '1px solid var(--pz-border)', background: 'var(--gco-input-bg, rgba(0,0,0,0.28))',
+                  color: 'var(--pz-ink)', font: 'inherit', fontWeight: 700, textAlign: 'center',
+                }}
+              />
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.84rem' }}>
+              <span style={{ color: 'var(--pz-muted)' }}>Seg</span>
+              <input
+                type="number"
+                min={0}
+                max={59}
+                value={creativeTimeLimit === 0 ? 0 : creativeTimeLimit % 60}
+                onChange={(e) => {
+                  const secs = Math.max(0, Math.min(59, Number(e.target.value) || 0))
+                  const mins = creativeTimeLimit === 0 ? 0 : Math.floor(creativeTimeLimit / 60)
+                  setCreativeTimeLimit(mins * 60 + secs)
+                }}
+                style={{
+                  width: 64, padding: '0.45rem 0.5rem', borderRadius: 10,
+                  border: '1px solid var(--pz-border)', background: 'var(--gco-input-bg, rgba(0,0,0,0.28))',
+                  color: 'var(--pz-ink)', font: 'inherit', fontWeight: 700, textAlign: 'center',
+                }}
+              />
+            </label>
+            <span style={{ fontSize: '0.8rem', color: 'var(--pz-neon)', fontWeight: 700 }}>
+              {creativeTimeLimit === 0 ? '∞ Sin límite' : formatTime(creativeTimeLimit * 1000)}
+            </span>
           </div>
           <p style={{ fontSize: '0.72rem', color: 'var(--pz-muted)', margin: 0 }}>
-            Recomendado para {creativePieces} piezas: {formatTime(recommendTimeLimitSeconds(creativePieces) * 1000)}. Elige ∞ si no quieres presión.
+            Elige minutos y segundos a mano, o usa el sugerido según piezas y dificultad.
+            Pon 0 min y 0 seg para tiempo infinito.
           </p>
           <input type="text" value={levelNameDraft} onChange={(e) => setLevelNameDraft(e.target.value)} placeholder="Nombre del nivel (opcional)"
             style={{ width: '100%', padding: '0.65rem 0.85rem', borderRadius: 12, border: '1px solid var(--pz-border)', background: 'var(--gco-input-bg, rgba(0,0,0,0.28))', color: 'var(--pz-ink)', font: 'inherit', fontSize: '0.88rem' }} />
@@ -1688,21 +2616,52 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
       <div>
         <button type="button" className="pz-upload" style={{ marginBottom: '0.9rem' }} onClick={() => fileInputRef.current?.click()} disabled={importing}>
           <span style={{ fontSize: '1.3rem' }}>⬆️</span>
-          {importing ? 'Importando…' : 'Importar imagen'}
-          <span className="pz-upload-sub">JPG, PNG, WEBP · sin límite de cantidad</span>
+          {importing ? 'Importando…' : 'Importar imágenes'}
+          <span className="pz-upload-sub">Elige una o muchas a la vez · JPG/PNG/WEBP · sin límite de cantidad</span>
         </button>
         {importError && <p className="pz-error">{importError}</p>}
         {customImages.length === 0 ? (
-          <p className="pz-empty">Todavía no importaste imágenes.</p>
+          <p className="pz-empty">Todavía no importaste imágenes. Puedes renombrarlas después de importarlas.</p>
         ) : (
           <div className="pz-img-grid">
             {customImages.map((img) => (
-              <div key={img.id} style={{ position: 'relative' }}>
-                <button type="button" className={`pz-img-card${creativeImage.id === img.id ? ' is-on' : ''}`} style={{ width: '100%' }} onClick={() => { setCreativeImage(img); setScreen('creativo') }}>
+              <div key={img.id} className="pz-card" style={{ padding: '0.45rem', position: 'relative' }}>
+                <button
+                  type="button"
+                  className={`pz-img-card${creativeImage.id === img.id ? ' is-on' : ''}`}
+                  style={{ width: '100%' }}
+                  onClick={() => { setCreativeImage(img); setScreen('creativo') }}
+                >
                   <ImageCover image={img} className="pz-img-cover" />
-                  <span className="pz-img-name">{img.name}</span>
                 </button>
-                <button type="button" className="pz-icon-btn" style={{ position: 'absolute', top: 6, right: 6, width: 28, height: 28, minWidth: 28, background: 'rgba(11,18,32,0.7)', fontSize: '0.75rem' }} onClick={() => handleDeleteCustomImage(img.id)} aria-label="Eliminar">🗑️</button>
+                <input
+                  type="text"
+                  value={img.name}
+                  onChange={(e) => {
+                    const list = renameCustomImage(img.id, e.target.value)
+                    setCustomImages(list)
+                    if (creativeImage.id === img.id) {
+                      const updated = list.find((x) => x.id === img.id)
+                      if (updated) setCreativeImage(updated)
+                    }
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label="Nombre de la imagen"
+                  style={{
+                    width: '100%', marginTop: 6, padding: '0.4rem 0.5rem', borderRadius: 10,
+                    border: '1px solid var(--pz-border)', background: 'rgba(0,0,0,0.28)',
+                    color: 'var(--pz-ink)', font: 'inherit', fontSize: '0.75rem', fontWeight: 600,
+                  }}
+                />
+                <button
+                  type="button"
+                  className="pz-icon-btn"
+                  style={{ position: 'absolute', top: 10, right: 10, width: 28, height: 28, minWidth: 28, background: 'rgba(11,18,32,0.75)', fontSize: '0.75rem' }}
+                  onClick={() => handleDeleteCustomImage(img.id)}
+                  aria-label="Eliminar"
+                >
+                  🗑️
+                </button>
               </div>
             ))}
           </div>
@@ -1712,7 +2671,9 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
   }
 
   function renderAjustes() {
-    const recent = stats.history
+    const filteredHistory = historyFilter === 'todos'
+      ? stats.history
+      : stats.history.filter((h) => h.mode === historyFilter)
     const winRate = stats.wins + stats.losses > 0 ? Math.round((stats.wins / (stats.wins + stats.losses)) * 100) : 0
     return (
       <div style={{ maxWidth: 520, width: '100%' }}>
@@ -1732,32 +2693,71 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
             </div>
           ))}
         </div>
-        <div className="pz-section-title">Historial completo ({recent.length})</div>
-        <div className="pz-card" style={{ padding: '0.35rem 0', marginBottom: '1.1rem', maxHeight: 360, overflow: 'auto' }}>
-          {recent.length === 0 ? (
-            <p className="pz-empty" style={{ padding: '0.85rem 1rem' }}>Completa un nivel para ver el historial.</p>
+        <div className="pz-section-title">Historial</div>
+        <div className="pz-tabs" style={{ marginBottom: 10 }}>
+          {(
+            [
+              { id: 'todos' as const, label: 'Todos' },
+              { id: 'normal' as const, label: 'Progresión' },
+              { id: 'creativo' as const, label: 'Creativo' },
+            ]
+          ).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={historyFilter === t.id ? 'is-on' : ''}
+              onClick={() => setHistoryFilter(t.id)}
+            >
+              {t.label}
+              {t.id === 'todos'
+                ? ` (${stats.history.length})`
+                : ` (${stats.history.filter((x) => x.mode === t.id).length})`}
+            </button>
+          ))}
+        </div>
+        <div className="pz-card" style={{ padding: '0.35rem 0', marginBottom: '1.1rem', maxHeight: 400, overflow: 'auto' }}>
+          {filteredHistory.length === 0 ? (
+            <p className="pz-empty" style={{ padding: '0.85rem 1rem' }}>
+              {historyFilter === 'todos'
+                ? 'Completa un nivel para ver el historial.'
+                : historyFilter === 'normal'
+                  ? 'Aún no hay partidas de Progresión.'
+                  : 'Aún no hay partidas de Creativo.'}
+            </p>
           ) : (
-            recent.map((h, i) => (
+            filteredHistory.map((h, i) => (
               <button
                 key={h.id}
                 type="button"
                 onClick={() => setHistoryDetail(h)}
                 style={{
-                  display: 'flex', flexDirection: 'column', gap: 4, padding: '0.7rem 1rem', width: '100%',
+                  display: 'flex', gap: 10, alignItems: 'center', padding: '0.65rem 0.9rem', width: '100%',
                   border: 'none', borderTop: i === 0 ? 'none' : '1px solid rgba(255,255,255,0.06)',
                   background: 'transparent', color: 'inherit', font: 'inherit', fontSize: '0.8rem',
                   textAlign: 'left', cursor: 'pointer',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontWeight: 700, minWidth: 70 }}>{h.mode === 'normal' ? `Nv ${h.level}` : (h.creativeLevelName || 'Creativo')}</span>
-                  <span style={{ color: 'var(--pz-muted)', flex: 1 }}>{h.pieces} pz · {formatTime(h.timeMs)} · {DIFFICULTY_META[h.difficulty]?.label ?? h.difficulty}</span>
-                  <span>{h.stars > 0 ? '⭐'.repeat(h.stars) : '—'}</span>
-                </div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--pz-faint)' }}>
-                  Media/pieza: {formatTime(h.avgMsPerPiece)}
-                  {h.fastestSnapMs != null ? ` · Mejor snap: ${formatTime(h.fastestSnapMs)}` : ''}
-                  {' · toca para ver detalle'}
+                {h.image && (
+                  <ImageCover
+                    image={h.image}
+                    style={{ width: 48, height: 36, borderRadius: 8, flexShrink: 0, backgroundSize: 'cover', backgroundPosition: 'center' }}
+                  />
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontWeight: 700 }}>
+                      {h.mode === 'normal' ? `Nv ${h.level}` : (h.creativeLevelName || 'Creativo')}
+                    </span>
+                    <span style={{ color: 'var(--pz-muted)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {h.pieces} pz · {formatTime(h.timeMs)} · {DIFFICULTY_META[h.difficulty]?.label ?? h.difficulty}
+                    </span>
+                    <span>{h.stars > 0 ? '⭐'.repeat(h.stars) : '—'}</span>
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--pz-faint)', marginTop: 2 }}>
+                    {h.shape ? `${PIECE_SHAPES.find((s) => s.id === h.shape)?.label ?? h.shape} · ` : ''}
+                    {(h.timeLimitSeconds ?? 0) > 0 ? `Límite ${formatTime((h.timeLimitSeconds ?? 0) * 1000)}` : 'Sin límite'}
+                    {' · toca para ver'}
+                  </div>
                 </div>
               </button>
             ))
@@ -1776,11 +2776,11 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
             </div>
           )}
         </div>
-        <div className="pz-section-title">Forma por defecto</div>
+        <div className="pz-section-title">Forma por defecto · desliza →</div>
         <div className="pz-card pz-panel" style={{ marginBottom: '1.1rem' }}>
-          <div className="pz-shape-grid">
+          <div className="pz-shape-slider">
             {PIECE_SHAPES.map((s) => (
-              <button key={s.id} type="button" className={`pz-shape-card${settings.defaultShape === s.id ? ' is-on' : ''}`} onClick={() => { updateSettings({ defaultShape: s.id }); setCreativeShape(s.id) }}>
+              <button key={s.id} type="button" className={`pz-shape-card${settings.defaultShape === s.id ? ' is-on' : ''}`} onClick={() => { updateSettings({ defaultShape: s.id }); setCreativeShape(s.id) }} title={s.desc}>
                 <span className="pz-shape-emoji">{s.emoji}</span>
                 <span className="pz-shape-label">{s.label}</span>
               </button>
@@ -1857,12 +2857,14 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
     return (
       <div className={`pz-play${fullscreen ? ' is-fs' : ''}`}>
         <div className="pz-toolbar">
-          <button type="button" className={`pz-tool${showPreview ? ' is-on' : ''}`} onClick={() => setShowPreview((v) => !v)}>👁️ Preview</button>
-          <button type="button" className={`pz-tool${showBorders ? ' is-on' : ''}`} onClick={() => setShowBorders((v) => !v)}>🔲 Bordes</button>
-          <button type="button" className="pz-tool" onClick={useHint} disabled={hintsUsed >= activeLevel.hints || !!completion}>💡 {Math.max(0, activeLevel.hints - hintsUsed)}</button>
-          <button type="button" className="pz-tool" onClick={fitToScreen} title="Ajustar a pantalla y centrar">⊡ Centrar</button>
-          <button type="button" className={`pz-tool${fullscreen ? ' is-on' : ''}`} onClick={() => setFullscreen((f) => !f)}>⛶ FS</button>
-          <span className="pz-pill" style={{ marginLeft: 4 }}>{DIFFICULTY_META[activeLevel.difficulty].emoji} {DIFFICULTY_META[activeLevel.difficulty].label}</span>
+          <button type="button" className={`pz-tool${showPreview ? ' is-on' : ''}`} onClick={() => setShowPreview((v) => !v)} title="Vista previa de la imagen">👁️ Vista</button>
+          <button type="button" className={`pz-tool${showBorders ? ' is-on' : ''}`} onClick={() => setShowBorders((v) => !v)} title="Bordes de pieza">✦ Bordes</button>
+          <button type="button" className="pz-tool" onClick={useHint} disabled={hintsUsed >= activeLevel.hints || !!completion} title="Pista">💡 {Math.max(0, activeLevel.hints - hintsUsed)}</button>
+          <button type="button" className="pz-tool" onClick={fitToScreen} title="Centrar y ajustar zoom">⊡ Ajustar</button>
+          <button type="button" className={`pz-tool${fullscreen ? ' is-on' : ''}`} onClick={() => setFullscreen((f) => !f)} title="Pantalla completa">⛶</button>
+          <span className="pz-tool is-on" style={{ cursor: 'default', pointerEvents: 'none' }}>
+            {DIFFICULTY_META[activeLevel.difficulty].emoji} {DIFFICULTY_META[activeLevel.difficulty].label}
+          </span>
           <div className="pz-zoom">
             <button type="button" className="pz-icon-btn" style={{ width: 28, height: 28, minWidth: 28 }} onClick={() => setZoom((z) => Math.max(0.35, +(z - 0.15).toFixed(2)))}>−</button>
             <span style={{ minWidth: 36, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
@@ -1890,7 +2892,7 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
           <strong>{pct}%</strong>
           <span>{locked}/{pieces.length}</span>
         </div>
-        <div className="pz-arena-scroll" ref={arenaScrollRef} onTouchStart={onArenaTouchStart} onTouchMove={onArenaTouchMove} onTouchEnd={onArenaTouchEnd}>
+        <div className="pz-arena-scroll" ref={arenaScrollRef} onTouchStart={onArenaTouchStart} onTouchMove={onArenaTouchMove} onTouchEnd={onArenaTouchEnd} onTouchCancel={onArenaTouchEnd}>
           <div style={{ width: arenaWidthPx * zoom, height: arenaHeightPx * zoom, position: 'relative' }}>
             <div className="pz-arena" style={{ width: arenaWidthPx, height: arenaHeightPx, transform: `scale(${zoom})` }}
               onPointerDown={handleArenaPointerDown} onPointerMove={handleArenaPointerMove} onPointerUp={handleArenaPointerUp} onPointerCancel={handleArenaPointerUp}>
@@ -1900,10 +2902,22 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
                 )}
               </div>
               {pieces.map((p) => (
-                <PieceView key={p.id} piece={p} cellPx={cellPx} pad={padPx} shape={activeLevel.shape}
-                  imageSrc={activeLevel.image.src} fallbackHue={activeLevel.image.fallbackHue}
-                  boardPxW={boardPxW} boardPxH={boardPxH} showBorders={showBorders}
-                  isHinted={p.id === hintPieceId} dragging={p.id === draggingId} />
+                <PieceView
+                  key={p.id}
+                  piece={p}
+                  cellW={cellW}
+                  cellH={cellH}
+                  pad={padPx}
+                  shape={activeLevel.shape}
+                  imageSrc={activeLevel.image.src}
+                  fallbackHue={activeLevel.image.fallbackHue}
+                  boardPxW={boardPxW}
+                  boardPxH={boardPxH}
+                  showBorders={showBorders}
+                  isHinted={p.id === hintPieceId}
+                  dragging={p.id === draggingId}
+                  lite={pieces.length >= 80}
+                />
               ))}
             </div>
           </div>
@@ -2012,10 +3026,20 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
             {completion.beatRecord === true && completion.challengeMs != null && ` · mejoraste ${formatTime(completion.challengeMs - completion.timeMs)}`}
             {completion.beatRecord === false && completion.challengeMs != null && ` · tu marca era ${formatTime(completion.challengeMs)}`}
           </p>
-          <div className="pz-complete-art" style={{ backgroundImage: `url(${art.src})`, backgroundColor: `hsl(${art.fallbackHue} 40% 22%)`, position: 'relative' }} role="img" aria-label={art.name}>
-            {completionBorders && (
-              <div style={{ position: 'absolute', inset: 0, backgroundImage: `repeating-linear-gradient(0deg, transparent, transparent calc(100%/${activeLevel.rows} - 1px), rgba(34,230,197,0.25) calc(100%/${activeLevel.rows} - 1px), rgba(34,230,197,0.25) calc(100%/${activeLevel.rows})), repeating-linear-gradient(90deg, transparent, transparent calc(100%/${activeLevel.cols} - 1px), rgba(34,230,197,0.25) calc(100%/${activeLevel.cols} - 1px), rgba(34,230,197,0.25) calc(100%/${activeLevel.cols}))`, pointerEvents: 'none' }} />
-            )}
+          <div
+            className="pz-complete-art"
+            style={{ backgroundColor: `hsl(${art.fallbackHue} 40% 22%)`, position: 'relative', padding: 0 }}
+            role="img"
+            aria-label={art.name}
+          >
+            <AssembledPuzzlePreview
+              image={art}
+              cols={activeLevel.cols}
+              rows={activeLevel.rows}
+              shape={activeLevel.shape}
+              seed={activeLevel.seed}
+              showBorders={completionBorders}
+            />
           </div>
           <button type="button" className="pz-btn pz-btn-ghost" style={{ marginBottom: 8, fontSize: '0.78rem', padding: '0.4rem 0.8rem' }} onClick={() => setCompletionBorders((b) => !b)}>
             {completionBorders ? 'Ver imagen sin bordes' : 'Ver con bordes de piezas'}
@@ -2053,56 +3077,116 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
     if (!historyDetail) return null
     const h = historyDetail
     const img = h.image
+    const shapeLabel = PIECE_SHAPES.find((s) => s.id === h.shape)?.label ?? h.shape ?? '—'
+    const limitSecs = h.timeLimitSeconds ?? 0
+    const limitLabel = limitSecs > 0
+      ? formatTime(limitSecs * 1000)
+      : 'Sin límite (∞)'
+    const when = new Date(h.at).toLocaleString()
     return (
       <div className="pz-overlay" onClick={() => setHistoryDetail(null)} style={{ pointerEvents: 'auto' }}>
-        <div className="pz-card pz-modal" onClick={(e: ReactMouseEvent) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+        <div className="pz-card pz-modal" onClick={(e: ReactMouseEvent) => e.stopPropagation()} style={{ maxWidth: 440 }}>
           <div className="pz-modal-head">
-            <h3>Detalle de partida</h3>
+            <h3>Partida guardada</h3>
             <button type="button" className="pz-icon-btn" onClick={() => setHistoryDetail(null)}>✕</button>
           </div>
-          {img && (
-            <div style={{ aspectRatio: '16/10', borderRadius: 12, overflow: 'hidden', marginBottom: 12, border: '1px solid var(--pz-border)' }}>
-              <ImageCover image={img} style={{ width: '100%', height: '100%' }} />
+
+          {/* Imagen completa como se veía armado el rompecabezas */}
+          {img ? (
+            <div
+              style={{
+                aspectRatio: '16/10',
+                borderRadius: 14,
+                overflow: 'hidden',
+                marginBottom: 12,
+                border: '1px solid rgba(34,230,197,0.35)',
+                boxShadow: '0 0 24px rgba(34,230,197,0.12)',
+                position: 'relative',
+                background: '#0a1018',
+              }}
+            >
+              {h.cols && h.rows && h.shape ? (
+                <AssembledPuzzlePreview
+                  image={img}
+                  cols={h.cols}
+                  rows={h.rows}
+                  shape={h.shape}
+                  seed={h.seed ?? levelSeed(h.level || h.pieces, 9100 + (h.at % 9999))}
+                  showBorders
+                />
+              ) : (
+                <ImageCover image={img} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />
+              )}
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  padding: '0.55rem 0.75rem',
+                  background: 'linear-gradient(180deg, transparent, rgba(0,0,0,0.75))',
+                  color: '#fff',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  pointerEvents: 'none',
+                }}
+              >
+                {img.name} · {DIFFICULTY_META[h.difficulty]?.label} · {h.pieces} pz
+              </div>
             </div>
+          ) : (
+            <p className="pz-empty">Esta partida antigua no tiene imagen guardada.</p>
           )}
-          <div style={{ fontSize: '0.88rem', marginBottom: 8 }}>
-            <strong>{h.mode === 'normal' ? `Progresión · Nivel ${h.level}` : (h.creativeLevelName || 'Creativo')}</strong>
+
+          <div style={{ fontSize: '0.92rem', fontWeight: 700, marginBottom: 6 }}>
+            {h.mode === 'normal'
+              ? `Progresión · Nivel ${h.level}`
+              : (h.creativeLevelName || 'Modo Creativo')}
           </div>
-          <div className="pz-complete-stats" style={{ justifyContent: 'flex-start', marginBottom: 12 }}>
-            <span>{formatTime(h.timeMs)}</span>
-            <span>{h.pieces} piezas</span>
-            <span>{DIFFICULTY_META[h.difficulty]?.label ?? h.difficulty}</span>
-            <span>{h.stars > 0 ? '⭐'.repeat(h.stars) : 'Sin estrellas'}</span>
-            {h.timeLimitSeconds != null && h.timeLimitSeconds > 0 && <span>Límite {formatTime(h.timeLimitSeconds * 1000)}</span>}
-            {h.fastestSnapMs != null && <span>Mejor snap {formatTime(h.fastestSnapMs)}</span>}
+          <div style={{ fontSize: '0.72rem', color: 'var(--pz-muted)', marginBottom: 10 }}>{when}</div>
+
+          <div className="pz-complete-stats" style={{ justifyContent: 'flex-start', marginBottom: 10 }}>
+            <span>⏱ {formatTime(h.timeMs)}</span>
+            <span>🧩 {h.pieces} piezas</span>
+            <span>{DIFFICULTY_META[h.difficulty]?.emoji} {DIFFICULTY_META[h.difficulty]?.label}</span>
+            <span>⭐ {h.stars > 0 ? '⭐'.repeat(h.stars) : '0'}</span>
+            <span>⌛ {limitLabel}</span>
+            <span>✂️ {shapeLabel}</span>
+            {h.cols && h.rows ? <span>{h.cols}×{h.rows}</span> : null}
+            {h.fastestSnapMs != null && <span>⚡ {formatTime(h.fastestSnapMs)}</span>}
           </div>
-          <p style={{ fontSize: '0.78rem', color: 'var(--pz-muted)', lineHeight: 1.45 }}>
-            Media por pieza: {formatTime(h.avgMsPerPiece)}. Al pulsar <strong>Repetir</strong> jugarás el mismo reto
-            con un reloj de récord ({formatTime(h.timeMs)}). Si terminas más lento, se te avisará; si mejoras la marca,
-            se añade al historial sin borrar esta entrada.
+
+          <p style={{ fontSize: '0.78rem', color: 'var(--pz-muted)', lineHeight: 1.5, margin: '0 0 12px' }}>
+            Al <strong>repetir</strong> se abre la misma partida: misma imagen, forma de piezas, cantidad,
+            dificultad y límite de tiempo. Además verás un reloj de récord ({formatTime(h.timeMs)}).
+            Si no mejoras esa marca, te lo diremos; si la superas, se añade una nueva entrada al historial
+            sin borrar esta.
           </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <button
               type="button"
               className="pz-btn pz-btn-primary pz-btn-block"
               onClick={() => {
                 setHistoryDetail(null)
-                if (h.mode === 'normal') {
-                  startNormalLevel(h.level, h.difficulty, h.timeMs)
-                } else {
-                  // Restaurar config creativa si es posible
-                  if (h.image) setCreativeImage(h.image)
-                  setCreativePieces(h.pieces)
-                  if (h.shape) setCreativeShape(h.shape)
-                  setCreativeDifficulty(h.difficulty)
-                  setCreativeTimeLimit(h.timeLimitSeconds ?? 0)
-                  startCreative(h.timeMs)
-                }
+                startFromHistory(h, true)
               }}
             >
-              🏁 Repetir (reto de récord)
+              🏁 Repetir misma partida
             </button>
-            <button type="button" className="pz-btn pz-btn-ghost pz-btn-block" onClick={() => setHistoryDetail(null)}>Cerrar</button>
+            <button
+              type="button"
+              className="pz-btn pz-btn-ghost pz-btn-block"
+              onClick={() => {
+                setHistoryDetail(null)
+                startFromHistory(h, false)
+              }}
+            >
+              Jugar sin reto de récord
+            </button>
+            <button type="button" className="pz-btn pz-btn-ghost pz-btn-block" onClick={() => setHistoryDetail(null)}>
+              Cerrar
+            </button>
           </div>
         </div>
       </div>
@@ -2186,7 +3270,7 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
       {piecesModalOpen && renderPiecesModal()}
       {completion && renderCompletionModal()}
       {historyDetail && renderHistoryDetailModal()}
-      <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple style={{ display: 'none' }}
+      <input ref={fileInputRef} type="file" accept="image/jpeg,image/jpg,image/png,image/webp,image/*" multiple style={{ display: 'none' }}
         onChange={(e: ChangeEvent<HTMLInputElement>) => { void handleImportFiles(e.target.files); e.target.value = '' }} />
     </div>
   )

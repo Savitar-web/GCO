@@ -1,9 +1,9 @@
 /**
  * =============================================================================
- * BlockCleaner.tsx — Color Block Jam style (v21.2 · ALL-IN-ONE)
+ * BlockCleaner.tsx — Color Block Jam style (v21.3 · ALL-IN-ONE)
  * =============================================================================
- * v14.5 — Archivo único: motor + generación + solver + UI.
- * Sin niveles imposibles · candados · axis locks · tableros verticales · 24 colores.
+ * v21.3 — Espacio libre garantizado (≥28%), movilidad mínima, sin atascos imposibles.
+ * Niveles difíciles pero siempre resolubles · legible en modo claro · progreso GCO.
  * =============================================================================
  */
 
@@ -836,11 +836,19 @@ export function getDifficultyTier(level: number): DifficultyTierConfig {
     }
   }
 
-  // Piezas densas (el 35 debe verse lleno)
-  let numBlocks = 8 + Math.floor(L * 0.5) + Math.floor(L / 5)
-  if (L >= 35) numBlocks = Math.max(numBlocks, 22 + Math.floor((L - 35) / 3))
-  if (L >= 50) numBlocks = Math.max(numBlocks, 28 + Math.floor((L - 50) / 4))
-  numBlocks = clampNum(numBlocks, 8, rows * cols - 4)
+  // Piezas densas pero SIEMPRE con espacio libre para mover (~28–40% libres)
+  // Cap por área del tablero: nunca más del ~68% ocupado (piezas + obstáculos)
+  const totalCells = rows * cols
+  const targetFill = L < 10 ? 0.48 : L < 25 ? 0.55 : L < 50 ? 0.60 : L < 80 ? 0.64 : 0.68
+  const minFreeCells = Math.max(6, Math.ceil(totalCells * (1 - targetFill)))
+  // Estimación media ~1.6 celdas/pieza → tope de piezas
+  let numBlocks = 6 + Math.floor(L * 0.35) + Math.floor(L / 8)
+  if (L >= 20) numBlocks = Math.max(numBlocks, 12 + Math.floor((L - 20) / 4))
+  if (L >= 40) numBlocks = Math.max(numBlocks, 16 + Math.floor((L - 40) / 5))
+  if (L >= 70) numBlocks = Math.max(numBlocks, 20 + Math.floor((L - 70) / 6))
+  // Espacio libre garantizado: al menos minFreeCells + margen para obstáculos
+  const maxBlocksBySpace = Math.max(4, Math.floor((totalCells - minFreeCells) / 1.55) - 2)
+  numBlocks = clampNum(numBlocks, 5, Math.min(maxBlocksBySpace, totalCells - minFreeCells - 2))
 
   // MUCHOS colores (no solo 4)
   let numColors = 5 + Math.floor(L / 3)
@@ -850,34 +858,34 @@ export function getDifficultyTier(level: number): DifficultyTierConfig {
   if (L >= 50) numColors = Math.max(numColors, 16)
   numColors = clampNum(numColors, 5, BLOCK_COLOR_ORDER.length)
 
-  const scrambleMoves = clampNum(50 + L * 3, 50, 240)
+  const scrambleMoves = clampNum(40 + L * 2, 40, 160)
   // Nunca más grandes que (tablero/2 - 1) para poder rodearse
   const passCap = Math.max(2, Math.min(Math.floor((rows - 1) / 2), Math.floor((cols - 1) / 2)))
   const maxDim = Math.min(L < 6 ? 2 : L < 18 ? 3 : 4, passCap)
   const allowSquares = L >= 4 && passCap >= 2
-  const timeLimitBase = clampNum(150 + L * 3, 140, 500)
+  const timeLimitBase = clampNum(160 + L * 4, 150, 520)
 
-  // Obstáculos desde 15
+  // Obstáculos desde 15 — pocos, nunca sellan el tablero
   let obstacleCount = 0
   if (L >= 15) {
-    obstacleCount = 1 + Math.floor((L - 15) / 5)
-    if (L >= 35) obstacleCount = Math.max(obstacleCount, 2)
-    if (L >= 50) obstacleCount = Math.max(obstacleCount, 3)
-    obstacleCount = clampNum(obstacleCount, 1, 8)
+    obstacleCount = 1 + Math.floor((L - 15) / 8)
+    if (L >= 40) obstacleCount = Math.max(obstacleCount, 2)
+    if (L >= 70) obstacleCount = Math.max(obstacleCount, 3)
+    obstacleCount = clampNum(obstacleCount, 1, Math.min(5, Math.floor(minFreeCells / 4)))
   }
 
-  // Candados desde 10: POCOS y jugables (máx ~20% de piezas)
+  // Candados desde 10: POCOS y jugables (máx ~18% de piezas)
   let lockedChance = 0
   let lockedClearsMin = 0
   let lockedClearsMax = 0
   if (L >= 10) {
-    lockedChance = clampNum(0.08 + (L - 10) * 0.0015, 0.08, 0.16)
+    lockedChance = clampNum(0.06 + (L - 10) * 0.0012, 0.06, 0.14)
     lockedClearsMin = 1
     lockedClearsMax = L >= 60 ? 2 : 1
   }
 
   let axisLockChance = 0
-  if (L >= 44) axisLockChance = clampNum(0.18 + (L - 44) * 0.005, 0.18, 0.4)
+  if (L >= 44) axisLockChance = clampNum(0.12 + (L - 44) * 0.004, 0.12, 0.28)
 
   let label = 'Tutorial'
   if (L >= 100) label = 'Maestro'
@@ -890,10 +898,15 @@ export function getDifficultyTier(level: number): DifficultyTierConfig {
   else if (L >= 10) label = 'Principiante+'
   else if (L >= 5) label = 'Principiante'
 
+  // Tope duro: piezas + obstáculos dejan al menos ~28% libres
+  const hardCapBlocks = Math.max(
+    4,
+    Math.floor((rows * cols - Math.max(6, Math.ceil(rows * cols * 0.28)) - obstacleCount) / 1.5)
+  )
   return {
     rows,
     cols,
-    numBlocks: Math.min(numBlocks, rows * cols - 3 - obstacleCount),
+    numBlocks: Math.min(numBlocks, hardCapBlocks, rows * cols - 4 - obstacleCount),
     numColors,
     obstacleCount,
     maxDim,
@@ -1525,30 +1538,35 @@ function generateLevelOnce(
   }
 
 
-  // Atascar el tablero: empujar piezas hacia el centro / entre sí (menos movilidad)
-  if (safeId >= 12) {
-    for (let pass = 0; pass < (safeId >= 30 ? 5 : 3); pass++) {
+  // Compactar con moderación: acercar piezas SIN matar la movilidad.
+  // Antes se atasaba al mínimo y generaba estados imposibles.
+  if (safeId >= 18) {
+    const passes = safeId >= 50 ? 2 : 1
+    for (let pass = 0; pass < passes; pass++) {
       for (const b of [...current]) {
         if (b.lockedUntilClears) continue
         const ranges = computeFreeSlideRanges(b, current, obstacles, rows, cols, 999)
-        // Elegir posición con MENOR movilidad restante (atasco), no la más lejos
         const opts: Array<{ row: number; col: number }> = [
           { row: b.row, col: ranges.minCol },
           { row: b.row, col: ranges.maxCol },
           { row: ranges.minRow, col: b.col },
           { row: ranges.maxRow, col: b.col },
         ]
-        let bestPos = { row: b.row, col: b.col, mob: 999 }
+        // Preferir posiciones con movilidad residual >= 2 (siempre hay hueco para deslizar)
+        let bestPos: { row: number; col: number; mob: number } | null = null
         for (const o of opts) {
           if (o.row === b.row && o.col === b.col) continue
           const trial = normalizeBlock({ ...b, row: o.row, col: o.col })
           const others = current.map(x => x.id === b.id ? trial : x)
           const rr = computeFreeSlideRanges(trial, others, obstacles, rows, cols, 999)
           const mob = (rr.maxRow - rr.minRow) + (rr.maxCol - rr.minCol)
-          if (mob < bestPos.mob) bestPos = { row: o.row, col: o.col, mob }
+          if (mob < 2) continue
+          if (!bestPos || mob < bestPos.mob) bestPos = { row: o.row, col: o.col, mob }
         }
-        if (bestPos.mob < 999) {
-          current = current.map(x => x.id === b.id ? normalizeBlock({ ...x, row: bestPos.row, col: bestPos.col }) : x)
+        if (bestPos) {
+          current = current.map(x =>
+            x.id === b.id ? normalizeBlock({ ...x, row: bestPos!.row, col: bestPos!.col }) : x
+          )
         }
       }
     }
@@ -1613,13 +1631,67 @@ function generateLevelOnce(
     const arr = current
     let locked = arr.filter(b => b.lockedUntilClears)
     locked.sort((a, b) => (b.lockedUntilClears || 0) - (a.lockedUntilClears || 0))
-    while (locked.length > Math.max(1, Math.floor(arr.length * 0.22))) {
+    while (locked.length > Math.max(1, Math.floor(arr.length * 0.18))) {
       const b = locked.shift()
       if (b) delete b.lockedUntilClears
     }
-    const free = arr.filter(b => !b.lockedUntilClears).length
+    const freePieces = arr.filter(b => !b.lockedUntilClears).length
     for (const b of arr) {
-      if (b.lockedUntilClears && b.lockedUntilClears > free) b.lockedUntilClears = Math.max(1, Math.min(2, free))
+      if (b.lockedUntilClears && b.lockedUntilClears > freePieces) {
+        b.lockedUntilClears = Math.max(1, Math.min(2, freePieces))
+      }
+    }
+  }
+
+  // === GARANTÍA DE ESPACIO LIBRE ===
+  // Si el tablero quedó demasiado lleno, quitar las piezas más pequeñas hasta ~28% libre
+  {
+    const totalCells = rows * cols
+    const minFree = Math.max(6, Math.ceil(totalCells * 0.28))
+    const areaOf = (b: Block) => blockWidth(b) * blockHeight(b)
+    let occ =
+      current.reduce((s, b) => s + areaOf(b), 0) + obstacles.length
+    if (totalCells - occ < minFree && current.length > 4) {
+      const sorted = [...current].sort((a, b) => areaOf(a) - areaOf(b))
+      while (totalCells - occ < minFree && sorted.length > 4) {
+        const drop = sorted.shift()!
+        current = current.filter(b => b.id !== drop.id)
+        occ -= areaOf(drop)
+      }
+      // Recortar obstáculos si aún falta espacio
+      while (totalCells - occ < minFree && obstacles.length > 0) {
+        obstacles.pop()
+        occ -= 1
+      }
+    }
+  }
+
+  // Última pasada de movilidad: si casi nadie se mueve, empujar 1–2 piezas a bordes libres
+  {
+    let movable = 0
+    for (const b of current) {
+      if (!isBlockMovable(b, 0)) continue
+      const r = computeFreeSlideRanges(b, current, obstacles, rows, cols, 0)
+      if ((r.maxRow - r.minRow) + (r.maxCol - r.minCol) > 0) movable++
+    }
+    if (movable < 2 && current.length > 3) {
+      for (const b of [...current]) {
+        if (!isBlockMovable(b, 0)) continue
+        const ranges = computeFreeSlideRanges(b, current, obstacles, rows, cols, 999)
+        const candidates = [
+          { row: b.row, col: ranges.minCol },
+          { row: b.row, col: ranges.maxCol },
+          { row: ranges.minRow, col: b.col },
+          { row: ranges.maxRow, col: b.col },
+        ]
+        for (const c of candidates) {
+          if (c.row === b.row && c.col === b.col) continue
+          current = current.map(x =>
+            x.id === b.id ? normalizeBlock({ ...x, row: c.row, col: c.col }) : x
+          )
+          break
+        }
+      }
     }
   }
 
@@ -1650,20 +1722,53 @@ const _levelCache = new Map<number, BlockCleanerLevel>() // v21.2 NO EASY FALLBA
  * Solver pesado solo en niveles muy pequeños.
  */
 
-/** Puntúa dureza lógica: más alto = más "gimnasio mental" */
+/** ¿Hay espacio y piezas con movilidad real? (anti-imposible) */
+function levelHasPlayableSpace(level: BlockCleanerLevel): boolean {
+  const { blocks, obstacles, rows, cols } = level
+  const totalCells = rows * cols
+  const occupied =
+    blocks.reduce((s, b) => s + blockWidth(b) * blockHeight(b), 0) + (obstacles?.length ?? 0)
+  const free = totalCells - occupied
+  // Al menos 25% libre o 6 celdas, lo que sea mayor
+  if (free < Math.max(6, Math.ceil(totalCells * 0.25))) return false
+
+  let movable = 0
+  let totalMob = 0
+  for (const b of blocks) {
+    if (!isBlockMovable(b, 0)) continue
+    const r = computeFreeSlideRanges(b, blocks, obstacles ?? [], rows, cols, 0)
+    const mob = (r.maxRow - r.minRow) + (r.maxCol - r.minCol)
+    if (mob > 0) {
+      movable++
+      totalMob += mob
+    }
+  }
+  // Al menos 2 piezas con movimiento, o 1 si hay pocas piezas
+  const need = blocks.length <= 4 ? 1 : 2
+  if (movable < need) return false
+  // Movilidad total mínima
+  if (totalMob < need) return false
+  return true
+}
+
+/** Puntúa dureza lógica: más alto = más "gimnasio mental" PERO jugable */
 function scoreLevelHardness(level: BlockCleanerLevel): number {
   const { blocks, exits, obstacles, rows, cols } = level
   const totalCells = rows * cols
   const occupied = blocks.reduce((s, b) => s + blockWidth(b) * blockHeight(b), 0) + obstacles.length
   const fill = occupied / Math.max(1, totalCells)
+  const freeRatio = 1 - fill
   const immediate = countUnlockedExitable(blocks, exits, obstacles, rows, cols)
 
-  // Movilidad media: rangos de deslizamiento (menos = más atascado)
+  // Movilidad media: rangos de deslizamiento
   let mobility = 0
+  let movableCount = 0
   for (const b of blocks) {
     if (!isBlockMovable(b, 0)) continue
     const r = computeFreeSlideRanges(b, blocks, obstacles, rows, cols, 0)
-    mobility += (r.maxRow - r.minRow) + (r.maxCol - r.minCol)
+    const m = (r.maxRow - r.minRow) + (r.maxCol - r.minCol)
+    mobility += m
+    if (m > 0) movableCount++
   }
   const avgMobility = mobility / Math.max(1, blocks.length)
 
@@ -1684,16 +1789,25 @@ function scoreLevelHardness(level: BlockCleanerLevel): number {
   const duals = blocks.filter(b => b.secondaryColor).length
   const axis = blocks.filter(b => b.axisLock).length
 
-  // Penalizar salidas inmediatas fuerte; recompensar fill, distancia, mecánicas
   let score = 0
-  score += fill * 4000
-  score += blocks.length * 40
-  score += avgDist * 120
-  score += locks * 80 + threats * 100 + duals * 90 + axis * 70
-  score += obstacles.length * 60
+  // Fill ideal ~0.50–0.68: recompensa densidad moderada, castiga vacío extremo y relleno extremo
+  if (fill >= 0.45 && fill <= 0.70) score += fill * 2800
+  else if (fill > 0.70) score += 800 - (fill - 0.70) * 6000 // castigo fuerte por relleno excesivo
+  else score += fill * 1500
+
+  // Espacio libre es obligatorio para disfrute
+  score += freeRatio * 2200
+  if (freeRatio < 0.22) score -= 5000
+  if (movableCount < 2 && blocks.length > 4) score -= 4000
+  if (avgMobility < 0.5) score -= 2500
+  // Algo de movilidad residual es bueno (no atasco total)
+  score += Math.min(avgMobility, 4) * 180
+
+  score += blocks.length * 35
+  score += avgDist * 100
+  score += locks * 70 + threats * 90 + duals * 85 + axis * 55
+  score += obstacles.length * 50
   score -= immediate * 900
-  score -= avgMobility * 50
-  // Ideal: 0 salidas inmediatas
   if (immediate === 0) score += 2000
   else if (immediate === 1) score += 400
   return score
@@ -1722,6 +1836,7 @@ export function generateLevel(levelId: number, salt = 0): BlockCleanerLevel {
       const seed = (baseSeed + attempt * 9973 + attempt * 37 + safeId * 13) >>> 0
       const level = generateLevelOnce(safeId, tier, seed)
       if (!level || level.blocks.length < 2) continue
+      if (!levelHasPlayableSpace(level)) continue
 
       for (const b of level.blocks) {
         const ex = level.exits.find((e) => e.color === b.color)
@@ -1734,14 +1849,19 @@ export function generateLevel(levelId: number, salt = 0): BlockCleanerLevel {
         }
       }
 
-      const score = scoreLevelHardness(level) + level.blocks.length * 20 + level.obstacles.length * 80
+      const score = scoreLevelHardness(level) + level.blocks.length * 18 + level.obstacles.length * 60
       if (score > bestScore) {
         bestScore = score
         best = level
       }
     }
 
-    const result = best ?? buildFullTierLevel(safeId, tier, baseSeed ^ 0xA5A5A5A5)
+    let result = best ?? buildFullTierLevel(safeId, tier, baseSeed ^ 0xA5A5A5A5)
+    // Garantía final: si el fallback también queda sin espacio, aflojar densidad
+    if (!levelHasPlayableSpace(result)) {
+      const relaxed = { ...tier, numBlocks: Math.max(4, Math.floor(tier.numBlocks * 0.7)), obstacleCount: Math.min(tier.obstacleCount, 2) }
+      result = buildFullTierLevel(safeId, relaxed, baseSeed ^ 0x5A5A5A5A)
+    }
     if (!salt) _levelCache.set(safeId, result)
     return result
   } catch {
@@ -1788,7 +1908,9 @@ function buildFullTierLevel(
 
   const occupied = new Set<string>()
   const blocks: Block[] = []
-  const nBlocks = clampNum(tier.numBlocks, 4, rows * cols - 4 - tier.obstacleCount)
+  // Fallback también respeta espacio libre (~30%)
+  const maxBySpace = Math.max(4, Math.floor((rows * cols * 0.68 - tier.obstacleCount) / 1.5))
+  const nBlocks = clampNum(tier.numBlocks, 4, Math.min(maxBySpace, rows * cols - 4 - tier.obstacleCount))
   const shapes = shapesForTier(tier)
 
   for (let i = 0; i < nBlocks; i++) {
@@ -2256,7 +2378,7 @@ export function exitPixelVector(
   }
 }
 
-export const ENGINE_VERSION = '21.2.0'
+export const ENGINE_VERSION = '21.3.0'
 export const ENGINE_NAME = 'BlockCleaner / Color Block Jam style'
 
 export const COLOR_DISPLAY_NAMES: Record<BlockColor, string> = {
@@ -2282,10 +2404,10 @@ import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { soundClick } from '@/core/audio/uiSounds'
 const LS = {
-  current: 'bc.v212.current', unlocked: 'bc.v212.unlocked', scores: 'bc.v212.scores', moves: 'bc.v212.moves',
-  times: 'bc.v212.times', defeats: 'bc.v212.defeats', style: 'bc.v212.style', options: 'bc.v212.options',
-  wins: 'bc.v212.wins', totalMoves: 'bc.v212.totalMoves', streak: 'bc.v212.streak', bestStreak: 'bc.v212.bestStreak', bestCombo: 'bc.v212.bestCombo', regen: 'bc.v212.regen',
-  history: 'bc.v212.history', favStyles: 'bc.v212.favStyles',
+  current: 'bc.v213.current', unlocked: 'bc.v213.unlocked', scores: 'bc.v213.scores', moves: 'bc.v213.moves',
+  times: 'bc.v213.times', defeats: 'bc.v213.defeats', style: 'bc.v213.style', options: 'bc.v213.options',
+  wins: 'bc.v213.wins', totalMoves: 'bc.v213.totalMoves', streak: 'bc.v213.streak', bestStreak: 'bc.v213.bestStreak', bestCombo: 'bc.v213.bestCombo', regen: 'bc.v213.regen',
+  history: 'bc.v213.history', favStyles: 'bc.v213.favStyles',
 }
 function readJSON<T>(key: string, fallback: T): T {
   try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : fallback } catch { return fallback }
@@ -2297,11 +2419,18 @@ function writeJSON(key: string, value: unknown) {
 /** Sincroniza con getGameProgress('logica', 'blockcleaner') del hub de GCO */
 function syncBlockCleanerProgress(highestLevel: number) {
   try {
+    const payload = {
+      highestLevel,
+      lastPlayed: Date.now(),
+      category: 'logica',
+      gameId: 'blockcleaner',
+    }
     const keys = [
       'gco:gameProgress:logica:blockcleaner',
       'gco.progress.logica.blockcleaner',
       'progress_logica_blockcleaner',
       'gameProgress:logica:blockcleaner',
+      'gco.gameProgress.logica.blockcleaner',
     ]
     for (const key of keys) {
       let data: Record<string, unknown> = {}
@@ -2311,11 +2440,13 @@ function syncBlockCleanerProgress(highestLevel: number) {
       } catch { /* */ }
       const prev = typeof data.highestLevel === 'number' ? data.highestLevel : 0
       data.highestLevel = Math.max(prev, highestLevel)
-      data.lastPlayed = Date.now()
+      data.lastPlayed = payload.lastPlayed
+      data.category = 'logica'
+      data.gameId = 'blockcleaner'
       localStorage.setItem(key, JSON.stringify(data))
     }
     // Almacén anidado tipo { logica: { blockcleaner: { highestLevel } } }
-    for (const root of ['gco.progress', 'gco:progress', 'gameProgress']) {
+    for (const root of ['gco.progress', 'gco:progress', 'gameProgress', 'gco:gameProgress']) {
       try {
         const raw = localStorage.getItem(root)
         const tree = raw ? JSON.parse(raw) as Record<string, unknown> : {}
@@ -2323,15 +2454,23 @@ function syncBlockCleanerProgress(highestLevel: number) {
         const bc = (logica.blockcleaner as Record<string, unknown>) || {}
         const prev = typeof bc.highestLevel === 'number' ? bc.highestLevel : 0
         bc.highestLevel = Math.max(prev, highestLevel)
+        bc.lastPlayed = payload.lastPlayed
         logica.blockcleaner = bc
         tree.logica = logica
         localStorage.setItem(root, JSON.stringify(tree))
       } catch { /* */ }
     }
+    // También sincronizar unlocked interno
+    try {
+      const u = readJSON(LS.unlocked, 1)
+      if (highestLevel > u) writeJSON(LS.unlocked, highestLevel)
+    } catch { /* */ }
     const w = window as unknown as {
       __GCO_SET_PROGRESS?: (cat: string, id: string, p: { highestLevel: number }) => void
+      setGameProgress?: (cat: string, id: string, p: { highestLevel: number }) => void
     }
     w.__GCO_SET_PROGRESS?.('logica', 'blockcleaner', { highestLevel })
+    w.setGameProgress?.('logica', 'blockcleaner', { highestLevel })
   } catch { /* noop */ }
 }
 
@@ -2531,8 +2670,18 @@ function safeGenerate(id: number): BlockCleanerLevel {
 export function BlockCleaner() {
   const navigate = useNavigate()
   const [screen, setScreen] = useState<Screen>('hub')
-  const [levelId, setLevelId] = useState(() => readJSON(LS.current, 1))
-  const [unlocked, setUnlocked] = useState(() => readJSON(LS.unlocked, 1))
+  const [levelId, setLevelId] = useState(() => {
+    const v = readJSON(LS.current, 0)
+    if (v) return v
+    // migrar v212
+    return readJSON('bc.v212.current', 1)
+  })
+  const [unlocked, setUnlocked] = useState(() => {
+    const v = readJSON(LS.unlocked, 0)
+    if (v) return v
+    return Math.max(1, readJSON('bc.v212.unlocked', 1))
+  })
+
   // NO generar al montar (evita freeze). Usar fallback hasta loadLevel.
   const [level, setLevel] = useState<BlockCleanerLevel>(() => ({
     ...FALLBACK_LEVEL,
@@ -3670,12 +3819,84 @@ const CSS = `
 .bc-anim-galaxy,.bc-anim-vapor{animation:bc-orbit 8s linear infinite}
 .bc-anim-laser,.bc-anim-solar,.bc-anim-firefly{animation:bc-pulse-neon 1.6s ease-in-out infinite}
 .bc-anim-storm{animation:bc-ripple 2.4s ease-in-out infinite}
-.bc-root{min-height:100dvh;width:100%;display:flex;flex-direction:column;color:var(--text-primary,#f2f4f8);background:transparent;font-family:Inter,system-ui,sans-serif;user-select:none;-webkit-user-select:none;touch-action:manipulation}
-.glass-panel{background:color-mix(in srgb,var(--text-primary,#fff) 6%,transparent);border:1px solid color-mix(in srgb,var(--text-primary,#fff) 14%,transparent);border-radius:24px;backdrop-filter:blur(20px) saturate(1.2);-webkit-backdrop-filter:blur(20px) saturate(1.2);box-shadow:0 16px 48px rgba(0,0,0,.22)}
-.glass-bar{background:color-mix(in srgb,var(--text-primary,#fff) 5%,transparent);border-bottom:1px solid color-mix(in srgb,var(--text-primary,#fff) 10%,transparent);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.bc-root{min-height:100dvh;width:100%;display:flex;flex-direction:column;color:var(--gco-ink,var(--text-primary,#f2f4f8));background:transparent;font-family:Inter,system-ui,sans-serif;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+.glass-panel{background:var(--gco-glass-bg,color-mix(in srgb,var(--text-primary,#fff) 8%,transparent));border:1px solid var(--gco-glass-border,color-mix(in srgb,var(--text-primary,#fff) 16%,transparent));border-radius:24px;backdrop-filter:blur(20px) saturate(1.2);-webkit-backdrop-filter:blur(20px) saturate(1.2);box-shadow:var(--gco-shadow,0 16px 48px rgba(0,0,0,.22));color:var(--gco-ink,inherit)}
+.glass-bar{background:var(--gco-glass-bg,color-mix(in srgb,var(--text-primary,#fff) 7%,transparent));border-bottom:1px solid var(--gco-glass-border,color-mix(in srgb,var(--text-primary,#fff) 12%,transparent));backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);color:var(--gco-ink,inherit)}
 .bc-hub{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:28px 18px;max-width:520px;margin:16px auto;width:calc(100% - 24px)}
-.bc-title{font-family:"Space Grotesk",Inter,sans-serif;font-weight:700;font-size:clamp(1.6rem,5vw,2.2rem);margin:0;letter-spacing:-.02em}
-.bc-sub{opacity:.65;margin:0 0 6px;font-size:.9rem}
+.bc-title{font-family:"Space Grotesk",Inter,sans-serif;font-weight:700;font-size:clamp(1.6rem,5vw,2.2rem);margin:0;letter-spacing:-.02em;color:var(--gco-ink,inherit)}
+.bc-sub{color:var(--gco-ink-muted,inherit);opacity:.85;margin:0 0 6px;font-size:.9rem}
+/* Modo claro: superficies sólidas y contraste alto */
+[data-theme="light"] .bc-root,
+.theme-light .bc-root{color:var(--gco-ink,#172033)}
+[data-theme="light"] .glass-panel,
+.theme-light .glass-panel,
+[data-theme="light"] .bc-hub.glass-panel,
+.theme-light .bc-hub.glass-panel{background:#ffffff;border-color:var(--gco-glass-border,#d8dee7);box-shadow:var(--gco-shadow-sm,0 2px 6px rgba(16,24,40,.06));backdrop-filter:none;-webkit-backdrop-filter:none;color:var(--gco-ink,#172033)}
+[data-theme="light"] .glass-bar,
+.theme-light .glass-bar{background:#ffffff;border-color:var(--gco-glass-border,#d8dee7);backdrop-filter:none;-webkit-backdrop-filter:none;color:var(--gco-ink,#172033)}
+[data-theme="light"] .bc-title,
+.theme-light .bc-title{color:var(--gco-ink,#172033);background:none;-webkit-background-clip:unset;background-clip:unset}
+[data-theme="light"] .bc-hub .bc-title,
+.theme-light .bc-hub .bc-title{background:none;-webkit-background-clip:unset;background-clip:unset;color:var(--gco-ink,#172033)}
+[data-theme="light"] .bc-sub,
+.theme-light .bc-sub,
+[data-theme="light"] .bc-tip-text,
+.theme-light .bc-tip-text{color:var(--gco-ink-muted,#667085);opacity:1}
+[data-theme="light"] .bc-btn,
+.theme-light .bc-btn{background:#ffffff;color:var(--gco-ink,#172033);border:1px solid var(--gco-glass-border,#d8dee7);box-shadow:var(--gco-shadow-xs,0 1px 2px rgba(16,24,40,.04))}
+[data-theme="light"] .bc-btn.primary,
+.theme-light .bc-btn.primary{background:var(--gco-primary,#5865d9);color:#fff;border-color:var(--gco-primary,#5865d9);box-shadow:0 4px 12px rgba(88,101,217,.22)}
+[data-theme="light"] .bc-btn.primary:hover,
+.theme-light .bc-btn.primary:hover{background:var(--gco-primary-hover,#4855c8);filter:none}
+[data-theme="light"] .bc-icon-btn,
+.theme-light .bc-icon-btn{background:#ffffff;color:var(--gco-ink-secondary,#344054);border:1px solid var(--gco-glass-border,#d8dee7);box-shadow:var(--gco-shadow-xs,0 1px 2px rgba(16,24,40,.04))}
+[data-theme="light"] .bc-icon-btn:hover,
+.theme-light .bc-icon-btn:hover{background:var(--gco-bg-secondary,#edf1f5);color:var(--gco-ink,#172033)}
+[data-theme="light"] .bc-back,
+.theme-light .bc-back{background:#ffffff;color:var(--gco-ink-secondary,#344054);border:1px solid var(--gco-glass-border,#d8dee7)}
+[data-theme="light"] .bc-chip,
+.theme-light .bc-chip{background:var(--gco-bg-secondary,#edf1f5);border-color:var(--gco-glass-border,#d8dee7);color:var(--gco-ink,#172033)}
+[data-theme="light"] .bc-play-meta,
+.theme-light .bc-play-meta{color:var(--gco-ink-secondary,#344054);opacity:1}
+[data-theme="light"] .bc-board,
+.theme-light .bc-board{background:var(--gco-bg-secondary,#edf1f5);border-color:var(--gco-glass-border,#d8dee7);box-shadow:var(--gco-shadow-sm,0 2px 6px rgba(16,24,40,.06))}
+[data-theme="light"] .bc-cell,
+.theme-light .bc-cell{background:#ffffff;border-color:var(--gco-glass-border,#d8dee7)}
+[data-theme="light"] .bc-obstacle,
+.theme-light .bc-obstacle{background:repeating-linear-gradient(45deg,#c4ccd7,#c4ccd7 4px,#e5eaf0 4px,#e5eaf0 8px);border-color:#98a2b3}
+[data-theme="light"] .bc-level-cell,
+.theme-light .bc-level-cell{background:#ffffff;border-color:var(--gco-glass-border,#d8dee7);color:var(--gco-ink,#172033)}
+[data-theme="light"] .bc-level-cell.current,
+.theme-light .bc-level-cell.current{outline-color:var(--gco-primary,#5865d9)}
+[data-theme="light"] .bc-opt-glass,
+.theme-light .bc-opt-glass,
+[data-theme="light"] .glass-mini,
+.theme-light .glass-mini,
+[data-theme="light"] .bc-stat-card,
+.theme-light .bc-stat-card,
+[data-theme="light"] .bc-history-row,
+.theme-light .bc-history-row,
+[data-theme="light"] .bc-style-card,
+.theme-light .bc-style-card{background:#ffffff;border-color:var(--gco-glass-border,#d8dee7);color:var(--gco-ink,#172033);backdrop-filter:none;-webkit-backdrop-filter:none}
+[data-theme="light"] .bc-opt-text span,
+.theme-light .bc-opt-text span,
+[data-theme="light"] .bc-stat-label,
+.theme-light .bc-stat-label{color:var(--gco-ink-muted,#667085);opacity:1}
+[data-theme="light"] .bc-opt-hint,
+.theme-light .bc-opt-hint{background:var(--gco-bg-secondary,#edf1f5);border-color:var(--gco-glass-border,#d8dee7);color:var(--gco-ink-secondary,#344054)}
+[data-theme="light"] .bc-modal,
+.theme-light .bc-modal{background:#ffffff;border:1px solid var(--gco-glass-border,#d8dee7);color:var(--gco-ink,#172033)}
+[data-theme="light"] .bc-modal-backdrop,
+.theme-light .bc-modal-backdrop{background:var(--gco-overlay,rgba(15,23,42,.42))}
+[data-theme="light"] .bc-style-search,
+.theme-light .bc-style-search{background:#ffffff;border-color:var(--gco-input-border,#cbd3de);color:var(--gco-ink,#172033)}
+[data-theme="light"] .bc-link,
+.theme-light .bc-link{color:var(--gco-primary,#5865d9);opacity:1}
+[data-theme="light"] .bc-tier,
+.theme-light .bc-tier{color:var(--gco-ink-muted,#667085);opacity:1}
+[data-theme="light"] .bc-particles,
+.theme-light .bc-particles{opacity:.35}
+
 .bc-back{
   display:inline-flex;align-items:center;gap:8px;
   padding:10px 18px 10px 14px;border-radius:999px;

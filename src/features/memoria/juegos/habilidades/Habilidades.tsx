@@ -35,6 +35,7 @@ type View =
   | 'secuencia'
   | 'numero-fugaz'
   | 'memoria-posicion'
+  | 'multitono'
 
 /* ── storage ─────────────────────────────────────────────────────────────── */
 function loadJSON<T>(key: string, fallback: T): T {
@@ -55,6 +56,8 @@ function saveJSON(key: string, value: unknown) {
 
 const KEYS = {
   reaction: 'gco:habilidades:reaccion',
+  reactionRelease: 'gco:habilidades:reaccion-soltar',
+  reactionMode: 'gco:habilidades:reaccion-modo',
   aim: 'gco:habilidades:punteria',
   aimKeyPrimary: 'gco:habilidades:punteria-key-primary',
   aimKeySecondary: 'gco:habilidades:punteria-key-secondary',
@@ -64,10 +67,14 @@ const KEYS = {
   sequenceLevel: 'gco:habilidades:secuencia-nivel',
   sequenceHistory: 'gco:habilidades:secuencia-historial',
   sequenceCellScale: 'gco:habilidades:secuencia-escala',
+  sequenceBestStreak: 'gco:habilidades:secuencia-racha',
   flashLevel: 'gco:habilidades:numero-fugaz-nivel',
   flashHistory: 'gco:habilidades:numero-fugaz-historial',
   positionLevel: 'gco:habilidades:memoria-posicion-nivel',
   positionHistory: 'gco:habilidades:memoria-posicion-historial',
+  multitonoLevel: 'gco:habilidades:multitono-nivel',
+  multitonoHistory: 'gco:habilidades:multitono-historial',
+  multitonoPanel: 'gco:habilidades:multitono-panel',
 } as const
 
 const CAT = 'memoria' as const
@@ -81,6 +88,97 @@ function shuffleArray<T>(arr: T[]): T[] {
     ;[a[i], a[j]] = [a[j], a[i]]
   }
   return a
+}
+function clamp(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v))
+}
+
+/* ── sonidos sintetizados adicionales (WebAudio) ──────────────────────────
+   Se generan en el propio archivo (no dependen de uiSounds.ts) para poder
+   incorporar nuevos efectos "de última generación" sin tocar el core de
+   audio compartido. Todo con try/catch defensivo por si el navegador
+   bloquea el AudioContext antes de un gesto del usuario.                 */
+let sharedAudioCtx: AudioContext | null = null
+function getAudioCtx(): AudioContext | null {
+  if (typeof window === 'undefined') return null
+  try {
+    if (!sharedAudioCtx) {
+      const Ctx =
+        window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+      sharedAudioCtx = new Ctx()
+    }
+    if (sharedAudioCtx.state === 'suspended') {
+      sharedAudioCtx.resume().catch(() => {})
+    }
+    return sharedAudioCtx
+  } catch {
+    return null
+  }
+}
+
+function playTone(
+  freq: number,
+  durationMs: number,
+  opts: {
+    type?: OscillatorType
+    gain?: number
+    glideTo?: number
+    delayMs?: number
+  } = {}
+) {
+  const ctx = getAudioCtx()
+  if (!ctx) return
+  const { type = 'sine', gain = 0.08, glideTo, delayMs = 0 } = opts
+  try {
+    const start = ctx.currentTime + delayMs / 1000
+    const osc = ctx.createOscillator()
+    const g = ctx.createGain()
+    osc.type = type
+    osc.frequency.setValueAtTime(freq, start)
+    if (glideTo) osc.frequency.linearRampToValueAtTime(glideTo, start + durationMs / 1000)
+    g.gain.setValueAtTime(0.0001, start)
+    g.gain.linearRampToValueAtTime(gain, start + 0.014)
+    g.gain.exponentialRampToValueAtTime(0.0001, start + durationMs / 1000)
+    osc.connect(g)
+    g.connect(ctx.destination)
+    osc.start(start)
+    osc.stop(start + durationMs / 1000 + 0.03)
+  } catch {
+    /* ignore */
+  }
+}
+
+function soundLevelUp() {
+  playTone(440, 90, { type: 'triangle' })
+  playTone(660, 110, { type: 'triangle', delayMs: 70 })
+  playTone(880, 200, { type: 'triangle', delayMs: 150 })
+}
+function soundCombo(step: number) {
+  playTone(500 + Math.min(step, 12) * 32, 90, { type: 'square', gain: 0.045 })
+}
+function soundCountdownTick() {
+  playTone(320, 30, { type: 'square', gain: 0.035 })
+}
+function soundFakeTarget() {
+  playTone(200, 150, { type: 'sawtooth', glideTo: 85, gain: 0.09 })
+}
+function soundScanSweep() {
+  playTone(220, 900, { type: 'sine', glideTo: 900, gain: 0.045 })
+  playTone(110, 900, { type: 'triangle', glideTo: 440, gain: 0.03, delayMs: 40 })
+}
+function soundWheelTick() {
+  playTone(760, 16, { type: 'square', gain: 0.02 })
+}
+function soundShapeUnlock() {
+  playTone(320, 100, { type: 'triangle' })
+  playTone(480, 100, { type: 'triangle', delayMs: 90 })
+  playTone(640, 220, { type: 'triangle', delayMs: 180 })
+}
+function soundSliderTick() {
+  playTone(880, 12, { type: 'sine', gain: 0.018 })
+}
+function soundHold() {
+  playTone(180, 260, { type: 'sine', gain: 0.05, glideTo: 260 })
 }
 
 /** Ronda individual dentro de un nivel creativo multi-ronda. */
@@ -117,7 +215,7 @@ function recommendSimonTime(referenceLevel: number): number {
   return Math.min(2800, Math.max(1200, Math.round(raw / 50) * 50))
 }
 
-/* ── Banco masivo de acciones para Simón Dice (>120) ─────────────────────── */
+/* ── Banco masivo de acciones para Simón Dice (>170) ─────────────────────── */
 const BASE_SIMON_ACTIONS: SimonButtonDef[] = [
   { id: 'aplaude', label: 'aplaude', emoji: '👏', hex: '#22E6C5' },
   { id: 'salta', label: 'salta', emoji: '🤸', hex: '#FF6B4A' },
@@ -258,6 +356,61 @@ const BASE_SIMON_ACTIONS: SimonButtonDef[] = [
   { id: 'celebracion', label: 'celebración corta', emoji: '🥳', hex: '#4A9EFF' },
 ]
 
+/** Bloque adicional (nuevo) para ampliar mucho más el banco de acciones. */
+const EXTRA_SIMON_ACTIONS: SimonButtonDef[] = [
+  { id: 'z-remo', label: 'imita remar', emoji: '🚣', hex: '#22E6C5' },
+  { id: 'z-nada', label: 'imita nadar', emoji: '🏊', hex: '#FF6B4A' },
+  { id: 'z-boxea', label: 'boxea al aire', emoji: '🥊', hex: '#8B7CF6' },
+  { id: 'z-patina', label: 'imita patinar', emoji: '⛸️', hex: '#F5A623' },
+  { id: 'z-esquia', label: 'imita esquiar', emoji: '⛷️', hex: '#4A9EFF' },
+  { id: 'z-surfea', label: 'imita surfear', emoji: '🏄', hex: '#FF6BCB' },
+  { id: 'z-escala', label: 'imita escalar', emoji: '🧗', hex: '#A3E635' },
+  { id: 'z-anda-bici', label: 'pedalea en el aire', emoji: '🚴', hex: '#FB923C' },
+  { id: 'z-lanza-beso', label: 'lanza un beso', emoji: '😘', hex: '#818CF8' },
+  { id: 'z-abanica', label: 'abanícate', emoji: '🪭', hex: '#2DD4BF' },
+  { id: 'z-toca-pecho', label: 'tócate el pecho', emoji: '🫱', hex: '#38BDF8' },
+  { id: 'z-forma-o', label: 'forma una O con la boca', emoji: '😯', hex: '#FB7185' },
+  { id: 'z-cara-guiño-doble', label: 'guiña los dos ojos', emoji: '😆', hex: '#22E6C5' },
+  { id: 'z-cara-mono', label: 'pon cara de mono', emoji: '🐵', hex: '#FF6B4A' },
+  { id: 'z-cara-zombie', label: 'camina como zombi', emoji: '🧟', hex: '#8B7CF6' },
+  { id: 'z-cara-fantasma', label: 'imita un fantasma', emoji: '👻', hex: '#F5A623' },
+  { id: 'z-imita-mono', label: 'imita un mono', emoji: '🙉', hex: '#4A9EFF' },
+  { id: 'z-imita-vaca', label: 'imita una vaca', emoji: '🐮', hex: '#FF6BCB' },
+  { id: 'z-imita-leon', label: 'imita un león', emoji: '🦁', hex: '#A3E635' },
+  { id: 'z-imita-serpiente', label: 'imita una serpiente', emoji: '🐍', hex: '#FB923C' },
+  { id: 'z-imita-rana', label: 'imita una rana', emoji: '🐸', hex: '#818CF8' },
+  { id: 'z-imita-mariposa', label: 'imita una mariposa', emoji: '🦋', hex: '#2DD4BF' },
+  { id: 'z-imita-abeja', label: 'imita una abeja', emoji: '🐝', hex: '#38BDF8' },
+  { id: 'z-imita-conejo', label: 'imita un conejo', emoji: '🐰', hex: '#FB7185' },
+  { id: 'z-imita-elefante', label: 'imita un elefante', emoji: '🐘', hex: '#22E6C5' },
+  { id: 'z-imita-cangrejo', label: 'camina como cangrejo', emoji: '🦀', hex: '#FF6B4A' },
+  { id: 'z-forma-estrella', label: 'forma una estrella con el cuerpo', emoji: '⭐', hex: '#8B7CF6' },
+  { id: 'z-forma-triangulo', label: 'forma un triángulo con las manos', emoji: '🔺', hex: '#F5A623' },
+  { id: 'z-forma-cuadrado', label: 'forma un cuadrado con las manos', emoji: '⬜', hex: '#4A9EFF' },
+  { id: 'z-forma-circulo-manos', label: 'forma un círculo con las manos', emoji: '⭕', hex: '#FF6BCB' },
+  { id: 'z-dedo-en-labios', label: 'dedo en los labios', emoji: '🤫', hex: '#A3E635' },
+  { id: 'z-manos-orejas', label: 'manos en las orejas', emoji: '🙉', hex: '#FB923C' },
+  { id: 'z-cruza-dedos', label: 'cruza los dedos', emoji: '🤞', hex: '#818CF8' },
+  { id: 'z-hace-cuernos', label: 'haz cuernitos con la mano', emoji: '🤘', hex: '#2DD4BF' },
+  { id: 'z-toca-suelo', label: 'toca el suelo', emoji: '🖐️', hex: '#38BDF8' },
+  { id: 'z-toca-techo', label: 'estira hacia el techo', emoji: '🙌', hex: '#FB7185' },
+  { id: 'z-abre-brazos', label: 'abre los brazos como avión', emoji: '🛩️', hex: '#22E6C5' },
+  { id: 'z-esconde-manos', label: 'esconde las manos', emoji: '🙈', hex: '#FF6B4A' },
+  { id: 'z-mano-en-cadera', label: 'una mano en la cadera', emoji: '🧍‍♀️', hex: '#8B7CF6' },
+  { id: 'z-simula-lluvia', label: 'simula que llueve', emoji: '🌧️', hex: '#F5A623' },
+  { id: 'z-simula-sol', label: 'simula tomar sol', emoji: '☀️', hex: '#4A9EFF' },
+  { id: 'z-simula-frio', label: 'tiembla de frío (finge)', emoji: '🥶', hex: '#FF6BCB' },
+  { id: 'z-simula-calor', label: 'abanícate por calor', emoji: '🥵', hex: '#A3E635' },
+  { id: 'z-simula-dormir', label: 'finge que duermes', emoji: '😴', hex: '#FB923C' },
+  { id: 'z-simula-despertar', label: 'finge que despiertas', emoji: '🥱', hex: '#818CF8' },
+  { id: 'z-simula-comer', label: 'finge que comes', emoji: '🍽️', hex: '#2DD4BF' },
+  { id: 'z-simula-beber', label: 'finge que bebes', emoji: '🥤', hex: '#38BDF8' },
+  { id: 'z-simula-telefono', label: 'contesta un teléfono imaginario', emoji: '📱', hex: '#FB7185' },
+  { id: 'z-simula-foto', label: 'tómate una foto imaginaria', emoji: '📸', hex: '#22E6C5' },
+  { id: 'z-aplaude-cabeza', label: 'aplaude sobre tu cabeza', emoji: '👏', hex: '#FF6B4A' },
+  { id: 'z-toca-espalda', label: 'tócate la espalda baja', emoji: '🫲', hex: '#8B7CF6' },
+]
+
 const ACTION_EMOJI_CHOICES = [
   '🙌', '🤸', '🙇', '👏', '🔄', '🪑', '👃', '🙈', '😄', '🤫',
   '🙋', '🧊', '👀', '🖐️', '🦶', '🤙', '✋', '👋', '🤝', '🎤',
@@ -308,7 +461,7 @@ export function HabilidadesGame() {
                 fontSize: '0.92rem',
               }}
             >
-              Reflejos, puntería, atención y memoria de trabajo bajo presión.
+              Reflejos, puntería, atención, color y memoria de trabajo bajo presión.
             </p>
           </>
         )}
@@ -327,6 +480,7 @@ export function HabilidadesGame() {
         {view === 'secuencia' && <SequenceGame key="secuencia" />}
         {view === 'numero-fugaz' && <FlashNumberGame key="numero-fugaz" />}
         {view === 'memoria-posicion' && <PositionMemoryGame key="memoria-posicion" />}
+        {view === 'multitono' && <MultitonoGame key="multitono" />}
       </AnimatePresence>
     </div>
   )
@@ -343,13 +497,16 @@ function MenuHabilidades({
   progressLevel: number
 }) {
   const reactionHist = loadJSON<number[]>(KEYS.reaction, [])
+  const reactionReleaseHist = loadJSON<number[]>(KEYS.reactionRelease, [])
   const aimHist = loadJSON<AimSessionSummary[]>(KEYS.aim, [])
   const simonLevel = loadJSON<number>(KEYS.simonLevel, 1)
   const sequenceHist = loadJSON<SequenceResult[]>(KEYS.sequenceHistory, [])
   const flashHist = loadJSON<FlashResult[]>(KEYS.flashHistory, [])
   const positionHist = loadJSON<PositionResult[]>(KEYS.positionHistory, [])
+  const multitonoLevel = loadJSON<number>(KEYS.multitonoLevel, 1)
 
-  const bestReaction = reactionHist.length ? Math.min(...reactionHist) : null
+  const allReaction = [...reactionHist, ...reactionReleaseHist]
+  const bestReaction = allReaction.length ? Math.min(...allReaction) : null
   const bestAim = aimHist.length
     ? Math.max(...aimHist.map((s) => s.avgAccuracyPct))
     : null
@@ -377,7 +534,7 @@ function MenuHabilidades({
       id: 'reaccion',
       title: 'Tiempo de reacción',
       emoji: '🟢',
-      desc: 'Pulsa apenas la pantalla cambie. Mide tu velocidad en milisegundos.',
+      desc: 'Pulsa apenas la pantalla cambie. Elige entre modo "al hacer clic" o "al soltar clic".',
       stat:
         bestReaction !== null
           ? `Mejor: ${formatReactionTime(bestReaction)}`
@@ -387,21 +544,21 @@ function MenuHabilidades({
       id: 'punteria',
       title: 'Puntería',
       emoji: '🎯',
-      desc: 'Golpea el blanco lo más cerca del centro. Niveles, contrarreloj y teclado opcional.',
+      desc: 'Golpea el blanco lo más cerca del centro. Desde el nivel 15, cuidado con los señuelos falsos.',
       stat: bestAim !== null ? `Mejor precisión: ${bestAim}%` : null,
     },
     {
       id: 'simon',
       title: 'Simón Dice',
       emoji: '🧠',
-      desc: 'Lee la orden y pulsa el botón correcto antes de que se acabe el tiempo. +120 acciones.',
+      desc: 'Lee la orden y pulsa el botón correcto antes de que se acabe el tiempo. +170 acciones.',
       stat: `Nivel ${simonLevel}`,
     },
     {
       id: 'secuencia',
       title: 'Secuencia numérica',
       emoji: '🔢',
-      desc: 'Encuentra los números en orden ascendente. Cuadrícula adaptable y tamaño ajustable.',
+      desc: 'Encuentra los números en orden ascendente. Ahora con rachas, rangos y estadísticas completas.',
       stat:
         bestSequence !== null
           ? `Mejor: ${formatReactionTime(bestSequence)}`
@@ -420,6 +577,13 @@ function MenuHabilidades({
       emoji: '📍',
       desc: 'Memoriza qué celdas se iluminan y reprodúcelas en el mismo orden o conjunto.',
       stat: bestPosition !== null ? `Nivel máximo: ${bestPosition}` : null,
+    },
+    {
+      id: 'multitono',
+      title: 'Multitono',
+      emoji: '🎨',
+      desc: 'Reproduce el color exacto con RGB, porcentajes, rueda cromática o barras. Niveles infinitos con figuras 2D/3D.',
+      stat: `Nivel ${multitonoLevel}`,
     },
   ]
 
@@ -503,18 +667,28 @@ function MenuHabilidades({
   )
 }
 
-/* ── Tiempo de reacción ──────────────────────────────────────────────────── */
+/* ── Tiempo de reacción (con switch: al hacer clic / al soltar clic) ─────── */
+type ReactionMode = 'click' | 'release'
 type ReactionState = 'idle' | 'esperando' | 'listo' | 'muy-pronto' | 'resultado'
 
 function ReactionGame() {
+  const [mode, setMode] = useState<ReactionMode>(() =>
+    loadJSON<ReactionMode>(KEYS.reactionMode, 'click')
+  )
   const [state, setState] = useState<ReactionState>('idle')
   const [round, setRound] = useState(1)
   const [lastTime, setLastTime] = useState<number | null>(null)
-  const [history, setHistory] = useState<number[]>(() =>
+  const [historyClick, setHistoryClick] = useState<number[]>(() =>
     loadJSON(KEYS.reaction, [])
+  )
+  const [historyRelease, setHistoryRelease] = useState<number[]>(() =>
+    loadJSON(KEYS.reactionRelease, [])
   )
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const readyAtRef = useRef(0)
+  const holdingRef = useRef(false)
+
+  const history = mode === 'click' ? historyClick : historyRelease
 
   useEffect(
     () => () => {
@@ -523,36 +697,53 @@ function ReactionGame() {
     []
   )
 
-  const startRound = useCallback(() => {
+  const pushHistory = useCallback(
+    (elapsed: number) => {
+      if (mode === 'click') {
+        setHistoryClick((prev) => {
+          const next = [elapsed, ...prev]
+          saveJSON(KEYS.reaction, next)
+          return next
+        })
+      } else {
+        setHistoryRelease((prev) => {
+          const next = [elapsed, ...prev]
+          saveJSON(KEYS.reactionRelease, next)
+          return next
+        })
+      }
+    },
+    [mode]
+  )
+
+  const changeMode = (m: ReactionMode) => {
+    if (m === mode) return
+    soundClick()
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    holdingRef.current = false
+    setMode(m)
+    saveJSON(KEYS.reactionMode, m)
+    setState('idle')
+    setLastTime(null)
+  }
+
+  const armRound = useCallback(() => {
     soundStart()
-    setState('esperando')
     const r = generateReactionRound(round, Date.now())
+    setState('esperando')
     timeoutRef.current = setTimeout(() => {
       readyAtRef.current = performance.now()
       setState('listo')
     }, r.delayMs)
   }, [round])
 
-  const handleTap = useCallback(() => {
-    if (state === 'idle' || state === 'resultado' || state === 'muy-pronto') {
-      startRound()
-      return
-    }
-    if (state === 'esperando') {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current)
-      soundFail()
-      setState('muy-pronto')
-      return
-    }
-    if (state === 'listo') {
-      const elapsed = performance.now() - readyAtRef.current
+  const registerSuccess = useCallback(
+    (elapsed: number) => {
       soundMatch()
       setLastTime(elapsed)
       setState('resultado')
       setRound((r) => r + 1)
-      const next = [elapsed, ...history]
-      setHistory(next)
-      saveJSON(KEYS.reaction, next)
+      pushHistory(elapsed)
       try {
         recordLevelResult({
           categoryId: CAT,
@@ -564,8 +755,52 @@ function ReactionGame() {
       } catch {
         /* */
       }
+    },
+    [pushHistory]
+  )
+
+  const failTooSoon = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    soundFail()
+    setState('muy-pronto')
+  }, [])
+
+  /* Modo "Al hacer clic": un solo toque arranca, otro toque marca el tiempo */
+  const handleClickMode = () => {
+    if (state === 'idle' || state === 'resultado' || state === 'muy-pronto') {
+      armRound()
+      return
     }
-  }, [state, startRound, history])
+    if (state === 'esperando') {
+      failTooSoon()
+      return
+    }
+    if (state === 'listo') {
+      const elapsed = performance.now() - readyAtRef.current
+      registerSuccess(elapsed)
+    }
+  }
+
+  /* Modo "Al soltar clic": mantén presionado, suelta cuando cambie de color */
+  const handlePointerDownRelease = () => {
+    if (state === 'idle' || state === 'resultado' || state === 'muy-pronto') {
+      holdingRef.current = true
+      soundHold()
+      armRound()
+    }
+  }
+  const handlePointerUpRelease = () => {
+    if (!holdingRef.current) return
+    holdingRef.current = false
+    if (state === 'esperando') {
+      failTooSoon()
+      return
+    }
+    if (state === 'listo') {
+      const elapsed = performance.now() - readyAtRef.current
+      registerSuccess(elapsed)
+    }
+  }
 
   const rating = lastTime !== null ? rateReactionTime(lastTime) : null
   const best = history.length ? Math.min(...history) : null
@@ -587,13 +822,23 @@ function ReactionGame() {
     'muy-pronto': 'var(--gco-ink)',
     resultado: 'var(--gco-ink)',
   }
-  const message: Record<ReactionState, string> = {
-    idle: 'Toca para empezar',
-    esperando: 'Espera a que cambie de color',
-    listo: '¡AHORA! Toca ya',
-    'muy-pronto': 'Muy pronto · Toca para reintentar',
-    resultado: 'Toca para otra ronda',
-  }
+
+  const message: Record<ReactionState, string> =
+    mode === 'click'
+      ? {
+          idle: 'Toca para empezar',
+          esperando: 'Espera a que cambie de color',
+          listo: '¡AHORA! Toca ya',
+          'muy-pronto': 'Muy pronto · Toca para reintentar',
+          resultado: 'Toca para otra ronda',
+        }
+      : {
+          idle: 'Mantén presionado para empezar',
+          esperando: 'Sigue presionando… espera el cambio',
+          listo: '¡AHORA! Suelta ya',
+          'muy-pronto': 'Soltaste antes de tiempo · Mantén presionado para reintentar',
+          resultado: 'Mantén presionado para otra ronda',
+        }
 
   return (
     <motion.div
@@ -606,14 +851,57 @@ function ReactionGame() {
           <h2 style={{ fontSize: '1.15rem', marginBottom: '0.25rem' }}>
             🟢 Tiempo de reacción
           </h2>
-          <p style={{ fontSize: '0.82rem', color: 'var(--gco-ink-muted)' }}>
-            Ronda {round} · Toca apenas cambie el color.
+          <p style={{ fontSize: '0.82rem', color: 'var(--gco-ink-muted)', marginBottom: '0.9rem' }}>
+            Ronda {round} · {mode === 'click' ? 'Toca apenas cambie el color.' : 'Mantén presionado y suelta apenas cambie.'}
           </p>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.75rem',
+              padding: '0.7rem 0.85rem',
+              borderRadius: 'var(--gco-radius-sm)',
+              background: 'var(--gco-fill-quaternary)',
+              border: '1px solid var(--gco-glass-border)',
+            }}
+          >
+            <span
+              style={{
+                fontSize: '0.8rem',
+                fontWeight: mode === 'click' ? 700 : 500,
+                color: mode === 'click' ? 'var(--gco-primary)' : 'var(--gco-ink-muted)',
+              }}
+            >
+              Al hacer clic
+            </span>
+            <label className="gco-switch">
+              <input
+                type="checkbox"
+                checked={mode === 'release'}
+                onChange={(e) => changeMode(e.target.checked ? 'release' : 'click')}
+                aria-label="Cambiar modo de tiempo de reacción"
+              />
+              <span />
+            </label>
+            <span
+              style={{
+                fontSize: '0.8rem',
+                fontWeight: mode === 'release' ? 700 : 500,
+                color: mode === 'release' ? 'var(--gco-primary)' : 'var(--gco-ink-muted)',
+              }}
+            >
+              Al soltar clic
+            </span>
+          </div>
         </div>
       </div>
       <button
         type="button"
-        onClick={handleTap}
+        onClick={mode === 'click' ? handleClickMode : undefined}
+        onPointerDown={mode === 'release' ? handlePointerDownRelease : undefined}
+        onPointerUp={mode === 'release' ? handlePointerUpRelease : undefined}
+        onPointerLeave={mode === 'release' ? handlePointerUpRelease : undefined}
         style={{
           width: '100%',
           minHeight: '46vh',
@@ -631,6 +919,7 @@ function ReactionGame() {
           boxShadow: 'var(--gco-shadow)',
           font: 'inherit',
           WebkitTapHighlightColor: 'transparent',
+          touchAction: 'manipulation',
         }}
       >
         {state === 'resultado' && lastTime !== null ? (
@@ -662,7 +951,7 @@ function ReactionGame() {
         ) : (
           <span
             style={{
-              fontSize: 'clamp(1.1rem, 4vw, 1.4rem)',
+              fontSize: 'clamp(1.05rem, 4vw, 1.4rem)',
               fontWeight: 600,
               textAlign: 'center',
               padding: '0 1rem',
@@ -687,7 +976,7 @@ function ReactionGame() {
               <span
                 style={{ fontSize: '0.85rem', color: 'var(--gco-ink-muted)' }}
               >
-                Mejor:{' '}
+                Mejor ({mode === 'click' ? 'clic' : 'soltar'}):{' '}
                 <span className="mono" style={{ color: 'var(--gco-primary)' }}>
                   {best !== null ? formatReactionTime(best) : '—'}
                 </span>
@@ -726,23 +1015,26 @@ function ReactionGame() {
   )
 }
 
-/* ── Puntería (con niveles, contrarreloj y teclado Z/X) ──────────────────── */
+/* ── Puntería (con niveles, contrarreloj, teclado Z/X y señuelos falsos) ─── */
 function AimGame() {
   const [level, setLevel] = useState(1)
   const config = useMemo(() => getAimSessionConfig(level), [level])
-  // Más blancos según nivel
   const totalTargets = Math.min(8 + level * 2, 28)
-  const sessionTimeLimit = Math.max(18, 45 - level) // segundos, se endurece
+  const sessionTimeLimit = Math.max(18, 45 - level)
+  const obstaclesActive = level > 14
 
   const [phase, setPhase] = useState<'listo' | 'jugando' | 'resumen'>('listo')
   const [index, setIndex] = useState(0)
   const [target, setTarget] = useState<ReturnType<typeof generateAimTarget> | null>(null)
+  const [obstacles, setObstacles] = useState<ReturnType<typeof generateAimTarget>[]>([])
   const [results, setResults] = useState<AimHitResult[]>([])
   const [lastFeedback, setLastFeedback] = useState<{
     accuracy: number
     hit: boolean
+    fake: boolean
   } | null>(null)
   const [timeLeft, setTimeLeft] = useState(sessionTimeLimit)
+  const [fakesAvoided, setFakesAvoided] = useState(0)
   const spawnAtRef = useRef(0)
   const startedAtRef = useRef(0)
   const areaRef = useRef<HTMLDivElement | null>(null)
@@ -752,7 +1044,6 @@ function AimGame() {
   )
   const [summary, setSummary] = useState<AimSessionSummary | null>(null)
 
-  // Teclas configurables (por defecto z y x)
   const [keyPrimary, setKeyPrimary] = useState(() =>
     loadJSON(KEYS.aimKeyPrimary, 'z')
   )
@@ -769,8 +1060,39 @@ function AimGame() {
       const t = generateAimTarget(i, level, config, Date.now() + i)
       setTarget(t)
       spawnAtRef.current = performance.now()
+
+      if (obstaclesActive) {
+        const fakeCount = Math.min(1 + Math.floor((level - 14) / 6), 3)
+        const fakes: typeof t[] = []
+        for (let k = 0; k < fakeCount; k++) {
+          let candidate = generateAimTarget(
+            i * 137 + k + 1,
+            level,
+            config,
+            Date.now() + i * 97 + k * 13 + 7
+          )
+          let attempt = 0
+          while (
+            attempt < 6 &&
+            Math.hypot(candidate.x - t.x, candidate.y - t.y) <
+              (t.radius + candidate.radius) / 4 + 9
+          ) {
+            candidate = generateAimTarget(
+              i * 137 + k + 1 + attempt,
+              level,
+              config,
+              Date.now() + i * 97 + k * 13 + 7 + attempt * 31
+            )
+            attempt++
+          }
+          fakes.push({ ...candidate, id: `fake-${candidate.id}-${k}` })
+        }
+        setObstacles(fakes)
+      } else {
+        setObstacles([])
+      }
     },
-    [config, level]
+    [config, level, obstaclesActive]
   )
 
   const finishSession = useCallback(
@@ -782,8 +1104,10 @@ function AimGame() {
       setHistory(nextHist)
       saveJSON(KEYS.aim, nextHist)
       setTarget(null)
+      setObstacles([])
       setPhase('resumen')
       if (!timedOut && s.hits > s.misses) {
+        soundLevelUp()
         setLevel((l) => l + 1)
       }
       try {
@@ -807,22 +1131,35 @@ function AimGame() {
       const rect = areaRef.current.getBoundingClientRect()
       const clickX = ((clientX - rect.left) / rect.width) * 100
       const clickY = ((clientY - rect.top) / rect.height) * 100
+
+      const fakeHit = obstacles.find((o) => {
+        const fdx = clickX - o.x
+        const fdy = clickY - o.y
+        const fdist = Math.sqrt(fdx * fdx + fdy * fdy) * (rect.width / 100)
+        return fdist <= o.radius * 1.05
+      })
+
       const dxPct = clickX - target.x
       const dyPct = clickY - target.y
       const distPx = Math.sqrt(dxPct * dxPct + dyPct * dyPct) * (rect.width / 100)
-      const hit = distPx <= target.radius * 1.15
+      const hit = !fakeHit && distPx <= target.radius * 1.15
       const accuracy = hit ? scoreAimHit(distPx, target.radius) : 0
       const reactionMs = performance.now() - spawnAtRef.current
+
       if (hit) soundMatch()
+      else if (fakeHit) soundFakeTarget()
       else soundFail()
+
+      if (!fakeHit && obstaclesActive) setFakesAvoided((f) => f + 1)
+
       const result: AimHitResult = {
         targetId: target.id,
         hit,
-        distanceFromCenterPx: distPx,
+        distanceFromCenterPx: fakeHit ? target.radius * 3 : distPx,
         accuracyPct: accuracy,
         reactionMs,
       }
-      setLastFeedback({ accuracy, hit })
+      setLastFeedback({ accuracy, hit, fake: !!fakeHit })
       const nextResults = [...results, result]
       setResults(nextResults)
       const nextIndex = index + 1
@@ -833,7 +1170,7 @@ function AimGame() {
         spawnNext(nextIndex)
       }
     },
-    [phase, target, results, index, totalTargets, spawnNext, finishSession]
+    [phase, target, obstacles, obstaclesActive, results, index, totalTargets, spawnNext, finishSession]
   )
 
   const start = () => {
@@ -842,18 +1179,17 @@ function AimGame() {
     setSummary(null)
     setLastFeedback(null)
     setIndex(0)
+    setFakesAvoided(0)
     setTimeLeft(sessionTimeLimit)
     startedAtRef.current = performance.now()
     setPhase('jugando')
     spawnNext(0)
   }
 
-  // Ratón / touch
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     registerHit(e.clientX, e.clientY)
   }
 
-  // Seguimiento del puntero para el teclado
   const handlePointerMove = (e: React.MouseEvent<HTMLDivElement>) => {
     pointerRef.current = {
       x: e.clientX,
@@ -861,14 +1197,12 @@ function AimGame() {
     }
   }
 
-  // Teclado (Z / X o teclas asignadas)
   useEffect(() => {
     if (phase !== 'jugando') return
     const onKey = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase()
       if (k === keyPrimary.toLowerCase() || k === keySecondary.toLowerCase()) {
         e.preventDefault()
-        // Usa la última posición conocida del puntero
         registerHit(pointerRef.current.x, pointerRef.current.y)
       }
     }
@@ -876,7 +1210,6 @@ function AimGame() {
     return () => window.removeEventListener('keydown', onKey)
   }, [phase, keyPrimary, keySecondary, registerHit])
 
-  // Contrarreloj de sesión
   useEffect(() => {
     if (phase !== 'jugando') return
     const id = window.setInterval(() => {
@@ -887,13 +1220,13 @@ function AimGame() {
           soundFail()
           return 0
         }
+        if (t <= 6) soundCountdownTick()
         return t - 1
       })
     }, 1000)
     return () => clearInterval(id)
   }, [phase]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Asignación de teclas
   useEffect(() => {
     if (!assigningKey) return
     const onKey = (e: KeyboardEvent) => {
@@ -943,13 +1276,26 @@ function AimGame() {
           </div>
           <p style={{ fontSize: '0.82rem', color: 'var(--gco-ink-muted)' }}>
             {phase === 'jugando'
-              ? `Blanco ${index + 1} de ${totalTargets} · ⏱ ${timeLeft}s`
+              ? `Blanco ${index + 1} de ${totalTargets} · ⏱ ${timeLeft}s${
+                  obstaclesActive ? ' · ⚠️ hay señuelos falsos' : ''
+                }`
               : 'Golpea el centro del blanco. En PC puedes usar teclas además del ratón.'}
           </p>
+          {!obstaclesActive && level >= 10 && phase !== 'jugando' && (
+            <p
+              className="mono"
+              style={{
+                fontSize: '0.72rem',
+                color: 'var(--gco-secondary)',
+                marginTop: '0.5rem',
+              }}
+            >
+              ⚠️ Desde el nivel 15 aparecerán señuelos falsos: si les das, cuenta como fallo.
+            </p>
+          )}
         </div>
       </div>
 
-      {/* Controles de teclado (solo escritorio) */}
       {isDesktop && phase !== 'jugando' && (
         <div className="glass-card" style={{ marginBottom: '1rem' }}>
           <div style={{ padding: '0.95rem 1.15rem' }}>
@@ -1054,6 +1400,9 @@ function AimGame() {
                     label="Tiempo total"
                     value={formatReactionTime(display.totalTimeMs)}
                   />
+                  {obstaclesActive && (
+                    <Stat label="Señuelos evitados" value={`${fakesAvoided}`} />
+                  )}
                 </div>
               </>
             )}
@@ -1088,7 +1437,6 @@ function AimGame() {
             touchAction: 'manipulation',
           }}
         >
-          {/* Barra de tiempo */}
           <div
             style={{
               position: 'absolute',
@@ -1110,6 +1458,38 @@ function AimGame() {
               }}
             />
           </div>
+
+          {obstacles.map((o) => (
+            <motion.div
+              key={o.id}
+              initial={{ scale: 0.4, opacity: 0 }}
+              animate={{ scale: [1, 1.06, 1], opacity: 1 }}
+              transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
+              style={{
+                position: 'absolute',
+                left: `${o.x}%`,
+                top: `${o.y}%`,
+                width: o.radius * 2,
+                height: o.radius * 2,
+                transform: 'translate(-50%, -50%)',
+                borderRadius: '50%',
+                background:
+                  'radial-gradient(circle, #FF6B4A 0%, #FB923C 45%, #F5A623 72%, #8B2E1E 100%)',
+                boxShadow:
+                  '0 0 0 3px rgba(255,107,74,0.22), var(--gco-shadow)',
+                pointerEvents: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: Math.max(10, o.radius * 0.5),
+                color: 'rgba(0,0,0,0.35)',
+                fontWeight: 900,
+              }}
+            >
+              ✕
+            </motion.div>
+          ))}
+
           {target && (
             <div
               key={target.id}
@@ -1138,15 +1518,19 @@ function AimGame() {
             marginTop: '0.85rem',
             textAlign: 'center',
             fontSize: '0.85rem',
-            color: lastFeedback.hit
-              ? aimAccuracyColor(lastFeedback.accuracy)
-              : 'var(--gco-secondary)',
+            color: lastFeedback.fake
+              ? 'var(--gco-secondary)'
+              : lastFeedback.hit
+                ? aimAccuracyColor(lastFeedback.accuracy)
+                : 'var(--gco-secondary)',
           }}
         >
           Último click:{' '}
-          {lastFeedback.hit
-            ? `${lastFeedback.accuracy}% de precisión`
-            : 'fallo'}
+          {lastFeedback.fake
+            ? '¡señuelo falso! cuenta como fallo'
+            : lastFeedback.hit
+              ? `${lastFeedback.accuracy}% de precisión`
+              : 'fallo'}
         </p>
       )}
     </motion.div>
@@ -1182,7 +1566,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   )
 }
 
-/* ── Simón Dice (con menú previo + banco grande + creativo completo) ─────── */
+/* ── Simón Dice (con menú previo + banco ampliado + creativo completo) ───── */
 type SimonPhase = 'lectura' | 'esperando' | 'acierto' | 'fallo' | 'tiempo'
 type SimonScreen = 'menu' | 'jugar' | 'creativo'
 
@@ -1199,6 +1583,7 @@ function SimonGame() {
   const [msLeft, setMsLeft] = useState(0)
   const [lastElapsedMs, setLastElapsedMs] = useState<number | null>(null)
   const [showLevelPicker, setShowLevelPicker] = useState(false)
+  const [streak, setStreak] = useState(0)
 
   const [directLevel, setDirectLevel] = useState<CreativeSimonLevel | null>(null)
   const [directRoundIndex, setDirectRoundIndex] = useState(0)
@@ -1227,7 +1612,7 @@ function SimonGame() {
   })
 
   const pool = useMemo(
-    () => [...BASE_SIMON_ACTIONS, ...customActions],
+    () => [...BASE_SIMON_ACTIONS, ...EXTRA_SIMON_ACTIONS, ...customActions],
     [customActions]
   )
 
@@ -1238,7 +1623,6 @@ function SimonGame() {
     (lvl: number) => {
       setDirectLevel(null)
       setDirectRoundIndex(0)
-      // A partir del nivel 8, mezclar distractores similares (misma categoría visual)
       let next: SimonLevel
       if (customLevels.length > 0 && lvl % 5 === 0) {
         const cl = customLevels[Math.floor(Math.random() * customLevels.length)]
@@ -1246,8 +1630,6 @@ function SimonGame() {
         next = buildSimonLevelFromRound(round, lvl)
       } else {
         next = generateSimonLevel(lvl, pool)
-        // Inteligencia de dificultad: si el nivel es alto, priorizar opciones
-        // con etiquetas parecidas a la correcta para forzar lectura atenta
         if (lvl >= 8 && next.options.length >= 4) {
           const correct = next.options.find((o) => o.id === next.correctId)
           if (correct) {
@@ -1299,6 +1681,7 @@ function SimonGame() {
     soundStart()
     const target = lvl ?? unlockedLevel
     setPlayingLevel(target)
+    setStreak(0)
     setScreen('jugar')
     loadLevel(target)
   }
@@ -1322,9 +1705,11 @@ function SimonGame() {
         setMsLeft(0)
         setPhase('tiempo')
         soundFail()
+        setStreak(0)
         if (tickRef.current) clearInterval(tickRef.current)
       } else {
         setMsLeft(remaining)
+        if (remaining < 800) soundCountdownTick()
       }
     }, 40)
     return () => {
@@ -1339,7 +1724,10 @@ function SimonGame() {
     setLastElapsedMs(elapsed)
 
     if (id === current.correctId) {
-      soundSuccess()
+      const nextStreak = streak + 1
+      setStreak(nextStreak)
+      if (nextStreak > 0 && nextStreak % 5 === 0) soundLevelUp()
+      else soundSuccess()
       setPhase('acierto')
 
       if (directLevel) {
@@ -1368,13 +1756,13 @@ function SimonGame() {
       window.setTimeout(() => loadLevel(nextLevel), 900)
     } else {
       soundFail()
+      setStreak(0)
       setPhase('fallo')
     }
   }
 
   const retry = () => {
     soundClick()
-    // Al fallar: nueva acción/texto (no la misma)
     if (directLevel) playCustomLevel(directLevel, directRoundIndex)
     else loadLevel(playingLevel)
   }
@@ -1406,7 +1794,6 @@ function SimonGame() {
     [unlockedLevel]
   )
 
-  // ——— Pantalla de menú de Simón ———
   if (screen === 'menu') {
     return (
       <motion.div
@@ -1428,7 +1815,7 @@ function SimonGame() {
               }}
             >
               Lee la orden y pulsa el botón correcto antes de que se acabe el
-              tiempo. Hay más de 120 acciones distintas y puedes crear las tuyas.
+              tiempo. Hay más de 170 acciones distintas y puedes crear las tuyas.
             </p>
             <div
               style={{
@@ -1517,12 +1904,28 @@ function SimonGame() {
             }}
           >
             <h2 style={{ fontSize: '1.15rem', margin: 0 }}>🧠 Simón Dice</h2>
-            <span
-              className="mono"
-              style={{ fontSize: '0.85rem', color: 'var(--gco-primary)' }}
-            >
-              {directLevel ? `${directLevel.name} · R${directRoundIndex + 1}` : `Nivel ${playingLevel}`}
-            </span>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              {streak > 1 && (
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: '0.78rem',
+                    color: 'var(--gco-secondary)',
+                    background: 'var(--gco-secondary-dim)',
+                    padding: '0.2rem 0.55rem',
+                    borderRadius: 999,
+                  }}
+                >
+                  🔥 x{streak}
+                </span>
+              )}
+              <span
+                className="mono"
+                style={{ fontSize: '0.85rem', color: 'var(--gco-primary)' }}
+              >
+                {directLevel ? `${directLevel.name} · R${directRoundIndex + 1}` : `Nivel ${playingLevel}`}
+              </span>
+            </div>
           </div>
           <div className="segmented" style={{ marginBottom: '0.6rem' }}>
             <button
@@ -1874,7 +2277,6 @@ function SimonCreativeEditor({
   const [customEmojiMode, setCustomEmojiMode] = useState(false)
   const [customEmojiInput, setCustomEmojiInput] = useState('')
 
-  // Toggle: click selecciona, click otra vez deselecciona
   const toggleButton = (btn: SimonButtonDef) => {
     soundClick()
     const exists = selected.some((b) => b.id === btn.id)
@@ -1884,7 +2286,6 @@ function SimonCreativeEditor({
       if (correctId === btn.id) setCorrectId(next[0]?.id ?? '')
     } else {
       if (selected.length >= 4) {
-        // Reemplaza la última si ya hay 4
         const next = [...selected.slice(0, 3), btn]
         setSelected(next)
         return
@@ -2368,7 +2769,6 @@ function SimonCreativeEditor({
                 onChange={(e) => {
                   const v = e.target.value
                   setCustomEmojiInput(v)
-                  // Toma el último emoji/carácter introducido
                   if (v.trim()) {
                     const chars = Array.from(v.trim())
                     setNewEmoji(chars[chars.length - 1])
@@ -2548,7 +2948,7 @@ function SimonCreativeEditor({
   )
 }
 
-/* ── Secuencia numérica (responsive + control de tamaño) ─────────────────── */
+/* ── Secuencia numérica (rediseño profesional: rachas, rango, estadísticas) */
 interface SequenceResult {
   level: number
   size: number
@@ -2578,6 +2978,19 @@ function sequenceStars(timeMs: number, mistakes: number, size: number): number {
   if (penalized <= par * 1.15) return 2
   return 1
 }
+function sequenceRank(stars: number, mistakes: number): { letter: string; color: string } {
+  if (stars === 3 && mistakes === 0) return { letter: 'S', color: '#F5A623' }
+  if (stars === 3) return { letter: 'A', color: 'var(--gco-primary)' }
+  if (stars === 2) return { letter: 'B', color: 'var(--gco-accent)' }
+  return { letter: 'C', color: 'var(--gco-ink-muted)' }
+}
+function sequenceDifficulty(level: number): { label: string; color: string } {
+  if (level <= 3) return { label: 'Iniciado', color: 'var(--gco-primary)' }
+  if (level <= 8) return { label: 'Intermedio', color: 'var(--gco-accent)' }
+  if (level <= 15) return { label: 'Avanzado', color: 'var(--gco-secondary)' }
+  if (level <= 25) return { label: 'Experto', color: '#F5A623' }
+  return { label: 'Maestro', color: '#FF6BCB' }
+}
 
 function SequenceGame() {
   const [level, setLevel] = useState<number>(() =>
@@ -2593,10 +3006,13 @@ function SequenceGame() {
   const [history, setHistory] = useState<SequenceResult[]>(() =>
     loadJSON(KEYS.sequenceHistory, [])
   )
-  // Escala de celda (0.7 – 1.35). Por defecto se calcula para que quepa.
+  const [bestStreak, setBestStreak] = useState<number>(() =>
+    loadJSON(KEYS.sequenceBestStreak, 0)
+  )
   const [cellScale, setCellScale] = useState<number>(() =>
     loadJSON(KEYS.sequenceCellScale, 1)
   )
+  const comboRef = useRef(0)
 
   const startedAtRef = useRef(0)
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -2614,6 +3030,7 @@ function SequenceGame() {
   const size = sequenceBoardSize(level)
   const cols = sequenceCols(size)
   const rows = Math.ceil(size / cols)
+  const difficulty = sequenceDifficulty(level)
 
   const start = () => {
     soundStart()
@@ -2623,6 +3040,7 @@ function SequenceGame() {
     setMistakes(0)
     setElapsedMs(0)
     setSummary(null)
+    comboRef.current = 0
     setPhase('jugando')
     startedAtRef.current = performance.now()
     tickRef.current = setInterval(() => {
@@ -2640,11 +3058,20 @@ function SequenceGame() {
         mistakes: finalMistakes,
         date: Date.now(),
       }
-      const nextHist = [result, ...history]
+      const nextHist = [result, ...history].slice(0, 60)
       setHistory(nextHist)
       saveJSON(KEYS.sequenceHistory, nextHist)
       setSummary(result)
       setPhase('resumen')
+      if (finalMistakes === 0) {
+        const nextStreak = bestStreak + 1
+        setBestStreak(nextStreak)
+        saveJSON(KEYS.sequenceBestStreak, nextStreak)
+        soundLevelUp()
+      } else {
+        setBestStreak(0)
+        saveJSON(KEYS.sequenceBestStreak, 0)
+      }
       const nextLevel = level + 1
       setLevel(nextLevel)
       saveJSON(KEYS.sequenceLevel, nextLevel)
@@ -2660,20 +3087,22 @@ function SequenceGame() {
         /* */
       }
     },
-    [level, size, history]
+    [level, size, history, bestStreak]
   )
 
   const handleTap = (n: number) => {
     if (phase !== 'jugando') return
     if (n !== nextTarget) {
       soundFail()
+      comboRef.current = 0
       setMistakes((m) => m + 1)
       setFlashWrong(n)
       if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current)
       flashTimeoutRef.current = setTimeout(() => setFlashWrong(null), 220)
       return
     }
-    soundMatch()
+    comboRef.current += 1
+    soundCombo(comboRef.current)
     if (n === size) {
       const timeMs = performance.now() - startedAtRef.current
       finish(timeMs, mistakes)
@@ -2688,12 +3117,20 @@ function SequenceGame() {
     : history.length
       ? Math.min(...history.map((r) => r.timeMs))
       : null
+  const avgTime = history.length
+    ? history.reduce((s, r) => s + r.timeMs, 0) / history.length
+    : null
+  const accuracyPct = history.length
+    ? Math.round(
+        (history.filter((r) => r.mistakes === 0).length / history.length) * 100
+      )
+    : null
 
   const stars = summary
     ? sequenceStars(summary.timeMs, summary.mistakes, summary.size)
     : 0
+  const rank = summary ? sequenceRank(stars, summary.mistakes) : null
 
-  // Tamaño de celda en px: quepa toda la cuadrícula sin solaparse ni scroll
   const gapPx = 6
   const maxGridPx =
     typeof window !== 'undefined'
@@ -2712,6 +3149,9 @@ function SequenceGame() {
       ) * cellScale
     )
   )
+
+  const recentTimes = history.slice(0, 10).map((r) => r.timeMs).reverse()
+  const maxRecent = recentTimes.length ? Math.max(...recentTimes) : 1
 
   return (
     <motion.div
@@ -2736,20 +3176,55 @@ function SequenceGame() {
             </h2>
             <span
               className="mono"
-              style={{ fontSize: '0.85rem', color: 'var(--gco-primary)' }}
+              style={{
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                color: difficulty.color,
+                background: 'var(--gco-fill-quaternary)',
+                padding: '0.25rem 0.6rem',
+                borderRadius: 999,
+              }}
             >
-              Nivel {level} · {size} números
+              {difficulty.label}
             </span>
           </div>
-          <p style={{ fontSize: '0.82rem', color: 'var(--gco-ink-muted)' }}>
+          <p style={{ fontSize: '0.82rem', color: 'var(--gco-ink-muted)', marginBottom: '0.9rem' }}>
+            Nivel {level} · {size} números ·{' '}
             {phase === 'jugando'
-              ? `Buscas el número ${nextTarget}`
-              : 'Toca los números en orden ascendente. La cuadrícula se adapta a la pantalla.'}
+              ? `Buscas el ${nextTarget}`
+              : 'Toca en orden ascendente'}
           </p>
+
+          {history.length > 0 && phase !== 'jugando' && (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, 1fr)',
+                gap: '0.6rem',
+              }}
+            >
+              <Stat label="Mejor" value={bestTime !== null ? formatReactionTime(bestTime) : '—'} />
+              <Stat label="Promedio" value={avgTime !== null ? formatReactionTime(avgTime) : '—'} />
+              <Stat label="Partidas" value={`${history.length}`} />
+              <Stat label="Sin errores" value={accuracyPct !== null ? `${accuracyPct}%` : '—'} />
+            </div>
+          )}
+
+          {bestStreak > 1 && phase !== 'jugando' && (
+            <p
+              className="mono"
+              style={{
+                fontSize: '0.78rem',
+                color: 'var(--gco-secondary)',
+                marginTop: '0.8rem',
+              }}
+            >
+              🔥 Racha perfecta actual: {bestStreak} niveles sin errores
+            </p>
+          )}
         </div>
       </div>
 
-      {/* Control de tamaño de celdas */}
       {phase !== 'jugando' && (
         <div className="glass-card" style={{ marginBottom: '1rem' }}>
           <div style={{ padding: '0.9rem 1.15rem' }}>
@@ -2808,6 +3283,14 @@ function SequenceGame() {
           <span className="mono" style={{ fontSize: '0.95rem' }}>
             ⏱ {formatReactionTime(elapsedMs)}
           </span>
+          {comboRef.current > 2 && (
+            <span
+              className="mono"
+              style={{ fontSize: '0.82rem', color: 'var(--gco-primary)' }}
+            >
+              🔗 combo x{comboRef.current}
+            </span>
+          )}
           <span
             className="mono"
             style={{ fontSize: '0.85rem', color: 'var(--gco-secondary)' }}
@@ -2820,12 +3303,31 @@ function SequenceGame() {
       {phase !== 'jugando' && (
         <div className="glass-card">
           <div style={{ padding: '1.85rem 1.5rem', textAlign: 'center' }}>
-            {phase === 'resumen' && summary && (
+            {phase === 'resumen' && summary && rank && (
               <>
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 64,
+                    height: 64,
+                    borderRadius: '50%',
+                    background: `${rank.color}22`,
+                    border: `2px solid ${rank.color}`,
+                    color: rank.color,
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 800,
+                    fontSize: '1.7rem',
+                    marginBottom: '0.7rem',
+                  }}
+                >
+                  {rank.letter}
+                </div>
                 <p
                   style={{
-                    fontSize: '1.6rem',
-                    marginBottom: '0.5rem',
+                    fontSize: '1.4rem',
+                    marginBottom: '0.35rem',
                     letterSpacing: '0.1em',
                   }}
                 >
@@ -2858,6 +3360,41 @@ function SequenceGame() {
                     value={bestTime !== null ? formatReactionTime(bestTime) : '—'}
                   />
                 </div>
+                {recentTimes.length > 1 && (
+                  <div style={{ marginBottom: '1.4rem' }}>
+                    <p
+                      className="more-section-title"
+                      style={{ textAlign: 'left', marginBottom: '0.5rem' }}
+                    >
+                      Tendencia (últimas {recentTimes.length} partidas)
+                    </p>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-end',
+                        gap: 4,
+                        height: 56,
+                      }}
+                    >
+                      {recentTimes.map((t, i) => (
+                        <div
+                          key={i}
+                          title={formatReactionTime(t)}
+                          style={{
+                            flex: 1,
+                            height: `${Math.max(8, (t / maxRecent) * 100)}%`,
+                            background:
+                              i === recentTimes.length - 1
+                                ? 'var(--gco-primary)'
+                                : 'var(--gco-glass-border)',
+                            borderRadius: 4,
+                            transition: 'height 0.3s ease',
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             )}
             <button
@@ -2890,11 +3427,12 @@ function SequenceGame() {
             const done = n < nextTarget
             const isWrong = flashWrong === n
             return (
-              <button
+              <motion.button
                 key={n}
                 type="button"
                 onClick={() => handleTap(n)}
                 disabled={done}
+                whileTap={{ scale: done ? 1 : 0.9 }}
                 className="mono"
                 style={{
                   width: cellPx,
@@ -2902,11 +3440,13 @@ function SequenceGame() {
                   borderRadius: Math.max(6, cellPx * 0.12),
                   border: isWrong
                     ? '1.5px solid var(--gco-secondary)'
-                    : '1px solid var(--gco-glass-border)',
+                    : done
+                      ? '1px solid var(--gco-primary)'
+                      : '1px solid var(--gco-glass-border)',
                   background: isWrong
                     ? 'var(--gco-secondary-dim)'
                     : done
-                      ? 'var(--gco-primary-dim)'
+                      ? 'linear-gradient(155deg, var(--gco-primary-dim), transparent)'
                       : 'var(--gco-glass-bg)',
                   color: done ? 'var(--gco-primary)' : 'var(--gco-ink)',
                   fontWeight: 700,
@@ -2923,7 +3463,7 @@ function SequenceGame() {
                 }}
               >
                 {n}
-              </button>
+              </motion.button>
             )
           })}
         </div>
@@ -2962,7 +3502,7 @@ function SequenceGame() {
   )
 }
 
-/* ── Número fugaz (nuevo) ────────────────────────────────────────────────── */
+/* ── Número fugaz ─────────────────────────────────────────────────────────── */
 interface FlashResult {
   level: number
   digits: number
@@ -2977,7 +3517,6 @@ function flashDigits(level: number): number {
   return Math.min(3 + Math.floor((level - 1) / 2), 9)
 }
 function flashShowMs(level: number): number {
-  // Empieza generoso y se va acortando
   return Math.max(350, 2200 - (level - 1) * 120)
 }
 
@@ -3014,7 +3553,6 @@ function FlashNumberGame() {
     setPhase('mostrando')
     timeoutRef.current = setTimeout(() => {
       setPhase('escribiendo')
-      // auto-focus en el input
       window.setTimeout(() => inputRef.current?.focus(), 50)
     }, displayTime)
   }
@@ -3024,8 +3562,10 @@ function FlashNumberGame() {
     const ok = input.trim() === number
     setCorrect(ok)
     setPhase('resultado')
-    if (ok) soundSuccess()
-    else soundFail()
+    if (ok) {
+      soundSuccess()
+      if (level % 5 === 0) soundLevelUp()
+    } else soundFail()
 
     const result: FlashResult = {
       level,
@@ -3285,7 +3825,7 @@ function FlashNumberGame() {
   )
 }
 
-/* ── Memoria de posición (nuevo) ─────────────────────────────────────────── */
+/* ── Memoria de posición ──────────────────────────────────────────────────── */
 interface PositionResult {
   level: number
   cells: number
@@ -3369,8 +3909,10 @@ function PositionMemoryGame() {
       a.length === b.length && a.every((v, i) => v === b[i])
     setCorrect(ok)
     setPhase('resultado')
-    if (ok) soundSuccess()
-    else soundFail()
+    if (ok) {
+      soundSuccess()
+      if (level % 5 === 0) soundLevelUp()
+    } else soundFail()
 
     const result: PositionResult = {
       level,
@@ -3608,6 +4150,1132 @@ function PositionMemoryGame() {
                   }}
                 >
                   Nv.{r.level} · {r.cells}c
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </motion.div>
+  )
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MULTITONO — laboratorio de color futurista
+   Modelo: HSL (tono, saturación, luminosidad) + contraste + brillo.
+   4 paneles de edición: RGB/Código · Porcentajes (conos) · Rueda · Barras.
+   Niveles infinitos con figuras 2D/3D cada vez más complejas + ficha
+   matemática (área, perímetro, volumen o ecuación) puramente educativa.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+interface ColorParams {
+  h: number // tono 0-360
+  s: number // saturación 0-100
+  l: number // luminosidad 0-100
+  contrast: number // 0-100, 50 = neutro
+  brightness: number // 0-100, 50 = neutro
+}
+
+const DEFAULT_PARAMS: ColorParams = { h: 200, s: 55, l: 50, contrast: 50, brightness: 50 }
+
+type MultitonoPanel = 'rgb' | 'porcentaje' | 'rueda' | 'barras'
+type MultitonoShape =
+  | 'cuadrado'
+  | 'circulo'
+  | 'estrella'
+  | 'esfera'
+  | 'cubo'
+  | 'cono'
+  | 'onda'
+
+const SHAPE_SEQUENCE: MultitonoShape[] = [
+  'circulo',
+  'estrella',
+  'esfera',
+  'cubo',
+  'cono',
+  'onda',
+]
+
+function getShapeForLevel(level: number): MultitonoShape {
+  if (level <= 3) return 'cuadrado'
+  const idx = Math.floor((level - 4) / 2) % SHAPE_SEQUENCE.length
+  return SHAPE_SEQUENCE[idx]
+}
+
+function minSimilarityForLevel(level: number): number {
+  return Math.min(70 + (level - 1) * 2, 96)
+}
+
+/* ── conversión de color ──────────────────────────────────────────────── */
+function hslToRgb(h: number, s: number, l: number): { r: number; g: number; b: number } {
+  const S = s / 100
+  const L = l / 100
+  const C = (1 - Math.abs(2 * L - 1)) * S
+  const Hp = h / 60
+  const X = C * (1 - Math.abs((Hp % 2) - 1))
+  let r1 = 0, g1 = 0, b1 = 0
+  if (Hp >= 0 && Hp < 1) [r1, g1, b1] = [C, X, 0]
+  else if (Hp < 2) [r1, g1, b1] = [X, C, 0]
+  else if (Hp < 3) [r1, g1, b1] = [0, C, X]
+  else if (Hp < 4) [r1, g1, b1] = [0, X, C]
+  else if (Hp < 5) [r1, g1, b1] = [X, 0, C]
+  else [r1, g1, b1] = [C, 0, X]
+  const m = L - C / 2
+  return {
+    r: Math.round((r1 + m) * 255),
+    g: Math.round((g1 + m) * 255),
+    b: Math.round((b1 + m) * 255),
+  }
+}
+
+function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
+  const R = r / 255, G = g / 255, B = b / 255
+  const max = Math.max(R, G, B)
+  const min = Math.min(R, G, B)
+  const l = (max + min) / 2
+  let h = 0
+  let s = 0
+  const d = max - min
+  if (d !== 0) {
+    s = d / (1 - Math.abs(2 * l - 1))
+    switch (max) {
+      case R:
+        h = ((G - B) / d) % 6
+        break
+      case G:
+        h = (B - R) / d + 2
+        break
+      default:
+        h = (R - G) / d + 4
+    }
+    h *= 60
+    if (h < 0) h += 360
+  }
+  return { h: Math.round(h), s: Math.round(s * 100), l: Math.round(l * 100) }
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  const to2 = (n: number) => clamp(Math.round(n), 0, 255).toString(16).padStart(2, '0')
+  return `#${to2(r)}${to2(g)}${to2(b)}`.toUpperCase()
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const clean = hex.trim().replace('#', '')
+  if (!/^[0-9a-fA-F]{6}$/.test(clean)) return null
+  const r = parseInt(clean.slice(0, 2), 16)
+  const g = parseInt(clean.slice(2, 4), 16)
+  const b = parseInt(clean.slice(4, 6), 16)
+  return { r, g, b }
+}
+
+/** Ajusta L y S visualmente según contraste/brillo para renderizar el color final. */
+function visualHsl(p: ColorParams): { h: number; s: number; l: number } {
+  const brightDelta = (p.brightness - 50) * 0.34
+  const contrastDelta = (p.contrast - 50) * 0.32
+  return {
+    h: p.h,
+    s: clamp(p.s + contrastDelta, 0, 100),
+    l: clamp(p.l + brightDelta, 3, 97),
+  }
+}
+function cssColor(p: ColorParams): string {
+  const v = visualHsl(p)
+  return `hsl(${Math.round(v.h)}, ${Math.round(v.s)}%, ${Math.round(v.l)}%)`
+}
+function shade(p: ColorParams, lDelta: number, sDelta = 0): string {
+  const v = visualHsl(p)
+  return `hsl(${Math.round(v.h)}, ${clamp(Math.round(v.s + sDelta), 0, 100)}%, ${clamp(
+    Math.round(v.l + lDelta),
+    2,
+    98
+  )}%)`
+}
+
+/* ── similitud ────────────────────────────────────────────────────────── */
+interface SimilarityBreakdown {
+  hue: number
+  sat: number
+  light: number
+  contrast: number
+  brightness: number
+  overall: number
+}
+function computeSimilarity(target: ColorParams, user: ColorParams): SimilarityBreakdown {
+  const hueDiff = Math.min(Math.abs(target.h - user.h), 360 - Math.abs(target.h - user.h))
+  const hue = clamp(100 - (hueDiff / 180) * 100, 0, 100)
+  const sat = clamp(100 - Math.abs(target.s - user.s), 0, 100)
+  const light = clamp(100 - Math.abs(target.l - user.l), 0, 100)
+  const contrast = clamp(100 - Math.abs(target.contrast - user.contrast), 0, 100)
+  const brightness = clamp(100 - Math.abs(target.brightness - user.brightness), 0, 100)
+  const overall = hue * 0.3 + sat * 0.25 + light * 0.25 + contrast * 0.1 + brightness * 0.1
+  return { hue, sat, light, contrast, brightness, overall: Math.round(overall) }
+}
+
+/* ── generación de objetivo por nivel ────────────────────────────────────── */
+function generateTargetParams(level: number): ColorParams {
+  const spread = Math.min(12 + level * 1.4, 34)
+  const h = Math.floor(Math.random() * 360)
+  const s = Math.floor(28 + Math.random() * 58)
+  const l = Math.floor(26 + Math.random() * 48)
+  const contrast =
+    level >= 4 ? Math.round(clamp(50 + (Math.random() * 2 - 1) * spread, 6, 94)) : 50
+  const brightness =
+    level >= 7 ? Math.round(clamp(50 + (Math.random() * 2 - 1) * spread, 6, 94)) : 50
+  return { h, s, l, contrast, brightness }
+}
+
+/* ── ficha matemática por figura (con valores deterministas por nivel) ──── */
+function shapeMathInfo(shape: MultitonoShape, level: number): { title: string; lines: string[] } {
+  const seed = 40 + (level % 12) * 5
+  switch (shape) {
+    case 'cuadrado': {
+      const lado = seed
+      return {
+        title: 'Cuadrado',
+        lines: [
+          `Lado = ${lado} px`,
+          `Área = lado² = ${lado * lado} px²`,
+          `Perímetro = 4 · lado = ${lado * 4} px`,
+        ],
+      }
+    }
+    case 'circulo': {
+      const r = seed / 2
+      return {
+        title: 'Círculo',
+        lines: [
+          `Radio = ${r} px`,
+          `Área = π·r² ≈ ${(Math.PI * r * r).toFixed(1)} px²`,
+          `Perímetro = 2π·r ≈ ${(2 * Math.PI * r).toFixed(1)} px`,
+        ],
+      }
+    }
+    case 'estrella': {
+      const puntas = 5
+      const rOut = seed / 2
+      const rIn = rOut * 0.46
+      const areaAprox = 0.5 * puntas * rOut * rIn * Math.sin((2 * Math.PI) / puntas) * 2
+      return {
+        title: `Estrella de ${puntas} puntas`,
+        lines: [
+          `Radio exterior = ${rOut.toFixed(0)} px · Radio interior ≈ ${rIn.toFixed(0)} px`,
+          `Área ≈ ${areaAprox.toFixed(1)} px² (polígono estrellado regular)`,
+          `Ángulo entre puntas = 360°/${puntas} = ${(360 / puntas).toFixed(0)}°`,
+        ],
+      }
+    }
+    case 'esfera': {
+      const r = seed / 2
+      return {
+        title: 'Esfera',
+        lines: [
+          `Radio = ${r} px`,
+          `Volumen = (4/3)π·r³ ≈ ${((4 / 3) * Math.PI * r ** 3).toFixed(0)} px³`,
+          `Área superficial = 4π·r² ≈ ${(4 * Math.PI * r * r).toFixed(1)} px²`,
+        ],
+      }
+    }
+    case 'cubo': {
+      const a = seed * 0.8
+      return {
+        title: 'Cubo',
+        lines: [
+          `Arista = ${a.toFixed(0)} px`,
+          `Volumen = a³ = ${(a ** 3).toFixed(0)} px³`,
+          `Área total = 6·a² ≈ ${(6 * a * a).toFixed(0)} px²`,
+        ],
+      }
+    }
+    case 'cono': {
+      const r = seed / 2.6
+      const h = seed * 0.9
+      const g = Math.sqrt(r * r + h * h)
+      return {
+        title: 'Cono',
+        lines: [
+          `Radio = ${r.toFixed(0)} px · Altura = ${h.toFixed(0)} px`,
+          `Generatriz (Pitágoras) g = √(r²+h²) ≈ ${g.toFixed(1)} px`,
+          `Volumen = (1/3)π·r²·h ≈ ${((1 / 3) * Math.PI * r * r * h).toFixed(0)} px³`,
+        ],
+      }
+    }
+    case 'onda': {
+      const amp = 24 + (level % 6) * 3
+      const freq = 1 + (level % 4)
+      return {
+        title: 'Onda senoidal',
+        lines: [
+          `Ecuación: y = A·sin(B·x)`,
+          `Amplitud A = ${amp} px · Frecuencia B = ${freq}`,
+          `Período = 2π/B ≈ ${(2 * Math.PI * 60 / freq).toFixed(0)} px`,
+        ],
+      }
+    }
+  }
+}
+
+/* ── render de figuras (SVG con sombreado pseudo-3D) ─────────────────────── */
+function ShapeSVG({
+  shape,
+  params,
+  uid,
+}: {
+  shape: MultitonoShape
+  params: ColorParams
+  uid: string
+}) {
+  const base = cssColor(params)
+  const light = shade(params, 20, -6)
+  const dark = shade(params, -22, 4)
+  const midLight = shade(params, 10)
+
+  switch (shape) {
+    case 'cuadrado':
+      return (
+        <svg viewBox="0 0 200 200" width="100%" height="100%">
+          <defs>
+            <linearGradient id={`sq-${uid}`} x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor={light} />
+              <stop offset="100%" stopColor={dark} />
+            </linearGradient>
+          </defs>
+          <rect x={30} y={30} width={140} height={140} rx={14} fill={`url(#sq-${uid})`} stroke={dark} strokeWidth={2} />
+        </svg>
+      )
+    case 'circulo':
+      return (
+        <svg viewBox="0 0 200 200" width="100%" height="100%">
+          <defs>
+            <radialGradient id={`ci-${uid}`} cx="38%" cy="32%" r="75%">
+              <stop offset="0%" stopColor={light} />
+              <stop offset="55%" stopColor={base} />
+              <stop offset="100%" stopColor={dark} />
+            </radialGradient>
+          </defs>
+          <circle cx={100} cy={100} r={78} fill={`url(#ci-${uid})`} />
+        </svg>
+      )
+    case 'estrella': {
+      const points: string[] = []
+      const spikes = 5
+      const rOut = 82
+      const rIn = 36
+      for (let i = 0; i < spikes * 2; i++) {
+        const r = i % 2 === 0 ? rOut : rIn
+        const angle = (Math.PI / spikes) * i - Math.PI / 2
+        points.push(`${100 + r * Math.cos(angle)},${100 + r * Math.sin(angle)}`)
+      }
+      return (
+        <svg viewBox="0 0 200 200" width="100%" height="100%">
+          <defs>
+            <linearGradient id={`st-${uid}`} x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor={light} />
+              <stop offset="100%" stopColor={dark} />
+            </linearGradient>
+          </defs>
+          <polygon points={points.join(' ')} fill={`url(#st-${uid})`} stroke={dark} strokeWidth={1.5} />
+        </svg>
+      )
+    }
+    case 'esfera':
+      return (
+        <svg viewBox="0 0 200 200" width="100%" height="100%">
+          <defs>
+            <radialGradient id={`es-${uid}`} cx="34%" cy="28%" r="80%">
+              <stop offset="0%" stopColor="#ffffff" stopOpacity={0.85} />
+              <stop offset="18%" stopColor={light} />
+              <stop offset="55%" stopColor={base} />
+              <stop offset="100%" stopColor={dark} />
+            </radialGradient>
+          </defs>
+          <circle cx={100} cy={100} r={80} fill={`url(#es-${uid})`} />
+          <ellipse cx={100} cy={168} rx={54} ry={10} fill="rgba(0,0,0,0.25)" />
+        </svg>
+      )
+    case 'cubo':
+      return (
+        <svg viewBox="0 0 200 200" width="100%" height="100%">
+          {/* cara superior */}
+          <polygon points="55,55 145,55 175,80 85,80" fill={midLight} />
+          {/* cara frontal */}
+          <polygon points="85,80 175,80 175,160 85,160" fill={base} />
+          {/* cara lateral */}
+          <polygon points="55,55 85,80 85,160 55,140" fill={dark} />
+        </svg>
+      )
+    case 'cono':
+      return (
+        <svg viewBox="0 0 200 200" width="100%" height="100%">
+          <defs>
+            <linearGradient id={`co-${uid}`} x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor={dark} />
+              <stop offset="45%" stopColor={light} />
+              <stop offset="100%" stopColor={dark} />
+            </linearGradient>
+          </defs>
+          <ellipse cx={100} cy={158} rx={62} ry={16} fill={dark} />
+          <polygon points="100,32 38,158 162,158" fill={`url(#co-${uid})`} />
+        </svg>
+      )
+    case 'onda': {
+      const amp = 34
+      const points: string[] = []
+      for (let x = 0; x <= 200; x += 4) {
+        const y = 100 + amp * Math.sin((x / 200) * Math.PI * 2.4)
+        points.push(`${x},${y.toFixed(1)}`)
+      }
+      const path = `M0,200 L0,${points[0].split(',')[1]} L${points.join(' L')} L200,200 Z`
+      return (
+        <svg viewBox="0 0 200 200" width="100%" height="100%">
+          <defs>
+            <linearGradient id={`wv-${uid}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={light} />
+              <stop offset="100%" stopColor={dark} />
+            </linearGradient>
+          </defs>
+          <path d={path} fill={`url(#wv-${uid})`} />
+        </svg>
+      )
+    }
+  }
+}
+
+/* ── panel 1: RGB / Código hex ────────────────────────────────────────────── */
+function RgbHexPanel({
+  params,
+  onChange,
+}: {
+  params: ColorParams
+  onChange: (p: ColorParams) => void
+}) {
+  const v = visualHsl(params)
+  const rgb = hslToRgb(v.h, v.s, v.l)
+  const hex = rgbToHex(rgb.r, rgb.g, rgb.b)
+  const [hexInput, setHexInput] = useState(hex)
+
+  useEffect(() => setHexInput(hex), [hex])
+
+  const applyRgb = (r: number, g: number, b: number) => {
+    const hsl = rgbToHsl(clamp(r, 0, 255), clamp(g, 0, 255), clamp(b, 0, 255))
+    soundSliderTick()
+    onChange({ ...params, h: hsl.h, s: hsl.s, l: hsl.l, contrast: 50, brightness: 50 })
+  }
+
+  const applyHex = () => {
+    const parsed = hexToRgb(hexInput)
+    if (!parsed) {
+      soundFail()
+      return
+    }
+    applyRgb(parsed.r, parsed.g, parsed.b)
+  }
+
+  return (
+    <div>
+      <p className="more-section-title">Código hexadecimal</p>
+      <div style={{ display: 'flex', gap: 8, marginBottom: '1.1rem' }}>
+        <input
+          className="glass-input mono"
+          value={hexInput}
+          onChange={(e) => setHexInput(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && applyHex()}
+          placeholder="#22E6C5"
+          style={{ textTransform: 'uppercase' }}
+        />
+        <button type="button" className="glass-button secondary" onClick={applyHex}>
+          Aplicar
+        </button>
+      </div>
+      <p className="more-section-title">Canales RGB (0–255)</p>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+        {(['r', 'g', 'b'] as const).map((ch) => (
+          <div key={ch}>
+            <label className="more-field-label" style={{ textTransform: 'uppercase' }}>
+              {ch}
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={255}
+              className="glass-input mono"
+              value={rgb[ch]}
+              onChange={(e) => {
+                const val = clamp(Number(e.target.value) || 0, 0, 255)
+                applyRgb(
+                  ch === 'r' ? val : rgb.r,
+                  ch === 'g' ? val : rgb.g,
+                  ch === 'b' ? val : rgb.b
+                )
+              }}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ── panel 2: porcentajes ("conos") ───────────────────────────────────────── */
+function PercentPanel({
+  params,
+  onChange,
+}: {
+  params: ColorParams
+  onChange: (p: ColorParams) => void
+}) {
+  const rows: Array<{ key: keyof ColorParams; label: string; max: number }> = [
+    { key: 'h', label: 'Tono', max: 360 },
+    { key: 's', label: 'Saturación', max: 100 },
+    { key: 'l', label: 'Luminosidad', max: 100 },
+    { key: 'contrast', label: 'Contraste', max: 100 },
+    { key: 'brightness', label: 'Brillo', max: 100 },
+  ]
+  return (
+    <div>
+      <p className="more-section-title">Ajusta cada parámetro por porcentaje</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+        {rows.map((row) => {
+          const pct = Math.round((params[row.key] / row.max) * 100)
+          return (
+            <div
+              key={row.key}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '0.5rem 0.7rem',
+                borderRadius: 'var(--gco-radius-xs)',
+                background: 'var(--gco-fill-quaternary)',
+                border: '1px solid var(--gco-glass-border)',
+              }}
+            >
+              <span style={{ fontSize: '0.8rem', flex: 1 }}>{row.label}</span>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                className="glass-input mono"
+                style={{ width: 84, textAlign: 'right', padding: '0.45rem 0.6rem' }}
+                value={pct}
+                onChange={(e) => {
+                  const p = clamp(Number(e.target.value) || 0, 0, 100)
+                  soundSliderTick()
+                  onChange({ ...params, [row.key]: Math.round((p / 100) * row.max) })
+                }}
+              />
+              <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--gco-ink-faint)' }}>
+                %
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/* ── panel 3: rueda cromática ─────────────────────────────────────────────── */
+function WheelPanel({
+  params,
+  onChange,
+}: {
+  params: ColorParams
+  onChange: (p: ColorParams) => void
+}) {
+  const size = 200
+  const radius = size / 2
+  const wheelRef = useRef<HTMLDivElement | null>(null)
+  const draggingRef = useRef(false)
+  const lastTickRef = useRef(0)
+
+  const angleRad = (params.h * Math.PI) / 180
+  const dist = (params.s / 100) * (radius - 16)
+  const knobX = radius + dist * Math.cos(angleRad - Math.PI / 2)
+  const knobY = radius + dist * Math.sin(angleRad - Math.PI / 2)
+
+  const updateFromPointer = (clientX: number, clientY: number) => {
+    const el = wheelRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    const dx = clientX - cx
+    const dy = clientY - cy
+    let angle = (Math.atan2(dy, dx) * 180) / Math.PI + 90
+    if (angle < 0) angle += 360
+    const distPx = Math.min(Math.sqrt(dx * dx + dy * dy), radius - 16)
+    const sat = Math.round((distPx / (radius - 16)) * 100)
+    const now = performance.now()
+    if (now - lastTickRef.current > 60) {
+      soundWheelTick()
+      lastTickRef.current = now
+    }
+    onChange({ ...params, h: Math.round(angle), s: clamp(sat, 0, 100) })
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+      <div
+        ref={wheelRef}
+        onPointerDown={(e) => {
+          draggingRef.current = true
+          ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+          updateFromPointer(e.clientX, e.clientY)
+        }}
+        onPointerMove={(e) => {
+          if (draggingRef.current) updateFromPointer(e.clientX, e.clientY)
+        }}
+        onPointerUp={() => {
+          draggingRef.current = false
+        }}
+        style={{
+          position: 'relative',
+          width: size,
+          height: size,
+          borderRadius: '50%',
+          background:
+            'conic-gradient(from 0deg, #ff0040, #ff8a00, #ffe600, #6bff2e, #00e6c5, #2e6bff, #8a2eff, #ff2e9e, #ff0040)',
+          boxShadow: '0 0 0 6px rgba(255,255,255,0.04), var(--gco-shadow-lg)',
+          cursor: 'crosshair',
+          touchAction: 'none',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            inset: '20%',
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(255,255,255,0.9), rgba(255,255,255,0) 70%)',
+            pointerEvents: 'none',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            left: knobX,
+            top: knobY,
+            width: 20,
+            height: 20,
+            borderRadius: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: cssColor(params),
+            border: '3px solid white',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.45)',
+            pointerEvents: 'none',
+          }}
+        />
+      </div>
+      <div style={{ width: '100%' }}>
+        <label className="more-field-label">Luminosidad</label>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={params.l}
+          onChange={(e) => {
+            soundWheelTick()
+            onChange({ ...params, l: Number(e.target.value) })
+          }}
+          className="pref-slider"
+          style={{ '--fill': `${params.l}%` } as unknown as React.CSSProperties}
+        />
+      </div>
+    </div>
+  )
+}
+
+/* ── panel 4: barras deslizables ──────────────────────────────────────────── */
+function SliderPanel({
+  params,
+  onChange,
+}: {
+  params: ColorParams
+  onChange: (p: ColorParams) => void
+}) {
+  const rows: Array<{ key: keyof ColorParams; label: string; max: number }> = [
+    { key: 'h', label: 'Tono', max: 360 },
+    { key: 's', label: 'Saturación', max: 100 },
+    { key: 'l', label: 'Luminosidad', max: 100 },
+    { key: 'contrast', label: 'Contraste', max: 100 },
+    { key: 'brightness', label: 'Brillo', max: 100 },
+  ]
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      {rows.map((row) => (
+        <div key={row.key}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+            <label className="more-field-label" style={{ marginBottom: 0 }}>
+              {row.label}
+            </label>
+            <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--gco-primary)' }}>
+              {Math.round(params[row.key])}
+            </span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={row.max}
+            value={params[row.key]}
+            onChange={(e) => {
+              soundSliderTick()
+              onChange({ ...params, [row.key]: Number(e.target.value) })
+            }}
+            className="pref-slider"
+            style={
+              {
+                '--fill': `${(params[row.key] / row.max) * 100}%`,
+              } as unknown as React.CSSProperties
+            }
+          />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/* ── historial ────────────────────────────────────────────────────────────── */
+interface MultitonoResult {
+  level: number
+  similarity: number
+  passed: boolean
+  date: number
+}
+
+function MultitonoGame() {
+  const [level, setLevel] = useState<number>(() => loadJSON(KEYS.multitonoLevel, 1))
+  const [panel, setPanel] = useState<MultitonoPanel>(() =>
+    loadJSON<MultitonoPanel>(KEYS.multitonoPanel, 'rueda')
+  )
+  const [target, setTarget] = useState<ColorParams>(() => generateTargetParams(1))
+  const [user, setUser] = useState<ColorParams>(DEFAULT_PARAMS)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [result, setResult] = useState<SimilarityBreakdown | null>(null)
+  const [passed, setPassed] = useState<boolean | null>(null)
+  const [history, setHistory] = useState<MultitonoResult[]>(() =>
+    loadJSON(KEYS.multitonoHistory, [])
+  )
+  const [showTargetInfo, setShowTargetInfo] = useState(false)
+  const analyzeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(
+    () => () => {
+      if (analyzeTimeoutRef.current) clearTimeout(analyzeTimeoutRef.current)
+    },
+    []
+  )
+
+  const shape = getShapeForLevel(level)
+  const minRequired = minSimilarityForLevel(level)
+  const math = useMemo(() => shapeMathInfo(shape, level), [shape, level])
+
+  const changePanel = (p: MultitonoPanel) => {
+    if (p === panel) return
+    soundClick()
+    setPanel(p)
+    saveJSON(KEYS.multitonoPanel, p)
+  }
+
+  const newRound = useCallback((lvl: number) => {
+    setTarget(generateTargetParams(lvl))
+    setUser(DEFAULT_PARAMS)
+    setResult(null)
+    setPassed(null)
+    setShowTargetInfo(false)
+  }, [])
+
+  const check = () => {
+    if (analyzing) return
+    soundScanSweep()
+    setAnalyzing(true)
+    setResult(null)
+    setPassed(null)
+    analyzeTimeoutRef.current = setTimeout(() => {
+      const sim = computeSimilarity(target, user)
+      const ok = sim.overall >= minRequired
+      setResult(sim)
+      setPassed(ok)
+      setAnalyzing(false)
+      setShowTargetInfo(true)
+      const nextHist = [{ level, similarity: sim.overall, passed: ok, date: Date.now() }, ...history].slice(0, 60)
+      setHistory(nextHist)
+      saveJSON(KEYS.multitonoHistory, nextHist)
+      if (ok) {
+        soundShapeUnlock()
+        const nextLevel = level + 1
+        setLevel(nextLevel)
+        saveJSON(KEYS.multitonoLevel, nextLevel)
+      } else {
+        soundFail()
+      }
+      try {
+        recordLevelResult({
+          categoryId: CAT,
+          gameId: GAME_ID,
+          level,
+          success: ok,
+          timeMs: 0,
+        })
+      } catch {
+        /* */
+      }
+    }, 1050)
+  }
+
+  const nextRound = () => {
+    soundClick()
+    newRound(level)
+  }
+  const retrySame = () => {
+    soundClick()
+    newRound(level)
+  }
+
+  const bestSimilarity = history.length ? Math.max(...history.map((h) => h.similarity)) : null
+  const passRate = history.length
+    ? Math.round((history.filter((h) => h.passed).length / history.length) * 100)
+    : null
+
+  const breakdownRows: Array<{ label: string; value: number }> = result
+    ? [
+        { label: 'Tono', value: result.hue },
+        { label: 'Saturación', value: result.sat },
+        { label: 'Luminosidad', value: result.light },
+        { label: 'Contraste', value: result.contrast },
+        { label: 'Brillo', value: result.brightness },
+      ]
+    : []
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      style={{ position: 'relative' }}
+    >
+      {/* fondo decorativo futurista */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: -20,
+          background:
+            'radial-gradient(ellipse 60% 40% at 20% 0%, rgba(139,124,246,0.10), transparent 60%), radial-gradient(ellipse 50% 35% at 100% 30%, rgba(34,230,197,0.10), transparent 55%)',
+          pointerEvents: 'none',
+          zIndex: -1,
+        }}
+      />
+
+      <div className="glass-card" style={{ marginBottom: '1rem' }}>
+        <div style={{ padding: '1.1rem 1.25rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              flexWrap: 'wrap',
+              marginBottom: '0.35rem',
+            }}
+          >
+            <h2 style={{ fontSize: '1.15rem', margin: 0 }}>🎨 Multitono</h2>
+            <span
+              className="mono"
+              style={{ fontSize: '0.85rem', color: 'var(--gco-primary)' }}
+            >
+              Nivel {level} · mínimo {minRequired}%
+            </span>
+          </div>
+          <p style={{ fontSize: '0.82rem', color: 'var(--gco-ink-muted)' }}>
+            Reproduce el color objetivo con la mayor similitud posible. Figura actual:{' '}
+            <strong style={{ color: 'var(--gco-ink)' }}>{math.title}</strong>
+          </p>
+          {history.length > 0 && (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '0.6rem',
+                marginTop: '0.9rem',
+              }}
+            >
+              <Stat label="Mejor similitud" value={bestSimilarity !== null ? `${bestSimilarity}%` : '—'} />
+              <Stat label="Intentos" value={`${history.length}`} />
+              <Stat label="% aprobados" value={passRate !== null ? `${passRate}%` : '—'} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* escenario: tu color vs objetivo */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: '0.9rem',
+          marginBottom: '1rem',
+        }}
+      >
+        <div className="glass-card">
+          <div style={{ padding: '1rem', textAlign: 'center' }}>
+            <p className="more-section-title" style={{ marginBottom: '0.6rem' }}>
+              Tu color
+            </p>
+            <div
+              style={{
+                width: '100%',
+                aspectRatio: '1 / 1',
+                borderRadius: 'var(--gco-radius-sm)',
+                overflow: 'hidden',
+                border: '1px solid var(--gco-glass-border)',
+                boxShadow: `0 0 24px ${cssColor(user)}33`,
+              }}
+            >
+              <ShapeSVG shape={shape} params={user} uid="user" />
+            </div>
+            <p className="mono" style={{ fontSize: '0.72rem', color: 'var(--gco-ink-faint)', marginTop: '0.5rem' }}>
+              {(() => {
+                const v = visualHsl(user)
+                const rgb = hslToRgb(v.h, v.s, v.l)
+                return rgbToHex(rgb.r, rgb.g, rgb.b)
+              })()}
+            </p>
+          </div>
+        </div>
+        <div className="glass-card">
+          <div style={{ padding: '1rem', textAlign: 'center' }}>
+            <p className="more-section-title" style={{ marginBottom: '0.6rem' }}>
+              Objetivo
+            </p>
+            <div
+              style={{
+                width: '100%',
+                aspectRatio: '1 / 1',
+                borderRadius: 'var(--gco-radius-sm)',
+                overflow: 'hidden',
+                border: '1px solid var(--gco-glass-border)',
+                boxShadow: `0 0 24px ${cssColor(target)}33`,
+              }}
+            >
+              <ShapeSVG shape={shape} params={target} uid="target" />
+            </div>
+            <p className="mono" style={{ fontSize: '0.72rem', color: 'var(--gco-ink-faint)', marginTop: '0.5rem' }}>
+              {showTargetInfo
+                ? (() => {
+                    const v = visualHsl(target)
+                    const rgb = hslToRgb(v.h, v.s, v.l)
+                    return rgbToHex(rgb.r, rgb.g, rgb.b)
+                  })()
+                : '???'}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* selector de panel */}
+      <div className="glass-card" style={{ marginBottom: '1rem' }}>
+        <div style={{ padding: '1.1rem 1.15rem' }}>
+          <div className="segmented" style={{ marginBottom: '1.1rem' }}>
+            <button type="button" className={panel === 'rgb' ? 'active' : ''} onClick={() => changePanel('rgb')}>
+              RGB/Código
+            </button>
+            <button
+              type="button"
+              className={panel === 'porcentaje' ? 'active' : ''}
+              onClick={() => changePanel('porcentaje')}
+            >
+              Porcentajes
+            </button>
+            <button type="button" className={panel === 'rueda' ? 'active' : ''} onClick={() => changePanel('rueda')}>
+              Rueda
+            </button>
+            <button
+              type="button"
+              className={panel === 'barras' ? 'active' : ''}
+              onClick={() => changePanel('barras')}
+            >
+              Barras
+            </button>
+          </div>
+
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={panel}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18 }}
+            >
+              {panel === 'rgb' && <RgbHexPanel params={user} onChange={setUser} />}
+              {panel === 'porcentaje' && <PercentPanel params={user} onChange={setUser} />}
+              {panel === 'rueda' && <WheelPanel params={user} onChange={setUser} />}
+              {panel === 'barras' && <SliderPanel params={user} onChange={setUser} />}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        className="glass-button"
+        style={{ width: '100%', marginBottom: '1rem' }}
+        onClick={check}
+        disabled={analyzing}
+      >
+        {analyzing ? 'Analizando…' : 'Comprobar'}
+      </button>
+
+      <AnimatePresence>
+        {analyzing && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="glass-card"
+            style={{ marginBottom: '1rem', overflow: 'hidden' }}
+          >
+            <div style={{ padding: '1.1rem 1.25rem' }}>
+              <p style={{ fontSize: '0.82rem', color: 'var(--gco-ink-muted)', marginBottom: '0.7rem' }}>
+                Escaneando espectro cromático…
+              </p>
+              <div
+                style={{
+                  height: 8,
+                  borderRadius: 8,
+                  background: 'var(--gco-glass-border)',
+                  overflow: 'hidden',
+                }}
+              >
+                <motion.div
+                  initial={{ x: '-100%' }}
+                  animate={{ x: '100%' }}
+                  transition={{ duration: 1.05, ease: 'linear' }}
+                  style={{
+                    height: '100%',
+                    width: '50%',
+                    background:
+                      'linear-gradient(90deg, transparent, var(--gco-primary), var(--gco-accent), transparent)',
+                  }}
+                />
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {result && passed !== null && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            className="glass-card"
+            style={{ marginBottom: '1rem' }}
+          >
+            <div style={{ padding: '1.4rem 1.25rem' }}>
+              <div style={{ textAlign: 'center', marginBottom: '1.2rem' }}>
+                <p
+                  className="mono"
+                  style={{
+                    fontSize: 'clamp(2rem, 8vw, 2.6rem)',
+                    fontWeight: 800,
+                    color: passed ? 'var(--gco-primary)' : 'var(--gco-secondary)',
+                  }}
+                >
+                  {result.overall}%
+                </p>
+                <p style={{ fontSize: '0.9rem', color: 'var(--gco-ink-muted)' }}>
+                  {passed
+                    ? `¡Aprobado! Necesitabas ${minRequired}% o más.`
+                    : `No alcanza el mínimo de ${minRequired}%. ¡Sigue ajustando!`}
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', marginBottom: '1.2rem' }}>
+                {breakdownRows.map((row) => (
+                  <div key={row.label}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--gco-ink-muted)' }}>{row.label}</span>
+                      <span className="mono" style={{ fontSize: '0.78rem' }}>
+                        {row.value}%
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        height: 6,
+                        borderRadius: 6,
+                        background: 'var(--gco-glass-border)',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${row.value}%` }}
+                        transition={{ duration: 0.6, ease: 'easeOut' }}
+                        style={{
+                          height: '100%',
+                          background:
+                            row.value >= minRequired ? 'var(--gco-primary)' : 'var(--gco-secondary)',
+                          borderRadius: 6,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div
+                style={{
+                  padding: '0.9rem 1rem',
+                  borderRadius: 'var(--gco-radius-sm)',
+                  background: 'var(--gco-fill-quaternary)',
+                  border: '1px solid var(--gco-glass-border)',
+                  marginBottom: '1.1rem',
+                }}
+              >
+                <p className="more-section-title" style={{ marginBottom: '0.4rem' }}>
+                  📐 {math.title} · cómo se construyó matemáticamente
+                </p>
+                {math.lines.map((l, i) => (
+                  <p key={i} className="mono" style={{ fontSize: '0.76rem', color: 'var(--gco-ink-muted)', lineHeight: 1.6 }}>
+                    {l}
+                  </p>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                className="glass-button"
+                style={{ width: '100%' }}
+                onClick={passed ? nextRound : retrySame}
+              >
+                {passed ? 'Siguiente nivel →' : 'Reintentar este nivel'}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {history.length > 0 && (
+        <div className="glass-card">
+          <div style={{ padding: '1.05rem 1.25rem' }}>
+            <p className="more-section-title" style={{ marginBottom: '0.6rem' }}>
+              Historial reciente
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+              {history.slice(0, 12).map((h, i) => (
+                <span
+                  key={`${h.date}-${i}`}
+                  className="mono"
+                  style={{
+                    fontSize: '0.72rem',
+                    padding: '0.3rem 0.55rem',
+                    borderRadius: 999,
+                    background: 'var(--gco-glass-bg)',
+                    border: '1px solid var(--gco-glass-border)',
+                    color: h.passed ? 'var(--gco-primary)' : 'var(--gco-secondary)',
+                  }}
+                >
+                  Nv.{h.level} · {h.similarity}%
                 </span>
               ))}
             </div>
