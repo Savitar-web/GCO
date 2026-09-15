@@ -105,8 +105,12 @@ export type GridPos = MazeCoord
 
 export type MazeCellType = 'wall' | 'floor' | 'hole'
 
+export type MazeObstacleKind = 'boulder' | 'glass'
+
 export interface MazeBoulder {
   id: string
+  /** 'boulder' debe encajar en un hueco específico; 'glass' se rompe con un solo empujón hacia cualquier casilla libre. */
+  kind: MazeObstacleKind
   row: number
   col: number
   holeRow: number
@@ -126,6 +130,8 @@ export interface LaberintoLevel {
   fogRadius: number
   moveLimit: number
   targetSeconds: number
+  /** Límite real de contrarreloj en segundos (siempre bastante mayor que targetSeconds, para ser justo). */
+  timeLimitSeconds: number
   goal: string
   seed: number
 }
@@ -225,13 +231,26 @@ function mazeBfsPath(grid: MazeCellType[][], start: MazeCoord, goal: MazeCoord):
 
 function simulateMazeClear(grid: MazeCellType[][], boulders: MazeBoulder[], start: MazeCoord, exit: MazeCoord): boolean {
   const work = grid.map((row) => row.slice())
-  for (const b of boulders) work[b.row][b.col] = 'wall'
+  for (const b of boulders) {
+    work[b.row][b.col] = 'wall'
+    // Un hueco SIN rellenar no es transitable (igual que en el juego real,
+    // ver isMazeWalkable) — hay que bloquearlo aquí también, o la
+    // simulación podría "colar" un camino que en la partida real está
+    // cerrado porque ese hueco aún pertenece a una roca sin empujar.
+    if (b.kind === 'boulder') work[b.holeRow][b.holeCol] = 'wall'
+  }
   let cur = start
   for (const b of boulders) {
     const from = boulderApproach(b)
     const path = mazeBfsPath(work, cur, from)
     if (!path) return false
+    // La celda de destino del empujón también debe estar libre EN ESE
+    // MOMENTO: si otro obstáculo todavía activo (procesado después en el
+    // orden) ocupa justo esa celda, el empujón fallaría en el juego real
+    // aunque el camino hasta el punto de aproximación sí exista.
+    if (work[b.holeRow][b.holeCol] === 'wall') return false
     work[b.row][b.col] = 'floor'
+    if (b.kind === 'boulder') work[b.holeRow][b.holeCol] = 'floor'
     cur = { row: b.row, col: b.col }
   }
   return !!mazeBfsPath(work, cur, exit)
@@ -243,67 +262,139 @@ function boulderApproach(b: MazeBoulder): MazeCoord {
   return { row: b.row - dr, col: b.col - dc }
 }
 
-function placeMazeBoulders(
-  grid: MazeCellType[][],
-  path: MazeCoord[],
-  count: number,
-  rng: () => number,
-  start: MazeCoord,
-  exit: MazeCoord
-): MazeBoulder[] {
+/** Distancias BFS desde `start` a cada celda transitable (−1 = inalcanzable). */
+function mazeBfsDistances(grid: MazeCellType[][], start: MazeCoord): Int32Array {
+  const H = grid.length
+  const W = grid[0].length
+  const dist = new Int32Array(H * W).fill(-1)
+  const key = (r: number, c: number) => r * W + c
+  dist[key(start.row, start.col)] = 0
+  const queue: MazeCoord[] = [start]
+  let qi = 0
+  while (qi < queue.length) {
+    const { row: r, col: c } = queue[qi++]
+    const dHere = dist[key(r, c)]
+    for (const [dr, dc] of [
+      [0, 1],
+      [0, -1],
+      [1, 0],
+      [-1, 0],
+    ] as const) {
+      const nr = r + dr
+      const nc = c + dc
+      if (nr < 0 || nr >= H || nc < 0 || nc >= W) continue
+      if (grid[nr][nc] === 'wall') continue
+      const k = key(nr, nc)
+      if (dist[k] !== -1) continue
+      dist[k] = dHere + 1
+      queue.push({ row: nr, col: nc })
+    }
+  }
+  return dist
+}
+
+/** La celda transitable más lejana de `start` (para colocar la salida bien alejada, nunca "a la vuelta de la esquina"). */
+function farthestFloorCell(grid: MazeCellType[][], start: MazeCoord): MazeCoord {
+  const W = grid[0].length
+  const dist = mazeBfsDistances(grid, start)
+  let best = start
+  let bestDist = -1
+  for (let r = 0; r < grid.length; r++) {
+    for (let c = 0; c < W; c++) {
+      const d = dist[r * W + c]
+      if (d > bestDist) {
+        bestDist = d
+        best = { row: r, col: c }
+      }
+    }
+  }
+  return best
+}
+
+/**
+ * Coloca rocas y cristales SIEMPRE exigiendo el mayor rodeo posible: para
+ * cada obstáculo, en vez de aceptar la primera colocación válida (como
+ * hacía la versión anterior — por eso terminaban muy cerca del jugador o
+ * en zonas de paso trivial), se evalúan varios candidatos y se elige el
+ * que obliga a caminar más lejos desde la posición actual para alcanzar el
+ * punto de empuje. La validez (que el nivel siga siendo 100% resoluble en
+ * orden) se sigue comprobando en cada paso con `simulateMazeClear`.
+ */
+function placeMazeBoulders(grid: MazeCellType[][], path: MazeCoord[], count: number, glassRatio: number, rng: () => number, start: MazeCoord, exit: MazeCoord): MazeBoulder[] {
   const H = grid.length
   const W = grid[0].length
   const pathSet = new Set(path.map((p) => p.row * W + p.col))
   const placed: MazeBoulder[] = []
-  const candidates = shuffledArray(path.slice(1, -1), rng)
   let idCounter = 0
+  let cursor = start
 
-  for (const p of candidates) {
-    if (placed.length >= count) break
-    if (placed.some((b) => b.row === p.row && b.col === p.col)) continue
+  const rawCandidates: { p: MazeCoord; dr: number; dc: number }[] = []
+  for (const p of path.slice(1, -1)) {
+    for (const [dr, dc] of [
+      [0, 1],
+      [0, -1],
+      [1, 0],
+      [-1, 0],
+    ] as const) {
+      rawCandidates.push({ p, dr, dc })
+    }
+  }
 
-    const dirs = shuffledArray(
-      [
-        [0, 1],
-        [0, -1],
-        [1, 0],
-        [-1, 0],
-      ] as const,
-      rng
-    )
-    for (const [dr, dc] of dirs) {
+  for (let slot = 0; slot < count; slot++) {
+    const sampled = shuffledArray(rawCandidates, rng).slice(0, 90)
+    let best: { boulder: MazeBoulder; score: number } | null = null
+
+    for (const { p, dr, dc } of sampled) {
+      if (placed.some((b) => b.row === p.row && b.col === p.col)) continue
+      const kind: MazeObstacleKind = rng() < glassRatio ? 'glass' : 'boulder'
       const hr = p.row + dr
       const hc = p.col + dc
       if (hr < 0 || hr >= H || hc < 0 || hc >= W) continue
       if (grid[hr][hc] === 'wall') continue
-      if (pathSet.has(hr * W + hc)) continue
-      if (placed.some((b) => b.holeRow === hr && b.holeCol === hc)) continue
       const fr = p.row - dr
       const fc = p.col - dc
       if (fr < 0 || fr >= H || fc < 0 || fc >= W) continue
       if (grid[fr][fc] === 'wall') continue
 
-      const candidate: MazeBoulder = { id: `b${idCounter}`, row: p.row, col: p.col, holeRow: hr, holeCol: hc, cleared: false }
-      const trial = [...placed, candidate]
-      if (simulateMazeClear(grid, trial, start, exit)) {
-        placed.push(candidate)
-        idCounter++
-        break
+      if (kind === 'boulder') {
+        if (pathSet.has(hr * W + hc)) continue
+        if (placed.some((b) => b.kind === 'boulder' && b.holeRow === hr && b.holeCol === hc)) continue
       }
+
+      const candidate: MazeBoulder = { id: `b${idCounter}`, kind, row: p.row, col: p.col, holeRow: hr, holeCol: hc, cleared: false }
+      const trial = [...placed, candidate]
+      if (!simulateMazeClear(grid, trial, start, exit)) continue
+
+      const work = grid.map((row) => row.slice())
+      for (const b of placed) {
+        work[b.row][b.col] = 'wall'
+        if (b.kind === 'boulder') work[b.holeRow][b.holeCol] = 'wall'
+      }
+      const approachPath = mazeBfsPath(work, cursor, { row: fr, col: fc })
+      const score = approachPath ? approachPath.length : -1
+      if (score < 0) continue
+      if (!best || score > best.score) best = { boulder: candidate, score }
     }
+
+    if (!best) continue
+    placed.push(best.boulder)
+    idCounter++
+    cursor = { row: best.boulder.row, col: best.boulder.col }
   }
   return placed
 }
 
 export function getLaberintoDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const rooms = Math.min(4 + Math.floor(lv / 2.2), 19)
-  const braidRatio = Math.min(0.04 + lv * 0.014, 0.46)
-  const boulderCount = Math.min(1 + Math.floor(lv / 3), 12)
+  const rooms = Math.min(5 + Math.floor(lv / 1.8), 26)
+  const braidRatio = Math.min(0.03 + lv * 0.011, 0.4)
+  const boulderCount = Math.min(1 + Math.floor(lv / 2.2), 16)
+  const glassRatio = lv < 4 ? 0 : Math.min(0.12 + lv * 0.01, 0.42)
   const fogRadius = lv >= 22 ? Math.max(2, 6 - Math.floor((lv - 22) / 9)) : 0
-  const moveLimit = lv <= 4 ? 0 : Math.round(rooms * rooms * 2.4 + boulderCount * 6)
-  const targetSeconds = Math.max(20, Math.round(rooms * rooms * 1.6 + boulderCount * 8))
-  return { rooms, braidRatio, boulderCount, fogRadius, moveLimit, targetSeconds }
+  const moveLimit = lv <= 4 ? 0 : Math.round(rooms * rooms * 2.6 + boulderCount * 7)
+  const targetSeconds = Math.max(22, Math.round(rooms * rooms * 1.7 + boulderCount * 9))
+  const timeLimitSeconds = Math.round(targetSeconds * 2.1 + 15)
+  return { rooms, braidRatio, boulderCount, glassRatio, fogRadius, moveLimit, targetSeconds, timeLimitSeconds }
 }
 
 export function generateLaberintoLevel(level: number, opts?: { seedSalt?: number }): LaberintoLevel {
@@ -316,11 +407,17 @@ export function generateLaberintoLevel(level: number, opts?: { seedSalt?: number
   braidMaze(grid, rng, d.braidRatio)
 
   const start: MazeCoord = { row: 1, col: 1 }
-  const exit: MazeCoord = { row: d.rooms * 2 - 1, col: d.rooms * 2 - 1 }
+  const exit = farthestFloorCell(grid, start)
   const path = mazeBfsPath(grid, start, exit) ?? [start, exit]
 
-  const boulders = placeMazeBoulders(grid, path, d.boulderCount, rng, start, exit)
-  for (const b of boulders) grid[b.holeRow][b.holeCol] = 'hole'
+  const boulders = placeMazeBoulders(grid, path, d.boulderCount, d.glassRatio, rng, start, exit)
+  for (const b of boulders) if (b.kind === 'boulder') grid[b.holeRow][b.holeCol] = 'hole'
+
+  const boulderKinds = new Set(boulders.map((b) => b.kind))
+  const goalParts: string[] = []
+  if (boulderKinds.has('boulder')) goalParts.push('empuja las rocas a sus huecos')
+  if (boulderKinds.has('glass')) goalParts.push('rompe los cristales empujándolos')
+  const goal = goalParts.length > 0 ? `${goalParts.join(' y ')} para llegar a la salida antes de que se acabe el tiempo.` : 'Encuentra el camino hasta la salida antes de que se acabe el tiempo.'
 
   return {
     level: lv,
@@ -333,7 +430,8 @@ export function generateLaberintoLevel(level: number, opts?: { seedSalt?: number
     fogRadius: d.fogRadius,
     moveLimit: d.moveLimit,
     targetSeconds: d.targetSeconds,
-    goal: boulders.length > 0 ? 'Empuja las rocas a los huecos para despejar el camino a la salida.' : 'Encuentra el camino hasta la salida.',
+    timeLimitSeconds: d.timeLimitSeconds,
+    goal,
     seed,
   }
 }
@@ -373,6 +471,12 @@ export function laberintoStep(level: LaberintoLevel, boulders: MazeBoulder[], pl
     if (beyondType === 'wall') return noMove
     const otherBoulder = boulders.find((b) => !b.cleared && b.row === beyondRow && b.col === beyondCol)
     if (otherBoulder) return noMove
+
+    if (boulderHere.kind === 'glass') {
+      // El cristal se rompe con un solo empujón hacia cualquier casilla libre (no necesita un hueco específico).
+      const nextBoulders = boulders.map((b) => (b.id === boulderHere.id ? { ...b, row: beyondRow, col: beyondCol, cleared: true } : b))
+      return { player: { row: targetRow, col: targetCol }, boulders: nextBoulders, moved: true, pushed: true }
+    }
 
     if (beyondType === 'hole') {
       const nextBoulders = boulders.map((b) => (b.id === boulderHere.id ? { ...b, row: beyondRow, col: beyondCol, cleared: true } : b))
@@ -842,95 +946,146 @@ export function isIceSlideSolvable(level: IceSlideLevel): boolean {
 
 export function getIceSlideDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const size = Math.min(7 + Math.floor(lv / 2.2), 19)
-  const obstacleRatio = Math.min(0.09 + lv * 0.016, 0.36)
-  const moveLimit = Math.round(6 + lv * 1.1)
-  const targetSeconds = Math.max(18, Math.round(20 + lv * 3.1))
-  // longitud mínima de la solución ÓPTIMA en número de deslizamientos —
-  // crece mucho más agresivamente que en la versión original para que cada
-  // nivel realmente exija encadenar varios rebotes de hielo.
-  const minPathLength = Math.min(3 + Math.floor(lv / 1.3), 24)
-  return { size, obstacleRatio, moveLimit, targetSeconds, minPathLength }
+  const size = Math.min(9 + Math.floor(lv / 1.1), 33)
+  // número de tramos de deslizamiento de la ruta garantizada (construida,
+  // no encontrada por azar) — esto es lo que realmente fija la dificultad.
+  const segments = Math.min(3 + Math.floor(lv / 1.7), 17)
+  const decorCount = Math.min(2 + Math.floor(lv / 2.5), 14)
+  const moveLimit = Math.round(segments * 1.6 + 4)
+  const targetSeconds = Math.max(18, Math.round(16 + segments * 3.4))
+  // longitud mínima de la solución óptima que se exige verificar (algo por
+  // debajo de `segments`, ya que los obstáculos decorativos añadidos después
+  // a veces abren un atajo legítimo de un tramo menos — eso sigue siendo
+  // interesante, no es un fallo).
+  const minPathLength = Math.max(2, Math.round(segments * 0.75))
+  return { size, segments, decorCount, moveLimit, targetSeconds, minPathLength }
+}
+
+/**
+ * Construye una ruta de deslizamientos GARANTIZADA: en cada tramo se elige
+ * una dirección y una distancia, y se coloca una celda "suelo" (no-hielo)
+ * exactamente en el punto de parada — así la ruta completa (inicio → ... →
+ * meta) es, por construcción, una secuencia válida de deslizamientos, sin
+ * depender de que el azar coloque obstáculos que por casualidad permitan
+ * una ruta larga (que es lo que fallaba antes: con obstáculos puramente
+ * aleatorios, la mayoría de los intentos no lograban una solución tan larga
+ * como pedía el nivel, y el generador terminaba cayendo casi siempre a un
+ * respaldo trivial sin obstáculos).
+ */
+function buildIceSlidePath(rows: number, cols: number, segments: number, rng: () => number): { grid: IceCellType[][]; start: MazeCoord; target: MazeCoord; achieved: number } {
+  const grid: IceCellType[][] = Array.from({ length: rows }, () => Array<IceCellType>(cols).fill('ice'))
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) if (r === 0 || c === 0 || r === rows - 1 || c === cols - 1) grid[r][c] = 'wall'
+
+  let cur: MazeCoord = { row: 1 + Math.floor(rng() * (rows - 2)), col: 1 + Math.floor(rng() * (cols - 2)) }
+  grid[cur.row][cur.col] = 'floor'
+  const start = { ...cur }
+  const dirs: Direction[] = ['up', 'down', 'left', 'right']
+  let achieved = 0
+
+  for (let i = 0; i < segments; i++) {
+    // Cualquier dirección es válida: como cada parada intermedia se marca
+    // como celda "suelo" (no-hielo), un deslizamiento SIEMPRE se detiene ahí
+    // sin importar qué haya más allá — así que ni retroceder ni seguir
+    // recto puede "saltarse" una parada y crear un atajo no intencional.
+    const avail = shuffledArray(dirs, rng)
+    let moved = false
+    for (const dir of avail) {
+      const { dr, dc } = DIRECTION_DELTA[dir]
+      const dist = 2 + Math.floor(rng() * 2)
+      const nr = cur.row + dr * dist
+      const nc = cur.col + dc * dist
+      if (nr <= 0 || nr >= rows - 1 || nc <= 0 || nc >= cols - 1) continue
+      let clearPath = true
+      for (let s = 1; s <= dist; s++) {
+        const rr = cur.row + dr * s
+        const cc = cur.col + dc * s
+        if (grid[rr][cc] !== 'ice') {
+          clearPath = false
+          break
+        }
+      }
+      if (!clearPath) continue
+      cur = { row: nr, col: nc }
+      grid[cur.row][cur.col] = 'floor'
+      moved = true
+      achieved++
+      break
+    }
+    if (!moved) break
+  }
+  return { grid, start, target: { ...cur }, achieved }
 }
 
 export function generateIceSlideLevel(level: number, opts?: { seedSalt?: number }): IceSlideLevel {
   const lv = Math.max(1, Math.floor(level))
   const d = getIceSlideDifficulty(lv)
-  const maxAttempts = 60
+  const maxAttempts = 150
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const seed = levelSeed(lv, 10100 + (opts?.seedSalt ?? 0) + attempt * 733)
     const rng = mulberry32(seed)
-    const rows = d.size
-    const cols = d.size
-    const grid: IceCellType[][] = Array.from({ length: rows }, () => Array<IceCellType>(cols).fill('ice'))
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (r === 0 || c === 0 || r === rows - 1 || c === cols - 1) grid[r][c] = 'wall'
-      }
+    const { grid, start, target, achieved } = buildIceSlidePath(d.size, d.size, d.segments, rng)
+    // Filtro rápido: si el recorrido se atascó muy por debajo del objetivo,
+    // ni siquiera vale la pena decorar y validar con BFS — se prueba
+    // directamente con otra semilla (esto es barato, así que probar muchas
+    // semillas es mucho más barato que antes).
+    if (achieved < Math.max(2, Math.floor(d.segments * 0.75))) continue
+
+    // Escombros decorativos: algunos muros y parches de suelo FUERA de la
+    // ruta principal, para que el tablero no se vea vacío y para dar más
+    // variedad — se verifica después que ninguno abra un atajo demasiado
+    // corto.
+    const decorGrid = grid.map((row) => row.slice())
+    let placedDecor = 0
+    let guard = 0
+    while (placedDecor < d.decorCount && guard < d.decorCount * 15) {
+      guard++
+      const r = 1 + Math.floor(rng() * (d.size - 2))
+      const c = 1 + Math.floor(rng() * (d.size - 2))
+      if (decorGrid[r][c] !== 'ice') continue
+      if ((r === start.row && c === start.col) || (r === target.row && c === target.col)) continue
+      decorGrid[r][c] = rng() < 0.5 ? 'wall' : 'floor'
+      placedDecor++
     }
-    // obstáculos interiores: mezcla de muros (fuerzan giros) y suelo normal
-    // (frena el deslizamiento a media pista) — ambos rompen la trivialidad.
-    for (let r = 2; r < rows - 2; r++) {
-      for (let c = 2; c < cols - 2; c++) {
-        if (rng() < d.obstacleRatio) grid[r][c] = rng() < 0.55 ? 'wall' : 'floor'
-      }
+
+    const finalGrid = decorGrid.map((row) => row.slice())
+    finalGrid[target.row][target.col] = 'goal'
+
+    const candidate: IceSlideLevel = {
+      level: lv,
+      rows: d.size,
+      cols: d.size,
+      grid: finalGrid,
+      start,
+      target,
+      moveLimit: d.moveLimit,
+      targetSeconds: d.targetSeconds,
+      goal: 'Deslízate sobre el hielo hasta llegar a la meta.',
+      seed,
     }
-    const interior: MazeCoord[] = []
-    for (let r = 1; r < rows - 1; r++) {
-      for (let c = 1; c < cols - 1; c++) {
-        if (grid[r][c] !== 'wall') interior.push({ row: r, col: c })
-      }
-    }
-    const shuffled = shuffledArray(interior, rng)
-    if (shuffled.length < 2) continue
-    const pairTries = Math.min(10, shuffled.length - 1)
-    for (let pt = 0; pt < pairTries; pt++) {
-      const start = shuffled[pt]
-      const target = shuffled[shuffled.length - 1 - pt]
-      if (start.row === target.row && start.col === target.col) continue
-      const trialGrid = grid.map((row) => row.slice())
-      trialGrid[start.row][start.col] = 'floor'
-      trialGrid[target.row][target.col] = 'goal'
-      const candidate: IceSlideLevel = {
-        level: lv,
-        rows,
-        cols,
-        grid: trialGrid,
-        start,
-        target,
-        moveLimit: d.moveLimit,
-        targetSeconds: d.targetSeconds,
-        goal: 'Deslízate sobre el hielo hasta llegar a la meta.',
-        seed,
-      }
-      const path = iceSlideBfs(candidate)
-      // el BFS ya da la solución ÓPTIMA (mínimo de deslizamientos): si esa
-      // solución mínima no alcanza minPathLength, el nivel es trivial y se
-      // descarta.
-      if (path && path.length >= d.minPathLength) return candidate
-    }
+    const path = iceSlideBfs(candidate)
+    if (path && path.length - 1 >= d.minPathLength) return candidate
   }
-  // Respaldo garantizado (siempre resoluble, aunque sin la dificultad plena)
-  const rows = 9
-  const cols = 9
-  const grid: IceCellType[][] = Array.from({ length: rows }, (_, r) =>
-    Array.from({ length: cols }, (_, c) => (r === 0 || c === 0 || r === rows - 1 || c === cols - 1 ? 'wall' : 'ice') as IceCellType)
-  )
-  grid[1][1] = 'floor'
-  grid[rows - 2][cols - 2] = 'goal'
+
+  // Respaldo garantizado: construcción simple sin decoración, siempre resoluble.
+  const fallbackSeed = levelSeed(lv, 10999 + (opts?.seedSalt ?? 0))
+  const fallbackRng = mulberry32(fallbackSeed)
+  const size = Math.min(d.size, 13)
+  const { grid, start, target } = buildIceSlidePath(size, size, Math.max(3, Math.floor(d.segments * 0.6)), fallbackRng)
+  grid[target.row][target.col] = 'goal'
   return {
     level: lv,
-    rows,
-    cols,
+    rows: size,
+    cols: size,
     grid,
-    start: { row: 1, col: 1 },
-    target: { row: rows - 2, col: cols - 2 },
+    start,
+    target,
     moveLimit: 0,
-    targetSeconds: 70,
+    targetSeconds: Math.max(20, d.targetSeconds),
     goal: 'Deslízate sobre el hielo hasta llegar a la meta.',
-    seed: levelSeed(lv, 10999),
+    seed: fallbackSeed,
   }
 }
+
 
 export function calcIceSlideStars(moves: number, timeMs: number, targetSeconds: number, moveLimit: number): 0 | 1 | 2 | 3 {
   if (moves <= 0) return 0
@@ -1037,74 +1192,147 @@ export function isSwitchLevelSolvable(level: SwitchLevel): boolean {
 
 export function getSwitchDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const size = Math.min(6 + Math.floor(lv / 3), 15)
-  const switchCount = Math.min(1 + Math.floor(lv / 4), 6)
-  const decoySwitches = lv >= 10 ? Math.min(Math.floor((lv - 10) / 5) + 1, 4) : 0
-  const moveLimit = Math.round(size * size * 0.95 + switchCount * 12 + decoySwitches * 8)
-  const targetSeconds = Math.max(20, Math.round(size * size * 1.15 + switchCount * 14 + decoySwitches * 10))
-  return { size, switchCount, decoySwitches, moveLimit, targetSeconds }
+  const rooms = Math.min(4 + Math.floor(lv / 2), 16)
+  const braidRatio = Math.min(0.05 + lv * 0.01, 0.3)
+  const switchCount = Math.min(1 + Math.floor(lv / 2.5), 8)
+  const decoySwitches = lv >= 6 ? Math.min(Math.floor((lv - 6) / 4) + 1, 5) : 0
+  const size = rooms * 2 + 1
+  const moveLimit = Math.round(size * size * 0.9 + switchCount * 16 + decoySwitches * 10)
+  const targetSeconds = Math.max(22, Math.round(size * size * 1.05 + switchCount * 16 + decoySwitches * 12))
+  return { rooms, braidRatio, switchCount, decoySwitches, moveLimit, targetSeconds }
+}
+
+/** BFS que trata las celdas de `blockedDoors` como muro (salvo que su índice esté en `openIdx`). */
+function switchReachable(grid: ('wall' | 'floor')[][], doorCells: MazeCoord[], openIdx: Set<number>, start: MazeCoord): Map<number, number> {
+  const rows = grid.length
+  const cols = grid[0].length
+  const key = (r: number, c: number) => r * cols + c
+  const blocked = new Set<number>()
+  doorCells.forEach((d, i) => {
+    if (!openIdx.has(i)) blocked.add(key(d.row, d.col))
+  })
+  const dist = new Map<number, number>([[key(start.row, start.col), 0]])
+  const queue: MazeCoord[] = [start]
+  let qi = 0
+  while (qi < queue.length) {
+    const cur = queue[qi++]
+    const d = dist.get(key(cur.row, cur.col))!
+    for (const [dr, dc] of [
+      [0, 1],
+      [0, -1],
+      [1, 0],
+      [-1, 0],
+    ] as const) {
+      const nr = cur.row + dr
+      const nc = cur.col + dc
+      if (nr < 0 || nr >= rows || nc < 0 || nc >= cols) continue
+      if (grid[nr][nc] === 'wall') continue
+      const k = key(nr, nc)
+      if (blocked.has(k)) continue
+      if (dist.has(k)) continue
+      dist.set(k, d + 1)
+      queue.push({ row: nr, col: nc })
+    }
+  }
+  return dist
 }
 
 export function generateSwitchLevel(level: number, opts?: { seedSalt?: number }): SwitchLevel {
   const lv = Math.max(1, Math.floor(level))
   const d = getSwitchDifficulty(lv)
-  const maxAttempts = 40
+  const maxAttempts = 30
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const seed = levelSeed(lv, 11100 + (opts?.seedSalt ?? 0) + attempt * 619)
     const rng = mulberry32(seed)
-    const rows = d.size
-    const cols = d.size
-    const grid: ('wall' | 'floor')[][] = Array.from({ length: rows }, () => Array<'wall' | 'floor'>(cols).fill('floor'))
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (r === 0 || c === 0 || r === rows - 1 || c === cols - 1) grid[r][c] = 'wall'
+
+    // Se reutiliza el mismo generador de laberinto perfecto que Laberinto:
+    // un laberinto real (no una única pared vertical repetida) con algunos
+    // atajos de "trenzado" para variar la forma.
+    const grid = carveMaze(d.rooms, rng) as unknown as ('wall' | 'floor')[][]
+    braidMaze(grid as unknown as MazeCellType[][], rng, d.braidRatio)
+
+    const start: MazeCoord = { row: 1, col: 1 }
+    const farExit = farthestFloorCell(grid as unknown as MazeCellType[][], start)
+    const mainPath = mazeBfsPath(grid as unknown as MazeCellType[][], start, farExit)
+    if (!mainPath || mainPath.length < d.switchCount * 3) continue
+
+    // Puntos de puerta repartidos a lo largo del camino principal (nunca en
+    // el propio inicio).
+    const doorCells: MazeCoord[] = []
+    for (let i = 0; i < d.switchCount; i++) {
+      const idx = Math.round(((i + 1) * (mainPath.length - 1)) / (d.switchCount + 1))
+      const cell = mainPath[Math.max(1, idx)]
+      if (doorCells.some((c) => c.row === cell.row && c.col === cell.col)) continue
+      doorCells.push(cell)
+    }
+    if (doorCells.length < Math.max(1, Math.floor(d.switchCount * 0.6))) continue
+
+    const doors: DoorDef[] = doorCells.map((c, i) => ({ id: `door${i}`, row: c.row, col: c.col, openInitially: false }))
+    const usedCells = new Set<number>([start.row * grid[0].length + start.col])
+    const switches: SwitchDef[] = []
+    const openIdx = new Set<number>()
+    let ok = true
+
+    for (let i = 0; i < doors.length; i++) {
+      const reach = switchReachable(grid, doorCells, openIdx, start)
+      // preferir colocaciones lejanas dentro de lo alcanzable (más exploración, no trivial)
+      const options = Array.from(reach.entries())
+        .filter(([k]) => !usedCells.has(k))
+        .sort((a, b) => b[1] - a[1])
+      if (options.length === 0) {
+        ok = false
+        break
       }
+      const topN = options.slice(0, Math.min(6, options.length))
+      const [key] = topN[Math.floor(rng() * topN.length)]
+      const cols = grid[0].length
+      const pos: MazeCoord = { row: Math.floor(key / cols), col: key % cols }
+      usedCells.add(key)
+      switches.push({ id: `sw${i}`, row: pos.row, col: pos.col, doorIds: [doors[i].id] })
+      openIdx.add(i)
     }
-    const barrierCol = Math.floor(cols / 2)
-    for (let r = 1; r < rows - 1; r++) grid[r][barrierCol] = 'wall'
+    if (!ok) continue
 
-    const doors: DoorDef[] = []
-    const gapRows = shuffledArray(
-      Array.from({ length: rows - 2 }, (_, i) => i + 1),
-      rng
-    ).slice(0, d.switchCount)
-    gapRows.forEach((r, i) => {
-      grid[r][barrierCol] = 'floor'
-      doors.push({ id: `door${i}`, row: r, col: barrierCol, openInitially: false })
-    })
-    if (doors.length === 0) continue
-
-    const leftCells: MazeCoord[] = []
-    const rightCells: MazeCoord[] = []
-    for (let r = 1; r < rows - 1; r++) {
-      for (let c = 1; c < barrierCol; c++) leftCells.push({ row: r, col: c })
-      for (let c = barrierCol + 1; c < cols - 1; c++) rightCells.push({ row: r, col: c })
-    }
-    if (!leftCells.length || !rightCells.length) continue
-    const start = shuffledArray(leftCells, rng)[0]
-    const target = shuffledArray(rightCells, rng)[0]
-
-    const usedSwitchCells = new Set<number>()
-    const switches: SwitchDef[] = doors.map((door, i) => {
-      const options = shuffledArray(leftCells, rng).filter((p) => !(p.row === start.row && p.col === start.col) && !usedSwitchCells.has(p.row * cols + p.col))
-      const pos = options[0] ?? leftCells[0]
-      usedSwitchCells.add(pos.row * cols + pos.col)
-      return { id: `sw${i}`, row: pos.row, col: pos.col, doorIds: [door.id] }
-    })
-
-    for (let i = 0; i < d.decoySwitches; i++) {
-      const rightOptions = shuffledArray(rightCells, rng).filter((p) => !(p.row === target.row && p.col === target.col) && !usedSwitchCells.has(p.row * cols + p.col))
-      const pos = rightOptions[0]
-      if (!pos || doors.length === 0) continue
-      usedSwitchCells.add(pos.row * cols + pos.col)
+    // Señuelos: interruptores adicionales, alcanzables al final, que
+    // TAMBIÉN alternan una puerta real — si se pulsan en el momento
+    // equivocado, pueden volver a cerrarla. Añaden riesgo real sin romper
+    // la garantía de solvencia (se verifica con isSwitchLevelSolvable).
+    const finalReach = switchReachable(grid, doorCells, openIdx, start)
+    const finalOptions = Array.from(finalReach.entries()).filter(([k]) => !usedCells.has(k))
+    for (let i = 0; i < d.decoySwitches && finalOptions.length > 0; i++) {
+      const idx = Math.floor(rng() * finalOptions.length)
+      const [key] = finalOptions.splice(idx, 1)[0]
+      const cols = grid[0].length
+      const pos: MazeCoord = { row: Math.floor(key / cols), col: key % cols }
+      usedCells.add(key)
       const targetDoor = doors[Math.floor(rng() * doors.length)]
       switches.push({ id: `decoy${i}`, row: pos.row, col: pos.col, doorIds: [targetDoor.id] })
     }
 
+    const targetReach = switchReachable(grid, doorCells, openIdx, start)
+    let target: MazeCoord | null = null
+    let bestDist = -1
+    for (const [key, dist] of targetReach.entries()) {
+      if (usedCells.has(key)) continue
+      if (dist > bestDist) {
+        bestDist = dist
+        const cols = grid[0].length
+        target = { row: Math.floor(key / cols), col: key % cols }
+      }
+    }
+    if (!target) continue
+
+    // Verificación explícita: con TODAS las puertas cerradas, la meta debe
+    // ser inalcanzable. El "trenzado" del laberinto (atajos añadidos para
+    // variar la forma) a veces abre una ruta alternativa que rodea las
+    // puertas por completo — si eso pasa, se descarta este intento.
+    const closedReach = switchReachable(grid, doorCells, new Set(), start)
+    if (closedReach.has(target.row * grid[0].length + target.col)) continue
+
     const candidate: SwitchLevel = {
       level: lv,
-      rows,
-      cols,
+      rows: grid.length,
+      cols: grid[0].length,
       grid,
       start,
       target,
@@ -1112,11 +1340,12 @@ export function generateSwitchLevel(level: number, opts?: { seedSalt?: number })
       doors,
       moveLimit: d.moveLimit,
       targetSeconds: d.targetSeconds,
-      goal: 'Activa los interruptores para abrir las puertas y llega a la meta.',
+      goal: 'Activa los interruptores EN ORDEN para abrir las puertas y llega a la meta.',
       seed,
     }
     if (isSwitchLevelSolvable(candidate)) return candidate
   }
+
   const rows = 7
   const cols = 7
   const grid: ('wall' | 'floor')[][] = Array.from({ length: rows }, (_, r) =>
@@ -1136,10 +1365,11 @@ export function generateSwitchLevel(level: number, opts?: { seedSalt?: number })
     doors: [{ id: 'door0', row: 3, col: barrierCol, openInitially: false }],
     moveLimit: 0,
     targetSeconds: 60,
-    goal: 'Activa los interruptores para abrir las puertas y llega a la meta.',
+    goal: 'Activa los interruptores EN ORDEN para abrir las puertas y llega a la meta.',
     seed: levelSeed(lv, 11999),
   }
 }
+
 
 export function calcSwitchStars(moves: number, timeMs: number, targetSeconds: number, moveLimit: number): 0 | 1 | 2 | 3 {
   if (moves <= 0) return 0
@@ -1239,97 +1469,102 @@ export function isTeleportLevelSolvable(level: TeleportLevel): boolean {
 
 export function getTeleportDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const size = Math.min(7 + Math.floor(lv / 3), 17)
-  const pairCount = Math.min(1 + Math.floor(lv / 4), 4)
-  const decoyPairs = lv >= 8 ? Math.min(Math.floor((lv - 8) / 5) + 1, 3) : 0
-  const innerWallRatio = Math.min(0.05 + lv * 0.01, 0.22)
-  const moveLimit = Math.round(size * size * 0.6 + (pairCount + decoyPairs) * 10)
-  const targetSeconds = Math.max(20, Math.round(size * size * 0.9 + (pairCount + decoyPairs) * 12))
-  return { size, pairCount, decoyPairs, innerWallRatio, moveLimit, targetSeconds }
+  const rooms = Math.min(3 + Math.floor(lv / 2.5), 12)
+  const braidRatio = Math.min(0.04 + lv * 0.009, 0.26)
+  const pairCount = Math.min(1 + Math.floor(lv / 5), 4)
+  const decoyPairs = lv >= 8 ? Math.min(Math.floor((lv - 8) / 5) + 1, 4) : 0
+  const size = rooms * 2 + 1
+  const moveLimit = Math.round(size * size * 1.1 + (pairCount + decoyPairs) * 12)
+  const targetSeconds = Math.max(22, Math.round(size * size * 1.3 + (pairCount + decoyPairs) * 14))
+  return { rooms, braidRatio, pairCount, decoyPairs, moveLimit, targetSeconds }
 }
 
 export function generateTeleportLevel(level: number, opts?: { seedSalt?: number }): TeleportLevel {
   const lv = Math.max(1, Math.floor(level))
   const d = getTeleportDifficulty(lv)
-  const maxAttempts = 50
+  const maxAttempts = 30
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const seed = levelSeed(lv, 12100 + (opts?.seedSalt ?? 0) + attempt * 541)
     const rng = mulberry32(seed)
-    const rows = d.size
-    const cols = d.size
-    const grid: ('wall' | 'floor')[][] = Array.from({ length: rows }, () => Array<'wall' | 'floor'>(cols).fill('floor'))
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (r === 0 || c === 0 || r === rows - 1 || c === cols - 1) grid[r][c] = 'wall'
+
+    // Cada mitad es un laberinto real completo (no unos pocos muros
+    // sueltos), separadas por una columna de muro SÓLIDA sin huecos: cruzar
+    // a pie es imposible por diseño, y dentro de cada mitad hay que
+    // recorrer el laberinto entero para llegar al portal.
+    const half = carveMaze(d.rooms, rng) as unknown as ('wall' | 'floor')[][]
+    braidMaze(half as unknown as MazeCellType[][], rng, d.braidRatio)
+    const leftGrid = half
+    const rightHalfRaw = carveMaze(d.rooms, rng) as unknown as ('wall' | 'floor')[][]
+    braidMaze(rightHalfRaw as unknown as MazeCellType[][], rng, d.braidRatio)
+    const rightGrid = rightHalfRaw
+
+    const halfSize = d.rooms * 2 + 1
+    const rows = halfSize
+    const totalCols = halfSize * 2 + 1
+    const sepCol = halfSize
+
+    const grid: ('wall' | 'floor')[][] = Array.from({ length: rows }, (_, r) => {
+      const row: ('wall' | 'floor')[] = []
+      for (let c = 0; c < halfSize; c++) row.push(leftGrid[r][c])
+      row.push('wall')
+      for (let c = 0; c < halfSize; c++) row.push(rightGrid[r][c])
+      return row
+    })
+
+    const start: MazeCoord = { row: 1, col: 1 }
+    const portalAPos = farthestFloorCell(leftGrid as unknown as MazeCellType[][], start)
+    const portalBLocal: MazeCoord = { row: 1, col: 1 }
+    const portalBPos: MazeCoord = { row: portalBLocal.row, col: sepCol + 1 + portalBLocal.col }
+    const targetLocal = farthestFloorCell(rightGrid as unknown as MazeCellType[][], portalBLocal)
+    const target: MazeCoord = { row: targetLocal.row, col: sepCol + 1 + targetLocal.col }
+
+    if ((portalAPos.row === start.row && portalAPos.col === start.col) || (targetLocal.row === portalBLocal.row && targetLocal.col === portalBLocal.col)) continue
+
+    const usedLeft = new Set<number>([start.row * halfSize + start.col, portalAPos.row * halfSize + portalAPos.col])
+    const usedRight = new Set<number>([portalBLocal.row * halfSize + portalBLocal.col, targetLocal.row * halfSize + targetLocal.col])
+
+    const pairs: TeleportPair[] = [{ a: { id: 'real0a', row: portalAPos.row, col: portalAPos.col }, b: { id: 'real0b', row: portalBPos.row, col: portalBPos.col } }]
+
+    // Pares reales adicionales: unen otro punto lejano de cada mitad, para
+    // niveles con más de un cruce necesario.
+    const leftFloorCells: MazeCoord[] = []
+    const rightFloorCells: MazeCoord[] = []
+    for (let r = 1; r < halfSize - 1; r++) {
+      for (let c = 1; c < halfSize - 1; c++) {
+        if (leftGrid[r][c] === 'floor') leftFloorCells.push({ row: r, col: c })
+        if (rightGrid[r][c] === 'floor') rightFloorCells.push({ row: r, col: c })
       }
     }
-
-    // Muro central SÓLIDO, sin huecos: cruzar a pie es imposible por diseño.
-    const barrierCol = Math.floor(cols / 2)
-    for (let r = 1; r < rows - 1; r++) grid[r][barrierCol] = 'wall'
-
-    const leftCells: MazeCoord[] = []
-    const rightCells: MazeCoord[] = []
-    for (let r = 1; r < rows - 1; r++) {
-      for (let c = 1; c < barrierCol; c++) leftCells.push({ row: r, col: c })
-      for (let c = barrierCol + 1; c < cols - 1; c++) rightCells.push({ row: r, col: c })
-    }
-    if (!leftCells.length || !rightCells.length) continue
-
-    // muros interiores decorativos dentro de cada mitad, para que moverse
-    // hasta el portal también exija maniobrar un poco.
-    for (const p of leftCells) if (rng() < d.innerWallRatio) grid[p.row][p.col] = 'wall'
-    for (const p of rightCells) if (rng() < d.innerWallRatio) grid[p.row][p.col] = 'wall'
-
-    const leftOpen = leftCells.filter((p) => grid[p.row][p.col] === 'floor')
-    const rightOpen = rightCells.filter((p) => grid[p.row][p.col] === 'floor')
-
-    const neededLeft = 1 + d.pairCount + d.decoyPairs * 2 // inicio + anclas de cruce + señuelos (peor caso, ambos en la izq.)
-    const neededRight = 1 + d.pairCount
-    if (leftOpen.length < neededLeft || rightOpen.length < neededRight) continue
-
-    const leftShuffled = shuffledArray(leftOpen, rng)
-    const rightShuffled = shuffledArray(rightOpen, rng)
-
-    const start = leftShuffled[0]
-    const target = rightShuffled[0]
-
-    const usedLeft = new Set<number>([start.row * cols + start.col])
-    const usedRight = new Set<number>([target.row * cols + target.col])
-
-    const pairs: TeleportPair[] = []
-    let li = 1
-    let ri = 1
-    for (let i = 0; i < d.pairCount; i++) {
+    const leftShuffled = shuffledArray(leftFloorCells, rng).filter((p) => !usedLeft.has(p.row * halfSize + p.col))
+    const rightShuffled = shuffledArray(rightFloorCells, rng).filter((p) => !usedRight.has(p.row * halfSize + p.col))
+    let li = 0
+    let ri = 0
+    for (let i = 1; i < d.pairCount; i++) {
       if (li >= leftShuffled.length || ri >= rightShuffled.length) break
       const a = leftShuffled[li++]
       const b = rightShuffled[ri++]
-      usedLeft.add(a.row * cols + a.col)
-      usedRight.add(b.row * cols + b.col)
+      usedLeft.add(a.row * halfSize + a.col)
+      usedRight.add(b.row * halfSize + b.col)
       pairs.push({ a: { id: `real${i}a`, row: a.row, col: a.col }, b: { id: `real${i}b`, row: b.row, col: b.col } })
     }
-    if (pairs.length === 0) continue // sin al menos un par real, el nivel sería imposible
 
-    // Pares señuelo: ambos extremos en la MISMA mitad — funcionan, pero no
-    // ayudan a cruzar. Se colocan alternando de mitad para no agotar celdas.
+    // Señuelos: ambos extremos en la MISMA mitad — no ayudan a cruzar.
     for (let i = 0; i < d.decoyPairs; i++) {
       const useLeftHalf = i % 2 === 0
-      const pool = useLeftHalf ? leftShuffled : rightShuffled
-      const used = useLeftHalf ? usedLeft : usedRight
-      const free = pool.filter((p) => !used.has(p.row * cols + p.col))
-      if (free.length < 2) continue
-      const a = free[0]
-      const b = free[1]
-      used.add(a.row * cols + a.col)
-      used.add(b.row * cols + b.col)
+      const pool = useLeftHalf ? leftShuffled.slice(li) : rightShuffled.slice(ri)
+      if (pool.length < 2) continue
+      const a = pool[0]
+      const b = pool[1]
+      if (useLeftHalf) li += 2
+      else ri += 2
       pairs.push({ a: { id: `decoy${i}a`, row: a.row, col: a.col }, b: { id: `decoy${i}b`, row: b.row, col: b.col } })
     }
 
     const candidate: TeleportLevel = {
       level: lv,
       rows,
-      cols,
+      cols: totalCols,
       grid,
       start,
       target,
@@ -1363,6 +1598,7 @@ export function generateTeleportLevel(level: number, opts?: { seedSalt?: number 
     seed: levelSeed(lv, 12999),
   }
 }
+
 
 export function calcTeleportStars(moves: number, timeMs: number, targetSeconds: number, moveLimit: number): 0 | 1 | 2 | 3 {
   if (moves <= 0) return 0
@@ -1456,17 +1692,18 @@ function laserOrientationForBend(from: Direction, to: Direction): MirrorOrientat
 
 export function getLaserDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const size = Math.min(6 + Math.floor(lv / 3.5), 13)
-  const bendCount = Math.min(1 + Math.floor(lv / 3), 7)
+  const size = Math.min(9 + Math.floor(lv / 2), 21)
+  const bendCount = Math.min(2 + Math.floor(lv / 2.2), 11)
+  const wallCount = Math.min(Math.floor(lv / 1.6), 18)
   const moveLimit = 0
-  const targetSeconds = Math.max(20, Math.round(20 + lv * 2.4))
-  return { size, bendCount, moveLimit, targetSeconds }
+  const targetSeconds = Math.max(24, Math.round(24 + lv * 3.4))
+  return { size, bendCount, wallCount, moveLimit, targetSeconds }
 }
 
 export function generateLaserLevel(level: number, opts?: { seedSalt?: number }): LaserLevel {
   const lv = Math.max(1, Math.floor(level))
   const d = getLaserDifficulty(lv)
-  const maxAttempts = 30
+  const maxAttempts = 40
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const seed = levelSeed(lv, 13100 + (opts?.seedSalt ?? 0) + attempt * 467)
     const rng = mulberry32(seed)
@@ -1479,6 +1716,7 @@ export function generateLaserLevel(level: number, opts?: { seedSalt?: number }):
     let curCol: number = source.col
     let curDir: Direction = source.dir
     const mirrors: LaserMirror[] = []
+    const criticalCells = new Set<number>([source.row * cols + source.col])
     let ok = true
     for (let i = 0; i < d.bendCount; i++) {
       const dirsAvail: Direction[] = curDir === 'up' || curDir === 'down' ? ['left', 'right'] : ['up', 'down']
@@ -1489,14 +1727,24 @@ export function generateLaserLevel(level: number, opts?: { seedSalt?: number }):
         break
       }
       const { dr, dc } = DIRECTION_DELTA[curDir]
-      const steps = 1 + Math.floor(rng() * 2)
+      // Tramos mucho más largos que antes (2 a 6 casillas, en vez de 1 a 2):
+      // los espejos quedan realmente separados entre sí, obligando a
+      // trazar mentalmente un recorrido largo en vez de girar la pieza de
+      // al lado.
+      const steps = 2 + Math.floor(rng() * 5)
       let br = curRow
       let bc = curCol
+      let blocked = false
       for (let s = 0; s < steps; s++) {
         br += dr
         bc += dc
+        if (br <= 0 || br >= rows - 1 || bc <= 0 || bc >= cols - 1) {
+          blocked = true
+          break
+        }
+        criticalCells.add(br * cols + bc)
       }
-      if (br <= 0 || br >= rows - 1 || bc <= 0 || bc >= cols - 1) {
+      if (blocked) {
         ok = false
         break
       }
@@ -1507,22 +1755,45 @@ export function generateLaserLevel(level: number, opts?: { seedSalt?: number }):
     }
     if (!ok) continue
     const { dr, dc } = DIRECTION_DELTA[curDir]
-    const finalSteps = 1 + Math.floor(rng() * 2)
+    const finalSteps = 2 + Math.floor(rng() * 5)
     let tr = curRow
     let tc = curCol
+    let blockedFinal = false
     for (let s = 0; s < finalSteps; s++) {
       tr += dr
       tc += dc
+      if (tr <= 0 || tr >= rows - 1 || tc <= 0 || tc >= cols - 1) {
+        blockedFinal = true
+        break
+      }
+      criticalCells.add(tr * cols + tc)
     }
-    if (tr <= 0 || tr >= rows - 1 || tc <= 0 || tc >= cols - 1) continue
+    if (blockedFinal) continue
     if (mirrors.some((m) => m.row === tr && m.col === tc)) continue
 
     const target: MazeCoord = { row: tr, col: tc }
+
+    // Muros decorativos: nunca sobre el recorrido crítico del láser
+    // (ni sobre la fuente/objetivo/espejos), así que jamás rompen la
+    // solución — solo añaden ruido visual y, en niveles avanzados, alguna
+    // trampa para orientaciones incorrectas.
+    const walls: MazeCoord[] = []
+    let wallGuard = 0
+    while (walls.length < d.wallCount && wallGuard < d.wallCount * 25) {
+      wallGuard++
+      const r = 1 + Math.floor(rng() * (rows - 2))
+      const c = 1 + Math.floor(rng() * (cols - 2))
+      const k = r * cols + c
+      if (criticalCells.has(k)) continue
+      if (walls.some((w) => w.row === r && w.col === c)) continue
+      walls.push({ row: r, col: c })
+    }
+
     const candidate: LaserLevel = {
       level: lv,
       rows,
       cols,
-      walls: [],
+      walls,
       source,
       target,
       mirrors,
@@ -2020,7 +2291,18 @@ export interface DPadSettings {
   buttonSize: number
   /** Separación entre botones, en píxeles. */
   gap: number
+  /** Estilo visual de la cruceta. */
+  style: DPadStyle
 }
+
+export type DPadStyle = 'classic' | 'minimal' | 'neon' | 'glass'
+
+export const DPAD_STYLES: { id: DPadStyle; label: string }[] = [
+  { id: 'classic', label: 'Clásica' },
+  { id: 'minimal', label: 'Minimalista' },
+  { id: 'neon', label: 'Neón' },
+  { id: 'glass', label: 'Cristal' },
+]
 
 export const DPAD_BUTTON_MIN = 40
 export const DPAD_BUTTON_MAX = 96
@@ -2028,14 +2310,16 @@ export const DPAD_GAP_MIN = 2
 export const DPAD_GAP_MAX = 24
 
 export function defaultDPadSettings(): DPadSettings {
-  return { buttonSize: 60, gap: 6 }
+  return { buttonSize: 60, gap: 6, style: 'classic' }
 }
 
 export function clampDPadSettings(s: Partial<DPadSettings>): DPadSettings {
   const base = defaultDPadSettings()
+  const style = DPAD_STYLES.some((d) => d.id === s.style) ? (s.style as DPadStyle) : base.style
   return {
     buttonSize: clampNum(Math.round(s.buttonSize ?? base.buttonSize), DPAD_BUTTON_MIN, DPAD_BUTTON_MAX),
     gap: clampNum(Math.round(s.gap ?? base.gap), DPAD_GAP_MIN, DPAD_GAP_MAX),
+    style,
   }
 }
 
@@ -2412,7 +2696,92 @@ export function calcPathUniqueStars(moves: number, timeMs: number, targetSeconds
  * `generateLevel.ts` ni de ningún otro módulo).
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+
+/* ── Sonido — sintetizado con WebAudio, sin archivos externos ──
+ *
+ * Todo el archivo sigue siendo autocontenido: en vez de cargar .mp3/.wav,
+ * cada efecto se sintetiza al vuelo con osciladores. Si el navegador no
+ * soporta AudioContext (o el usuario aún no ha interactuado con la
+ * página, por las políticas de autoplay), las funciones simplemente no
+ * hacen nada — nunca lanzan un error visible.
+ */
+
+let sharedAudioCtx: AudioContext | null = null
+
+function getAudioCtx(): AudioContext | null {
+  try {
+    if (!sharedAudioCtx) {
+      const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+      if (!Ctor) return null
+      sharedAudioCtx = new Ctor()
+    }
+    if (sharedAudioCtx.state === 'suspended') sharedAudioCtx.resume().catch(() => {})
+    return sharedAudioCtx
+  } catch {
+    return null
+  }
+}
+
+interface ToneStep {
+  freq: number
+  /** duración en segundos */
+  dur: number
+  /** retardo en segundos respecto al inicio del sonido */
+  at?: number
+  type?: OscillatorType
+  gain?: number
+}
+
+function playTones(steps: ToneStep[]) {
+  const ctx = getAudioCtx()
+  if (!ctx) return
+  try {
+    const master = ctx.createGain()
+    master.gain.value = 0.16
+    master.connect(ctx.destination)
+    const now = ctx.currentTime
+    for (const step of steps) {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = step.type ?? 'sine'
+      osc.frequency.value = step.freq
+      const start = now + (step.at ?? 0)
+      const end = start + step.dur
+      const peak = step.gain ?? 1
+      gain.gain.setValueAtTime(0, start)
+      gain.gain.linearRampToValueAtTime(peak, start + Math.min(0.015, step.dur * 0.3))
+      gain.gain.exponentialRampToValueAtTime(0.001, end)
+      osc.connect(gain)
+      gain.connect(master)
+      osc.start(start)
+      osc.stop(end + 0.02)
+    }
+  } catch {
+    /* el audio es un extra cosmético: cualquier fallo se ignora en silencio */
+  }
+}
+
+const Sound = {
+  move: () => playTones([{ freq: 320, dur: 0.05, type: 'triangle', gain: 0.7 }]),
+  blocked: () => playTones([{ freq: 130, dur: 0.09, type: 'square', gain: 0.5 }]),
+  push: () => playTones([{ freq: 180, dur: 0.11, type: 'sawtooth', gain: 0.6 }, { freq: 90, dur: 0.14, at: 0.02, type: 'sine', gain: 0.5 }]),
+  slide: () => playTones([{ freq: 700, dur: 0.16, type: 'sine', gain: 0.35 }]),
+  crack: () => playTones([{ freq: 220, dur: 0.05, type: 'square', gain: 0.5 }, { freq: 140, dur: 0.08, at: 0.03, type: 'square', gain: 0.4 }]),
+  warp: () => playTones([{ freq: 520, dur: 0.09, type: 'sine' }, { freq: 880, dur: 0.09, at: 0.07, type: 'sine' }, { freq: 1320, dur: 0.12, at: 0.14, type: 'sine' }]),
+  zap: () => playTones([{ freq: 1200, dur: 0.05, type: 'sawtooth', gain: 0.35 }, { freq: 900, dur: 0.05, at: 0.04, type: 'sawtooth', gain: 0.3 }]),
+  pop: () => playTones([{ freq: 660, dur: 0.08, type: 'sine' }, { freq: 990, dur: 0.08, at: 0.05, type: 'sine' }]),
+  toggle: () => playTones([{ freq: 440, dur: 0.07, type: 'square', gain: 0.4 }]),
+  click: () => playTones([{ freq: 500, dur: 0.04, type: 'sine', gain: 0.3 }]),
+  success: () =>
+    playTones([
+      { freq: 523.25, dur: 0.12, type: 'sine' },
+      { freq: 659.25, dur: 0.12, at: 0.1, type: 'sine' },
+      { freq: 783.99, dur: 0.2, at: 0.2, type: 'sine' },
+    ]),
+  fail: () => playTones([{ freq: 220, dur: 0.16, type: 'sawtooth', gain: 0.4 }, { freq: 160, dur: 0.22, at: 0.1, type: 'sawtooth', gain: 0.35 }]),
+}
 
 /* ── Progreso por juego (nivel actual + mejores estrellas) ── */
 
@@ -2475,17 +2844,34 @@ function cellSizeFor(rows: number, cols: number, maxStage = 380, minCell = 14, m
   return clampNum(raw, minCell, maxCell)
 }
 
-function useElapsedMs(resetKey: unknown): number {
+/**
+ * Cronómetro que se congela cuando `frozen` es true (por ejemplo, al
+ * completar el nivel) — antes seguía corriendo de fondo tras ganar, lo que
+ * hacía que el tiempo mostrado en el modal de victoria (y las estrellas
+ * calculadas con él) siguiera cambiando después de terminar la partida.
+ */
+function useElapsedMs(resetKey: unknown, frozen = false): number {
   const [startedAt, setStartedAt] = useState<number>(() => Date.now())
   const [, forceTick] = useState(0)
+  const frozenAtRef = useRef<number | null>(null)
+
   useEffect(() => {
     setStartedAt(Date.now())
+    frozenAtRef.current = null
   }, [resetKey])
+
   useEffect(() => {
-    const id = window.setInterval(() => forceTick((n) => n + 1), 250)
+    if (frozen) {
+      if (frozenAtRef.current === null) frozenAtRef.current = Date.now()
+      return
+    }
+    frozenAtRef.current = null
+    const id = window.setInterval(() => forceTick((n) => n + 1), 200)
     return () => window.clearInterval(id)
-  }, [])
-  return Date.now() - startedAt
+  }, [frozen])
+
+  const end = frozen && frozenAtRef.current !== null ? frozenAtRef.current : Date.now()
+  return Math.max(0, end - startedAt)
 }
 
 /** Escucha las flechas del teclado y WASD como alternativa a la cruceta. */
@@ -2534,23 +2920,66 @@ function Stars({ count }: { count: 0 | 1 | 2 | 3 }) {
 
 function DPad({ onMove, settings, disabled }: { onMove: (dir: Direction) => void; settings: DPadSettings; disabled?: boolean }) {
   const style = { '--dg-btn': `${settings.buttonSize}px`, '--dg-gap': `${settings.gap}px` } as React.CSSProperties
+  const arrows: Record<DPadStyle, [string, string, string, string]> = {
+    classic: ['▲', '◀', '▶', '▼'],
+    minimal: ['↑', '←', '→', '↓'],
+    neon: ['▲', '◀', '▶', '▼'],
+    glass: ['▲', '◀', '▶', '▼'],
+  }
+  const [up, left, right, down] = arrows[settings.style]
+  function move(dir: Direction) {
+    Sound.click()
+    onMove(dir)
+  }
   return (
-    <div className="dg-dpad" style={style}>
-      <button type="button" className="dg-dpad__btn dg-dpad__up" disabled={disabled} onClick={() => onMove('up')} aria-label="Mover arriba">
-        <span>▲</span>
+    <div className={`dg-dpad dg-dpad--${settings.style}`} style={style}>
+      <button type="button" className="dg-dpad__btn dg-dpad__up" disabled={disabled} onClick={() => move('up')} aria-label="Mover arriba">
+        <span>{up}</span>
       </button>
       <div className="dg-dpad__row">
-        <button type="button" className="dg-dpad__btn dg-dpad__left" disabled={disabled} onClick={() => onMove('left')} aria-label="Mover izquierda">
-          <span>◀</span>
+        <button type="button" className="dg-dpad__btn dg-dpad__left" disabled={disabled} onClick={() => move('left')} aria-label="Mover izquierda">
+          <span>{left}</span>
         </button>
         <div className="dg-dpad__hub" />
-        <button type="button" className="dg-dpad__btn dg-dpad__right" disabled={disabled} onClick={() => onMove('right')} aria-label="Mover derecha">
-          <span>▶</span>
+        <button type="button" className="dg-dpad__btn dg-dpad__right" disabled={disabled} onClick={() => move('right')} aria-label="Mover derecha">
+          <span>{right}</span>
         </button>
       </div>
-      <button type="button" className="dg-dpad__btn dg-dpad__down" disabled={disabled} onClick={() => onMove('down')} aria-label="Mover abajo">
-        <span>▼</span>
+      <button type="button" className="dg-dpad__btn dg-dpad__down" disabled={disabled} onClick={() => move('down')} aria-label="Mover abajo">
+        <span>{down}</span>
       </button>
+    </div>
+  )
+}
+
+function LevelPickerModal({ current, maxLevel, onPick, onClose }: { current: number; maxLevel: number; onPick: (n: number) => void; onClose: () => void }) {
+  const levels = Array.from({ length: maxLevel }, (_, i) => i + 1).reverse()
+  return (
+    <div className="dg-overlay" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="dg-overlay__card dg-levelpicker" onClick={(e) => e.stopPropagation()}>
+        <div className="dg-settings__header">
+          <div className="dg-overlay__title">Elegir nivel</div>
+          <button type="button" className="dg-iconbtn dg-iconbtn--ghost" onClick={onClose} aria-label="Cerrar">
+            ✕
+          </button>
+        </div>
+        <div className="dg-levelpicker__grid">
+          {levels.map((n) => (
+            <button
+              key={n}
+              type="button"
+              className={`dg-levelpicker__btn ${n === current ? 'dg-levelpicker__btn--active' : ''}`}
+              onClick={() => {
+                Sound.click()
+                onPick(n)
+                onClose()
+              }}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
@@ -2559,39 +2988,52 @@ function TopBar({
   title,
   icon,
   level,
+  maxLevel,
   goal,
   timeMs,
+  countdownMs,
   moves,
   onBack,
   onRestart,
+  onJumpLevel,
 }: {
   title: string
   icon: string
   level: number
+  maxLevel: number
   goal: string
   timeMs: number
+  /** Si se pasa, se muestra como cuenta regresiva en vez de cronómetro ascendente. */
+  countdownMs?: number
   moves?: number
   onBack: () => void
   onRestart: () => void
+  onJumpLevel: (n: number) => void
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const low = countdownMs !== undefined && countdownMs <= 10000
   return (
     <div className="dg-topbar">
-      <button type="button" className="dg-iconbtn" onClick={onBack} aria-label="Volver al menú">
-        ←
+      <button type="button" className="dg-backbtn" onClick={onBack} aria-label="Volver al menú de Despejes">
+        <span>←</span> Menú
       </button>
       <div className="dg-topbar__center">
         <div className="dg-topbar__title">
-          <span className="dg-topbar__icon">{icon}</span> {title} <span className="dg-topbar__level">· Nv. {level}</span>
+          <span className="dg-topbar__icon">{icon}</span> {title}
         </div>
         <div className="dg-topbar__goal">{goal}</div>
       </div>
       <div className="dg-topbar__stats">
-        <span className="dg-chip">⏱ {formatTime(timeMs)}</span>
+        <button type="button" className="dg-chip dg-chip--clickable" onClick={() => setPickerOpen(true)}>
+          Nivel {level} ▾
+        </button>
+        <span className={`dg-chip ${low ? 'dg-chip--danger' : ''}`}>⏱ {formatTime(countdownMs !== undefined ? countdownMs : timeMs)}</span>
         {moves !== undefined && <span className="dg-chip">👣 {moves}</span>}
         <button type="button" className="dg-iconbtn dg-iconbtn--ghost" onClick={onRestart} aria-label="Reiniciar nivel">
           ↺
         </button>
       </div>
+      {pickerOpen && <LevelPickerModal current={level} maxLevel={maxLevel} onPick={onJumpLevel} onClose={() => setPickerOpen(false)} />}
     </div>
   )
 }
@@ -2740,6 +3182,22 @@ function SettingsPanel({
         </div>
 
         <div className="dg-settings__section">
+          <div className="dg-settings__label">Estilo de la cruceta</div>
+          <div className="dg-style-grid">
+            {DPAD_STYLES.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className={`dg-style-btn ${dpad.style === s.id ? 'dg-style-btn--active' : ''}`}
+                onClick={() => onChangeDPad(clampDPadSettings({ ...dpad, style: s.id }))}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="dg-settings__section">
           <div className="dg-settings__label">
             Tamaño de la cruceta <span className="dg-settings__value">{dpad.buttonSize}px</span>
           </div>
@@ -2770,6 +3228,13 @@ function SettingsPanel({
         <div className="dg-settings__preview">
           <DPad settings={dpad} onMove={() => {}} />
         </div>
+        <button
+          type="button"
+          className="dg-btn dg-btn--ghost dg-settings__reset"
+          onClick={() => onChangeDPad(defaultDPadSettings())}
+        >
+          ↺ Restablecer cruceta
+        </button>
       </div>
     </div>
   )
@@ -2788,8 +3253,19 @@ function MainMenu({
   skin: string
   progressByGame: Record<GameId, GameProgress>
 }) {
+  const navigate = useNavigate()
   return (
     <div className="dg-menu">
+      <button
+        type="button"
+        className="dg-backbtn dg-backbtn--top"
+        onClick={() => {
+          Sound.click()
+          navigate('/categoria/logica')
+        }}
+      >
+        <span>←</span> Volver
+      </button>
       <div className="dg-menu__header">
         <div>
           <div className="dg-menu__title">Despejes</div>
@@ -2808,6 +3284,7 @@ function MainMenu({
             <button key={g.id} type="button" className={`dg-card dg-card--${g.accent}`} onClick={() => onSelect(g.id)}>
               <div className="dg-card__icon">{g.icon}</div>
               <div className="dg-card__title">{g.title}</div>
+
               <div className="dg-card__tagline">{g.tagline}</div>
               <div className="dg-card__footer">
                 <span className="dg-chip dg-chip--dark">Nivel {progress.level}</span>
@@ -2828,82 +3305,144 @@ function MainMenu({
 function LaberintoGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string; onBack: () => void }) {
   const meta = GAME_META.find((g) => g.id === 'laberinto')!
   const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress('laberinto'))
+  const [viewingLevel, setViewingLevel] = useState(progress.level)
   const [level, setLevel] = useState<LaberintoLevel>(() => generateLaberintoLevel(progress.level))
   const [boulders, setBoulders] = useState<MazeBoulder[]>(() => level.boulders)
   const [player, setPlayer] = useState<MazeCoord>(() => level.start)
   const [moves, setMoves] = useState(0)
   const [completed, setCompleted] = useState(false)
-  const timeMs = useElapsedMs(level.seed)
+  const [timedOut, setTimedOut] = useState(false)
+  const timeMs = useElapsedMs(level.seed, completed || timedOut)
 
   function loadLevel(n: number) {
+    setViewingLevel(n)
     const lvl = generateLaberintoLevel(n)
     setLevel(lvl)
     setBoulders(lvl.boulders)
     setPlayer(lvl.start)
     setMoves(0)
     setCompleted(false)
+    setTimedOut(false)
   }
+
+  const countdownMs = Math.max(0, level.timeLimitSeconds * 1000 - timeMs)
+  useEffect(() => {
+    if (completed || timedOut) return
+    if (countdownMs <= 0) {
+      setTimedOut(true)
+      Sound.fail()
+    }
+  }, [countdownMs, completed, timedOut])
+
+  const locked = completed || timedOut
 
   const handleMove = useCallback(
     (dir: Direction) => {
-      if (completed) return
+      if (locked) return
       const res = laberintoStep(level, boulders, player, dir)
-      if (!res.moved) return
+      if (!res.moved) {
+        Sound.blocked()
+        return
+      }
+      if (res.pushed) Sound.push()
+      else Sound.move()
       setPlayer(res.player)
       setBoulders(res.boulders)
       setMoves((m) => m + 1)
-      if (isMazeComplete(res.player, level.exit)) setCompleted(true)
+      if (isMazeComplete(res.player, level.exit)) {
+        setCompleted(true)
+        Sound.success()
+      }
     },
-    [level, boulders, player, completed]
+    [level, boulders, player, locked]
   )
-  useArrowKeys(handleMove, !completed)
+  useArrowKeys(handleMove, !locked)
 
   const visible = useMemo(() => visibleMazeCells(level, player), [level, player])
-  const cell = cellSizeFor(level.rows, level.cols, 400, 10, 40)
+
+  // Cámara al estilo "GBA": una ventana fija de celdas que sigue al jugador,
+  // en vez de encoger el tablero completo hasta hacerlo ilegible en mapas
+  // grandes. Si el laberinto cabe entero en la ventana, simplemente se
+  // centra (sin desplazarse).
+  const VIEWPORT_CELLS = 11
+  const CELL_PX = 30
+  const viewportPx = VIEWPORT_CELLS * CELL_PX
+  const contentW = level.cols * CELL_PX
+  const contentH = level.rows * CELL_PX
+  const camX = contentW <= viewportPx ? (viewportPx - contentW) / 2 : clampNum(viewportPx / 2 - (player.col * CELL_PX + CELL_PX / 2), viewportPx - contentW, 0)
+  const camY = contentH <= viewportPx ? (viewportPx - contentH) / 2 : clampNum(viewportPx / 2 - (player.row * CELL_PX + CELL_PX / 2), viewportPx - contentH, 0)
 
   function handleNext() {
-    const nextLevel = progress.level + 1
     const stars = calcLaberintoStars(moves, timeMs, level.targetSeconds, level.moveLimit)
-    const nextProgress: GameProgress = { level: nextLevel, stars: { ...progress.stars, [progress.level]: Math.max(progress.stars[progress.level] ?? 0, stars) as 0 | 1 | 2 | 3 } }
+    const nextProgressLevel = Math.max(progress.level, viewingLevel + 1)
+    const nextProgress: GameProgress = { level: nextProgressLevel, stars: { ...progress.stars, [viewingLevel]: Math.max(progress.stars[viewingLevel] ?? 0, stars) as 0 | 1 | 2 | 3 } }
     setProgress(nextProgress)
     saveGameProgress('laberinto', nextProgress)
-    loadLevel(nextLevel)
+    loadLevel(viewingLevel + 1)
   }
 
   const stars = calcLaberintoStars(moves, timeMs, level.targetSeconds, level.moveLimit)
 
   return (
     <div className="dg-game">
-      <TopBar title={meta.title} icon={meta.icon} level={progress.level} goal={level.goal} timeMs={timeMs} moves={moves} onBack={onBack} onRestart={() => loadLevel(progress.level)} />
+      <TopBar
+        title={meta.title}
+        icon={meta.icon}
+        level={viewingLevel}
+        maxLevel={progress.level}
+        onJumpLevel={loadLevel}
+        goal={level.goal}
+        timeMs={timeMs}
+        countdownMs={countdownMs}
+        moves={moves}
+        onBack={onBack}
+        onRestart={() => loadLevel(viewingLevel)}
+      />
       <div className="dg-board dg-board--stone">
-        <div className="dg-stage" style={{ '--dg-cols': level.cols, '--dg-cell': `${cell}px`, gap: 2 } as React.CSSProperties}>
-          {level.grid.map((row, r) =>
-            row.map((type, c) => {
-              const key = r * level.cols + c
-              const isVisible = visible.has(key)
-              const boulderHere = boulders.find((b) => !b.cleared && b.row === r && b.col === c)
-              const isExit = r === level.exit.row && c === level.exit.col
-              const filledHole = type === 'hole' && boulders.some((b) => b.cleared && b.holeRow === r && b.holeCol === c)
-              let cls = 'dg-cell dg-cell--maze'
-              if (!isVisible) cls += ' dg-cell--fog'
-              else if (type === 'wall') cls += ' dg-cell--wall'
-              else if (type === 'hole' && !filledHole) cls += ' dg-cell--hole'
-              else cls += ' dg-cell--floor'
-              return (
-                <div key={key} className={cls} style={{ gridColumn: c + 1, gridRow: r + 1, width: cell, height: cell }}>
-                  {isVisible && isExit && <span className="dg-emoji-mark">🚩</span>}
-                  {isVisible && boulderHere && <span className="dg-emoji-mark dg-boulder">🪨</span>}
-                </div>
-              )
-            })
-          )}
-          <PlayerToken row={player.row} col={player.col} cell={cell} skin={skin} />
+        <div className="dg-camera" style={{ width: viewportPx, height: viewportPx }}>
+          <div className="dg-stage dg-camera__inner" style={{ '--dg-cols': level.cols, '--dg-cell': `${CELL_PX}px`, transform: `translate(${camX}px, ${camY}px)` } as React.CSSProperties}>
+            {level.grid.map((row, r) =>
+              row.map((type, c) => {
+                const key = r * level.cols + c
+                const isVisible = visible.has(key)
+                const boulderHere = boulders.find((b) => !b.cleared && b.row === r && b.col === c)
+                const isExit = r === level.exit.row && c === level.exit.col
+                const filledHole = type === 'hole' && boulders.some((b) => b.cleared && b.holeRow === r && b.holeCol === c)
+                let cls = 'dg-cell dg-cell--maze'
+                if (!isVisible) cls += ' dg-cell--fog'
+                else if (type === 'wall') cls += ' dg-cell--wall'
+                else if (type === 'hole' && !filledHole) cls += ' dg-cell--hole'
+                else cls += ' dg-cell--floor'
+                return (
+                  <div key={key} className={cls} style={{ gridColumn: c + 1, gridRow: r + 1, width: CELL_PX, height: CELL_PX }}>
+                    {isVisible && isExit && <span className="dg-emoji-mark dg-exit-flag">🚩</span>}
+                    {isVisible && boulderHere && <span className={`dg-emoji-mark ${boulderHere.kind === 'glass' ? 'dg-glass' : 'dg-boulder'}`}>{boulderHere.kind === 'glass' ? '🔷' : '🪨'}</span>}
+                  </div>
+                )
+              })
+            )}
+            <PlayerToken row={player.row} col={player.col} cell={CELL_PX} skin={skin} />
+          </div>
         </div>
       </div>
       <div className="dg-controls">
-        <DPad settings={dpad} onMove={handleMove} disabled={completed} />
+        <DPad settings={dpad} onMove={handleMove} disabled={locked} />
       </div>
-      {completed && <CompletionOverlay stars={stars} timeMs={timeMs} onRetry={() => loadLevel(progress.level)} onNext={handleNext} />}
+      {completed && <CompletionOverlay stars={stars} timeMs={timeMs} onRetry={() => loadLevel(viewingLevel)} onNext={handleNext} />}
+      {timedOut && !completed && (
+        <div className="dg-overlay" role="dialog" aria-modal="true">
+          <div className="dg-overlay__card">
+            <div className="dg-overlay__badge dg-overlay__badge--fail">⏱</div>
+            <div className="dg-overlay__title">Se acabó el tiempo</div>
+            <div className="dg-overlay__time">Tómate tu tiempo y vuelve a intentarlo con calma.</div>
+            <div className="dg-overlay__actions">
+              <button type="button" className="dg-btn dg-btn--primary" onClick={() => loadLevel(viewingLevel)}>
+                Reintentar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -2915,14 +3454,16 @@ function LaberintoGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: strin
 function CromaGame({ dpad, onBack }: { dpad: DPadSettings; onBack: () => void }) {
   const meta = GAME_META.find((g) => g.id === 'croma')!
   const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress('croma'))
+  const [viewingLevel, setViewingLevel] = useState(progress.level)
   const [level, setLevel] = useState<CromaLevel>(() => generateCromaLevel(progress.level))
   const [gems, setGems] = useState<Gem[]>(() => level.gems)
   const [selected, setSelected] = useState<string | null>(null)
   const [moves, setMoves] = useState(0)
   const [completed, setCompleted] = useState(false)
-  const timeMs = useElapsedMs(level.seed)
+  const timeMs = useElapsedMs(level.seed, completed)
 
   function loadLevel(n: number) {
+    setViewingLevel(n)
     const lvl = generateCromaLevel(n)
     setLevel(lvl)
     setGems(lvl.gems)
@@ -2951,21 +3492,21 @@ function CromaGame({ dpad, onBack }: { dpad: DPadSettings; onBack: () => void })
   const cell = cellSizeFor(level.rows, level.cols, 380, 24, 52)
 
   function handleNext() {
-    const nextLevel = progress.level + 1
     const stars = calcCromaStars(moves, timeMs, level.targetSeconds, level.shuffleMoves)
-    const nextProgress: GameProgress = { level: nextLevel, stars: { ...progress.stars, [progress.level]: Math.max(progress.stars[progress.level] ?? 0, stars) as 0 | 1 | 2 | 3 } }
+    const nextProgressLevel = Math.max(progress.level, viewingLevel + 1)
+    const nextProgress: GameProgress = { level: nextProgressLevel, stars: { ...progress.stars, [viewingLevel]: Math.max(progress.stars[viewingLevel] ?? 0, stars) as 0 | 1 | 2 | 3 } }
     setProgress(nextProgress)
     saveGameProgress('croma', nextProgress)
-    loadLevel(nextLevel)
+    loadLevel(viewingLevel + 1)
   }
 
   const stars = calcCromaStars(moves, timeMs, level.targetSeconds, level.shuffleMoves)
 
   return (
     <div className="dg-game">
-      <TopBar title={meta.title} icon={meta.icon} level={progress.level} goal={level.goal} timeMs={timeMs} moves={moves} onBack={onBack} onRestart={() => loadLevel(progress.level)} />
+      <TopBar title={meta.title} icon={meta.icon} level={viewingLevel} maxLevel={progress.level} onJumpLevel={loadLevel} goal={level.goal} timeMs={timeMs} moves={moves} onBack={onBack} onRestart={() => loadLevel(viewingLevel)} />
       <div className="dg-board dg-board--gem">
-        <div className="dg-stage" style={{ '--dg-cols': level.cols, '--dg-cell': `${cell}px`, gap: 3 } as React.CSSProperties}>
+        <div className="dg-stage" style={{ '--dg-cols': level.cols, '--dg-cell': `${cell}px` } as React.CSSProperties}>
           {Array.from({ length: level.rows }).map((_, r) =>
             Array.from({ length: level.cols }).map((__, c) => {
               const isObstacle = level.obstacles.some((o) => o.row === r && o.col === c)
@@ -3016,12 +3557,14 @@ function CromaGame({ dpad, onBack }: { dpad: DPadSettings; onBack: () => void })
 function PintarGame({ onBack }: { onBack: () => void }) {
   const meta = GAME_META.find((g) => g.id === 'pintar')!
   const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress('pintar'))
+  const [viewingLevel, setViewingLevel] = useState(progress.level)
   const [level, setLevel] = useState<PintarLevel>(() => generatePintarLevel(progress.level))
   const [taps, setTaps] = useState(0)
   const [completed, setCompleted] = useState(false)
-  const timeMs = useElapsedMs(level.seed)
+  const timeMs = useElapsedMs(level.seed, completed)
 
   function loadLevel(n: number) {
+    setViewingLevel(n)
     setLevel(generatePintarLevel(n))
     setTaps(0)
     setCompleted(false)
@@ -3048,12 +3591,12 @@ function PintarGame({ onBack }: { onBack: () => void }) {
   }
 
   function handleNext() {
-    const nextLevel = progress.level + 1
     const stars = calcPintarStars(timeMs, level.targetSeconds, taps, level.cells.length)
-    const nextProgress: GameProgress = { level: nextLevel, stars: { ...progress.stars, [progress.level]: Math.max(progress.stars[progress.level] ?? 0, stars) as 0 | 1 | 2 | 3 } }
+    const nextProgressLevel = Math.max(progress.level, viewingLevel + 1)
+    const nextProgress: GameProgress = { level: nextProgressLevel, stars: { ...progress.stars, [viewingLevel]: Math.max(progress.stars[viewingLevel] ?? 0, stars) as 0 | 1 | 2 | 3 } }
     setProgress(nextProgress)
     saveGameProgress('pintar', nextProgress)
-    loadLevel(nextLevel)
+    loadLevel(viewingLevel + 1)
   }
 
   const stars = calcPintarStars(timeMs, level.targetSeconds, taps, level.cells.length)
@@ -3063,15 +3606,15 @@ function PintarGame({ onBack }: { onBack: () => void }) {
       <TopBar
         title={meta.title}
         icon={meta.icon}
-        level={progress.level}
+        level={viewingLevel} maxLevel={progress.level} onJumpLevel={loadLevel}
         goal={`${level.goal} (${progressInfo.done}/${progressInfo.total})`}
         timeMs={timeMs}
         moves={taps}
         onBack={onBack}
-        onRestart={() => loadLevel(progress.level)}
+        onRestart={() => loadLevel(viewingLevel)}
       />
       <div className="dg-board dg-board--paint">
-        <div className="dg-stage" style={{ '--dg-cols': level.cols, '--dg-cell': `${cell}px`, gap: 3 } as React.CSSProperties}>
+        <div className="dg-stage" style={{ '--dg-cols': level.cols, '--dg-cell': `${cell}px` } as React.CSSProperties}>
           {level.cells.map((c) => (
             <button
               key={`${c.row}-${c.col}`}
@@ -3104,14 +3647,16 @@ function PintarGame({ onBack }: { onBack: () => void }) {
 function HieloGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string; onBack: () => void }) {
   const meta = GAME_META.find((g) => g.id === 'hielo')!
   const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress('hielo'))
+  const [viewingLevel, setViewingLevel] = useState(progress.level)
   const [level, setLevel] = useState<IceSlideLevel>(() => generateIceSlideLevel(progress.level))
   const [player, setPlayer] = useState<MazeCoord>(() => level.start)
   const [moves, setMoves] = useState(0)
   const [completed, setCompleted] = useState(false)
   const [sliding, setSliding] = useState(false)
-  const timeMs = useElapsedMs(level.seed)
+  const timeMs = useElapsedMs(level.seed, completed)
 
   function loadLevel(n: number) {
+    setViewingLevel(n)
     const lvl = generateIceSlideLevel(n)
     setLevel(lvl)
     setPlayer(lvl.start)
@@ -3137,21 +3682,21 @@ function HieloGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string; o
   const cell = cellSizeFor(level.rows, level.cols, 400, 12, 40)
 
   function handleNext() {
-    const nextLevel = progress.level + 1
     const stars = calcIceSlideStars(moves, timeMs, level.targetSeconds, level.moveLimit)
-    const nextProgress: GameProgress = { level: nextLevel, stars: { ...progress.stars, [progress.level]: Math.max(progress.stars[progress.level] ?? 0, stars) as 0 | 1 | 2 | 3 } }
+    const nextProgressLevel = Math.max(progress.level, viewingLevel + 1)
+    const nextProgress: GameProgress = { level: nextProgressLevel, stars: { ...progress.stars, [viewingLevel]: Math.max(progress.stars[viewingLevel] ?? 0, stars) as 0 | 1 | 2 | 3 } }
     setProgress(nextProgress)
     saveGameProgress('hielo', nextProgress)
-    loadLevel(nextLevel)
+    loadLevel(viewingLevel + 1)
   }
 
   const stars = calcIceSlideStars(moves, timeMs, level.targetSeconds, level.moveLimit)
 
   return (
     <div className="dg-game">
-      <TopBar title={meta.title} icon={meta.icon} level={progress.level} goal={level.goal} timeMs={timeMs} moves={moves} onBack={onBack} onRestart={() => loadLevel(progress.level)} />
+      <TopBar title={meta.title} icon={meta.icon} level={viewingLevel} maxLevel={progress.level} onJumpLevel={loadLevel} goal={level.goal} timeMs={timeMs} moves={moves} onBack={onBack} onRestart={() => loadLevel(viewingLevel)} />
       <div className="dg-board dg-board--ice">
-        <div className="dg-stage" style={{ '--dg-cols': level.cols, '--dg-cell': `${cell}px`, gap: 1 } as React.CSSProperties}>
+        <div className="dg-stage" style={{ '--dg-cols': level.cols, '--dg-cell': `${cell}px` } as React.CSSProperties}>
           {level.grid.map((row, r) =>
             row.map((type, c) => {
               let cls = 'dg-cell dg-cell--ice-tile'
@@ -3184,14 +3729,16 @@ function HieloGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string; o
 function InterruptoresGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string; onBack: () => void }) {
   const meta = GAME_META.find((g) => g.id === 'interruptores')!
   const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress('interruptores'))
+  const [viewingLevel, setViewingLevel] = useState(progress.level)
   const [level, setLevel] = useState<SwitchLevel>(() => generateSwitchLevel(progress.level))
   const [state, setState] = useState<SwitchState>(() => switchInitialState(level))
   const [player, setPlayer] = useState<MazeCoord>(() => level.start)
   const [moves, setMoves] = useState(0)
   const [completed, setCompleted] = useState(false)
-  const timeMs = useElapsedMs(level.seed)
+  const timeMs = useElapsedMs(level.seed, completed)
 
   function loadLevel(n: number) {
+    setViewingLevel(n)
     const lvl = generateSwitchLevel(n)
     setLevel(lvl)
     setState(switchInitialState(lvl))
@@ -3223,21 +3770,21 @@ function InterruptoresGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: s
   }
 
   function handleNext() {
-    const nextLevel = progress.level + 1
     const stars = calcSwitchStars(moves, timeMs, level.targetSeconds, level.moveLimit)
-    const nextProgress: GameProgress = { level: nextLevel, stars: { ...progress.stars, [progress.level]: Math.max(progress.stars[progress.level] ?? 0, stars) as 0 | 1 | 2 | 3 } }
+    const nextProgressLevel = Math.max(progress.level, viewingLevel + 1)
+    const nextProgress: GameProgress = { level: nextProgressLevel, stars: { ...progress.stars, [viewingLevel]: Math.max(progress.stars[viewingLevel] ?? 0, stars) as 0 | 1 | 2 | 3 } }
     setProgress(nextProgress)
     saveGameProgress('interruptores', nextProgress)
-    loadLevel(nextLevel)
+    loadLevel(viewingLevel + 1)
   }
 
   const stars = calcSwitchStars(moves, timeMs, level.targetSeconds, level.moveLimit)
 
   return (
     <div className="dg-game">
-      <TopBar title={meta.title} icon={meta.icon} level={progress.level} goal={level.goal} timeMs={timeMs} moves={moves} onBack={onBack} onRestart={() => loadLevel(progress.level)} />
+      <TopBar title={meta.title} icon={meta.icon} level={viewingLevel} maxLevel={progress.level} onJumpLevel={loadLevel} goal={level.goal} timeMs={timeMs} moves={moves} onBack={onBack} onRestart={() => loadLevel(viewingLevel)} />
       <div className="dg-board dg-board--switch">
-        <div className="dg-stage" style={{ '--dg-cols': level.cols, '--dg-cell': `${cell}px`, gap: 2 } as React.CSSProperties}>
+        <div className="dg-stage" style={{ '--dg-cols': level.cols, '--dg-cell': `${cell}px` } as React.CSSProperties}>
           {level.grid.map((row, r) =>
             row.map((type, c) => {
               const door = level.doors.find((d) => d.row === r && d.col === c)
@@ -3285,14 +3832,16 @@ function InterruptoresGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: s
 function TeleportGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string; onBack: () => void }) {
   const meta = GAME_META.find((g) => g.id === 'teleport')!
   const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress('teleport'))
+  const [viewingLevel, setViewingLevel] = useState(progress.level)
   const [level, setLevel] = useState<TeleportLevel>(() => generateTeleportLevel(progress.level))
   const [player, setPlayer] = useState<MazeCoord>(() => level.start)
   const [moves, setMoves] = useState(0)
   const [completed, setCompleted] = useState(false)
   const [warping, setWarping] = useState(false)
-  const timeMs = useElapsedMs(level.seed)
+  const timeMs = useElapsedMs(level.seed, completed)
 
   function loadLevel(n: number) {
+    setViewingLevel(n)
     const lvl = generateTeleportLevel(n)
     setLevel(lvl)
     setPlayer(lvl.start)
@@ -3324,21 +3873,21 @@ function TeleportGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string
   }
 
   function handleNext() {
-    const nextLevel = progress.level + 1
     const stars = calcTeleportStars(moves, timeMs, level.targetSeconds, level.moveLimit)
-    const nextProgress: GameProgress = { level: nextLevel, stars: { ...progress.stars, [progress.level]: Math.max(progress.stars[progress.level] ?? 0, stars) as 0 | 1 | 2 | 3 } }
+    const nextProgressLevel = Math.max(progress.level, viewingLevel + 1)
+    const nextProgress: GameProgress = { level: nextProgressLevel, stars: { ...progress.stars, [viewingLevel]: Math.max(progress.stars[viewingLevel] ?? 0, stars) as 0 | 1 | 2 | 3 } }
     setProgress(nextProgress)
     saveGameProgress('teleport', nextProgress)
-    loadLevel(nextLevel)
+    loadLevel(viewingLevel + 1)
   }
 
   const stars = calcTeleportStars(moves, timeMs, level.targetSeconds, level.moveLimit)
 
   return (
     <div className="dg-game">
-      <TopBar title={meta.title} icon={meta.icon} level={progress.level} goal={level.goal} timeMs={timeMs} moves={moves} onBack={onBack} onRestart={() => loadLevel(progress.level)} />
+      <TopBar title={meta.title} icon={meta.icon} level={viewingLevel} maxLevel={progress.level} onJumpLevel={loadLevel} goal={level.goal} timeMs={timeMs} moves={moves} onBack={onBack} onRestart={() => loadLevel(viewingLevel)} />
       <div className="dg-board dg-board--portal">
-        <div className="dg-stage" style={{ '--dg-cols': level.cols, '--dg-cell': `${cell}px`, gap: 2 } as React.CSSProperties}>
+        <div className="dg-stage" style={{ '--dg-cols': level.cols, '--dg-cell': `${cell}px` } as React.CSSProperties}>
           {level.grid.map((row, r) =>
             row.map((type, c) => {
               const portal = teleportPortalAt(level, r, c)
@@ -3370,13 +3919,15 @@ function TeleportGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string
 function LaserGame({ onBack }: { onBack: () => void }) {
   const meta = GAME_META.find((g) => g.id === 'laser')!
   const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress('laser'))
+  const [viewingLevel, setViewingLevel] = useState(progress.level)
   const [level, setLevel] = useState<LaserLevel>(() => generateLaserLevel(progress.level))
   const [mirrors, setMirrors] = useState<LaserMirror[]>(() => level.mirrors)
   const [rotations, setRotations] = useState(0)
   const [completed, setCompleted] = useState(false)
-  const timeMs = useElapsedMs(level.seed)
+  const timeMs = useElapsedMs(level.seed, completed)
 
   function loadLevel(n: number) {
+    setViewingLevel(n)
     const lvl = generateLaserLevel(n)
     setLevel(lvl)
     setMirrors(lvl.mirrors)
@@ -3401,12 +3952,12 @@ function LaserGame({ onBack }: { onBack: () => void }) {
   }
 
   function handleNext() {
-    const nextLevel = progress.level + 1
     const stars = calcLaserStars(timeMs, level.targetSeconds, rotations)
-    const nextProgress: GameProgress = { level: nextLevel, stars: { ...progress.stars, [progress.level]: Math.max(progress.stars[progress.level] ?? 0, stars) as 0 | 1 | 2 | 3 } }
+    const nextProgressLevel = Math.max(progress.level, viewingLevel + 1)
+    const nextProgress: GameProgress = { level: nextProgressLevel, stars: { ...progress.stars, [viewingLevel]: Math.max(progress.stars[viewingLevel] ?? 0, stars) as 0 | 1 | 2 | 3 } }
     setProgress(nextProgress)
     saveGameProgress('laser', nextProgress)
-    loadLevel(nextLevel)
+    loadLevel(viewingLevel + 1)
   }
 
   const stars = calcLaserStars(timeMs, level.targetSeconds, rotations)
@@ -3421,7 +3972,7 @@ function LaserGame({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="dg-game">
-      <TopBar title={meta.title} icon={meta.icon} level={progress.level} goal={level.goal} timeMs={timeMs} moves={rotations} onBack={onBack} onRestart={() => loadLevel(progress.level)} />
+      <TopBar title={meta.title} icon={meta.icon} level={viewingLevel} maxLevel={progress.level} onJumpLevel={loadLevel} goal={level.goal} timeMs={timeMs} moves={rotations} onBack={onBack} onRestart={() => loadLevel(viewingLevel)} />
       <div className="dg-board dg-board--laser">
         <div className="dg-stage dg-stage--laser" style={{ width: stageWidth, height: stageHeight }}>
           <div className="dg-grid-bg" style={{ '--dg-cols': level.cols, '--dg-rows': level.rows, '--dg-cell': `${cell}px` } as React.CSSProperties} />
@@ -3513,12 +4064,14 @@ function CircuitPipe({ piece, powered, cell }: { piece: CircuitPiece; powered: b
 function CircuitosGame({ onBack }: { onBack: () => void }) {
   const meta = GAME_META.find((g) => g.id === 'circuitos')!
   const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress('circuitos'))
+  const [viewingLevel, setViewingLevel] = useState(progress.level)
   const [level, setLevel] = useState<CircuitLevel>(() => generateCircuitLevel(progress.level))
   const [rotations, setRotations] = useState(0)
   const [completed, setCompleted] = useState(false)
-  const timeMs = useElapsedMs(level.seed)
+  const timeMs = useElapsedMs(level.seed, completed)
 
   function loadLevel(n: number) {
+    setViewingLevel(n)
     setLevel(generateCircuitLevel(n))
     setRotations(0)
     setCompleted(false)
@@ -3537,21 +4090,21 @@ function CircuitosGame({ onBack }: { onBack: () => void }) {
   const powered = useMemo(() => poweredCircuitCells(level), [level])
 
   function handleNext() {
-    const nextLevel = progress.level + 1
     const stars = calcCircuitStars(timeMs, level.targetSeconds, rotations, level.rows * level.cols)
-    const nextProgress: GameProgress = { level: nextLevel, stars: { ...progress.stars, [progress.level]: Math.max(progress.stars[progress.level] ?? 0, stars) as 0 | 1 | 2 | 3 } }
+    const nextProgressLevel = Math.max(progress.level, viewingLevel + 1)
+    const nextProgress: GameProgress = { level: nextProgressLevel, stars: { ...progress.stars, [viewingLevel]: Math.max(progress.stars[viewingLevel] ?? 0, stars) as 0 | 1 | 2 | 3 } }
     setProgress(nextProgress)
     saveGameProgress('circuitos', nextProgress)
-    loadLevel(nextLevel)
+    loadLevel(viewingLevel + 1)
   }
 
   const stars = calcCircuitStars(timeMs, level.targetSeconds, rotations, level.rows * level.cols)
 
   return (
     <div className="dg-game">
-      <TopBar title={meta.title} icon={meta.icon} level={progress.level} goal={level.goal} timeMs={timeMs} moves={rotations} onBack={onBack} onRestart={() => loadLevel(progress.level)} />
+      <TopBar title={meta.title} icon={meta.icon} level={viewingLevel} maxLevel={progress.level} onJumpLevel={loadLevel} goal={level.goal} timeMs={timeMs} moves={rotations} onBack={onBack} onRestart={() => loadLevel(viewingLevel)} />
       <div className="dg-board dg-board--circuit">
-        <div className="dg-stage" style={{ '--dg-cols': level.cols, '--dg-cell': `${cell}px`, gap: 0 } as React.CSSProperties}>
+        <div className="dg-stage" style={{ '--dg-cols': level.cols, '--dg-cell': `${cell}px` } as React.CSSProperties}>
           {level.pieces.map((row, r) =>
             row.map((piece, c) => {
               const isPowered = powered.has(r * level.cols + c)
@@ -3587,14 +4140,16 @@ function CircuitosGame({ onBack }: { onBack: () => void }) {
 function CaminoUnicoGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string; onBack: () => void }) {
   const meta = GAME_META.find((g) => g.id === 'camino')!
   const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress('camino'))
+  const [viewingLevel, setViewingLevel] = useState(progress.level)
   const [level, setLevel] = useState<PathUniqueLevel>(() => generatePathUniqueLevel(progress.level))
   const [player, setPlayer] = useState<MazeCoord>(() => level.start)
   const [visited, setVisited] = useState<Set<number>>(() => pathUniqueInitialVisited(level))
   const [moves, setMoves] = useState(0)
   const [completed, setCompleted] = useState(false)
-  const timeMs = useElapsedMs(level.seed)
+  const timeMs = useElapsedMs(level.seed, completed)
 
   function loadLevel(n: number) {
+    setViewingLevel(n)
     const lvl = generatePathUniqueLevel(n)
     setLevel(lvl)
     setPlayer(lvl.start)
@@ -3620,21 +4175,21 @@ function CaminoUnicoGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: str
   const cell = cellSizeFor(level.rows, level.cols, 400, 20, 48)
 
   function handleNext() {
-    const nextLevel = progress.level + 1
     const stars = calcPathUniqueStars(moves, timeMs, level.targetSeconds, level.totalWalkable)
-    const nextProgress: GameProgress = { level: nextLevel, stars: { ...progress.stars, [progress.level]: Math.max(progress.stars[progress.level] ?? 0, stars) as 0 | 1 | 2 | 3 } }
+    const nextProgressLevel = Math.max(progress.level, viewingLevel + 1)
+    const nextProgress: GameProgress = { level: nextProgressLevel, stars: { ...progress.stars, [viewingLevel]: Math.max(progress.stars[viewingLevel] ?? 0, stars) as 0 | 1 | 2 | 3 } }
     setProgress(nextProgress)
     saveGameProgress('camino', nextProgress)
-    loadLevel(nextLevel)
+    loadLevel(viewingLevel + 1)
   }
 
   const stars = calcPathUniqueStars(moves, timeMs, level.targetSeconds, level.totalWalkable)
 
   return (
     <div className="dg-game">
-      <TopBar title={meta.title} icon={meta.icon} level={progress.level} goal={`${level.goal} (${visited.size}/${level.totalWalkable})`} timeMs={timeMs} moves={moves} onBack={onBack} onRestart={() => loadLevel(progress.level)} />
+      <TopBar title={meta.title} icon={meta.icon} level={viewingLevel} maxLevel={progress.level} onJumpLevel={loadLevel} goal={`${level.goal} (${visited.size}/${level.totalWalkable})`} timeMs={timeMs} moves={moves} onBack={onBack} onRestart={() => loadLevel(viewingLevel)} />
       <div className="dg-board dg-board--ember">
-        <div className="dg-stage" style={{ '--dg-cols': level.cols, '--dg-cell': `${cell}px`, gap: 2 } as React.CSSProperties}>
+        <div className="dg-stage" style={{ '--dg-cols': level.cols, '--dg-cell': `${cell}px` } as React.CSSProperties}>
           {level.grid.map((row, r) =>
             row.map((type, c) => {
               const key = r * level.cols + c
@@ -3900,6 +4455,48 @@ const DESPEJES_CSS = `
 }
 .dg-dpad__btn:active { transform: scale(0.9); background: linear-gradient(160deg, rgba(124,155,255,0.5), rgba(124,155,255,0.18)); }
 
+/* Variantes de cruceta */
+.dg-dpad--minimal .dg-dpad__btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); box-shadow: none; border-radius: 10px; }
+.dg-dpad--minimal .dg-dpad__btn:active { background: rgba(124,155,255,0.3); }
+.dg-dpad--neon .dg-dpad__btn {
+  background: rgba(10,14,28,0.7); border: 1px solid var(--dg-primary);
+  box-shadow: 0 0 10px rgba(124,155,255,0.55), inset 0 0 8px rgba(124,155,255,0.35);
+  color: #cdd9ff;
+}
+.dg-dpad--neon .dg-dpad__btn:active { box-shadow: 0 0 22px rgba(124,155,255,0.9), inset 0 0 12px rgba(124,155,255,0.6); }
+.dg-dpad--glass .dg-dpad__btn {
+  background: rgba(255,255,255,0.10); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.25);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.4);
+}
+.dg-dpad--glass .dg-dpad__btn:active { background: rgba(255,255,255,0.22); }
+
+.dg-style-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.dg-style-btn { padding: 8px 12px; border-radius: 10px; background: var(--dg-surface); border: 1px solid var(--dg-border); font-size: 12.5px; font-weight: 600; }
+.dg-style-btn--active { border-color: var(--dg-primary); background: rgba(124,155,255,0.18); color: #cdd9ff; }
+.dg-settings__reset { width: 100%; margin-top: 14px; }
+
+/* ── Botón "Volver" (pill, con hover) ── */
+.dg-backbtn {
+  display: inline-flex; align-items: center; gap: 7px; padding: 9px 18px; border-radius: 999px;
+  background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.14); color: var(--dg-text);
+  font-weight: 700; font-size: 13.5px; transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  flex-shrink: 0;
+}
+.dg-backbtn:hover { background: rgba(255,255,255,0.14); border-color: rgba(255,255,255,0.26); }
+.dg-backbtn:active { transform: scale(0.96); }
+.dg-backbtn--top { margin-bottom: 14px; }
+
+/* ── Chip "Nivel" clicable + selector de nivel ── */
+.dg-chip--clickable { background: rgba(124,155,255,0.16); border-color: rgba(124,155,255,0.4); font-weight: 700; }
+.dg-chip--clickable:hover { background: rgba(124,155,255,0.28); }
+.dg-chip--danger { background: rgba(248,113,113,0.18); border-color: rgba(248,113,113,0.5); color: #ffd4d4; animation: dg-danger-pulse 1s ease-in-out infinite; }
+@keyframes dg-danger-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+.dg-levelpicker { max-width: 360px; }
+.dg-levelpicker__grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; max-height: 260px; overflow-y: auto; padding-right: 2px; }
+.dg-levelpicker__btn { padding: 10px 0; border-radius: 10px; background: var(--dg-surface); border: 1px solid var(--dg-border); font-weight: 700; }
+.dg-levelpicker__btn:hover { background: rgba(255,255,255,0.14); }
+.dg-levelpicker__btn--active { border-color: var(--dg-primary); background: rgba(124,155,255,0.25); }
+
 /* ── Barra superior de cada juego ── */
 .dg-topbar {
   display: flex; align-items: center; gap: 10px; max-width: 620px; margin: 0 auto 14px;
@@ -3917,8 +4514,8 @@ const DESPEJES_CSS = `
 .dg-controls { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 4px; }
 .dg-hint { color: var(--dg-text-dim); font-size: 12.5px; text-align: center; margin-top: 10px; max-width: 320px; }
 
-.dg-stage { position: relative; display: grid; grid-template-columns: repeat(var(--dg-cols), var(--dg-cell)); grid-auto-rows: var(--dg-cell); }
-.dg-cell { position: relative; display: flex; align-items: center; justify-content: center; }
+.dg-stage { position: relative; display: grid; grid-template-columns: repeat(var(--dg-cols), var(--dg-cell)); grid-auto-rows: var(--dg-cell); gap: 0; }
+.dg-cell { position: relative; display: flex; align-items: center; justify-content: center; box-sizing: border-box; border: 1px solid rgba(0,0,0,0.28); }
 .dg-emoji-mark { font-size: 0.62em; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5)); pointer-events: none; }
 .dg-emoji-abs { position: absolute; display: flex; align-items: center; justify-content: center; font-size: 18px; pointer-events: none; z-index: 3; }
 
@@ -3940,6 +4537,16 @@ const DESPEJES_CSS = `
 .dg-cell--maze.dg-cell--hole { background: radial-gradient(circle, #050505, #1a1a1a 70%); border-radius: 50%; box-shadow: inset 0 4px 8px rgba(0,0,0,0.8); }
 .dg-cell--maze.dg-cell--fog { background: #0a0a0a; }
 .dg-boulder { font-size: 0.72em; filter: drop-shadow(0 3px 3px rgba(0,0,0,0.6)); }
+.dg-glass { font-size: 0.66em; filter: drop-shadow(0 0 6px rgba(120,200,255,0.85)); animation: dg-glass-shimmer 2.2s ease-in-out infinite; }
+@keyframes dg-glass-shimmer { 0%,100% { opacity: 0.85; transform: scale(1); } 50% { opacity: 1; transform: scale(1.08); } }
+.dg-exit-flag { animation: dg-flag-wave 1.6s ease-in-out infinite; transform-origin: bottom center; }
+@keyframes dg-flag-wave { 0%,100% { transform: rotate(-4deg); } 50% { transform: rotate(6deg); } }
+
+/* Cámara estilo GBA: ventana fija que sigue al jugador en mapas grandes */
+.dg-camera { position: relative; overflow: hidden; border-radius: 14px; margin: 0 auto; box-shadow: inset 0 0 40px rgba(0,0,0,0.55), 0 0 0 3px rgba(0,0,0,0.4); }
+.dg-camera__inner { position: absolute; top: 0; left: 0; transition: transform 0.16s cubic-bezier(.3,.9,.4,1); }
+
+.dg-overlay__badge--fail { background: linear-gradient(135deg, var(--dg-danger), #dc2626); box-shadow: 0 0 26px rgba(248,113,113,0.55); }
 
 /* ── Hielo ── */
 .dg-board--ice { background: linear-gradient(160deg, #0d2436, #081824); }
