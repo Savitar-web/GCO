@@ -2081,7 +2081,6 @@ export function MusicaHome() {
     pan: 0,
     spatial8d: 0,
   })
-  const [listenStatsVersion, setListenStatsVersion] = useState(0)
   const [progressColor, setProgressColor] = useState(() => getBarPrefs().progressColor)
   const plDragFromRef = useRef<string | null>(null)
   const plLongPressRef = useRef<number | null>(null)
