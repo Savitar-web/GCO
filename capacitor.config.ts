@@ -8,6 +8,9 @@ const config: CapacitorConfig = {
     url: 'https://gco-one.vercel.app',
     cleartext: false,
   },
+  plugins: {
+  MediaSession: { foregroundService: 'always' }
+}
 }
 
 export default config

@@ -1,8 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   AndroidManifest.xml — GCO (Capacitor)
-  Cobertura: Android 9 (API 28) → Android 14/15/16+ (API 34/35/36+)
-  Incluye perfil Samsung One UI.
+  Cobertura: Android 9 (API 28) → Android 16+ (API 36+)
+  Perfil: AOSP, Samsung One UI 5–8 (S26 Ultra / Android 16), Xiaomi/Redmi MIUI/HyperOS.
+
+  OBLIGATORIO tras copiar este archivo:
+    npm i @capgo/capacitor-media-session @capacitor/local-notifications @capacitor/app
+    npx cap sync android
+
+  El plugin @capgo/capacitor-media-session inyecta MediaSessionService.
+  Aquí se REDECLARA con tools:replace para que NUNCA se pierda
+  android:foregroundServiceType="mediaPlayback" (API 34+ lo exige o el
+  sistema mata el servicio y no hay gadget / Now bar / lock screen).
+
+  capacitor.config.ts (recomendado):
+    plugins: {
+      MediaSession: { foregroundService: "always" }
+    }
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
@@ -12,12 +26,14 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- PERMISOS — energía y ciclo de vida en segundo plano -->
+    <!-- PERMISOS — energía, FGS media y ciclo de vida en segundo plano -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- API 34+ : sin este permiso el FGS mediaPlayback es ilegal y la notificación no aparece -->
     <uses-permission
         android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
         tools:targetApi="34" />
+    <!-- API 33+ : sin este permiso concedido EN RUNTIME la MediaStyle notification es invisible -->
     <uses-permission
         android:name="android.permission.POST_NOTIFICATIONS"
         tools:targetApi="33" />
@@ -54,6 +70,18 @@
         <intent>
             <action android:name="android.settings.APPLICATION_DETAILS_SETTINGS" />
         </intent>
+        <intent>
+            <action android:name="android.settings.APP_NOTIFICATION_SETTINGS" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MEDIA_BUTTON" />
+        </intent>
     </queries>
 
     <application
@@ -69,8 +97,8 @@
         android:fullBackupContent="@xml/backup_rules"
         android:enableOnBackInvokedCallback="true"
         android:extractNativeLibs="false"
-        tools:targetApi="35"
-        tools:ignore="ForegroundServicePermission,UnusedAttribute,DataExtractionRules,MissingForegroundServiceType">
+        android:largeHeap="true"
+        tools:targetApi="36">
 
         <!-- Activity principal -->
         <activity
@@ -79,6 +107,11 @@
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
             android:exported="true"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
+            android:excludeFromRecents="false"
+            android:showWhenLocked="false"
+            android:turnScreenOn="false"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density|fontScale|layoutDirection">
 
@@ -87,7 +120,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Respaldo para botones multimedia físicos (One UI / MIUI) -->
+            <!-- Botones multimedia físicos / Bluetooth (One UI, HyperOS, AOSP) -->
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
@@ -105,12 +138,38 @@
         </provider>
 
         <!--
-          MediaSessionService / MediaPlaybackService
-          NO declarar manualmente.
-          Lo inyecta automáticamente @capgo/capacitor-media-session
-          al ejecutar `npx cap sync android`.
-          Debe aparecer en el Merged Manifest con:
-            android:foregroundServiceType="mediaPlayback"
+          MediaSessionService de @capgo/capacitor-media-session
+          Nombre completo = package del plugin + MediaSessionService.
+          stopWithTask=false: si el usuario quita la app de recientes, el FGS
+          de media puede seguir (One UI 6–8 / HyperOS matan si stopWithTask=true).
         -->
+        <service
+            android:name="com.capgo.mediasession.MediaSessionService"
+            android:enabled="true"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback"
+            android:stopWithTask="false"
+            tools:replace="android:exported,android:foregroundServiceType,android:stopWithTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </service>
+
+        <!--
+          Si usas @jofr/capacitor-media-session EN VEZ de Capgo, sustituye el
+          android:name del <service> anterior por:
+          io.github.jofr.capacitor.mediasessionplugin.MediaSessionService
+          No declares ambos a la vez: competirían por MEDIA_BUTTON.
+        -->
+
+        <receiver
+            android:name="androidx.media.session.MediaButtonReceiver"
+            android:exported="true"
+            android:enabled="true"
+            tools:replace="android:exported">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

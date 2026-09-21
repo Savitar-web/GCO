@@ -4,8 +4,11 @@
  * ============================================================================
  * Temas: oscuro / claro / arcoíris vía CSS vars + data-theme / clases.
  * Clic portada/título → fullscreen (drag solo tras umbral).
- * Dock L/R · móvil · PiP · cola · letra · heatmap · vídeo.
- * Plataformas: web, PWA, Capacitor APK, Electron.
+ * Gestos fullscreen: swipe ↓ cierra · ← cola · → letra.
+ * Cola: long-press para reordenar (sin selección de texto).
+ * Vídeo nativo FS: overlay con ±10s, volumen, brillo, candado, auto-hide.
+ * PiP: document.pictureInPicture + webkit (iOS Safari/PWA cuando existe).
+ * Plataformas: web, PWA, Capacitor APK, Electron · Android 9–16+ · iOS · desktop.
  * ============================================================================
  */
 
@@ -17,6 +20,7 @@ import {
   useMemo,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
+  type DragEvent as ReactDragEvent,
 } from 'react'
 import { createPortal } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
@@ -39,6 +43,8 @@ const DRAG_THRESHOLD_PX = 10
 const MOBILE_NAV_RESERVE = 76
 const MOBILE_BAR_MAX_W = 300
 const DESKTOP_BAR_MAX_W = 560
+const SWIPE_MIN_PX = 64
+const QUEUE_LONGPRESS_MS = 280
 
 type FloatEdge = 'left' | 'right' | 'top' | 'bottom' | null
 type FloatPos = { x: number; y: number; edge: FloatEdge; docked: boolean }
@@ -52,7 +58,7 @@ type Props = {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Detección de tema (oscuro / claro / arcoíris)
+ * Detección de tema
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 function detectThemeMode(): AppThemeMode {
@@ -69,14 +75,10 @@ function detectThemeMode(): AppThemeMode {
     (typeof localStorage !== 'undefined' &&
       (localStorage.getItem('gco:theme') || localStorage.getItem('theme') || '')) ||
     ''
-
   const blob = `${attr} ${cls} ${stored}`.toLowerCase()
-
   if (/rainbow|arco|iris|pride|neon/.test(blob)) return 'rainbow'
   if (/light|claro|day|sunrise/.test(blob)) return 'light'
   if (/dark|oscuro|night|midnight/.test(blob)) return 'dark'
-
-  // Preferencia del sistema si no hay marca explícita
   try {
     if (window.matchMedia('(prefers-color-scheme: light)').matches) return 'light'
   } catch {
@@ -87,11 +89,9 @@ function detectThemeMode(): AppThemeMode {
 
 function useAppThemeMode(): AppThemeMode {
   const [mode, setMode] = useState<AppThemeMode>(() => detectThemeMode())
-
   useEffect(() => {
     const refresh = () => setMode(detectThemeMode())
     refresh()
-
     const obs = new MutationObserver(refresh)
     obs.observe(document.documentElement, {
       attributes: true,
@@ -103,12 +103,9 @@ function useAppThemeMode(): AppThemeMode {
         attributeFilter: ['class', 'data-theme', 'data-gco-theme'],
       })
     }
-
     window.addEventListener('storage', refresh)
     window.addEventListener('gco:theme-change', refresh)
-    // Poll suave por si el tema se cambia solo en localStorage sin evento
     const id = window.setInterval(refresh, 2000)
-
     return () => {
       obs.disconnect()
       window.removeEventListener('storage', refresh)
@@ -116,32 +113,27 @@ function useAppThemeMode(): AppThemeMode {
       window.clearInterval(id)
     }
   }, [])
-
   return mode
 }
 
-/** Tokens visuales según tema (siempre priorizan CSS vars de la app). */
 function useThemeTokens(mode: AppThemeMode) {
   return useMemo(() => {
     const accent = 'var(--gco-primary)'
     const onAccent = 'var(--gco-on-primary, #0B1220)'
-
     if (mode === 'light') {
       return {
         accent,
         onAccent,
-        floatBg:
-          'linear-gradient(145deg, rgba(255,255,255,0.92), rgba(244,246,252,0.9))',
+        floatBg: 'linear-gradient(145deg, rgba(255,255,255,0.94), rgba(244,246,252,0.92))',
         floatBorder: '1px solid rgba(15,20,40,0.1)',
         floatShadow: '0 12px 36px rgba(20,30,60,0.14), inset 0 1px 0 rgba(255,255,255,0.9)',
         floatColor: 'var(--gco-ink, #12141c)',
         floatMuted: 'var(--gco-ink-muted, rgba(18,20,28,0.55))',
-        fsBg:
-          'radial-gradient(ellipse at top, #eef1f8 0%, #dfe5f2 45%, #d0d7e8 100%)',
+        fsBg: 'radial-gradient(ellipse at top, #eef1f8 0%, #dfe5f2 45%, #d0d7e8 100%)',
         fsColor: 'var(--gco-ink, #12141c)',
         glassBg: 'rgba(255,255,255,0.55)',
         glassBorder: '1px solid rgba(20,30,50,0.1)',
-        glassIconBg: 'rgba(255,255,255,0.7)',
+        glassIconBg: 'rgba(255,255,255,0.72)',
         glassIconColor: 'var(--gco-ink, #12141c)',
         liquid: {
           background: 'rgba(255,255,255,0.55)',
@@ -152,15 +144,14 @@ function useThemeTokens(mode: AppThemeMode) {
         } as CSSProperties,
         progressTrack: 'rgba(20,30,50,0.12)',
         heatBase: 0.06,
+        overlayBg: 'linear-gradient(transparent 30%, rgba(0,0,0,0.72) 100%)',
+        surfaceMuted: 'rgba(0,0,0,0.05)',
       }
     }
-
-    // dark + rainbow (rainbow se apoya en --gco-primary animado del tema global)
     return {
       accent,
       onAccent,
-      floatBg:
-        'linear-gradient(145deg, rgba(28,32,48,0.94), rgba(14,16,28,0.9))',
+      floatBg: 'linear-gradient(145deg, rgba(28,32,48,0.95), rgba(14,16,28,0.92))',
       floatBorder: '1px solid rgba(255,255,255,0.12)',
       floatShadow: '0 12px 40px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.1)',
       floatColor: '#F3F5FA',
@@ -180,12 +171,14 @@ function useThemeTokens(mode: AppThemeMode) {
       } as CSSProperties,
       progressTrack: 'rgba(255,255,255,0.12)',
       heatBase: 0.04,
+      overlayBg: 'linear-gradient(transparent 28%, rgba(0,0,0,0.78) 100%)',
+      surfaceMuted: 'rgba(255,255,255,0.06)',
     }
   }, [mode])
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Utils geo / storage
+ * Utils
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 function isMobileViewport() {
@@ -265,6 +258,31 @@ function isVideoTrack(item: TrackItem) {
       /mp4|webm|mov|mkv/i.test(item.mime) ||
       /\.(mp4|webm|mov|mkv)$/i.test(item.title || ''))
   )
+}
+
+/** Tiempo restante: "-3:42" */
+function formatRemaining(currentMs: number, durationMs: number) {
+  if (!durationMs || durationMs <= 0) return '−0:00'
+  const left = Math.max(0, durationMs - currentMs)
+  return `−${formatTrackTime(left)}`
+}
+
+function detectPipSupport(): boolean {
+  if (typeof document === 'undefined') return false
+  const d = document as Document & {
+    pictureInPictureEnabled?: boolean
+    webkitPictureInPictureEnabled?: boolean
+  }
+  if (d.pictureInPictureEnabled) return true
+  if (typeof HTMLVideoElement !== 'undefined') {
+    const proto = HTMLVideoElement.prototype as HTMLVideoElement & {
+      webkitSupportsPresentationMode?: (mode: string) => boolean
+      webkitSetPresentationMode?: (mode: string) => void
+    }
+    if (typeof proto.webkitSupportsPresentationMode === 'function') return true
+    if (typeof proto.requestPictureInPicture === 'function') return true
+  }
+  return false
 }
 
 let globalBarMounted = false
@@ -389,6 +407,74 @@ function IconLock({ locked }: { locked: boolean }) {
     </svg>
   )
 }
+/** −10 s */
+function IconSeekBack10({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M1 4v6h6" />
+      <path d="M3.5 15a9 9 0 103.6-9.3L1 10" />
+      <text x="12" y="15.5" textAnchor="middle" fontSize="7.5" fill="currentColor" stroke="none" fontWeight="700">
+        10
+      </text>
+    </svg>
+  )
+}
+/** +10 s */
+function IconSeekFwd10({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M23 4v6h-6" />
+      <path d="M20.5 15a9 9 0 11-3.6-9.3L23 10" />
+      <text x="12" y="15.5" textAnchor="middle" fontSize="7.5" fill="currentColor" stroke="none" fontWeight="700">
+        10
+      </text>
+    </svg>
+  )
+}
+function IconVolDown({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M11 5L6 9H2v6h4l5 4V5z" />
+      <path d="M15 9.5a3 3 0 010 5" />
+    </svg>
+  )
+}
+function IconVolUp({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M11 5L6 9H2v6h4l5 4V5z" />
+      <path d="M15 9.5a3 3 0 010 5M18 7a6 6 0 010 10" />
+    </svg>
+  )
+}
+function IconBrightDown({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <circle cx="12" cy="12" r="3.5" />
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" opacity="0.45" />
+    </svg>
+  )
+}
+function IconBrightUp({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
+    </svg>
+  )
+}
+function IconGrip() {
+  return (
+    <svg width="14" height="18" viewBox="0 0 14 18" fill="currentColor" aria-hidden opacity="0.45">
+      <circle cx="4" cy="3" r="1.4" />
+      <circle cx="10" cy="3" r="1.4" />
+      <circle cx="4" cy="9" r="1.4" />
+      <circle cx="10" cy="9" r="1.4" />
+      <circle cx="4" cy="15" r="1.4" />
+      <circle cx="10" cy="15" r="1.4" />
+    </svg>
+  )
+}
 
 function buildGlobalCss(mode: AppThemeMode) {
   const isLight = mode === 'light'
@@ -396,14 +482,15 @@ function buildGlobalCss(mode: AppThemeMode) {
 .gco-pb-scroll { scrollbar-width: thin; scrollbar-color: ${isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.22)'} transparent; }
 .gco-pb-scroll::-webkit-scrollbar { width: 5px; }
 .gco-pb-scroll::-webkit-scrollbar-thumb { background: ${isLight ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)'}; border-radius: 999px; }
-.gco-pb-icon:hover { filter: brightness(1.08); }
-.gco-pb-icon:active { transform: scale(0.93); }
+.gco-pb-icon:hover { filter: brightness(1.1); }
+.gco-pb-icon:active { transform: scale(0.92); }
 .gco-pb-icon:disabled { opacity: 0.32; cursor: not-allowed; }
 .gco-float-bar {
   border-radius: 22px;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
   transition: box-shadow 0.2s ease, width 0.22s ease, border-radius 0.22s ease, background 0.25s ease;
 }
 .gco-float-bar.is-dragging { filter: brightness(1.03); }
@@ -414,23 +501,41 @@ function buildGlobalCss(mode: AppThemeMode) {
   padding: 0 !important;
   overflow: hidden;
 }
+.gco-fs-root {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: pan-y;
+}
+.gco-fs-root input,
+.gco-fs-root textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
 .gco-fs-pill {
-  display: inline-flex; align-items: center; gap: 8px;
+  display: inline-flex; align-items: center; gap: 6px;
   padding: 4px 6px 4px 10px; border-radius: 999px;
   font-size: 0.74rem; font-weight: 600;
 }
-.gco-fs-pill span { min-width: 54px; text-align: center; font-variant-numeric: tabular-nums; }
+.gco-fs-pill span { min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; }
 .gco-fs-pill button {
   width: 26px; height: 26px; border-radius: 50%; border: none;
   cursor: pointer; display: grid; place-items: center;
+  background: rgba(255,255,255,0.15); color: inherit;
 }
 .gco-fs-range {
   -webkit-appearance: none; appearance: none; width: 100%; height: 6px;
   border-radius: 999px; outline: none; cursor: pointer;
+  background: transparent;
 }
 .gco-fs-range::-webkit-slider-thumb {
   -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
   background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.35); margin-top: -5px;
+  border: none;
+}
+.gco-fs-range::-moz-range-thumb {
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.35); border: none;
 }
 .gco-seg {
   display: inline-flex; padding: 3px; border-radius: 999px;
@@ -443,18 +548,44 @@ function buildGlobalCss(mode: AppThemeMode) {
 .gco-open-zone {
   cursor: pointer; border: none; background: transparent;
   color: inherit; font: inherit; text-align: left; padding: 0; min-width: 0;
+  user-select: none; -webkit-user-select: none;
 }
 .gco-open-zone:focus-visible {
   outline: 2px solid var(--gco-primary);
   outline-offset: 2px;
   border-radius: 12px;
 }
-${mode === 'rainbow' ? `
+.gco-queue-row {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
+.gco-queue-row.is-dragging-row {
+  opacity: 0.7;
+  transform: scale(1.02);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+}
+.gco-seek-chip {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: grid; place-items: center; border: none; cursor: pointer;
+  flex-shrink: 0; transition: transform 0.12s ease, background 0.15s ease;
+}
+.gco-seek-chip:active { transform: scale(0.9); }
+.gco-swipe-hint {
+  width: 36px; height: 4px; border-radius: 999px; margin: 0 auto 8px;
+  background: rgba(128,128,128,0.35);
+}
+${
+  mode === 'rainbow'
+    ? `
 .gco-float-bar {
   box-shadow: 0 12px 40px color-mix(in srgb, var(--gco-primary) 25%, transparent),
               inset 0 1px 0 rgba(255,255,255,0.12);
 }
-` : ''}
+`
+    : ''
+}
 `
 }
 
@@ -475,12 +606,11 @@ export function PlayerBar({ player, floating }: Props) {
   const [showVideo, setShowVideo] = useState(false)
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
-  const dragQ = useRef<number | null>(null)
   const fsRootRef = useRef<HTMLDivElement | null>(null)
 
   const [locked, setLocked] = useState(false)
   const [brightness, setBrightness] = useState(100)
-  const [volumeUi, setVolumeUi] = useState(100)
+  const [volumeUi, setVolumeUi] = useState(() => Math.round((player.volume ?? 1) * 100))
   const [heatmap, setHeatmap] = useState<number[]>(() => new Array(HEATMAP_BINS).fill(0))
   const [overlayVisible, setOverlayVisible] = useState(true)
   const heatmapRef = useRef(heatmap)
@@ -505,6 +635,20 @@ export function PlayerBar({ player, floating }: Props) {
   const [pipSupported, setPipSupported] = useState(false)
   const pipRequestedRef = useRef(false)
 
+  /* Swipe fullscreen */
+  const swipeStartRef = useRef<{ x: number; y: number; t: number } | null>(null)
+  const [fsDragY, setFsDragY] = useState(0)
+
+  /* Queue long-press reorder */
+  const queueDragFromRef = useRef<number | null>(null)
+  const queueLongPressRef = useRef<number | null>(null)
+  const queuePointerRef = useRef<{ id: number; y: number } | null>(null)
+  const [queueDraggingIdx, setQueueDraggingIdx] = useState<number | null>(null)
+  const [queueDropIdx, setQueueDropIdx] = useState<number | null>(null)
+  const queueDropIdxRef = useRef<number | null>(null)
+  const queueRowsRef = useRef<Map<number, HTMLElement>>(new Map())
+  const htmlDragFromRef = useRef<number | null>(null)
+
   const dur = player.durationMs || t?.durationMs || 0
   const hasVideo = t ? isVideoTrack(t) : false
   const globalCss = useMemo(() => buildGlobalCss(themeMode), [themeMode])
@@ -526,15 +670,33 @@ export function PlayerBar({ player, floating }: Props) {
     transition: 'background-color 0.15s ease, transform 0.1s ease',
   }
 
+  const seekChipStyle: CSSProperties = {
+    width: 32,
+    height: 32,
+    borderRadius: '50%',
+    border: tokens.glassBorder,
+    background: tokens.glassIconBg,
+    color: tokens.glassIconColor,
+    display: 'grid',
+    placeItems: 'center',
+    cursor: 'pointer',
+    padding: 0,
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
+    flexShrink: 0,
+  }
+
   const openFullscreen = useCallback(() => {
     soundClick()
     setFsTab('now')
     setFullscreen(true)
+    setOverlayVisible(true)
   }, [])
 
   const closeFullscreen = useCallback(() => {
     soundClick()
     setFullscreen(false)
+    setFsDragY(0)
   }, [])
 
   const syncQueue = useCallback(() => {
@@ -548,11 +710,7 @@ export function PlayerBar({ player, floating }: Props) {
   }, [])
 
   useEffect(() => {
-    if (typeof document === 'undefined') return
-    setPipSupported(
-      'pictureInPictureEnabled' in document &&
-        !!(document as Document & { pictureInPictureEnabled?: boolean }).pictureInPictureEnabled
-    )
+    setPipSupported(detectPipSupport())
   }, [])
 
   useEffect(() => {
@@ -565,7 +723,19 @@ export function PlayerBar({ player, floating }: Props) {
     }
   }, [fullscreen, syncQueue, t?.id])
 
-  /* Atajos con fullscreen abierto */
+  /* Sync volume UI → player */
+  useEffect(() => {
+    const v = clamp(volumeUi / 100, 0, 1)
+    if (Math.abs((player.volume ?? 1) - v) > 0.01) {
+      player.setVolume?.(v)
+    }
+  }, [volumeUi]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setVolumeUi(Math.round((player.volume ?? 1) * 100))
+  }, [player.volume])
+
+  /* Atajos teclado */
   useEffect(() => {
     if (!fullscreen) return
     const onKey = (e: KeyboardEvent) => {
@@ -574,9 +744,14 @@ export function PlayerBar({ player, floating }: Props) {
         return
       }
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (locked) return
       if (e.code === 'Space') {
         e.preventDefault()
         void player.toggle()
+      } else if (e.key === 'ArrowRight' && e.shiftKey) {
+        player.seek(Math.min(dur, player.currentMs + 10000))
+      } else if (e.key === 'ArrowLeft' && e.shiftKey) {
+        player.seek(Math.max(0, player.currentMs - 10000))
       } else if (e.key === 'ArrowRight') {
         player.seek(Math.min(dur, player.currentMs + 5000))
       } else if (e.key === 'ArrowLeft') {
@@ -589,8 +764,9 @@ export function PlayerBar({ player, floating }: Props) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [fullscreen, player, dur])
+  }, [fullscreen, player, dur, locked])
 
+  /* Carga blob vídeo */
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -622,6 +798,7 @@ export function PlayerBar({ player, floating }: Props) {
     }
   }, [t?.id, t?.blobKey, hasVideo, showVideo, fullscreen, pipActive])
 
+  /* Sync vídeo ↔ audio */
   useEffect(() => {
     const v = videoRef.current
     if (!v || !videoUrl) return
@@ -633,548 +810,954 @@ export function PlayerBar({ player, floating }: Props) {
         /* */
       }
     }
-    v.muted = true
-    if (player.playing) void v.play().catch(() => {})
-    else v.pause()
-  }, [player.playing, player.currentMs, videoUrl])
-
-  useEffect(() => {
-    if (!hasVideo) setShowVideo(false)
-  }, [hasVideo, t?.id])
-
-  useEffect(() => {
-    if (!t) return
-    const all = loadHeatmapStore()
-    const saved = all[t.id]
-    const arr =
-      saved && saved.length === HEATMAP_BINS ? [...saved] : new Array(HEATMAP_BINS).fill(0)
-    heatmapRef.current = arr
-    setHeatmap(arr)
-    lastBinRef.current = null
-  }, [t?.id])
-
-  useEffect(() => {
-    if (!t || !player.playing || !dur) return
-    const bin = clamp(Math.floor((player.currentMs / dur) * HEATMAP_BINS), 0, HEATMAP_BINS - 1)
-    if (bin !== lastBinRef.current) {
-      lastBinRef.current = bin
-      const next = [...heatmapRef.current]
-      next[bin] += 1
-      heatmapRef.current = next
-      setHeatmap(next)
-      const all = loadHeatmapStore()
-      all[t.id] = next
-      saveHeatmapStore(all)
+    if (player.playing && v.paused) {
+      v.play().catch(() => {})
+    } else if (!player.playing && !v.paused) {
+      v.pause()
     }
+  }, [player.currentMs, player.playing, videoUrl])
+
+  /* PiP events */
+  useEffect(() => {
+    const onEnter = () => setPipActive(true)
+    const onLeave = () => {
+      setPipActive(false)
+      pipRequestedRef.current = false
+    }
+    document.addEventListener('enterpictureinpicture', onEnter)
+    document.addEventListener('leavepictureinpicture', onLeave)
+    return () => {
+      document.removeEventListener('enterpictureinpicture', onEnter)
+      document.removeEventListener('leavepictureinpicture', onLeave)
+    }
+  }, [])
+
+  /* Native fullscreen change */
+  useEffect(() => {
+    const onFs = () => {
+      const active = !!document.fullscreenElement
+      setNativeFsActive(active)
+      if (active) {
+        setNativeOverlayVisible(true)
+        bumpNativeIdle()
+      }
+    }
+    document.addEventListener('fullscreenchange', onFs)
+    document.addEventListener('webkitfullscreenchange', onFs as EventListener)
+    return () => {
+      document.removeEventListener('fullscreenchange', onFs)
+      document.removeEventListener('webkitfullscreenchange', onFs as EventListener)
+    }
+  }, [])
+
+  /* Heatmap */
+  useEffect(() => {
+    heatmapRef.current = heatmap
+  }, [heatmap])
+
+  useEffect(() => {
+    if (!t?.id || !player.playing || !dur) return
+    const bin = Math.min(HEATMAP_BINS - 1, Math.floor((player.currentMs / dur) * HEATMAP_BINS))
+    if (lastBinRef.current === bin) return
+    lastBinRef.current = bin
+    setHeatmap((prev) => {
+      const next = [...prev]
+      next[bin] = (next[bin] || 0) + 1
+      const store = loadHeatmapStore()
+      store[t.id] = next
+      saveHeatmapStore(store)
+      return next
+    })
   }, [player.currentMs, player.playing, dur, t?.id])
 
   useEffect(() => {
-    player.setVolume?.(volumeUi / 100)
-  }, [volumeUi, player])
+    if (!t?.id) return
+    const store = loadHeatmapStore()
+    const arr = store[t.id]
+    if (arr && arr.length === HEATMAP_BINS) setHeatmap(arr)
+    else setHeatmap(new Array(HEATMAP_BINS).fill(0))
+    lastBinRef.current = null
+  }, [t?.id])
 
-  useEffect(() => {
-    if (!fullscreen || fsTab !== 'now') return
+  /* Idle overlay (fullscreen UI) */
+  const bumpIdle = useCallback(() => {
+    if (locked) return
     setOverlayVisible(true)
-    const bump = () => {
-      setOverlayVisible(true)
-      if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current)
-      idleTimerRef.current = window.setTimeout(() => setOverlayVisible(false), CONTROLS_IDLE_MS)
-    }
-    bump()
-    const root = fsRootRef.current
-    root?.addEventListener('mousemove', bump)
-    root?.addEventListener('pointerdown', bump)
-    root?.addEventListener('touchstart', bump)
-    return () => {
-      if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current)
-      root?.removeEventListener('mousemove', bump)
-      root?.removeEventListener('pointerdown', bump)
-      root?.removeEventListener('touchstart', bump)
-    }
-  }, [fullscreen, fsTab])
+    if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current)
+    idleTimerRef.current = window.setTimeout(() => {
+      setOverlayVisible(false)
+    }, CONTROLS_IDLE_MS)
+  }, [locked])
 
-  useEffect(() => {
-    const onFsChange = () => {
-      const anyDoc = document as Document & { webkitFullscreenElement?: Element | null }
-      const fs = document.fullscreenElement || anyDoc.webkitFullscreenElement || null
-      const videoFs = !!(
-        videoRef.current &&
-        (videoRef.current as HTMLVideoElement & { webkitDisplayingFullscreen?: boolean })
-          .webkitDisplayingFullscreen
-      )
-      setNativeFsActive(fs === mediaAreaRef.current || fs === videoRef.current || videoFs)
-    }
-    document.addEventListener('fullscreenchange', onFsChange)
-    document.addEventListener('webkitfullscreenchange', onFsChange as EventListener)
-    return () => {
-      document.removeEventListener('fullscreenchange', onFsChange)
-      document.removeEventListener('webkitfullscreenchange', onFsChange as EventListener)
-    }
-  }, [videoUrl, showVideo])
-
-  useEffect(() => {
-    if (!nativeFsActive) return
+  const bumpNativeIdle = useCallback(() => {
+    if (locked) return
     setNativeOverlayVisible(true)
-    const bump = () => {
-      setNativeOverlayVisible(true)
-      if (nativeIdleTimerRef.current) window.clearTimeout(nativeIdleTimerRef.current)
-      nativeIdleTimerRef.current = window.setTimeout(
-        () => setNativeOverlayVisible(false),
-        CONTROLS_IDLE_MS
-      )
-    }
-    bump()
-    const el = mediaAreaRef.current
-    el?.addEventListener('mousemove', bump)
-    el?.addEventListener('pointerdown', bump)
-    el?.addEventListener('touchstart', bump)
-    return () => {
-      if (nativeIdleTimerRef.current) window.clearTimeout(nativeIdleTimerRef.current)
-      el?.removeEventListener('mousemove', bump)
-      el?.removeEventListener('pointerdown', bump)
-      el?.removeEventListener('touchstart', bump)
-    }
-  }, [nativeFsActive])
+    if (nativeIdleTimerRef.current) window.clearTimeout(nativeIdleTimerRef.current)
+    nativeIdleTimerRef.current = window.setTimeout(() => {
+      setNativeOverlayVisible(false)
+    }, CONTROLS_IDLE_MS)
+  }, [locked])
 
   useEffect(() => {
-    const v = videoRef.current
-    if (!v) return
-    const onEnter = () => setPipActive(true)
-    const onLeave = () => setPipActive(false)
-    v.addEventListener('enterpictureinpicture', onEnter)
-    v.addEventListener('leavepictureinpicture', onLeave)
+    if (!fullscreen) return
+    bumpIdle()
     return () => {
-      v.removeEventListener('enterpictureinpicture', onEnter)
-      v.removeEventListener('leavepictureinpicture', onLeave)
+      if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current)
     }
-  }, [videoUrl])
+  }, [fullscreen, bumpIdle, fsTab])
 
+  /* ── Floating bar: medir tamaño real (docked / expanded) ── */
   useEffect(() => {
-    if (!pipRequestedRef.current) return
-    const v = videoRef.current
-    if (!v || !videoUrl) return
-    const tryPip = () => {
-      pipRequestedRef.current = false
-      void v.requestPictureInPicture().catch((err) => console.warn('[gco] PiP', err))
-    }
-    if (v.readyState >= 1) tryPip()
-    else v.addEventListener('loadedmetadata', tryPip, { once: true })
-  }, [showVideo, videoUrl, fullscreen])
-
-  /* Drag con umbral (clic intacto) */
-  const finishDrag = () => {
     const el = floatRootRef.current
-    if (!el) return
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect
+      if (r && r.width > 0 && r.height > 0) {
+        barSizeRef.current = { w: r.width, h: r.height }
+      }
+    })
+    ro.observe(el)
     const rect = el.getBoundingClientRect()
-    const edge = nearestEdge(rect.left, rect.top, rect.width, rect.height)
+    if (rect.width > 0) barSizeRef.current = { w: rect.width, h: rect.height }
+    return () => ro.disconnect()
+  }, [floatPos.docked, floating, mobile, t?.id])
+
+  /* ── Floating bar drag (listeners en window → fiable en móvil/desktop) ── */
+  const finishDrag = useCallback(() => {
+    const el = floatRootRef.current
+    const rect = el?.getBoundingClientRect()
+    const w = rect?.width ?? (floatPos.docked ? COLLAPSED_SIZE : barSizeRef.current.w)
+    const h = rect?.height ?? barSizeRef.current.h
+    const x = rect?.left ?? floatPos.x
+    const y = rect?.top ?? floatPos.y
+    if (rect) barSizeRef.current = { w: rect.width, h: rect.height }
+
+    const edge = nearestEdge(x, y, w, h)
+    let next: FloatPos
     if (edge === 'left' || edge === 'right') {
-      const y = clamp(rect.top, 8, window.innerHeight - COLLAPSED_SIZE - 8)
-      const x = edge === 'left' ? 8 : window.innerWidth - COLLAPSED_SIZE - 8
-      const next: FloatPos = { x, y, edge, docked: true }
-      setFloatPos(next)
-      saveFloatPos(next)
-      return
-    }
-    const c = clampPos(rect.left, rect.top, rect.width, rect.height)
-    let { x, y } = c
-    if (edge === 'top') y = 8
-    if (edge === 'bottom') {
-      const reserve = mobile ? MOBILE_NAV_RESERVE + 8 : 20
-      y = window.innerHeight - rect.height - reserve
-    }
-    const next: FloatPos = {
-      x,
-      y,
-      edge: edge === 'top' || edge === 'bottom' ? edge : null,
-      docked: false,
+      next = {
+        x: edge === 'left' ? 8 : window.innerWidth - COLLAPSED_SIZE - 8,
+        y: clamp(y, 8, window.innerHeight - COLLAPSED_SIZE - 8),
+        edge,
+        docked: true,
+      }
+    } else {
+      const expandedW = Math.min(
+        mobile ? MOBILE_BAR_MAX_W : DESKTOP_BAR_MAX_W,
+        window.innerWidth - 24,
+      )
+      const c = clampPos(x, y, floatPos.docked ? expandedW : w, h)
+      next = { x: c.x, y: c.y, edge: null, docked: false }
     }
     setFloatPos(next)
     saveFloatPos(next)
-  }
+  }, [floatPos.docked, floatPos.x, floatPos.y, mobile])
 
   const onPointerDownBar = (e: ReactPointerEvent) => {
-    if (!floating || !floatRootRef.current) return
     if ((e.target as HTMLElement).closest('[data-no-drag]')) return
+    /* No iniciar drag con botón derecho / stylus eraser */
+    if (e.button != null && e.button !== 0) return
+
+    e.preventDefault()
     pointerIdRef.current = e.pointerId
     dragActiveRef.current = false
-    const rect = floatRootRef.current.getBoundingClientRect()
-    barSizeRef.current = { w: rect.width, h: rect.height }
-    dragStartRef.current = { x: e.clientX, y: e.clientY, left: rect.left, top: rect.top }
-  }
+    const el = floatRootRef.current
+    const rect = el?.getBoundingClientRect()
+    if (rect && rect.width > 0) {
+      barSizeRef.current = { w: rect.width, h: rect.height }
+    }
+    dragStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      left: rect?.left ?? floatPos.x,
+      top: rect?.top ?? floatPos.y,
+    }
 
-  const onPointerMoveBar = (e: ReactPointerEvent) => {
-    if (pointerIdRef.current !== e.pointerId) return
-    const dx = e.clientX - dragStartRef.current.x
-    const dy = e.clientY - dragStartRef.current.y
-    if (!dragActiveRef.current) {
-      if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return
-      dragActiveRef.current = true
-      setDragging(true)
-      try {
-        floatRootRef.current?.setPointerCapture(e.pointerId)
-      } catch {
-        /* */
+    const pid = e.pointerId
+    const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== pid) return
+      const dx = ev.clientX - dragStartRef.current.x
+      const dy = ev.clientY - dragStartRef.current.y
+      if (!dragActiveRef.current) {
+        if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return
+        dragActiveRef.current = true
+        setDragging(true)
+      }
+      const dragW = floatPos.docked ? COLLAPSED_SIZE : barSizeRef.current.w
+      const dragH = floatPos.docked ? COLLAPSED_SIZE : barSizeRef.current.h
+      const c = clampPos(dragStartRef.current.left + dx, dragStartRef.current.top + dy, dragW, dragH)
+      setFloatPos((p) => ({ ...p, x: c.x, y: c.y, docked: false, edge: null }))
+    }
+
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== pid) return
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+      const wasDragging = dragActiveRef.current
+      pointerIdRef.current = null
+      dragActiveRef.current = false
+      setDragging(false)
+      if (wasDragging) {
+        finishDrag()
       }
     }
-    const { w, h } = barSizeRef.current
-    const c = clampPos(
-      dragStartRef.current.left + dx,
-      dragStartRef.current.top + dy,
-      floatPos.docked ? COLLAPSED_SIZE : w,
-      h
-    )
-    setFloatPos((p) => ({ ...p, x: c.x, y: c.y, docked: false, edge: null }))
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
   }
 
-  const onPointerUpBar = (e: ReactPointerEvent) => {
-    if (pointerIdRef.current !== e.pointerId) return
-    const wasDragging = dragActiveRef.current
-    pointerIdRef.current = null
-    dragActiveRef.current = false
-    try {
-      floatRootRef.current?.releasePointerCapture(e.pointerId)
-    } catch {
-      /* */
-    }
-    setDragging(false)
-    if (wasDragging) finishDrag()
-  }
-
-  const undock = () => {
-    const maxW = mobile ? MOBILE_BAR_MAX_W : DESKTOP_BAR_MAX_W
-    const w = Math.min(maxW, window.innerWidth - 24)
-    const x =
-      floatPos.edge === 'right'
-        ? Math.max(12, window.innerWidth - w - 12)
-        : Math.min(Math.max(12, floatPos.x), window.innerWidth - w - 12)
-    const next: FloatPos = {
-      x,
-      y: clamp(floatPos.y, 12, window.innerHeight - 80),
-      edge: null,
-      docked: false,
-    }
-    setFloatPos(next)
-    saveFloatPos(next)
-    soundClick()
-  }
-
-  const onOpenFromPill = (e: React.MouseEvent) => {
+  /** Click en pastilla / burbuja → fullscreen (si no hubo drag) */
+  const onOpenFromPill = (e: React.MouseEvent | React.PointerEvent) => {
     e.stopPropagation()
+    e.preventDefault()
     if (dragActiveRef.current || dragging) return
     openFullscreen()
   }
 
+  /* ── PiP (iOS Safari/PWA + Chrome/Android + desktop) ── */
   const togglePip = useCallback(async () => {
     soundClick()
     if (!hasVideo || !t) return
-    if (document.pictureInPictureElement) {
+
+    const d = document as Document & {
+      pictureInPictureElement?: Element | null
+      exitPictureInPicture?: () => Promise<void>
+      pictureInPictureEnabled?: boolean
+    }
+
+    /* Salir si ya está en PiP (estándar) */
+    if (d.pictureInPictureElement) {
       try {
-        await document.exitPictureInPicture()
+        await d.exitPictureInPicture?.()
       } catch (err) {
         console.warn('[gco] exit PiP', err)
       }
+      setPipActive(false)
+      pipRequestedRef.current = false
       return
     }
-    if (!document.pictureInPictureEnabled) return
+
     setShowVideo(true)
-    if (!fullscreen) setFullscreen(true)
     pipRequestedRef.current = true
-    window.setTimeout(() => {
-      const v = videoRef.current
-      if (!v) return
-      const run = async () => {
+    if (!fullscreen) setFullscreen(true)
+
+    const tryEnter = async (vid: HTMLVideoElement) => {
+      const wv = vid as HTMLVideoElement & {
+        webkitSupportsPresentationMode?: (m: string) => boolean
+        webkitSetPresentationMode?: (m: string) => void
+        webkitPresentationMode?: string
+        requestPictureInPicture?: () => Promise<PictureInPictureWindow>
+      }
+
+      /* iOS / Safari: webkit presentation mode (funciona en PWA iOS 15+) */
+      if (typeof wv.webkitSupportsPresentationMode === 'function') {
         try {
-          v.muted = true
-          if (player.playing) await v.play().catch(() => {})
-          if (v !== document.pictureInPictureElement) await v.requestPictureInPicture()
+          if (wv.webkitPresentationMode === 'picture-in-picture') {
+            wv.webkitSetPresentationMode?.('inline')
+            setPipActive(false)
+            return true
+          }
+          if (wv.webkitSupportsPresentationMode('picture-in-picture')) {
+            vid.muted = true
+            try {
+              await vid.play()
+            } catch {
+              /* autoplay policy */
+            }
+            wv.webkitSetPresentationMode?.('picture-in-picture')
+            setPipActive(true)
+            return true
+          }
+        } catch (err) {
+          console.warn('[gco] webkit PiP', err)
+        }
+      }
+
+      /* Estándar (Chrome, Edge, Android WebView reciente, desktop) */
+      if (typeof wv.requestPictureInPicture === 'function' && d.pictureInPictureEnabled !== false) {
+        try {
+          vid.muted = true
+          try {
+            await vid.play()
+          } catch {
+            /* */
+          }
+          if (vid !== d.pictureInPictureElement) {
+            await wv.requestPictureInPicture()
+          }
+          setPipActive(true)
+          return true
         } catch (err) {
           console.warn('[gco] PiP', err)
         }
       }
-      if (v.readyState >= 1) void run()
-      else v.addEventListener('loadedmetadata', () => void run(), { once: true })
-    }, 120)
-  }, [hasVideo, t, fullscreen, player.playing])
+
+      return false
+    }
+
+    /* Esperar a que el <video> exista en el DOM tras setShowVideo */
+    const attempt = (tries: number) => {
+      const vid = videoRef.current
+      if (!vid) {
+        if (tries > 0) window.setTimeout(() => attempt(tries - 1), 80)
+        return
+      }
+      const run = async () => {
+        const ok = await tryEnter(vid)
+        if (!ok && tries > 0) window.setTimeout(() => attempt(tries - 1), 120)
+      }
+      if (vid.readyState >= 1) void run()
+      else {
+        vid.addEventListener('loadedmetadata', () => void run(), { once: true })
+        vid.load()
+      }
+    }
+    window.setTimeout(() => attempt(8), 60)
+  }, [hasVideo, t, fullscreen])
 
   const toggleNativeFullscreen = async () => {
     soundClick()
     const el = mediaAreaRef.current || videoRef.current
     if (!el) return
-    const anyEl = el as HTMLElement & { webkitRequestFullscreen?: () => void }
+    const anyEl = el as HTMLElement & {
+      webkitRequestFullscreen?: () => void
+      webkitEnterFullscreen?: () => void
+    }
     try {
       if (!document.fullscreenElement) {
         if (el.requestFullscreen) await el.requestFullscreen()
         else if (anyEl.webkitRequestFullscreen) anyEl.webkitRequestFullscreen()
-        else if (videoRef.current && (videoRef.current as any).webkitEnterFullscreen) {
-          ;(videoRef.current as any).webkitEnterFullscreen()
+        else if (videoRef.current) {
+          const vv = videoRef.current as HTMLVideoElement & { webkitEnterFullscreen?: () => void }
+          vv.webkitEnterFullscreen?.()
         }
-      } else await document.exitFullscreen()
+      } else {
+        await document.exitFullscreen()
+      }
     } catch (err) {
       console.warn('[gco] fs', err)
     }
   }
 
   const reorderQueue = (from: number, to: number) => {
-    if (from === to) return
+    if (from === to || from < 0 || to < 0) return
     const q = [...(player.getQueue?.() ?? [])]
+    if (from >= q.length || to >= q.length) return
     const [item] = q.splice(from, 1)
     q.splice(to, 0, item)
     player.setQueue?.(q)
     setQueue(q)
   }
 
-  const progressBar = (opacity = 1, large = false) => {
+  const seekBy = (deltaMs: number) => {
+    if (locked) return
+    soundClick()
+    const next = clamp(player.currentMs + deltaMs, 0, dur || Number.MAX_SAFE_INTEGER)
+    player.seek(next)
+    bumpIdle()
+    bumpNativeIdle()
+  }
+
+  /* ── Swipe gestures on fullscreen sheet ── */
+  const onFsPointerDown = (e: ReactPointerEvent) => {
+    if (locked) return
+    if ((e.target as HTMLElement).closest('[data-no-swipe]')) return
+    swipeStartRef.current = { x: e.clientX, y: e.clientY, t: Date.now() }
+    setFsDragY(0)
+  }
+
+  const onFsPointerMove = (e: ReactPointerEvent) => {
+    if (!swipeStartRef.current || locked) return
+    const dy = e.clientY - swipeStartRef.current.y
+    const dx = e.clientX - swipeStartRef.current.x
+    if (Math.abs(dy) > Math.abs(dx) && dy > 0 && fsTab === 'now') {
+      setFsDragY(Math.min(dy, 160))
+    }
+  }
+
+  const onFsPointerUp = (e: ReactPointerEvent) => {
+    const start = swipeStartRef.current
+    swipeStartRef.current = null
+    setFsDragY(0)
+    if (!start || locked) return
+    const dx = e.clientX - start.x
+    const dy = e.clientY - start.y
+    const absX = Math.abs(dx)
+    const absY = Math.abs(dy)
+    if (Date.now() - start.t > 900) return
+
+    /* Vertical down → cerrar */
+    if (absY > SWIPE_MIN_PX && absY > absX * 1.1 && dy > 0) {
+      closeFullscreen()
+      return
+    }
+
+    /*
+     * Horizontal sobre Cola ↔ Ahora ↔ Letra (cíclico):
+     *   swipe izquierda (dx < 0) → pestaña siguiente
+     *   swipe derecha  (dx > 0) → pestaña anterior
+     * Orden: queue → now → lyrics → queue …
+     */
+    if (absX > SWIPE_MIN_PX && absX > absY * 1.05) {
+      const order: FsTab[] = ['queue', 'now', 'lyrics']
+      const i = order.indexOf(fsTab)
+      const dir = dx < 0 ? 1 : -1
+      const next = order[(i + dir + order.length) % order.length]
+      soundClick()
+      setFsTab(next)
+      if (next === 'queue') syncQueue()
+      bumpIdle()
+      return
+    }
+    bumpIdle()
+  }
+
+  /* ── Cola: long-press en grip (móvil) + HTML5 drag (PC) ── */
+  const clearQueueLongPress = () => {
+    if (queueLongPressRef.current != null) {
+      window.clearTimeout(queueLongPressRef.current)
+      queueLongPressRef.current = null
+    }
+  }
+
+  const endQueueDrag = () => {
+    clearQueueLongPress()
+    queuePointerRef.current = null
+    queueDragFromRef.current = null
+    setQueueDraggingIdx(null)
+    setQueueDropIdx(null)
+  }
+
+  const findQueueIndexAtY = (clientY: number): number | null => {
+    let best: number | null = null
+    let bestDist = Infinity
+    queueRowsRef.current.forEach((el, idx) => {
+      const r = el.getBoundingClientRect()
+      const mid = r.top + r.height / 2
+      const dist = Math.abs(clientY - mid)
+      if (dist < bestDist) {
+        bestDist = dist
+        best = idx
+      }
+    })
+    return best
+  }
+
+  const onQueueHandlePointerDown = (idx: number, e: ReactPointerEvent) => {
+    if (locked) return
+    e.preventDefault()
+    e.stopPropagation()
+    queuePointerRef.current = { id: e.pointerId, y: e.clientY }
+    clearQueueLongPress()
+    const pid = e.pointerId
+    const startY = e.clientY
+    queueLongPressRef.current = window.setTimeout(() => {
+      queueDragFromRef.current = idx
+      setQueueDraggingIdx(idx)
+      setQueueDropIdx(idx)
+      if (navigator.vibrate) {
+        try {
+          navigator.vibrate(14)
+        } catch {
+          /* */
+        }
+      }
+    }, QUEUE_LONGPRESS_MS)
+
+    const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== pid) return
+      const dy = Math.abs(ev.clientY - startY)
+      if (queueDragFromRef.current == null) {
+        if (dy > 10) clearQueueLongPress()
+        return
+      }
+      const over = findQueueIndexAtY(ev.clientY)
+      if (over != null) {
+        queueDropIdxRef.current = over
+        setQueueDropIdx(over)
+      }
+    }
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== pid) return
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+      const from = queueDragFromRef.current
+      const to = queueDropIdxRef.current
+      clearQueueLongPress()
+      if (from != null && to != null && from !== to) {
+        reorderQueue(from, to)
+        soundClick()
+      }
+      queueDropIdxRef.current = null
+      endQueueDrag()
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+  }
+
+  const onHtmlDragStart = (idx: number, e: ReactDragEvent) => {
+    htmlDragFromRef.current = idx
+    setQueueDraggingIdx(idx)
+    e.dataTransfer.effectAllowed = 'move'
+    try {
+      e.dataTransfer.setData('text/plain', String(idx))
+    } catch {
+      /* */
+    }
+  }
+
+  const onHtmlDragOver = (idx: number, e: ReactDragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (queueDropIdx !== idx) setQueueDropIdx(idx)
+  }
+
+  const onHtmlDrop = (idx: number, e: ReactDragEvent) => {
+    e.preventDefault()
+    const from = htmlDragFromRef.current
+    if (from != null && from !== idx) {
+      reorderQueue(from, idx)
+      soundClick()
+    }
+    htmlDragFromRef.current = null
+    setQueueDraggingIdx(null)
+    setQueueDropIdx(null)
+  }
+
+  const onHtmlDragEnd = () => {
+    htmlDragFromRef.current = null
+    setQueueDraggingIdx(null)
+    setQueueDropIdx(null)
+  }
+
+  const progressBar = (opacity = 1, large = false, showTimes = false) => {
     const pct = dur > 0 ? clamp((player.currentMs / dur) * 100, 0, 100) : 0
     const maxHeat = Math.max(1, ...heatmap)
     return (
-      <div data-no-drag style={{ position: 'relative', height: large ? 28 : 18, opacity, transition: 'opacity 0.3s' }}>
-        <div
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: large ? 8 : 5,
-            height: large ? 8 : 5,
-            borderRadius: 999,
-            overflow: 'hidden',
-            background: tokens.progressTrack,
-            display: 'flex',
-          }}
-        >
-          {heatmap.map((h, i) => (
-            <div
-              key={i}
-              style={{
-                flex: 1,
-                background:
-                  themeMode === 'light'
-                    ? `rgba(20,30,50,${tokens.heatBase + (h / maxHeat) * 0.28})`
-                    : `rgba(255,255,255,${tokens.heatBase + (h / maxHeat) * 0.25})`,
-              }}
-            />
-          ))}
+      <div data-no-drag data-no-swipe style={{ position: 'relative', opacity, transition: 'opacity 0.3s' }}>
+        <div style={{ position: 'relative', height: large ? 28 : 18 }}>
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: large ? 8 : 5,
+              height: large ? 8 : 5,
+              borderRadius: 999,
+              overflow: 'hidden',
+              background: tokens.progressTrack,
+              display: 'flex',
+            }}
+          >
+            {heatmap.map((h, i) => (
+              <div
+                key={i}
+                style={{
+                  flex: 1,
+                  background:
+                    themeMode === 'light'
+                      ? `rgba(20,30,50,${tokens.heatBase + (h / maxHeat) * 0.28})`
+                      : `rgba(255,255,255,${tokens.heatBase + (h / maxHeat) * 0.25})`,
+                }}
+              />
+            ))}
+          </div>
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              bottom: large ? 8 : 5,
+              height: large ? 8 : 5,
+              width: `${pct}%`,
+              borderRadius: 999,
+              background: progressColor,
+              boxShadow: `0 0 12px color-mix(in srgb, ${progressColor} 50%, transparent)`,
+              pointerEvents: 'none',
+            }}
+          />
+          <input
+            type="range"
+            className="gco-fs-range"
+            min={0}
+            max={Math.max(1, dur)}
+            step={100}
+            value={clamp(player.currentMs, 0, dur || 1)}
+            disabled={locked}
+            aria-label="Progreso"
+            onChange={(e) => {
+              if (locked) return
+              player.seek(Number(e.target.value))
+              bumpIdle()
+              bumpNativeIdle()
+            }}
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: large ? 2 : 0,
+              width: '100%',
+              margin: 0,
+              height: large ? 24 : 18,
+              opacity: 0.001,
+              cursor: locked ? 'not-allowed' : 'pointer',
+            }}
+          />
         </div>
-        <div
-          style={{
-            position: 'absolute',
-            left: 0,
-            bottom: large ? 8 : 5,
-            height: large ? 8 : 5,
-            width: `${pct}%`,
-            borderRadius: 999,
-            background: progressColor,
-            boxShadow: `0 0 12px color-mix(in srgb, ${progressColor} 50%, transparent)`,
-            pointerEvents: 'none',
-          }}
-        />
-        <input
-          type="range"
-          className="gco-fs-range"
-          min={0}
-          max={Math.max(1, dur)}
-          value={clamp(player.currentMs, 0, dur || 1)}
-          disabled={!dur}
-          onChange={(e) => player.seek(Number(e.target.value))}
-          style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', height: '100%' }}
-          aria-label="Progreso"
-        />
+        {showTimes && (
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: '0.72rem',
+              opacity: 0.65,
+              marginTop: 4,
+              fontVariantNumeric: 'tabular-nums',
+              letterSpacing: '0.02em',
+            }}
+          >
+            <span>{formatTrackTime(player.currentMs)}</span>
+            <span>{formatRemaining(player.currentMs, dur)}</span>
+          </div>
+        )}
       </div>
     )
   }
 
-  if (!t) return null
-
-  const barMaxW = mobile ? MOBILE_BAR_MAX_W : DESKTOP_BAR_MAX_W
-
-  const miniBar = floating ? (
-    <div
-      ref={floatRootRef}
-      className={`gco-float-bar${dragging ? ' is-dragging' : ''}${floatPos.docked ? ' is-docked' : ''}`}
-      data-theme={themeMode}
-      style={{
-        position: 'fixed',
-        left: floatPos.x,
-        top: floatPos.y,
-        zIndex: 130,
-        width: floatPos.docked ? COLLAPSED_SIZE : `min(${barMaxW}px, calc(100vw - 24px))`,
-        padding: floatPos.docked ? 0 : '8px 10px 8px 8px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        cursor: dragging ? 'grabbing' : 'grab',
-        pointerEvents: 'auto',
-        background: tokens.floatBg,
-        border: tokens.floatBorder,
-        boxShadow: tokens.floatShadow,
-        color: tokens.floatColor,
-      }}
-      onPointerDown={onPointerDownBar}
-      onPointerMove={onPointerMoveBar}
-      onPointerUp={onPointerUpBar}
-      onPointerCancel={onPointerUpBar}
-    >
-      <style>{globalCss}</style>
-      {floatPos.docked ? (
-        <button
-          type="button"
-          style={{
-            width: '100%',
-            height: '100%',
-            border: 'none',
-            padding: 0,
-            background: 'transparent',
-            cursor: 'pointer',
-            borderRadius: 16,
-            overflow: 'hidden',
-          }}
-          aria-label="Expandir"
-          onClick={(e) => {
-            e.stopPropagation()
-            if (dragging) return
-            undock()
-          }}
-        >
-          {t.coverDataUrl ? (
-            <img
-              src={t.coverDataUrl}
-              alt=""
-              draggable={false}
-              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-            />
-          ) : (
-            <span style={{ display: 'grid', placeItems: 'center', height: '100%', color: tokens.accent }}>
-              ♪
-            </span>
-          )}
-        </button>
-      ) : (
-        <>
+  /* Transport row: shuffle · −10 · prev · play · next · +10 · repeat */
+  const transportRow = (size: 'fs' | 'mini' = 'fs') => {
+    const big = size === 'fs'
+    const mainSize = big ? 68 : 40
+    const sideSize = big ? 40 : 36
+    const chip = big ? 34 : 30
+    return (
+      <div
+        data-no-swipe
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: big ? 10 : 6,
+          flexWrap: 'nowrap',
+        }}
+      >
+        {big && (
           <button
             type="button"
-            className="gco-open-zone"
-            onClick={onOpenFromPill}
-            aria-label="Abrir reproductor"
+            className="gco-pb-icon"
             style={{
-              width: 44,
-              height: 44,
-              borderRadius: 14,
-              overflow: 'hidden',
-              flexShrink: 0,
-              background: themeMode === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)',
-              display: 'block',
+              ...glassIconStyle,
+              opacity: player.shuffle ? 1 : 0.4,
+              color: player.shuffle ? tokens.accent : undefined,
+            }}
+            aria-label="Aleatorio"
+            disabled={locked}
+            onClick={() => {
+              if (locked) return
+              soundClick()
+              player.setShuffle(!player.shuffle)
+              bumpIdle()
             }}
           >
-            {t.coverDataUrl ? (
-              <img
-                src={t.coverDataUrl}
-                alt=""
-                draggable={false}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover',
-                  display: 'block',
-                  pointerEvents: 'none',
-                }}
-              />
-            ) : (
-              <span style={{ display: 'grid', placeItems: 'center', height: '100%', pointerEvents: 'none' }}>
-                ♪
-              </span>
-            )}
+            <IconShuffle />
           </button>
+        )}
+
+        <button
+          type="button"
+          className="gco-seek-chip"
+          style={{ ...seekChipStyle, width: chip, height: chip }}
+          aria-label="Retroceder 10 segundos"
+          disabled={locked}
+          onClick={() => seekBy(-10000)}
+        >
+          <IconSeekBack10 size={big ? 15 : 13} />
+        </button>
+
+        <button
+          type="button"
+          className="gco-pb-icon"
+          style={{ ...glassIconStyle, width: sideSize, height: sideSize, borderRadius: big ? 14 : 12 }}
+          aria-label="Anterior"
+          disabled={locked}
+          onClick={() => {
+            if (locked) return
+            soundClick()
+            void player.prev()
+            bumpIdle()
+          }}
+        >
+          <IconPrev size={big ? 18 : 14} />
+        </button>
+
+        <button
+          type="button"
+          className="gco-pb-icon"
+          style={{
+            ...glassIconStyle,
+            width: mainSize,
+            height: mainSize,
+            borderRadius: big ? 24 : 14,
+            background: tokens.accent,
+            color: tokens.onAccent,
+            border: 'none',
+            boxShadow: `0 8px 28px color-mix(in srgb, ${tokens.accent} 45%, transparent)`,
+          }}
+          aria-label={player.playing ? 'Pausar' : 'Reproducir'}
+          onClick={() => {
+            soundClick()
+            void player.toggle()
+            bumpIdle()
+            bumpNativeIdle()
+          }}
+        >
+          {player.playing ? <IconPause size={big ? 26 : 16} /> : <IconPlay size={big ? 26 : 16} />}
+        </button>
+
+        <button
+          type="button"
+          className="gco-pb-icon"
+          style={{ ...glassIconStyle, width: sideSize, height: sideSize, borderRadius: big ? 14 : 12 }}
+          aria-label="Siguiente"
+          disabled={locked}
+          onClick={() => {
+            if (locked) return
+            soundClick()
+            void player.next()
+            bumpIdle()
+          }}
+        >
+          <IconNext size={big ? 18 : 14} />
+        </button>
+
+        <button
+          type="button"
+          className="gco-seek-chip"
+          style={{ ...seekChipStyle, width: chip, height: chip }}
+          aria-label="Adelantar 10 segundos"
+          disabled={locked}
+          onClick={() => seekBy(10000)}
+        >
+          <IconSeekFwd10 size={big ? 15 : 13} />
+        </button>
+
+        {big && (
           <button
             type="button"
-            className="gco-open-zone"
-            onClick={onOpenFromPill}
-            aria-label="Abrir reproductor"
-            style={{ flex: 1 }}
+            className="gco-pb-icon"
+            style={{
+              ...glassIconStyle,
+              opacity: player.repeat === 'off' ? 0.4 : 1,
+              color: player.repeat !== 'off' ? tokens.accent : undefined,
+            }}
+            aria-label="Repetir"
+            disabled={locked}
+            onClick={() => {
+              if (locked) return
+              soundClick()
+              const order = ['off', 'all', 'one'] as const
+              const i = order.indexOf(player.repeat)
+              player.setRepeat(order[(i + 1) % 3])
+              bumpIdle()
+            }}
           >
-            <p
-              style={{
-                margin: 0,
-                fontWeight: 700,
-                fontSize: mobile ? '0.8rem' : '0.88rem',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                pointerEvents: 'none',
-              }}
-            >
-              {t.title}
-            </p>
-            <p
-              style={{
-                margin: '2px 0 0',
-                fontSize: '0.72rem',
-                color: tokens.floatMuted,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                pointerEvents: 'none',
-              }}
-            >
-              {t.artist}
-            </p>
+            <IconRepeat />
           </button>
-          <div data-no-drag style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-            <button
-              type="button"
-              data-no-drag
-              className="gco-pb-icon"
-              style={{ ...glassIconStyle, width: 36, height: 36, borderRadius: 12 }}
-              aria-label="Anterior"
-              onClick={(e) => {
-                e.stopPropagation()
-                soundClick()
-                void player.prev()
-              }}
-            >
-              <IconPrev size={14} />
-            </button>
-            <button
-              type="button"
-              data-no-drag
-              className="gco-pb-icon"
-              style={{
-                ...glassIconStyle,
-                width: 40,
-                height: 40,
-                borderRadius: 14,
-                background: tokens.accent,
-                color: tokens.onAccent,
-                border: 'none',
-              }}
-              aria-label={player.playing ? 'Pausar' : 'Reproducir'}
-              onClick={(e) => {
-                e.stopPropagation()
-                soundClick()
-                void player.toggle()
-              }}
-            >
-              {player.playing ? <IconPause size={16} /> : <IconPlay size={16} />}
-            </button>
-            <button
-              type="button"
-              data-no-drag
-              className="gco-pb-icon"
-              style={{ ...glassIconStyle, width: 36, height: 36, borderRadius: 12 }}
-              aria-label="Siguiente"
-              onClick={(e) => {
-                e.stopPropagation()
-                soundClick()
-                void player.next()
-              }}
-            >
-              <IconNext size={14} />
-            </button>
-          </div>
-        </>
-      )}
+        )}
+      </div>
+    )
+  }
+
+  /* Native video overlay controls */
+  const nativeVideoOverlay = (
+    <div
+      data-no-swipe
+      style={{
+        position: 'absolute',
+        inset: 0,
+        opacity: nativeOverlayVisible ? 1 : 0,
+        pointerEvents: nativeOverlayVisible ? 'auto' : 'none',
+        background: tokens.overlayBg,
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'flex-end',
+        padding: '16px 14px calc(16px + env(safe-area-inset-bottom, 0px))',
+        transition: 'opacity 0.35s ease',
+        color: '#fff',
+      }}
+      onClick={(e) => {
+        e.stopPropagation()
+        if (locked) {
+          setLocked(false)
+          bumpNativeIdle()
+          return
+        }
+        bumpNativeIdle()
+      }}
+    >
+      {progressBar(1, true, true)}
+
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          gap: 8,
+          marginTop: 12,
+          flexWrap: 'wrap',
+          opacity: locked ? 0.35 : 1,
+          pointerEvents: locked ? 'none' : 'auto',
+        }}
+      >
+        {transportRow('mini')}
+      </div>
+
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          gap: 8,
+          marginTop: 12,
+          flexWrap: 'wrap',
+          opacity: locked ? 0.35 : 1,
+          pointerEvents: locked ? 'none' : 'auto',
+        }}
+      >
+        <div
+          className="gco-fs-pill"
+          style={{
+            background: 'rgba(255,255,255,0.12)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            color: '#fff',
+          }}
+        >
+          <button
+            type="button"
+            aria-label="Bajar brillo"
+            onClick={(e) => {
+              e.stopPropagation()
+              setBrightness((b) => clamp(b - 10, 40, 160))
+              bumpNativeIdle()
+            }}
+          >
+            <IconBrightDown size={13} />
+          </button>
+          <span>{brightness}%</span>
+          <button
+            type="button"
+            aria-label="Subir brillo"
+            onClick={(e) => {
+              e.stopPropagation()
+              setBrightness((b) => clamp(b + 10, 40, 160))
+              bumpNativeIdle()
+            }}
+          >
+            <IconBrightUp size={13} />
+          </button>
+        </div>
+
+        <div
+          className="gco-fs-pill"
+          style={{
+            background: 'rgba(255,255,255,0.12)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            color: '#fff',
+          }}
+        >
+          <button
+            type="button"
+            aria-label="Bajar volumen"
+            onClick={(e) => {
+              e.stopPropagation()
+              setVolumeUi((v) => clamp(v - 10, 0, 100))
+              bumpNativeIdle()
+            }}
+          >
+            <IconVolDown size={13} />
+          </button>
+          <span>{volumeUi}%</span>
+          <button
+            type="button"
+            aria-label="Subir volumen"
+            onClick={(e) => {
+              e.stopPropagation()
+              setVolumeUi((v) => clamp(v + 10, 0, 100))
+              bumpNativeIdle()
+            }}
+          >
+            <IconVolUp size={13} />
+          </button>
+        </div>
+
+        <button
+          type="button"
+          className="gco-pb-icon"
+          style={{
+            ...glassIconStyle,
+            width: 36,
+            height: 36,
+            borderRadius: 12,
+            color: locked ? tokens.accent : '#fff',
+            background: locked ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.12)',
+            pointerEvents: 'auto',
+          }}
+          aria-label={locked ? 'Desbloquear' : 'Bloquear controles'}
+          onClick={(e) => {
+            e.stopPropagation()
+            soundClick()
+            setLocked((v) => !v)
+            if (!locked) {
+              /* acaba de bloquear: mantener overlay visible un momento */
+              setNativeOverlayVisible(true)
+            } else {
+              bumpNativeIdle()
+            }
+          }}
+        >
+          <IconLock locked={locked} />
+        </button>
+      </div>
     </div>
+  )
+
+  /* ── Mini / floating bar ── */
+  const barMaxW = mobile ? MOBILE_BAR_MAX_W : DESKTOP_BAR_MAX_W
+
+  const miniBarInner = floatPos.docked ? (
+    <button
+      type="button"
+      className="gco-open-zone"
+      onClick={onOpenFromPill}
+      style={{
+        width: COLLAPSED_SIZE,
+        height: COLLAPSED_SIZE,
+        display: 'grid',
+        placeItems: 'center',
+        borderRadius: 16,
+        overflow: 'hidden',
+        padding: 0,
+        cursor: 'grab',
+        touchAction: 'none',
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+      }}
+      aria-label="Abrir reproductor a pantalla completa"
+    >
+      {t?.coverDataUrl ? (
+        <img
+          src={t.coverDataUrl}
+          alt=""
+          draggable={false}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
+        />
+      ) : (
+        <span style={{ fontSize: '1.25rem', opacity: 0.7 }}>♪</span>
+      )}
+    </button>
   ) : (
     <div
-      className="gco-float-bar"
       data-theme={themeMode}
       style={{
         display: 'flex',
@@ -1187,14 +1770,24 @@ export function PlayerBar({ player, floating }: Props) {
         border: tokens.floatBorder,
         boxShadow: tokens.floatShadow,
         color: tokens.floatColor,
+        borderRadius: 22,
+        boxSizing: 'border-box',
       }}
     >
       <style>{globalCss}</style>
       <button
         type="button"
         className="gco-open-zone"
-        onClick={openFullscreen}
-        style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10 }}
+        onClick={onOpenFromPill}
+        style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          minWidth: 0,
+          cursor: 'grab',
+          touchAction: 'none',
+        }}
       >
         <div
           style={{
@@ -1206,11 +1799,18 @@ export function PlayerBar({ player, floating }: Props) {
             background: themeMode === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)',
           }}
         >
-          {t.coverDataUrl ? (
-            <img src={t.coverDataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          ) : null}
+          {t?.coverDataUrl ? (
+            <img
+              src={t.coverDataUrl}
+              alt=""
+              draggable={false}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+          ) : (
+            <div style={{ display: 'grid', placeItems: 'center', height: '100%', opacity: 0.4 }}>♪</div>
+          )}
         </div>
-        <div style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
           <p
             style={{
               margin: 0,
@@ -1221,82 +1821,205 @@ export function PlayerBar({ player, floating }: Props) {
               textOverflow: 'ellipsis',
             }}
           >
-            {t.title}
+            {t?.title || 'Sin título'}
           </p>
-          <p style={{ margin: 0, fontSize: '0.72rem', color: tokens.floatMuted }}>{t.artist}</p>
+          <p
+            style={{
+              margin: '2px 0 0',
+              fontSize: '0.72rem',
+              opacity: 0.55,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {t?.artist || '—'}
+          </p>
         </div>
       </button>
-      <button
-        type="button"
-        data-no-drag
-        className="gco-pb-icon"
-        style={{
-          ...glassIconStyle,
-          width: 40,
-          height: 40,
-          background: tokens.accent,
-          color: tokens.onAccent,
-          border: 'none',
-        }}
-        aria-label={player.playing ? 'Pausar' : 'Reproducir'}
-        onClick={() => {
-          soundClick()
-          void player.toggle()
-        }}
-      >
-        {player.playing ? <IconPause size={16} /> : <IconPlay size={16} />}
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+        <button
+          type="button"
+          data-no-drag
+          className="gco-pb-icon"
+          style={{ ...glassIconStyle, width: 36, height: 36, borderRadius: 12 }}
+          aria-label="Anterior"
+          onClick={(e) => {
+            e.stopPropagation()
+            soundClick()
+            void player.prev()
+          }}
+        >
+          <IconPrev size={14} />
+        </button>
+        <button
+          type="button"
+          data-no-drag
+          className="gco-pb-icon"
+          style={{
+            ...glassIconStyle,
+            width: 40,
+            height: 40,
+            borderRadius: 14,
+            background: tokens.accent,
+            color: tokens.onAccent,
+            border: 'none',
+          }}
+          aria-label={player.playing ? 'Pausar' : 'Reproducir'}
+          onClick={(e) => {
+            e.stopPropagation()
+            soundClick()
+            void player.toggle()
+          }}
+        >
+          {player.playing ? <IconPause size={16} /> : <IconPlay size={16} />}
+        </button>
+        <button
+          type="button"
+          data-no-drag
+          className="gco-pb-icon"
+          style={{ ...glassIconStyle, width: 36, height: 36, borderRadius: 12 }}
+          aria-label="Siguiente"
+          onClick={(e) => {
+            e.stopPropagation()
+            soundClick()
+            void player.next()
+          }}
+        >
+          <IconNext size={14} />
+        </button>
+      </div>
     </div>
   )
 
-  const fullscreenContent = (
+  const miniBar = floating ? (
+    <div
+      ref={floatRootRef}
+      className={`gco-float-bar${dragging ? ' is-dragging' : ''}${floatPos.docked ? ' is-docked' : ''}`}
+      style={{
+        position: 'fixed',
+        left: floatPos.x,
+        top: floatPos.y,
+        zIndex: 130,
+        pointerEvents: 'auto',
+        width: floatPos.docked
+          ? COLLAPSED_SIZE
+          : Math.min(barMaxW, typeof window !== 'undefined' ? window.innerWidth - 24 : barMaxW),
+        maxWidth: barMaxW,
+        background: floatPos.docked ? tokens.floatBg : undefined,
+        border: floatPos.docked ? tokens.floatBorder : undefined,
+        boxShadow: floatPos.docked ? tokens.floatShadow : undefined,
+        color: tokens.floatColor,
+        overflow: 'hidden',
+        touchAction: 'none',
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        cursor: dragging ? 'grabbing' : 'grab',
+      }}
+      onPointerDown={onPointerDownBar}
+    >
+      <style>{globalCss}</style>
+      {miniBarInner}
+    </div>
+  ) : (
+    <div
+      style={{
+        position: 'relative',
+        width: '100%',
+        maxWidth: barMaxW,
+        margin: '0 auto',
+      }}
+    >
+      {miniBarInner}
+    </div>
+  )
+
+  /* ── Fullscreen portal content ── */
+  const fullscreenContent = t ? (
     <div
       ref={fsRootRef}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Reproductor"
+      className="gco-fs-root"
       data-theme={themeMode}
       style={{
         position: 'fixed',
         inset: 0,
         zIndex: 200,
-        display: 'flex',
-        flexDirection: 'column',
         background: tokens.fsBg,
         color: tokens.fsColor,
+        display: 'flex',
+        flexDirection: 'column',
+        transform: fsDragY > 0 ? `translateY(${fsDragY}px)` : undefined,
+        opacity: fsDragY > 0 ? clamp(1 - fsDragY / 280, 0.4, 1) : 1,
+        transition: fsDragY > 0 ? 'none' : 'transform 0.25s ease, opacity 0.25s ease',
+        borderRadius: fsDragY > 12 ? 24 : 0,
+        overflow: 'hidden',
+      }}
+      onPointerDown={onFsPointerDown}
+      onPointerMove={onFsPointerMove}
+      onPointerUp={onFsPointerUp}
+      onPointerCancel={onFsPointerUp}
+      onMouseMove={() => {
+        if (!locked) bumpIdle()
+      }}
+      onTouchStart={() => {
+        if (!locked) bumpIdle()
       }}
     >
       <style>{globalCss}</style>
+
+      {/* Header */}
       <div
+        data-no-swipe
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: 'calc(10px + env(safe-area-inset-top, 0px)) 16px 8px',
+          padding: '10px 14px calc(6px + env(safe-area-inset-top, 0px))',
+          opacity: overlayVisible ? 1 : 0.25,
+          transition: 'opacity 0.3s',
           flexShrink: 0,
         }}
       >
-        <button type="button" className="gco-pb-icon" style={glassIconStyle} aria-label="Cerrar" onClick={closeFullscreen}>
+        <button
+          type="button"
+          className="gco-pb-icon"
+          style={{ ...glassIconStyle, width: 40, height: 40 }}
+          aria-label="Cerrar"
+          onClick={closeFullscreen}
+        >
           <IconChevronDown />
         </button>
-        <span style={{ fontWeight: 700, fontSize: '0.85rem', opacity: 0.8 }}>Reproduciendo</span>
+        <div className="gco-swipe-hint" title="Desliza hacia abajo para cerrar" />
         <button
           type="button"
           className="gco-pb-icon"
           style={{
             ...glassIconStyle,
-            color: pipActive ? tokens.accent : tokens.glassIconColor,
-            opacity: hasVideo && pipSupported ? 1 : 0.35,
+            width: 40,
+            height: 40,
+            color: locked ? tokens.accent : tokens.glassIconColor,
           }}
-          disabled={!hasVideo || !pipSupported}
-          aria-label="Picture in Picture"
-          onClick={() => void togglePip()}
+          aria-label={locked ? 'Desbloquear' : 'Bloquear'}
+          onClick={() => {
+            soundClick()
+            setLocked((v) => !v)
+            bumpIdle()
+          }}
         >
-          <IconPip />
+          <IconLock locked={locked} />
         </button>
       </div>
 
-      <div className="gco-pb-scroll" style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '0 20px 12px' }}>
+      <div
+        className="gco-pb-scroll"
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: '0 18px 12px',
+          WebkitOverflowScrolling: 'touch',
+        }}
+      >
         {fsTab === 'now' && (
           <>
             <div
@@ -1312,102 +2035,69 @@ export function PlayerBar({ player, floating }: Props) {
                 ...tokens.liquid,
                 filter: `brightness(${brightness}%)`,
               }}
+              onClick={() => {
+                if (nativeFsActive) {
+                  bumpNativeIdle()
+                  setNativeOverlayVisible((v) => !v || true)
+                } else {
+                  bumpIdle()
+                }
+              }}
             >
               {showVideo && videoUrl ? (
                 <video
-                  ref={videoRef}
+                  ref={(el) => {
+                    videoRef.current = el
+                    if (el) {
+                      el.setAttribute('playsinline', 'true')
+                      el.setAttribute('webkit-playsinline', 'true')
+                      el.setAttribute('x5-playsinline', 'true')
+                      el.setAttribute('x5-video-player-type', 'h5')
+                      el.setAttribute('x5-video-player-fullscreen', 'true')
+                    }
+                  }}
                   src={videoUrl}
                   playsInline
                   muted
-                  style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000' }}
+                  preload="auto"
+                  controls={false}
+                  disablePictureInPicture={false}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                    background: '#000',
+                    pointerEvents: locked ? 'none' : 'auto',
+                  }}
                 />
               ) : t.coverDataUrl ? (
-                <img src={t.coverDataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <img
+                  src={t.coverDataUrl}
+                  alt=""
+                  draggable={false}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
               ) : (
-                <div style={{ display: 'grid', placeItems: 'center', height: '100%', fontSize: '3rem', opacity: 0.35 }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    placeItems: 'center',
+                    height: '100%',
+                    fontSize: '3rem',
+                    opacity: 0.35,
+                  }}
+                >
                   ♪
                 </div>
               )}
-              {nativeFsActive && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    opacity: nativeOverlayVisible ? 1 : 0,
-                    pointerEvents: nativeOverlayVisible ? 'auto' : 'none',
-                    background: 'linear-gradient(transparent 40%, rgba(0,0,0,0.75))',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'flex-end',
-                    padding: 16,
-                    transition: 'opacity 0.35s ease',
-                    color: '#fff',
-                  }}
-                >
-                  {progressBar(1, true)}
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'center',
-                      gap: 8,
-                      marginTop: 10,
-                      flexWrap: 'wrap',
-                      opacity: locked ? 0.35 : 1,
-                      pointerEvents: locked ? 'none' : 'auto',
-                    }}
-                  >
-                    <div
-                      className="gco-fs-pill"
-                      style={{
-                        background: 'rgba(255,255,255,0.12)',
-                        border: '1px solid rgba(255,255,255,0.2)',
-                        color: '#fff',
-                      }}
-                    >
-                      <button type="button" onClick={() => setBrightness((b) => clamp(b - 10, 40, 160))}>
-                        −
-                      </button>
-                      <span>{brightness}%</span>
-                      <button type="button" onClick={() => setBrightness((b) => clamp(b + 10, 40, 160))}>
-                        +
-                      </button>
-                    </div>
-                    <div
-                      className="gco-fs-pill"
-                      style={{
-                        background: 'rgba(255,255,255,0.12)',
-                        border: '1px solid rgba(255,255,255,0.2)',
-                        color: '#fff',
-                      }}
-                    >
-                      <button type="button" onClick={() => setVolumeUi((v) => clamp(v - 10, 0, 100))}>
-                        −
-                      </button>
-                      <span>{volumeUi}%</span>
-                      <button type="button" onClick={() => setVolumeUi((v) => clamp(v + 10, 0, 100))}>
-                        +
-                      </button>
-                    </div>
-                    <button
-                      type="button"
-                      className="gco-pb-icon"
-                      style={{ ...glassIconStyle, color: locked ? tokens.accent : '#fff' }}
-                      onClick={() => {
-                        soundClick()
-                        setLocked((v) => !v)
-                      }}
-                    >
-                      <IconLock locked={locked} />
-                    </button>
-                  </div>
-                </div>
-              )}
+              {nativeFsActive && nativeVideoOverlay}
             </div>
 
             {!nativeFsActive && hasVideo && (
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}>
                 <div
                   className="gco-seg"
+                  data-no-swipe
                   style={{
                     background: themeMode === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.09)',
                     border: tokens.glassBorder,
@@ -1435,6 +2125,7 @@ export function PlayerBar({ player, floating }: Props) {
                       onClick={() => {
                         soundClick()
                         setShowVideo(i === 1)
+                        bumpIdle()
                       }}
                     >
                       {label}
@@ -1453,116 +2144,129 @@ export function PlayerBar({ player, floating }: Props) {
                     fontWeight: 800,
                     textAlign: 'center',
                     lineHeight: 1.2,
+                    letterSpacing: '-0.02em',
                   }}
                 >
                   {t.title}
                 </h1>
-                <p style={{ margin: '4px 0 0', fontSize: '0.95rem', opacity: 0.62, textAlign: 'center' }}>
-                  {t.artist}
-                </p>
-                <div style={{ margin: '14px 0 4px' }}>{progressBar(overlayVisible ? 1 : 0.35, false)}</div>
-                <div
+                <p
                   style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    fontSize: '0.7rem',
-                    opacity: 0.55,
-                    marginBottom: 16,
+                    margin: '4px 0 0',
+                    fontSize: '0.95rem',
+                    opacity: 0.62,
+                    textAlign: 'center',
                   }}
                 >
-                  <span>{formatTrackTime(player.currentMs)}</span>
-                  <span>{formatTrackTime(dur)}</span>
+                  {t.artist}
+                </p>
+
+                <div
+                  style={{
+                    margin: '16px 0 4px',
+                    opacity: overlayVisible ? 1 : 0.4,
+                    transition: 'opacity 0.3s',
+                  }}
+                >
+                  {progressBar(1, false, true)}
                 </div>
+
+                <div
+                  style={{
+                    marginTop: 14,
+                    marginBottom: 18,
+                    opacity: overlayVisible ? 1 : 0.35,
+                    transition: 'opacity 0.3s',
+                    pointerEvents: locked ? 'none' : 'auto',
+                  }}
+                >
+                  {transportRow('fs')}
+                </div>
+
+                {/* Vol + bright row in non-native FS */}
+                <div
+                  data-no-swipe
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    gap: 10,
+                    marginBottom: 14,
+                    flexWrap: 'wrap',
+                    opacity: overlayVisible ? (locked ? 0.35 : 1) : 0.25,
+                    pointerEvents: locked ? 'none' : 'auto',
+                    transition: 'opacity 0.3s',
+                  }}
+                >
+                  <div
+                    className="gco-fs-pill"
+                    style={{
+                      background: themeMode === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)',
+                      border: tokens.glassBorder,
+                      color: tokens.fsColor,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      aria-label="Bajar brillo"
+                      onClick={() => {
+                        setBrightness((b) => clamp(b - 10, 40, 160))
+                        bumpIdle()
+                      }}
+                    >
+                      <IconBrightDown size={13} />
+                    </button>
+                    <span>{brightness}%</span>
+                    <button
+                      type="button"
+                      aria-label="Subir brillo"
+                      onClick={() => {
+                        setBrightness((b) => clamp(b + 10, 40, 160))
+                        bumpIdle()
+                      }}
+                    >
+                      <IconBrightUp size={13} />
+                    </button>
+                  </div>
+                  <div
+                    className="gco-fs-pill"
+                    style={{
+                      background: themeMode === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)',
+                      border: tokens.glassBorder,
+                      color: tokens.fsColor,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      aria-label="Bajar volumen"
+                      onClick={() => {
+                        setVolumeUi((v) => clamp(v - 10, 0, 100))
+                        bumpIdle()
+                      }}
+                    >
+                      <IconVolDown size={13} />
+                    </button>
+                    <span>{volumeUi}%</span>
+                    <button
+                      type="button"
+                      aria-label="Subir volumen"
+                      onClick={() => {
+                        setVolumeUi((v) => clamp(v + 10, 0, 100))
+                        bumpIdle()
+                      }}
+                    >
+                      <IconVolUp size={13} />
+                    </button>
+                  </div>
+                </div>
+
                 <div
                   style={{
                     display: 'flex',
                     justifyContent: 'center',
-                    alignItems: 'center',
-                    gap: 14,
-                    marginBottom: 18,
+                    gap: 10,
+                    opacity: overlayVisible ? 1 : 0.3,
+                    transition: 'opacity 0.3s',
                   }}
                 >
-                  <button
-                    type="button"
-                    className="gco-pb-icon"
-                    style={{
-                      ...glassIconStyle,
-                      opacity: player.shuffle ? 1 : 0.4,
-                      color: player.shuffle ? tokens.accent : undefined,
-                    }}
-                    aria-label="Aleatorio"
-                    onClick={() => {
-                      soundClick()
-                      player.setShuffle(!player.shuffle)
-                    }}
-                  >
-                    <IconShuffle />
-                  </button>
-                  <button
-                    type="button"
-                    className="gco-pb-icon"
-                    style={glassIconStyle}
-                    aria-label="Anterior"
-                    onClick={() => {
-                      soundClick()
-                      void player.prev()
-                    }}
-                  >
-                    <IconPrev />
-                  </button>
-                  <button
-                    type="button"
-                    className="gco-pb-icon"
-                    style={{
-                      ...glassIconStyle,
-                      width: 68,
-                      height: 68,
-                      borderRadius: 24,
-                      background: tokens.accent,
-                      color: tokens.onAccent,
-                      border: 'none',
-                      boxShadow: `0 8px 28px color-mix(in srgb, ${tokens.accent} 45%, transparent)`,
-                    }}
-                    aria-label={player.playing ? 'Pausar' : 'Reproducir'}
-                    onClick={() => {
-                      soundClick()
-                      void player.toggle()
-                    }}
-                  >
-                    {player.playing ? <IconPause size={26} /> : <IconPlay size={26} />}
-                  </button>
-                  <button
-                    type="button"
-                    className="gco-pb-icon"
-                    style={glassIconStyle}
-                    aria-label="Siguiente"
-                    onClick={() => {
-                      soundClick()
-                      void player.next()
-                    }}
-                  >
-                    <IconNext />
-                  </button>
-                  <button
-                    type="button"
-                    className="gco-pb-icon"
-                    style={{
-                      ...glassIconStyle,
-                      opacity: player.repeat === 'off' ? 0.4 : 1,
-                      color: player.repeat !== 'off' ? tokens.accent : undefined,
-                    }}
-                    aria-label="Repetir"
-                    onClick={() => {
-                      soundClick()
-                      const order = ['off', 'all', 'one'] as const
-                      const i = order.indexOf(player.repeat)
-                      player.setRepeat(order[(i + 1) % 3])
-                    }}
-                  >
-                    <IconRepeat />
-                  </button>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
                   <button
                     type="button"
                     className="gco-pb-icon"
@@ -1580,7 +2284,14 @@ export function PlayerBar({ player, floating }: Props) {
                       color: pipActive ? tokens.accent : tokens.glassIconColor,
                     }}
                     disabled={!hasVideo || !pipSupported}
-                    aria-label="Vídeo en segundo plano"
+                    aria-label="Vídeo en segundo plano (PiP)"
+                    title={
+                      !hasVideo
+                        ? 'Solo disponible en pistas de vídeo'
+                        : !pipSupported
+                          ? 'PiP no soportado en este navegador'
+                          : 'Picture-in-Picture'
+                    }
                     onClick={() => void togglePip()}
                   >
                     <IconPip />
@@ -1592,43 +2303,79 @@ export function PlayerBar({ player, floating }: Props) {
         )}
 
         {fsTab === 'queue' && (
-          <div>
+          <div data-no-swipe>
             <h2 style={{ fontSize: '1.05rem', margin: '4px 0 8px', fontWeight: 800 }}>
               Cola · {queue.length}
             </h2>
+            <p style={{ margin: '0 0 12px', fontSize: '0.75rem', opacity: 0.5 }}>
+              Mantén pulsado ⠿ y arrastra · en PC puedes arrastrar la fila
+            </p>
             {queue.map((item, i) => {
               const active = item.id === t.id
+              const isDrag = queueDraggingIdx === i
+              const isDrop = queueDropIdx === i && queueDraggingIdx != null && queueDraggingIdx !== i
               return (
                 <div
                   key={`${item.id}-${i}`}
-                  draggable
-                  onDragStart={() => {
-                    dragQ.current = i
+                  data-queue-idx={i}
+                  ref={(el) => {
+                    if (el) queueRowsRef.current.set(i, el)
+                    else queueRowsRef.current.delete(i)
                   }}
-                  onDragOver={(ev) => ev.preventDefault()}
-                  onDrop={() => {
-                    if (dragQ.current != null) reorderQueue(dragQ.current, i)
-                    dragQ.current = null
-                  }}
+                  className={`gco-queue-row${isDrag ? ' is-dragging-row' : ''}${isDrop ? ' is-drop-target' : ''}`}
+                  draggable={!mobile && !locked}
+                  onDragStart={(e) => onHtmlDragStart(i, e)}
+                  onDragOver={(e) => onHtmlDragOver(i, e)}
+                  onDrop={(e) => onHtmlDrop(i, e)}
+                  onDragEnd={onHtmlDragEnd}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 10,
-                    padding: '0.55rem 0.5rem',
+                    padding: '0.6rem 0.55rem',
                     borderRadius: 16,
                     background: active
                       ? themeMode === 'light'
                         ? 'rgba(0,0,0,0.06)'
                         : 'rgba(255,255,255,0.1)'
-                      : 'transparent',
-                    marginBottom: 3,
-                    cursor: 'grab',
+                      : isDrag || isDrop
+                        ? tokens.surfaceMuted
+                        : 'transparent',
+                    marginBottom: 4,
+                    cursor: isDrag ? 'grabbing' : 'default',
+                    userSelect: 'none',
+                    WebkitUserSelect: 'none',
+                    outline: isDrop
+                      ? `2px solid color-mix(in srgb, ${tokens.accent} 55%, transparent)`
+                      : undefined,
                   }}
+                  onContextMenu={(e) => e.preventDefault()}
                 >
-                  <span style={{ opacity: 0.4 }}>⠿</span>
+                  <button
+                    type="button"
+                    aria-label="Arrastrar para reordenar"
+                    onPointerDown={(e) => onQueueHandlePointerDown(i, e)}
+                    style={{
+                      opacity: 0.5,
+                      display: 'grid',
+                      placeItems: 'center',
+                      width: 28,
+                      height: 36,
+                      flexShrink: 0,
+                      touchAction: 'none',
+                      border: 'none',
+                      background: 'transparent',
+                      color: 'inherit',
+                      cursor: 'grab',
+                      padding: 0,
+                    }}
+                  >
+                    <IconGrip />
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
+                      if (queueDraggingIdx != null) return
                       soundClick()
                       void player.playTrack(item, queue)
                     }}
@@ -1645,6 +2392,8 @@ export function PlayerBar({ player, floating }: Props) {
                       textAlign: 'left',
                       padding: 0,
                       minWidth: 0,
+                      userSelect: 'none',
+                      WebkitUserSelect: 'none',
                     }}
                   >
                     <div
@@ -1654,11 +2403,17 @@ export function PlayerBar({ player, floating }: Props) {
                         borderRadius: 10,
                         overflow: 'hidden',
                         flexShrink: 0,
-                        background: themeMode === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)',
+                        background:
+                          themeMode === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)',
                       }}
                     >
                       {item.coverDataUrl ? (
-                        <img src={item.coverDataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <img
+                          src={item.coverDataUrl}
+                          alt=""
+                          draggable={false}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
                       ) : null}
                     </div>
                     <div style={{ minWidth: 0, flex: 1 }}>
@@ -1675,9 +2430,11 @@ export function PlayerBar({ player, floating }: Props) {
                       >
                         {item.title}
                       </p>
-                      <p style={{ margin: '2px 0 0', fontSize: '0.75rem', opacity: 0.55 }}>{item.artist}</p>
+                      <p style={{ margin: '2px 0 0', fontSize: '0.75rem', opacity: 0.55 }}>
+                        {item.artist}
+                      </p>
                     </div>
-                    <span style={{ fontSize: '0.72rem', opacity: 0.45 }}>
+                    <span style={{ fontSize: '0.72rem', opacity: 0.45, flexShrink: 0 }}>
                       {formatTrackTime(item.durationMs)}
                     </span>
                   </button>
@@ -1688,7 +2445,7 @@ export function PlayerBar({ player, floating }: Props) {
         )}
 
         {fsTab === 'lyrics' && (
-          <div style={{ borderRadius: 22, padding: '14px 16px', ...tokens.liquid }}>
+          <div style={{ borderRadius: 22, padding: '14px 16px', ...tokens.liquid }} data-no-swipe>
             <h2 style={{ fontSize: '1.05rem', margin: '0 0 10px', fontWeight: 800 }}>Letra</h2>
             <pre
               style={{
@@ -1698,6 +2455,8 @@ export function PlayerBar({ player, floating }: Props) {
                 fontSize: '1.02rem',
                 lineHeight: 1.7,
                 opacity: 0.9,
+                userSelect: 'text',
+                WebkitUserSelect: 'text',
               }}
             >
               {t.lyrics?.trim() || 'Sin letra guardada.\nEdita la pista en la biblioteca.'}
@@ -1706,7 +2465,16 @@ export function PlayerBar({ player, floating }: Props) {
         )}
       </div>
 
-      <div style={{ padding: '8px 16px calc(14px + env(safe-area-inset-bottom, 0px))', flexShrink: 0 }}>
+      {/* Bottom tabs */}
+      <div
+        data-no-swipe
+        style={{
+          padding: '8px 16px calc(14px + env(safe-area-inset-bottom, 0px))',
+          flexShrink: 0,
+          opacity: overlayVisible ? 1 : 0.4,
+          transition: 'opacity 0.3s',
+        }}
+      >
         <div
           style={{
             display: 'grid',
@@ -1733,6 +2501,7 @@ export function PlayerBar({ player, floating }: Props) {
                   soundClick()
                   setFsTab(tab.id)
                   if (tab.id === 'queue') syncQueue()
+                  bumpIdle()
                 }}
                 style={{
                   border: 'none',
@@ -1747,7 +2516,11 @@ export function PlayerBar({ player, floating }: Props) {
                       ? 'rgba(0,0,0,0.08)'
                       : 'rgba(255,255,255,0.2)'
                     : 'transparent',
-                  color: on ? tokens.fsColor : themeMode === 'light' ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.5)',
+                  color: on
+                    ? tokens.fsColor
+                    : themeMode === 'light'
+                      ? 'rgba(0,0,0,0.45)'
+                      : 'rgba(255,255,255,0.5)',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -1762,7 +2535,10 @@ export function PlayerBar({ player, floating }: Props) {
         </div>
       </div>
     </div>
-  )
+  ) : null
+
+  /* Sin pista activa: no mostrar pastilla ni burbuja */
+  if (!t) return null
 
   const hideBecauseGlobal =
     !floating &&
@@ -1773,7 +2549,7 @@ export function PlayerBar({ player, floating }: Props) {
   return (
     <>
       {hideBecauseGlobal ? null : miniBar}
-      {fullscreen && typeof document !== 'undefined'
+      {fullscreen && typeof document !== 'undefined' && fullscreenContent
         ? createPortal(fullscreenContent, document.body)
         : null}
     </>
@@ -1832,7 +2608,7 @@ if (typeof window !== 'undefined') {
       }) => {
         mod.registerFloatingBarMounter?.(ensureGlobalPlayerBar)
         if (mod.api?.track) requestAnimationFrame(() => ensureGlobalPlayerBar())
-      }
+      },
     )
     .catch(() => {})
 }

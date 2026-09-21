@@ -12,19 +12,21 @@
  *    "MediaSession.then() is not implemented on web" y rompe el play.
  * 3. En web / PWA / Electron: navigator.mediaSession.
  * 4. Singleton fuera de React: desmontar vistas NO pausa el audio.
- * 5. Al pausar NO se destruye la Media Session (la notificación puede permanecer).
- * 6. Android 13+ (API 33+): sin permiso POST_NOTIFICATIONS concedido, la
- *    notificación de reproducción no aparece y el sistema puede matar el
- *    Foreground Service mediaPlayback poco después. Este archivo pide el
- *    permiso en runtime automáticamente antes de reproducir en Capacitor.
- * 7. Android 14-16 (Samsung One UI incluido, p. ej. S26 Ultra): el orden de
- *    llamadas alrededor de audio.play() importa. Se fija: metadata → handlers
- *    → play() → playbackState:'playing'. Reordenar esto puede hacer que la
- *    notificación aparezca "vacía" o que el sistema no reconozca la sesión
- *    como activa en dispositivos con capas de fabricante agresivas.
+ * 5. Al pausar NO se destruye la Media Session (la notificación permanece
+ *    con play/pause, seekbar y portada).
+ * 6. Android 13+ (API 33+): sin POST_NOTIFICATIONS concedido, la notificación
+ *    MediaStyle no aparece y el FGS mediaPlayback puede morir. Se pide al
+ *    entrar en la app (Activity activa) y otra vez justo antes del primer play.
+ * 7. Android 14-16 (Samsung One UI 6-8, S26 Ultra, Xiaomi/Redmi HyperOS):
+ *    orden fijo: handlers → metadata (portada base64) → positionState
+ *    → audio.play() → playbackState:'playing' → positionState otra vez.
+ * 8. El plugin nativo NO acepta blob: en artwork. Solo http(s) o
+ *    data:image/…;base64,…  Las portadas se recodifican a JPEG 512px.
+ * 9. La barra de progreso del gadget / lock screen exige duration>0 en
+ *    setPositionState y el handler 'seekto' registrado ANTES de 'playing'.
  * ============================================================================
  */
-import { useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { getTrackBlob, type TrackItem } from '@/core/storage/mediaLibrary'
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -46,12 +48,14 @@ type CapacitorBridge = {
   Plugins?: Record<string, unknown>
 }
 
+type MediaArtwork = { src: string; sizes?: string; type?: string }
+
 type CapMediaSessionPlugin = {
   setMetadata: (opts: {
     title?: string
     artist?: string
     album?: string
-    artwork?: { src: string; sizes?: string; type?: string }[]
+    artwork?: MediaArtwork[]
   }) => Promise<void>
   setPlaybackState: (opts: {
     playbackState: 'none' | 'paused' | 'playing'
@@ -60,7 +64,7 @@ type CapMediaSessionPlugin = {
     opts: { action: string },
     handler:
       | ((details?: { seekOffset?: number; seekTime?: number }) => void)
-      | null
+      | null,
   ) => Promise<void>
   setPositionState?: (opts: {
     duration?: number
@@ -72,6 +76,13 @@ type CapMediaSessionPlugin = {
 type LocalNotificationsPlugin = {
   checkPermissions: () => Promise<{ display: string }>
   requestPermissions: () => Promise<{ display: string }>
+}
+
+type BatteryOptimizationPlugin = {
+  isBatteryOptimizationEnabled?: () => Promise<{ enabled: boolean }>
+  requestDisableBatteryOptimization?: () => Promise<void>
+  isIgnoringBatteryOptimizations?: () => Promise<{ value?: boolean; isIgnoring?: boolean }>
+  requestIgnoreBatteryOptimizations?: () => Promise<void>
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -91,7 +102,6 @@ function getCapacitor(): CapacitorBridge | null {
     return null
   }
 }
-/** true solo dentro de APK / app iOS nativa Capacitor (no en PWA del navegador). */
 function isCapacitorNative(): boolean {
   try {
     return !!getCapacitor()?.isNativePlatform?.()
@@ -123,7 +133,6 @@ function isAppleWebKit(): boolean {
     /Safari/.test(ua) && !/Chrome|Chromium|CriOS|Edg|OPR|Firefox|FxiOS/.test(ua)
   return isIOS || isSafariDesktop
 }
-/** true si el navegador corre en un iOS real (Safari, o cualquier navegador iOS, que usan WebKit por obligación de Apple). */
 function isIOSAny(): boolean {
   if (!isBrowser()) return false
   const ua = navigator.userAgent || ''
@@ -137,7 +146,6 @@ function isAndroidUa(): boolean {
   if (!isBrowser()) return false
   return /Android/i.test(navigator.userAgent || '')
 }
-/** Detecta la versión mayor de Android desde el user agent (best-effort, solo informativo/telemetría). */
 function androidMajorVersion(): number | null {
   if (!isBrowser()) return null
   const m = /Android\s+(\d+)/i.exec(navigator.userAgent || '')
@@ -146,6 +154,10 @@ function androidMajorVersion(): number | null {
 function isSamsungDevice(): boolean {
   if (!isBrowser()) return false
   return /SM-|Samsung|SAMSUNG/i.test(navigator.userAgent || '')
+}
+function isXiaomiFamily(): boolean {
+  if (!isBrowser()) return false
+  return /Xiaomi|Redmi|POCO|MIUI|HyperOS/i.test(navigator.userAgent || '')
 }
 function isElectron(): boolean {
   if (!isBrowser()) return false
@@ -173,43 +185,19 @@ function setAudioSessionPlayback() {
     /* Safari antiguo */
   }
 }
-async function tryKeepAwake(playing: boolean) {
-  if (!isBrowser() || !isCapacitorNative()) return
-  try {
-    const mod = await import('@capacitor-community/keep-awake').catch(() => null)
-    const KeepAwake = (
-      mod as {
-        KeepAwake?: {
-          keepAwake: () => Promise<void>
-          allowSleep: () => Promise<void>
-        }
-      } | null
-    )?.KeepAwake
-    if (!KeepAwake) return
-    if (playing) await KeepAwake.keepAwake()
-    else await KeepAwake.allowSleep()
-  } catch {
-    /* */
-  }
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Permisos en runtime — Android 13+ (notificaciones) y batería
- * ═══════════════════════════════════════════════════════════════════════════
- * CRÍTICO: declarar POST_NOTIFICATIONS en el Manifest NO concede el permiso.
- * Sin esto concedido, en Android 13-16 la notificación de reproducción no
- * puede mostrarse y el Foreground Service tipo mediaPlayback puede ser
- * detenido por el sistema poco después de iniciar. Se pide una sola vez
- * por sesión de la app (no en cada play) para no ser intrusivos.
+ * Permisos runtime — POST_NOTIFICATIONS (API 33+) y batería OEM
  * ═══════════════════════════════════════════════════════════════════════════ */
 let notifPermAsked = false
 let notifPermGranted: boolean | null = null
+let batteryPromptShown = false
+let bootstrapStarted = false
+let bootstrapDone = false
 
 async function ensureAndroidNotificationPermission(): Promise<boolean> {
   if (!isBrowser() || !isCapacitorAndroid()) return true
   if (notifPermGranted === true) return true
-  if (notifPermAsked && notifPermGranted === false) return false
-  notifPermAsked = true
   try {
     const mod = await import('@capacitor/local-notifications').catch(() => null)
     const LN = (mod as { LocalNotifications?: LocalNotificationsPlugin } | null)
@@ -218,83 +206,134 @@ async function ensureAndroidNotificationPermission(): Promise<boolean> {
       const cur = await LN.checkPermissions().catch(() => ({ display: 'prompt' }))
       if (cur.display === 'granted') {
         notifPermGranted = true
+        notifPermAsked = true
+        notify()
         return true
       }
+      if (notifPermAsked && cur.display === 'denied' && notifPermGranted === false) {
+        return false
+      }
+      notifPermAsked = true
       const req = await LN.requestPermissions().catch(() => ({ display: 'denied' }))
       notifPermGranted = req.display === 'granted'
+      notify()
       return notifPermGranted
     }
   } catch (e) {
     console.warn('[gco] ensureAndroidNotificationPermission:', e)
   }
-  // Sin el plugin instalado no podemos pedir el permiso nativo: no bloqueamos
-  // la reproducción, solo dejamos constancia de que puede faltar notificación.
   notifPermGranted = null
   return true
 }
 
-let batteryPromptShown = false
-
-/**
- * Abre (si hay un plugin disponible) el diálogo nativo para excluir la app
- * de la optimización de batería del fabricante. En Samsung One UI (S26
- * Ultra incluido), Xiaomi/MIUI, Huawei y OnePlus, esto es a menudo la causa
- * real de que el audio se corte en segundo plano aunque el Foreground
- * Service esté correctamente declarado y en ejecución.
- *
- * Es best-effort y silencioso: si no hay plugin, no interrumpe el flujo de
- * reproducción; el usuario puede excluir la app manualmente desde
- * Ajustes → Apps → GCO → Batería → Sin restricciones.
- */
 async function requestUnrestrictedBatteryIfNeeded() {
   if (!isBrowser() || !isCapacitorAndroid() || batteryPromptShown) return
   batteryPromptShown = true
   try {
-const mod = await import(
-  '@capawesome-team/capacitor-android-battery-optimization'
-).catch(() => null)
+    const mod = await import(
+      '@capawesome-team/capacitor-android-battery-optimization'
+    ).catch(() => null)
     const plugin = (
-      mod as {
-        BatteryOptimization?: {
-          isBatteryOptimizationEnabled?: () => Promise<{ enabled: boolean }>
-          requestDisableBatteryOptimization?: () => Promise<void>
-        }
-      } | null
+      mod as { BatteryOptimization?: BatteryOptimizationPlugin } | null
     )?.BatteryOptimization
     if (!plugin) return
-    const status = await plugin
-      .isBatteryOptimizationEnabled?.()
-      .catch(() => ({ enabled: false }))
-    if (status?.enabled && plugin.requestDisableBatteryOptimization) {
-      await plugin.requestDisableBatteryOptimization().catch(() => {})
+    if (plugin.isBatteryOptimizationEnabled) {
+      const status = await plugin
+        .isBatteryOptimizationEnabled()
+        .catch(() => ({ enabled: false }))
+      if (status?.enabled && plugin.requestDisableBatteryOptimization) {
+        await plugin.requestDisableBatteryOptimization().catch(() => {})
+      }
+      return
+    }
+    if (plugin.isIgnoringBatteryOptimizations) {
+      const st = await plugin.isIgnoringBatteryOptimizations().catch(() => null)
+      const ignoring = !!(st?.value ?? st?.isIgnoring)
+      if (!ignoring && plugin.requestIgnoreBatteryOptimizations) {
+        await plugin.requestIgnoreBatteryOptimizations().catch(() => {})
+      }
     }
   } catch {
-    /* Plugin no instalado: no-op silencioso, ver nota de Ajustes manuales. */
+    /* plugin ausente: el usuario puede excluir la app en Ajustes → Batería */
   }
+}
+
+/**
+ * Llama al entrar en la app (Activity en primer plano). Encadena:
+ * 1) POST_NOTIFICATIONS  2) exclusión de optimización de batería.
+ * No bloquea la UI; el play no espera a que el usuario pulse "Permitir".
+ */
+export async function bootstrapNativePlayback(): Promise<void> {
+  if (!isBrowser() || bootstrapDone) return
+  if (!isCapacitorNative()) {
+    bootstrapDone = true
+    return
+  }
+  if (bootstrapStarted) return
+  bootstrapStarted = true
+  initEnvFlags()
+  bindPageLifecycle()
+  bindCapacitorListeners()
+  await loadCapMediaSession()
+  await ensureMediaSessionHandlers()
+  if (isCapacitorAndroid()) {
+    try {
+      await ensureAndroidNotificationPermission()
+    } catch {
+      /* */
+    }
+    window.setTimeout(() => {
+      void requestUnrestrictedBatteryIfNeeded()
+    }, 900)
+  }
+  bootstrapDone = true
+  notify()
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Capgo Media Session — SOLO nativo
  * ═══════════════════════════════════════════════════════════════════════════ */
 let capMs: CapMediaSessionPlugin | null = null
-let capMsTried = false
+let capMsFailCount = 0
 let capMsHandlersReady = false
 
-/**
- * Carga Capgo únicamente si estamos en Capacitor nativo.
- * En web/PWA devuelve null siempre (evita "MediaSession.then() is not implemented on web").
- */
+function pluginFromCapacitorBridge(): CapMediaSessionPlugin | null {
+  try {
+    const raw = getCapacitor()?.Plugins?.MediaSession as CapMediaSessionPlugin | undefined
+    if (
+      raw &&
+      typeof raw === 'object' &&
+      typeof raw.setMetadata === 'function' &&
+      typeof raw.setPlaybackState === 'function'
+    ) {
+      return raw
+    }
+  } catch {
+    /* */
+  }
+  return null
+}
+
 async function loadCapMediaSession(): Promise<CapMediaSessionPlugin | null> {
   if (capMs) return capMs
-  if (capMsTried) return null
-  capMsTried = true
-  // CRÍTICO: no tocar el plugin en web
   if (!isBrowser() || !isCapacitorNative()) return null
+  if (capMsFailCount > 8) return null
+
+  const bridged = pluginFromCapacitorBridge()
+  if (bridged) {
+    capMs = bridged
+    capMsFailCount = 0
+    return capMs
+  }
+
   try {
     const cap = getCapacitor()
     if (typeof cap?.isPluginAvailable === 'function') {
       try {
-        if (!cap.isPluginAvailable('MediaSession')) return null
+        if (!cap.isPluginAvailable('MediaSession')) {
+          capMsFailCount += 1
+          return null
+        }
       } catch {
         /* */
       }
@@ -309,15 +348,94 @@ async function loadCapMediaSession(): Promise<CapMediaSessionPlugin | null> {
       typeof raw.setPlaybackState === 'function'
     ) {
       capMs = raw
+      capMsFailCount = 0
       return capMs
     }
   } catch (e) {
     console.warn('[gco] Capgo MediaSession no disponible (ok en web):', e)
+    capMsFailCount += 1
   }
+  capMsFailCount += 1
   return null
 }
+
 function hasWebMediaSession(): boolean {
   return isBrowser() && typeof navigator !== 'undefined' && 'mediaSession' in navigator
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Portada para el plugin nativo
+ * El decoder Android (urlToBitmap) SOLO entiende:
+ *   · http(s)://…
+ *   · data:*;base64,…
+ * blob: se descarta → gadget sin carátula.
+ * Recodificamos a JPEG 512 para no OOM en Redmi / One UI.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+const COVER_NATIVE_SIZE = 512
+const coverCache = new Map<string, string>()
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(String(r.result || ''))
+    r.onerror = () => reject(r.error)
+    r.readAsDataURL(blob)
+  })
+}
+
+function shrinkCoverToJpegDataUrl(src: string): Promise<string | null> {
+  if (!isBrowser()) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = COVER_NATIVE_SIZE
+        canvas.height = COVER_NATIVE_SIZE
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          resolve(src.includes(';base64,') ? src : null)
+          return
+        }
+        const iw = img.naturalWidth || img.width
+        const ih = img.naturalHeight || img.height
+        const scale = Math.max(COVER_NATIVE_SIZE / iw, COVER_NATIVE_SIZE / ih)
+        const dw = iw * scale
+        const dh = ih * scale
+        ctx.fillStyle = '#111'
+        ctx.fillRect(0, 0, COVER_NATIVE_SIZE, COVER_NATIVE_SIZE)
+        ctx.drawImage(img, (COVER_NATIVE_SIZE - dw) / 2, (COVER_NATIVE_SIZE - dh) / 2, dw, dh)
+        resolve(canvas.toDataURL('image/jpeg', 0.86))
+      } catch {
+        resolve(src.includes(';base64,') ? src : null)
+      }
+    }
+    img.onerror = () => resolve(src.includes(';base64,') ? src : null)
+    img.src = src
+  })
+}
+
+async function artworkSrcForNative(cover?: string): Promise<string | undefined> {
+  if (!cover) return undefined
+  const cached = coverCache.get(cover)
+  if (cached) return cached
+  let src = cover
+  try {
+    if (src.startsWith('blob:')) {
+      const blob = await fetch(src).then((r) => r.blob())
+      src = await blobToDataUrl(blob)
+    }
+    if (src.startsWith('http://') || src.startsWith('https://')) {
+      coverCache.set(cover, src)
+      return src
+    }
+    const jpeg = await shrinkCoverToJpegDataUrl(src)
+    const out = jpeg || (src.includes(';base64,') ? src : undefined)
+    if (out) coverCache.set(cover, out)
+    return out
+  } catch {
+    return cover.includes(';base64,') ? cover : undefined
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -325,13 +443,16 @@ function hasWebMediaSession(): boolean {
  * ═══════════════════════════════════════════════════════════════════════════ */
 async function updateMediaSessionMetadata(t: TrackItem | null) {
   if (!isBrowser()) return
-  const artwork: { src: string; sizes: string; type: string }[] = []
-  if (t?.coverDataUrl) {
-    for (const s of ['96x96', '128x128', '192x192', '256x256', '384x384', '512x512']) {
-      artwork.push({ src: t.coverDataUrl, sizes: s, type: 'image/png' })
-    }
+  const nativeSrc = t?.coverDataUrl ? await artworkSrcForNative(t.coverDataUrl) : undefined
+  const artwork: MediaArtwork[] = []
+  if (nativeSrc) {
+    artwork.push({
+      src: nativeSrc,
+      sizes: `${COVER_NATIVE_SIZE}x${COVER_NATIVE_SIZE}`,
+      type: nativeSrc.startsWith('data:image/jpeg') ? 'image/jpeg' : 'image/png',
+    })
   }
-  // Capgo solo nativo
+
   if (isCapacitorNative()) {
     const plugin = await loadCapMediaSession()
     if (plugin) {
@@ -351,23 +472,30 @@ async function updateMediaSessionMetadata(t: TrackItem | null) {
       }
     }
   }
-  // Web / PWA / Electron
+
   if (!hasWebMediaSession()) return
   try {
     if (!t) {
       navigator.mediaSession.metadata = null
       return
     }
+    const webArt: MediaImage[] = []
+    if (t.coverDataUrl) {
+      for (const s of ['96x96', '128x128', '192x192', '256x256', '384x384', '512x512']) {
+        webArt.push({ src: t.coverDataUrl, sizes: s, type: 'image/png' })
+      }
+    }
     navigator.mediaSession.metadata = new MediaMetadata({
       title: t.title || 'Sin título',
       artist: t.artist || 'Desconocido',
       album: t.album || '',
-      artwork,
+      artwork: webArt,
     })
   } catch {
     /* */
   }
 }
+
 async function setMediaSessionPlaybackState(state: 'playing' | 'paused' | 'none') {
   if (!isBrowser()) return
   if (isCapacitorNative()) {
@@ -387,10 +515,11 @@ async function setMediaSessionPlaybackState(state: 'playing' | 'paused' | 'none'
     /* */
   }
 }
+
 async function updatePositionState(
   durationMs: number,
   positionMs: number,
-  playbackRate = 1
+  playbackRate = 1,
 ) {
   if (!isBrowser()) return
   if (!durationMs || !Number.isFinite(durationMs) || durationMs <= 0) return
@@ -426,6 +555,17 @@ async function updatePositionState(
   } catch {
     /* */
   }
+}
+
+async function pushNowPlayingToSystem() {
+  const t = trackRef.current
+  const audio = audioRef.current
+  if (!t) return
+  await updateMediaSessionMetadata(t)
+  const dur = (audio?.duration || 0) * 1000 || snapshot.durationMs
+  const pos = (audio?.currentTime || 0) * 1000 || snapshot.currentMs
+  await updatePositionState(dur, pos, rateRef.current)
+  await setMediaSessionPlaybackState(playingRef.current ? 'playing' : 'paused')
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -564,7 +704,6 @@ function applyElementVolume(audio: HTMLAudioElement) {
       }
     }
   } else {
-    // Nativo: el hardware satura en 1
     audio.volume = clamp(v * clamp(g, 0, 1), 0, 1)
   }
 }
@@ -598,7 +737,6 @@ function ensureGraph(audio: HTMLAudioElement) {
     }
     const forceNativeOnly =
       appleWebKit.current || androidEnv.current || nativeShell.current
-    // iOS / Safari: nunca createMediaElementSource (rompe background)
     if (appleWebKit.current) {
       outputModeRef.current = 'native-nospec'
       snapshot.outputMode = 'native-nospec'
@@ -658,7 +796,6 @@ function ensureGraph(audio: HTMLAudioElement) {
       notify()
       return
     }
-    // Desktop no-Apple: Web Audio con boost real
     if (!gainNodeRef.current) {
       const g = ctx.createGain()
       g.gain.value = clamp(gainRefState.current, 0, 3)
@@ -713,24 +850,29 @@ async function resumeAudioContext() {
       await audio.play()
       playingRef.current = true
       snapshot.playing = true
-      void setMediaSessionPlaybackState('playing')
+      await setMediaSessionPlaybackState('playing')
+      startPositionTick()
       notify()
     } catch {
       /* autoplay */
     }
   }
-  api.refreshMediaSession()
+  if (trackRef.current) void pushNowPlayingToSystem()
+  else api.refreshMediaSession()
 }
+
 function startPositionTick() {
   stopPositionTick()
   if (!isBrowser()) return
-  positionTickTimer = window.setInterval(() => {
+  const tick = () => {
     const audio = audioRef.current
     if (!audio || !playingRef.current) return
-    const dur = (audio.duration || 0) * 1000
+    const dur = (audio.duration || 0) * 1000 || snapshot.durationMs
     const pos = (audio.currentTime || 0) * 1000
     void updatePositionState(dur, pos, rateRef.current)
-  }, 1000)
+  }
+  positionTickTimer = window.setInterval(tick, 500)
+  tick()
 }
 function stopPositionTick() {
   if (positionTickTimer != null) {
@@ -750,12 +892,11 @@ function bindPageLifecycle() {
     void resumeAudioContext()
     if (ev.persisted) void resumeAudioContext()
   })
+  // NO cortar el tick en pagehide si queremos seguir sonando: en Android el
+  // seekbar del gadget se congela si dejamos de empujar setPositionState.
   window.addEventListener('pagehide', () => {
-    stopPositionTick()
+    if (!wantPlayingRef.current) stopPositionTick()
   })
-  // iOS Safari / PWA standalone: al desbloquear pantalla el AudioContext
-  // puede quedar suspendido sin disparar visibilitychange de forma fiable.
-  // Se refuerza con un segundo intento retrasado.
   if (isIOSAny()) {
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
@@ -770,32 +911,30 @@ function bindCapacitorListeners() {
   try {
     void import('@capacitor/app')
       .then((mod) => {
-        const App = (mod as {
-          App?: {
-            addListener: (
-              e: string,
-              cb: (data: { isActive?: boolean }) => void
-            ) => Promise<{ remove: () => void }>
+        const App = (
+          mod as {
+            App?: {
+              addListener: (
+                e: string,
+                cb: (data: { isActive?: boolean }) => void,
+              ) => Promise<{ remove: () => void }>
+            }
           }
-        }).App
+        ).App
         if (!App?.addListener) return
         void App.addListener('appStateChange', (state) => {
           if (state.isActive) {
+            void bootstrapNativePlayback()
             void resumeAudioContext()
-            // Refuerzo Android 14-16 / One UI: al volver a primer plano,
-            // reafirmar metadata + estado evita que la notificación quede
-            // "congelada" tras que el sistema recorte el proceso en segundo
-            // plano y lo reactive.
-            if (wantPlayingRef.current && trackRef.current) {
-              void updateMediaSessionMetadata(trackRef.current)
-              void setMediaSessionPlaybackState(
-                playingRef.current ? 'playing' : 'paused'
-              )
+            if (trackRef.current) {
+              void ensureMediaSessionHandlers()
+              void pushNowPlayingToSystem()
             }
           }
         })
         void App.addListener('resume', () => {
           void resumeAudioContext()
+          if (trackRef.current) void pushNowPlayingToSystem()
         })
       })
       .catch(() => {})
@@ -809,7 +948,7 @@ function bindCapacitorListeners() {
  * ═══════════════════════════════════════════════════════════════════════════ */
 function wireWebAction(
   action: MediaSessionAction,
-  handler: (details?: { seekOffset?: number; seekTime?: number }) => void
+  handler: (details?: { seekOffset?: number; seekTime?: number }) => void,
 ) {
   if (!hasWebMediaSession()) return
   try {
@@ -825,7 +964,7 @@ function wireWebAction(
 }
 function wireCapAction(
   action: string,
-  handler: (details?: { seekOffset?: number; seekTime?: number }) => void
+  handler: (details?: { seekOffset?: number; seekTime?: number }) => void,
 ) {
   if (!capMs || !isCapacitorNative()) return
   void capMs
@@ -837,10 +976,12 @@ function wireCapAction(
     })
     .catch(() => {})
 }
+
 async function ensureMediaSessionHandlers() {
   if (!isBrowser()) return
   if (isCapacitorNative()) await loadCapMediaSession()
   if (mediaSessionReady.current && (capMsHandlersReady || !capMs)) return
+
   const onPlay = () => {
     wantPlayingRef.current = true
     void api.toggle()
@@ -854,64 +995,52 @@ async function ensureMediaSessionHandlers() {
       snapshot.playing = false
       void setMediaSessionPlaybackState('paused')
       stopPositionTick()
-      void tryKeepAwake(false)
       notify()
     }
   }
   const onStop = () => onPause()
-  wireWebAction('play', onPlay)
-  wireWebAction('pause', onPause)
-  wireWebAction('stop', onStop)
-  wireWebAction('previoustrack', () => {
+  const onPrev = () => {
     void api.prev()
-  })
-  wireWebAction('nexttrack', () => {
+  }
+  const onNext = () => {
     void api.next()
-  })
-  wireWebAction('seekbackward', (d) => {
+  }
+  const onSeekBack = (d?: { seekOffset?: number }) => {
     const audio = audioRef.current
     if (!audio) return
     const offset = (d?.seekOffset ?? 10) * 1000
     api.seek(Math.max(0, audio.currentTime * 1000 - offset))
-  })
-  wireWebAction('seekforward', (d) => {
+  }
+  const onSeekFwd = (d?: { seekOffset?: number }) => {
     const audio = audioRef.current
     if (!audio) return
     const offset = (d?.seekOffset ?? 10) * 1000
     const dur = (audio.duration || 0) * 1000
     api.seek(Math.min(dur || Number.MAX_SAFE_INTEGER, audio.currentTime * 1000 + offset))
-  })
-  wireWebAction('seekto', (d) => {
+  }
+  const onSeekTo = (d?: { seekTime?: number }) => {
     if (d?.seekTime == null) return
     api.seek(d.seekTime * 1000)
-  })
+  }
+
+  wireWebAction('play', onPlay)
+  wireWebAction('pause', onPause)
+  wireWebAction('stop', onStop)
+  wireWebAction('previoustrack', onPrev)
+  wireWebAction('nexttrack', onNext)
+  wireWebAction('seekbackward', onSeekBack)
+  wireWebAction('seekforward', onSeekFwd)
+  wireWebAction('seekto', onSeekTo)
+
   if (capMs && isCapacitorNative()) {
     wireCapAction('play', onPlay)
     wireCapAction('pause', onPause)
     wireCapAction('stop', onStop)
-    wireCapAction('previoustrack', () => {
-      void api.prev()
-    })
-    wireCapAction('nexttrack', () => {
-      void api.next()
-    })
-    wireCapAction('seekbackward', (d) => {
-      const audio = audioRef.current
-      if (!audio) return
-      api.seek(Math.max(0, audio.currentTime * 1000 - (d?.seekOffset ?? 10) * 1000))
-    })
-    wireCapAction('seekforward', (d) => {
-      const audio = audioRef.current
-      if (!audio) return
-      const dur = (audio.duration || 0) * 1000
-      api.seek(
-        Math.min(dur || Number.MAX_SAFE_INTEGER, audio.currentTime * 1000 + (d?.seekOffset ?? 10) * 1000)
-      )
-    })
-    wireCapAction('seekto', (d) => {
-      if (d?.seekTime == null) return
-      api.seek(d.seekTime * 1000)
-    })
+    wireCapAction('previoustrack', onPrev)
+    wireCapAction('nexttrack', onNext)
+    wireCapAction('seekbackward', onSeekBack)
+    wireCapAction('seekforward', onSeekFwd)
+    wireCapAction('seekto', onSeekTo)
     capMsHandlersReady = true
   }
   mediaSessionReady.current = true
@@ -965,6 +1094,8 @@ function requestFloatingBar() {
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Elemento <audio>
+ * En WebView Android el Audio() huérfano (fuera del DOM) se pausa al ir a
+ * segundo plano. Lo montamos oculto en document.body.
  * ═══════════════════════════════════════════════════════════════════════════ */
 function ensureAudio(): HTMLAudioElement {
   initEnvFlags()
@@ -976,6 +1107,10 @@ function ensureAudio(): HTMLAudioElement {
     a.crossOrigin = 'anonymous'
     a.setAttribute('playsinline', 'true')
     a.setAttribute('webkit-playsinline', 'true')
+    a.setAttribute('data-gco', 'media-engine')
+    a.controls = false
+    a.style.cssText =
+      'position:fixed;width:0;height:0;opacity:0;pointer-events:none;left:-9999px;'
     try {
       ;(a as HTMLAudioElement & { disableRemotePlayback?: boolean }).disableRemotePlayback =
         false
@@ -988,6 +1123,11 @@ function ensureAudio(): HTMLAudioElement {
       /* */
     }
     a.volume = clamp(volumeRef.current, 0, 1)
+    try {
+      if (document.body && !a.isConnected) document.body.appendChild(a)
+    } catch {
+      /* */
+    }
     a.ontimeupdate = () => {
       const ms = (a.currentTime || 0) * 1000
       snapshot.currentMs = ms
@@ -1005,6 +1145,11 @@ function ensureAudio(): HTMLAudioElement {
       if (a.duration && Number.isFinite(a.duration)) {
         snapshot.durationMs = a.duration * 1000
         notify()
+        void updatePositionState(
+          snapshot.durationMs,
+          (a.currentTime || 0) * 1000,
+          rateRef.current,
+        )
       }
     }
     a.onplay = () => {
@@ -1015,7 +1160,6 @@ function ensureAudio(): HTMLAudioElement {
       void updateMediaSessionMetadata(trackRef.current)
       setAudioSessionPlayback()
       startPositionTick()
-      void tryKeepAwake(true)
       notify()
       requestFloatingBar()
     }
@@ -1031,8 +1175,7 @@ function ensureAudio(): HTMLAudioElement {
       playingRef.current = false
       snapshot.playing = false
       void setMediaSessionPlaybackState('paused')
-      stopPositionTick()
-      void tryKeepAwake(false)
+      if (!wantPlayingRef.current) stopPositionTick()
       notify()
     }
     a.onended = () => {
@@ -1107,13 +1250,17 @@ async function loadTrack(t: TrackItem) {
   cleanupUrl()
   const url = URL.createObjectURL(media)
   urlRef.current = url
-  // Reset antes de asignar src
   try {
     audio.pause()
   } catch {
     /* */
   }
   audio.src = url
+  try {
+    audio.load()
+  } catch {
+    /* */
+  }
   audio.playbackRate = rateRef.current
   try {
     audio.preservesPitch = true
@@ -1127,9 +1274,8 @@ async function loadTrack(t: TrackItem) {
   snapshot.durationMs = t.durationMs || 0
   notify()
   requestFloatingBar()
-  // Media Session en paralelo (no bloquea el play si falla)
-  void updateMediaSessionMetadata(t)
-  void ensureMediaSessionHandlers()
+  await updateMediaSessionMetadata(t)
+  await ensureMediaSessionHandlers()
   await new Promise<void>((resolve) => {
     if (gen !== loadGenRef.current) {
       resolve()
@@ -1149,7 +1295,6 @@ async function loadTrack(t: TrackItem) {
     else {
       audio.addEventListener('loadedmetadata', done)
       audio.addEventListener('canplay', done)
-      // Timeout de seguridad
       window.setTimeout(done, 4000)
     }
   })
@@ -1190,18 +1335,10 @@ async function onEnded() {
     snapshot.playing = false
     await setMediaSessionPlaybackState('paused')
     stopPositionTick()
-    void tryKeepAwake(false)
     notify()
   }
 }
 
-/**
- * Preparación previa a reproducir en Android nativo: pide permiso de
- * notificaciones (una vez por sesión) y, si procede, sugiere excluir la
- * app de la optimización de batería. No bloquea el play si el usuario
- * aún no ha respondido: el audio arranca igual, solo puede faltar la
- * notificación hasta que el permiso se conceda.
- */
 async function prepareAndroidBackgroundPlayback() {
   if (!isCapacitorAndroid()) return
   try {
@@ -1209,8 +1346,28 @@ async function prepareAndroidBackgroundPlayback() {
   } catch {
     /* */
   }
-  // Se dispara sin esperar: no debe retrasar el arranque del audio.
   void requestUnrestrictedBatteryIfNeeded()
+  await loadCapMediaSession()
+  await ensureMediaSessionHandlers()
+}
+
+async function armNativeSessionThenPlay(t: TrackItem, audio: HTMLAudioElement) {
+  await ensureMediaSessionHandlers()
+  await updateMediaSessionMetadata(t)
+  const durHint = (audio.duration || 0) * 1000 || t.durationMs || snapshot.durationMs
+  if (durHint > 0) {
+    await updatePositionState(durHint, (audio.currentTime || 0) * 1000, rateRef.current)
+  }
+  await audio.play()
+  playingRef.current = true
+  snapshot.playing = true
+  snapshot.error = null
+  await setMediaSessionPlaybackState('playing')
+  const dur = (audio.duration || 0) * 1000 || snapshot.durationMs
+  await updatePositionState(dur, (audio.currentTime || 0) * 1000, rateRef.current)
+  startPositionTick()
+  notify()
+  requestFloatingBar()
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1270,6 +1427,7 @@ export const api = {
       isAndroidUa: isAndroidUa(),
       isPWAStandalone: isPWAStandalone(),
       isSamsungDevice: isSamsungDevice(),
+      isXiaomiFamily: isXiaomiFamily(),
     }
   },
   setShuffle(v: boolean) {
@@ -1311,7 +1469,7 @@ export const api = {
       void updatePositionState(
         (audio.duration || 0) * 1000,
         (audio.currentTime || 0) * 1000,
-        val
+        val,
       )
     }
     notify()
@@ -1328,16 +1486,10 @@ export const api = {
     } else {
       indexRef.current = queueRef.current.findIndex((x) => x.id === t.id)
     }
-    // Android 13-16: preparar permisos ANTES de tocar el <audio>, para que
-    // la notificación pueda aparecer en el primer play y no solo desde el
-    // segundo intento tras conceder el permiso.
     await prepareAndroidBackgroundPlayback()
     await loadTrack(t)
     const audio = ensureAudio()
-    if (!audio.src) {
-      // loadTrack falló
-      return
-    }
+    if (!audio.src) return
     ensureGraph(audio)
     setAudioSessionPlayback()
     if (ctxRef.current?.state === 'suspended') {
@@ -1348,23 +1500,8 @@ export const api = {
       }
     }
     wantPlayingRef.current = true
-    // Orden crítico en Android 14-16 / fabricantes con capas agresivas
-    // (Samsung One UI incluido): metadata y handlers se preparan ANTES de
-    // play(), y el playbackState:'playing' se confirma justo después.
-    // Invertir este orden puede dejar la notificación sin título/portada
-    // en el primer segundo de reproducción en algunos dispositivos.
-    void updateMediaSessionMetadata(t)
-    void ensureMediaSessionHandlers()
     try {
-      await audio.play()
-      playingRef.current = true
-      snapshot.playing = true
-      snapshot.error = null
-      void setMediaSessionPlaybackState('playing')
-      startPositionTick()
-      void tryKeepAwake(true)
-      notify()
-      requestFloatingBar()
+      await armNativeSessionThenPlay(t, audio)
     } catch (e) {
       playingRef.current = false
       snapshot.playing = false
@@ -1393,9 +1530,7 @@ export const api = {
     }
     if (!audio.src) {
       if (queueRef.current.length) {
-        await api.playTrack(
-          queueRef.current[indexRef.current] ?? queueRef.current[0]
-        )
+        await api.playTrack(queueRef.current[indexRef.current] ?? queueRef.current[0])
       }
       return
     }
@@ -1403,15 +1538,17 @@ export const api = {
       await prepareAndroidBackgroundPlayback()
       wantPlayingRef.current = true
       try {
-        await audio.play()
-        playingRef.current = true
-        snapshot.playing = true
-        snapshot.error = null
-        void setMediaSessionPlaybackState('playing')
-        if (trackRef.current) void updateMediaSessionMetadata(trackRef.current)
-        startPositionTick()
-        void tryKeepAwake(true)
-        notify()
+        const t = trackRef.current
+        if (t) await armNativeSessionThenPlay(t, audio)
+        else {
+          await audio.play()
+          playingRef.current = true
+          snapshot.playing = true
+          snapshot.error = null
+          await setMediaSessionPlaybackState('playing')
+          startPositionTick()
+          notify()
+        }
       } catch (e) {
         playingRef.current = false
         snapshot.playing = false
@@ -1426,7 +1563,6 @@ export const api = {
       snapshot.playing = false
       void setMediaSessionPlaybackState('paused')
       stopPositionTick()
-      void tryKeepAwake(false)
       notify()
     }
   },
@@ -1508,13 +1644,13 @@ export const api = {
     return buf
   },
   resumeAudioContext,
-  /** Pide (o vuelve a pedir) el permiso de notificaciones de Android en runtime. */
+  bootstrapNativePlayback,
   async requestNotificationsPermission() {
+    notifPermAsked = false
     const ok = await ensureAndroidNotificationPermission()
     notify()
     return ok
   },
-  /** Sugiere al usuario excluir la app de la optimización de batería del fabricante. */
   async requestBatteryUnrestricted() {
     batteryPromptShown = false
     await requestUnrestrictedBatteryIfNeeded()
@@ -1524,16 +1660,8 @@ export const api = {
     capMsHandlersReady = false
     void (async () => {
       await ensureMediaSessionHandlers()
-      if (trackRef.current) await updateMediaSessionMetadata(trackRef.current)
-      await setMediaSessionPlaybackState(playingRef.current ? 'playing' : 'paused')
-      const audio = audioRef.current
-      if (audio) {
-        void updatePositionState(
-          (audio.duration || 0) * 1000 || snapshot.durationMs,
-          (audio.currentTime || 0) * 1000,
-          rateRef.current
-        )
-      }
+      if (trackRef.current) await pushNowPlayingToSystem()
+      else await setMediaSessionPlaybackState(playingRef.current ? 'playing' : 'paused')
     })()
   },
 }
@@ -1541,6 +1669,9 @@ export const api = {
 export function useMediaPlayer(): MediaPlayerApi {
   const snap = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
   void snap.version
+  useEffect(() => {
+    void bootstrapNativePlayback()
+  }, [])
   return api
 }
 
@@ -1550,4 +1681,15 @@ export const __mediaPlayerInternals = {
   loadCapMediaSession,
   ensureAndroidNotificationPermission,
   requestUnrestrictedBatteryIfNeeded,
+}
+
+if (typeof window !== 'undefined') {
+  const boot = () => {
+    void bootstrapNativePlayback()
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot, { once: true })
+  } else {
+    window.setTimeout(boot, 0)
+  }
 }
