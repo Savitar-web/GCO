@@ -645,9 +645,71 @@ const analyserRef: { current: AnalyserNode | null } = { current: null }
 const mediaSourceRef: { current: MediaElementAudioSourceNode | null } = { current: null }
 const streamSourceRef: { current: MediaStreamAudioSourceNode | null } = { current: null }
 const gainNodeRef: { current: GainNode | null } = { current: null }
+const bassFilterRef: { current: BiquadFilterNode | null } = { current: null }
+const midFilterRef: { current: BiquadFilterNode | null } = { current: null }
+const trebleFilterRef: { current: BiquadFilterNode | null } = { current: null }
+const voiceFilterRef: { current: BiquadFilterNode | null } = { current: null }
+const panNodeRef: { current: StereoPannerNode | null } = { current: null }
 const compRef: { current: DynamicsCompressorNode | null } = { current: null }
 const graphReady = { current: false }
 const outputModeRef: { current: OutputMode } = { current: 'none' }
+
+/** FX de audio real (EQ + pan + corte de voz aproximado). */
+export type AudioFxState = {
+  bass: number
+  mid: number
+  treble: number
+  vocalCut: number
+  pan: number
+  spatial8d: number
+}
+
+const DEFAULT_AUDIO_FX: AudioFxState = {
+  bass: 0,
+  mid: 0,
+  treble: 0,
+  vocalCut: 0,
+  pan: 0,
+  spatial8d: 0,
+}
+
+const audioFxRef: { current: AudioFxState } = { current: { ...DEFAULT_AUDIO_FX } }
+let spatial8dTimer: number | null = null
+let spatial8dPhase = 0
+
+function applyAudioFxNodes() {
+  const fx = audioFxRef.current
+  try {
+    if (bassFilterRef.current) bassFilterRef.current.gain.value = clamp(fx.bass, -12, 12)
+    if (midFilterRef.current) midFilterRef.current.gain.value = clamp(fx.mid, -12, 12)
+    if (trebleFilterRef.current) trebleFilterRef.current.gain.value = clamp(fx.treble, -12, 12)
+    if (voiceFilterRef.current) {
+      /* notch Q alto = más corte de banda vocal */
+      const cut = clamp(fx.vocalCut, 0, 1)
+      voiceFilterRef.current.Q.value = 0.5 + cut * 8
+      voiceFilterRef.current.frequency.value = 1000 + cut * 400
+    }
+    if (panNodeRef.current && fx.spatial8d <= 0) {
+      panNodeRef.current.pan.value = clamp(fx.pan, -1, 1)
+    }
+  } catch {
+    /* */
+  }
+  /* Auto-pan 8D */
+  if (spatial8dTimer != null) {
+    window.clearInterval(spatial8dTimer)
+    spatial8dTimer = null
+  }
+  if (fx.spatial8d > 0 && panNodeRef.current && typeof window !== 'undefined') {
+    const speed = clamp(fx.spatial8d, 0.2, 3)
+    spatial8dTimer = window.setInterval(() => {
+      spatial8dPhase += 0.04 * speed
+      if (panNodeRef.current) {
+        panNodeRef.current.pan.value = Math.sin(spatial8dPhase) * 0.92
+      }
+    }, 32)
+  }
+}
 const mediaSessionReady = { current: false }
 const appleWebKit = { current: false }
 const androidEnv = { current: false }
@@ -796,6 +858,45 @@ function ensureGraph(audio: HTMLAudioElement) {
       notify()
       return
     }
+    if (!bassFilterRef.current) {
+      const f = ctx.createBiquadFilter()
+      f.type = 'lowshelf'
+      f.frequency.value = 180
+      f.gain.value = audioFxRef.current.bass
+      bassFilterRef.current = f
+    }
+    if (!midFilterRef.current) {
+      const f = ctx.createBiquadFilter()
+      f.type = 'peaking'
+      f.frequency.value = 1000
+      f.Q.value = 0.9
+      f.gain.value = audioFxRef.current.mid
+      midFilterRef.current = f
+    }
+    if (!trebleFilterRef.current) {
+      const f = ctx.createBiquadFilter()
+      f.type = 'highshelf'
+      f.frequency.value = 3200
+      f.gain.value = audioFxRef.current.treble
+      trebleFilterRef.current = f
+    }
+    if (!voiceFilterRef.current) {
+      const f = ctx.createBiquadFilter()
+      f.type = 'notch'
+      f.frequency.value = 1200
+      f.Q.value = 1.2
+      f.gain.value = 0
+      voiceFilterRef.current = f
+    }
+    if (!panNodeRef.current) {
+      try {
+        const p = ctx.createStereoPanner()
+        p.pan.value = audioFxRef.current.pan
+        panNodeRef.current = p
+      } catch {
+        panNodeRef.current = null
+      }
+    }
     if (!gainNodeRef.current) {
       const g = ctx.createGain()
       g.gain.value = clamp(gainRefState.current, 0, 3)
@@ -812,11 +913,31 @@ function ensureGraph(audio: HTMLAudioElement) {
     }
     if (!mediaSourceRef.current) {
       mediaSourceRef.current = ctx.createMediaElementSource(audio)
-      mediaSourceRef.current.connect(gainNodeRef.current)
-      gainNodeRef.current.connect(compRef.current)
-      compRef.current.connect(analyserRef.current!)
-      analyserRef.current!.connect(ctx.destination)
+      /* source → EQ → voice notch → pan → gain → comp → analyser → out */
+      const src = mediaSourceRef.current
+      const bass = bassFilterRef.current!
+      const mid = midFilterRef.current!
+      const treble = trebleFilterRef.current!
+      const voice = voiceFilterRef.current!
+      const pan = panNodeRef.current
+      const gain = gainNodeRef.current!
+      const comp = compRef.current!
+      const an = analyserRef.current!
+      src.connect(bass)
+      bass.connect(mid)
+      mid.connect(treble)
+      treble.connect(voice)
+      if (pan) {
+        voice.connect(pan)
+        pan.connect(gain)
+      } else {
+        voice.connect(gain)
+      }
+      gain.connect(comp)
+      comp.connect(an)
+      an.connect(ctx.destination)
     }
+    applyAudioFxNodes()
     outputModeRef.current = 'webaudio'
     snapshot.outputMode = 'webaudio'
     graphReady.current = true
@@ -1452,6 +1573,29 @@ export const api = {
     gainRefState.current = val
     snapshot.gain = val
     if (audioRef.current) applyElementVolume(audioRef.current)
+    notify()
+  },
+  get audioFx(): AudioFxState {
+    return { ...audioFxRef.current }
+  },
+  setAudioFx(partial: Partial<AudioFxState>) {
+    audioFxRef.current = {
+      ...audioFxRef.current,
+      ...partial,
+      bass: clamp(partial.bass ?? audioFxRef.current.bass, -12, 12),
+      mid: clamp(partial.mid ?? audioFxRef.current.mid, -12, 12),
+      treble: clamp(partial.treble ?? audioFxRef.current.treble, -12, 12),
+      vocalCut: clamp(partial.vocalCut ?? audioFxRef.current.vocalCut, 0, 1),
+      pan: clamp(partial.pan ?? audioFxRef.current.pan, -1, 1),
+      spatial8d: clamp(partial.spatial8d ?? audioFxRef.current.spatial8d, 0, 3),
+    }
+    if (audioRef.current) ensureGraph(audioRef.current)
+    applyAudioFxNodes()
+    notify()
+  },
+  resetAudioFx() {
+    audioFxRef.current = { ...DEFAULT_AUDIO_FX }
+    applyAudioFxNodes()
     notify()
   },
   setPlaybackRate(r: number) {

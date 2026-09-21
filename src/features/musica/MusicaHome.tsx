@@ -20,7 +20,13 @@ import {
 import { useMediaPlayer } from '@/hooks/useMediaPlayer'
 import { soundClick, soundSuccess, soundFail } from '@/core/audio/uiSounds'
 import { PlayerBar, getBarPrefs, saveBarPrefs } from './PlayerBar'
-import { AudioSpectrum, type SpecStyle } from './AudioSpectrum'
+import {
+  AudioSpectrum,
+  SPEC_STYLES as ALL_SPEC_STYLES,
+  type SpecStyle,
+  type SpecEqBands,
+  DEFAULT_EQ,
+} from './AudioSpectrum'
 
 /* ============================================================================
  * NOTA DE ARQUITECTURA — REPRODUCCIÓN ININTERRUMPIDA ENTRE MODOS
@@ -62,19 +68,60 @@ function formatBytes(n?: number) {
 }
 
 const FAV_KEY = 'gco:music-favorites'
+const STATS_KEY = 'gco:music-listen-stats-v1'
 
-/** Solo mapeamos las variantes que este panel expone en la UI. El tipo
- *  `SpecStyle` puede tener más miembros a futuro; usamos un registro parcial
- *  con fallback en vez de un Record exhaustivo para no romper el build cada
- *  vez que se amplíe el motor de visualización. */
-const SPEC_STYLES: SpecStyle[] = ['bars', 'wave', 'sphere', 'mirror', 'pulse'] as SpecStyle[]
-const SPEC_STYLE_LABELS: Partial<Record<SpecStyle, string>> = {
-  bars: 'Barras',
-  wave: 'Onda',
-  sphere: 'Esfera',
-  mirror: 'Espejo',
-  pulse: 'Pulso',
+type ListenStats = Record<string, { plays: number; ms: number; lastAt: number }>
+
+function loadListenStats(): ListenStats {
+  try {
+    const raw = localStorage.getItem(STATS_KEY)
+    return raw ? (JSON.parse(raw) as ListenStats) : {}
+  } catch {
+    return {}
+  }
 }
+
+function saveListenStats(s: ListenStats) {
+  try {
+    localStorage.setItem(STATS_KEY, JSON.stringify(s))
+  } catch {
+    /* */
+  }
+}
+
+function formatListenHours(ms: number) {
+  if (!ms || ms < 1000) return '0 min'
+  const m = Math.floor(ms / 60000)
+  if (m < 60) return `${m} min`
+  const h = Math.floor(m / 60)
+  const rm = m % 60
+  return rm ? `${h} h ${rm} min` : `${h} h`
+}
+
+/** Estilos destacados en la UI (el motor soporta todos vía ALL_SPEC_STYLES). */
+const SPEC_STYLES: SpecStyle[] = [
+  'coverOrb',
+  'bars',
+  'wave',
+  'sphere',
+  'rings',
+  'mirror',
+  'pulse',
+  'circular',
+  'eqBars',
+  'aurora',
+  'fire',
+  'liquid',
+  'galaxy',
+  'heartbeat',
+  'waveform',
+  'city',
+] as SpecStyle[]
+
+const SPEC_STYLE_LABELS: Partial<Record<SpecStyle, string>> = Object.fromEntries(
+  ALL_SPEC_STYLES.map((s) => [s.id, s.label]),
+) as Partial<Record<SpecStyle, string>>
+
 const specLabel = (s: SpecStyle) => SPEC_STYLE_LABELS[s] ?? String(s)
 
 function loadFavs(): string[] {
@@ -2020,11 +2067,24 @@ export function MusicaHome() {
   const [specColor, setSpecColor] = useState('#22E6C5')
   const [specColorB, setSpecColorB] = useState('#8B5CF6')
   const [specColorC, setSpecColorC] = useState('#F472B6')
-  const [specStyle, setSpecStyle] = useState<SpecStyle>('sphere' as SpecStyle)
+  const [specStyle, setSpecStyle] = useState<SpecStyle>('coverOrb' as SpecStyle)
   const [specMulti, setSpecMulti] = useState<1 | 2 | 3>(2)
   const [specParticles, setSpecParticles] = useState(true)
   const [specGlow, setSpecGlow] = useState(true)
+  const [specEq, setSpecEq] = useState<SpecEqBands>({ ...DEFAULT_EQ })
+  const [specShowAll, setSpecShowAll] = useState(false)
+  const [audioFxUi, setAudioFxUi] = useState({
+    bass: 0,
+    mid: 0,
+    treble: 0,
+    vocalCut: 0,
+    pan: 0,
+    spatial8d: 0,
+  })
+  const [listenStatsVersion, setListenStatsVersion] = useState(0)
   const [progressColor, setProgressColor] = useState(() => getBarPrefs().progressColor)
+  const plDragFromRef = useRef<string | null>(null)
+  const plLongPressRef = useRef<number | null>(null)
 
   const player = useMediaPlayer()
 
@@ -2050,6 +2110,43 @@ export function MusicaHome() {
     if (typeof player.setGain === 'function') player.setGain(gain)
     else player.setVolume?.(Math.min(1, gain))
   }, [volumeBoost, player])
+
+  /* Estadísticas de escucha (plays + tiempo) */
+  const listenStatsRef = useRef<ListenStats>(loadListenStats())
+  const lastStatTickRef = useRef<number>(Date.now())
+  const lastPlayTrackRef = useRef<string | null>(null)
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const t = player.track
+      if (!t || !player.playing) {
+        lastStatTickRef.current = Date.now()
+        return
+      }
+      const now = Date.now()
+      const delta = Math.min(5000, now - lastStatTickRef.current)
+      lastStatTickRef.current = now
+      const stats = listenStatsRef.current
+      const cur = stats[t.id] ?? { plays: 0, ms: 0, lastAt: 0 }
+      if (lastPlayTrackRef.current !== t.id) {
+        cur.plays += 1
+        lastPlayTrackRef.current = t.id
+      }
+      cur.ms += delta
+      cur.lastAt = now
+      stats[t.id] = cur
+      listenStatsRef.current = stats
+      saveListenStats(stats)
+    }, 2000)
+    return () => window.clearInterval(id)
+  }, [player])
+
+  useEffect(() => {
+    const api = player as typeof player & {
+      setAudioFx?: (p: Record<string, number>) => void
+      resetAudioFx?: () => void
+    }
+    api.setAudioFx?.(audioFxUi)
+  }, [audioFxUi, player])
 
   useEffect(() => {
     if (!menu) return
@@ -2655,13 +2752,19 @@ export function MusicaHome() {
   ) => (
     <div
       key={t.id}
+      data-pl-track={opts?.inPlaylist ? t.id : undefined}
       draggable={!!opts?.inPlaylist}
       onDragStart={() => {
         dragId.current = t.id
       }}
-      onDragOver={(e) => e.preventDefault()}
+      onDragOver={(e) => {
+        if (opts?.inPlaylist) e.preventDefault()
+      }}
       onDrop={() => {
-        if (dragId.current) void reorderPlaylist(dragId.current, t.id)
+        if (dragId.current && opts?.inPlaylist) void reorderPlaylist(dragId.current, t.id)
+        dragId.current = null
+      }}
+      onDragEnd={() => {
         dragId.current = null
       }}
       className="gco-song-row gco-music-song-row-desktop"
@@ -2669,18 +2772,83 @@ export function MusicaHome() {
         display: 'flex',
         alignItems: 'center',
         gap: 12,
-        padding: '0.6rem 0.4rem',
+        padding: '0.65rem 0.45rem',
         borderBottom: '1px solid var(--gco-glass-border)',
         cursor: opts?.inPlaylist ? 'grab' : undefined,
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+        touchAction: opts?.inPlaylist ? 'none' : undefined,
       }}
     >
       {opts?.inPlaylist ? (
-        <span
-          style={{ color: 'var(--gco-ink-muted)', userSelect: 'none', display: 'grid', placeItems: 'center' }}
-          aria-hidden
+        <button
+          type="button"
+          aria-label="Arrastrar para reordenar"
+          onPointerDown={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            if (plLongPressRef.current) window.clearTimeout(plLongPressRef.current)
+            const pid = e.pointerId
+            const fromId = t.id
+            plLongPressRef.current = window.setTimeout(() => {
+              plDragFromRef.current = fromId
+              dragId.current = fromId
+              if (navigator.vibrate) {
+                try {
+                  navigator.vibrate(12)
+                } catch {
+                  /* */
+                }
+              }
+            }, 280)
+            const onMove = (ev: PointerEvent) => {
+              if (ev.pointerId !== pid) return
+              if (!plDragFromRef.current) {
+                /* cancel long-press if moved too early is ok after activate */
+                return
+              }
+              const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null
+              const row = el?.closest?.('[data-pl-track]') as HTMLElement | null
+              const toId = row?.getAttribute('data-pl-track')
+              if (toId && toId !== plDragFromRef.current) {
+                void reorderPlaylist(plDragFromRef.current, toId)
+                plDragFromRef.current = toId
+                dragId.current = toId
+              }
+            }
+            const onUp = (ev: PointerEvent) => {
+              if (ev.pointerId !== pid) return
+              window.removeEventListener('pointermove', onMove)
+              window.removeEventListener('pointerup', onUp)
+              window.removeEventListener('pointercancel', onUp)
+              if (plLongPressRef.current) {
+                window.clearTimeout(plLongPressRef.current)
+                plLongPressRef.current = null
+              }
+              plDragFromRef.current = null
+              dragId.current = null
+            }
+            window.addEventListener('pointermove', onMove)
+            window.addEventListener('pointerup', onUp)
+            window.addEventListener('pointercancel', onUp)
+          }}
+          style={{
+            color: 'var(--gco-ink-muted)',
+            userSelect: 'none',
+            display: 'grid',
+            placeItems: 'center',
+            width: 28,
+            height: 36,
+            border: 'none',
+            background: 'transparent',
+            cursor: 'grab',
+            padding: 0,
+            flexShrink: 0,
+            touchAction: 'none',
+          }}
         >
           <Icon.drag />
-        </span>
+        </button>
       ) : (
         <span className="gco-music-song-idx">{opts?.index ?? ''}</span>
       )}
@@ -2910,6 +3078,8 @@ export function MusicaHome() {
         </div>
       </div>
 
+      {!search.trim() && (
+        <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <h2 style={{ fontSize: '1.05rem', margin: 0, fontWeight: 700 }}>Reproduciendo recientemente</h2>
         <div className="hscroll-nav">
@@ -3101,6 +3271,9 @@ export function MusicaHome() {
         </>
       )}
 
+        </>
+      )}
+
       <h2 style={{ fontSize: '1.05rem', margin: '0 0 8px', fontWeight: 700 }}>Todas las canciones</h2>
       <div className="glass-card gco-music-songs-card" style={{ border: '1px solid var(--gco-glass-border)', padding: '0.35rem 0.6rem' }}>
         <div className="gco-music-table-head" aria-hidden>
@@ -3205,7 +3378,7 @@ export function MusicaHome() {
         </button>
       </div>
       <p style={{ fontSize: '0.8rem', color: 'var(--gco-ink-muted)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-        <Icon.drag size={14} /> Arrastra para reordenar · {plTracks.length} pistas · una canción puede estar en varias listas
+        <Icon.drag size={14} /> Mantén ⠿ y arrastra (móvil) · arrastra la fila (PC) · {plTracks.length} pistas
       </p>
       {addToPlOpen && (
         <div
@@ -3347,7 +3520,22 @@ export function MusicaHome() {
                   {pl.trackIds.length} pistas
                 </p>
               </button>
-              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="glass-button secondary"
+                  style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: 5 }}
+                  disabled={!pl.trackIds.length}
+                  onClick={() => {
+                    soundClick()
+                    const list = pl.trackIds
+                      .map((id) => tracks.find((x) => x.id === id))
+                      .filter(Boolean) as TrackItem[]
+                    if (list.length) playAll(list)
+                  }}
+                >
+                  <Icon.play size={12} /> Play
+                </button>
                 <button
                   type="button"
                   className="glass-button secondary"
@@ -3431,10 +3619,21 @@ export function MusicaHome() {
             multi={specMulti}
             particles={specParticles}
             glow={specGlow}
+            coverUrl={current?.coverDataUrl}
+            trackKey={current?.id}
+            eq={specEq}
+            onEqChange={setSpecEq}
+            showDjPanel={!!current}
+            height={160}
+            maxWidth={560}
+            glass
+            reflection
+            peakCaps
+            beatReactive
           />
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 16, flexWrap: 'wrap' }}>
-          {SPEC_STYLES.map((s) => (
+          {(specShowAll ? ALL_SPEC_STYLES.map((x) => x.id) : SPEC_STYLES).map((s) => (
             <button
               key={s}
               type="button"
@@ -3448,6 +3647,136 @@ export function MusicaHome() {
               {specLabel(s)}
             </button>
           ))}
+          <button
+            type="button"
+            className="glass-button secondary"
+            style={{ fontSize: '0.75rem', padding: '0.35rem 0.7rem' }}
+            onClick={() => {
+              soundClick()
+              setSpecShowAll((v) => !v)
+            }}
+          >
+            {specShowAll ? 'Menos estilos' : `Todos (${ALL_SPEC_STYLES.length})`}
+          </button>
+        </div>
+
+        {/* Mezcla de audio REAL (Web Audio EQ + pan + vocal cut) */}
+        <div
+          className="glass-card"
+          style={{
+            marginTop: 16,
+            padding: '1rem 1.1rem',
+            border: '1px solid var(--gco-glass-border)',
+            textAlign: 'left',
+            borderRadius: 20,
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Icon.volume size={16} /> Mezcla de audio
+            </h3>
+            <button
+              type="button"
+              className="glass-button secondary"
+              style={{ fontSize: '0.7rem', padding: '0.3rem 0.65rem' }}
+              onClick={() => {
+                soundClick()
+                setAudioFxUi({ bass: 0, mid: 0, treble: 0, vocalCut: 0, pan: 0, spatial8d: 0 })
+                ;(player as { resetAudioFx?: () => void }).resetAudioFx?.()
+              }}
+            >
+              Restaurar
+            </button>
+          </div>
+          <p style={{ margin: '0 0 12px', fontSize: '0.72rem', opacity: 0.55, lineHeight: 1.45 }}>
+            Cambia el sonido de verdad (EQ + estéreo). En iOS/Android nativo puede estar limitado si el motor usa salida nativa.
+            «Instrumental» atenúa la zona de voz (~1 kHz). «8D» mueve el pan automáticamente.
+          </p>
+          {(
+            [
+              { key: 'bass', label: 'Graves', min: -12, max: 12, step: 0.5, fmt: (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB` },
+              { key: 'mid', label: 'Medios', min: -12, max: 12, step: 0.5, fmt: (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB` },
+              { key: 'treble', label: 'Agudos', min: -12, max: 12, step: 0.5, fmt: (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB` },
+              { key: 'vocalCut', label: 'Instrumental / −voz', min: 0, max: 1, step: 0.05, fmt: (v: number) => `${Math.round(v * 100)}%` },
+              { key: 'pan', label: 'Balance L ↔ R', min: -1, max: 1, step: 0.05, fmt: (v: number) => (v === 0 ? 'Centro' : v < 0 ? `L ${Math.abs(v).toFixed(2)}` : `R ${v.toFixed(2)}`) },
+              { key: 'spatial8d', label: 'Espacial 8D', min: 0, max: 2.5, step: 0.1, fmt: (v: number) => (v <= 0 ? 'Off' : `${v.toFixed(1)}×`) },
+            ] as const
+          ).map((row) => (
+            <label
+              key={row.key}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(110px, 1fr) 1.6fr auto',
+                gap: 10,
+                alignItems: 'center',
+                marginBottom: 10,
+                fontSize: '0.78rem',
+              }}
+            >
+              <span style={{ fontWeight: 600 }}>{row.label}</span>
+              <input
+                type="range"
+                min={row.min}
+                max={row.max}
+                step={row.step}
+                value={audioFxUi[row.key]}
+                onChange={(e) => {
+                  const v = Number(e.target.value)
+                  setAudioFxUi((prev) => ({ ...prev, [row.key]: v }))
+                }}
+                style={{ width: '100%', accentColor: 'var(--gco-primary)' }}
+              />
+              <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.75, minWidth: 64, textAlign: 'right' }}>
+                {row.fmt(audioFxUi[row.key])}
+              </span>
+            </label>
+          ))}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+            <button
+              type="button"
+              className="glass-button secondary"
+              style={{ fontSize: '0.72rem' }}
+              onClick={() => {
+                soundClick()
+                setAudioFxUi((p) => ({ ...p, vocalCut: p.vocalCut > 0.5 ? 0 : 0.85 }))
+              }}
+            >
+              {audioFxUi.vocalCut > 0.5 ? 'Voz normal' : 'Modo instrumental'}
+            </button>
+            <button
+              type="button"
+              className="glass-button secondary"
+              style={{ fontSize: '0.72rem' }}
+              onClick={() => {
+                soundClick()
+                setAudioFxUi((p) => ({ ...p, spatial8d: p.spatial8d > 0 ? 0 : 1.2, pan: 0 }))
+              }}
+            >
+              {audioFxUi.spatial8d > 0 ? '8D off' : 'Activar 8D'}
+            </button>
+            <button
+              type="button"
+              className="glass-button secondary"
+              style={{ fontSize: '0.72rem' }}
+              onClick={() => {
+                soundClick()
+                setAudioFxUi((p) => ({ ...p, bass: 6, mid: -2, treble: 3 }))
+              }}
+            >
+              Preset Bass Boost
+            </button>
+            <button
+              type="button"
+              className="glass-button secondary"
+              style={{ fontSize: '0.72rem' }}
+              onClick={() => {
+                soundClick()
+                setAudioFxUi((p) => ({ ...p, bass: -3, mid: 2, treble: 5 }))
+              }}
+            >
+              Preset Vocal
+            </button>
+          </div>
         </div>
         {current && (
           <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 14 }}>
@@ -3665,26 +3994,187 @@ export function MusicaHome() {
         </div>
       </div>
 
-      <div className="glass-card" style={{ padding: '1.2rem 1.25rem', border: '1px solid var(--gco-glass-border)' }}>
-        <h3 style={{ marginBottom: 10, fontSize: '0.98rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Icon.chart size={17} /> Resumen de tu biblioteca
+      <div className="glass-card" style={{ padding: '1.25rem 1.3rem', border: '1px solid var(--gco-glass-border)', borderRadius: 22 }}>
+        <h3 style={{ marginBottom: 12, fontSize: '1rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Icon.chart size={17} /> Tu actividad
         </h3>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 10, marginBottom: 16 }}>
           {[
             { label: 'Pistas', value: tracks.length },
             { label: 'Listas', value: playlists.length },
             { label: 'Favoritos', value: favorites.length },
             { label: 'Artistas', value: artistGroups.length },
+            {
+              label: 'Tiempo total',
+              value: formatListenHours(
+                Object.values(listenStatsRef.current).reduce((a, b) => a + (b.ms || 0), 0),
+              ),
+            },
+            {
+              label: 'Reproducciones',
+              value: Object.values(listenStatsRef.current).reduce((a, b) => a + (b.plays || 0), 0),
+            },
           ].map((s) => (
-            <div key={s.label} className="gco-stat-tile">
-              <p style={{ fontSize: '1.35rem', fontWeight: 800, margin: 0, color: 'var(--gco-primary)' }}>{s.value}</p>
-              <p style={{ fontSize: '0.75rem', color: 'var(--gco-ink-muted)', margin: '2px 0 0' }}>{s.label}</p>
+            <div
+              key={s.label}
+              style={{
+                padding: '0.75rem 0.8rem',
+                borderRadius: 16,
+                background: 'var(--gco-glass-bg, rgba(255,255,255,0.04))',
+                border: '1px solid var(--gco-glass-border)',
+              }}
+            >
+              <p style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0, color: 'var(--gco-primary)' }}>{s.value}</p>
+              <p style={{ fontSize: '0.72rem', color: 'var(--gco-ink-muted)', margin: '3px 0 0' }}>{s.label}</p>
             </div>
           ))}
         </div>
-        <p style={{ fontSize: '0.8rem', color: 'var(--gco-ink-muted)', marginTop: 14, marginBottom: 0, lineHeight: 1.5 }}>
-          Las listas solo existen si tú las creas. Puedes poner la misma canción en varias listas sin
-          duplicar el archivo.
+
+        <h4 style={{ margin: '0 0 8px', fontSize: '0.88rem', fontWeight: 700 }}>Más escuchadas</h4>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+          {tracks
+            .map((t) => ({ t, st: listenStatsRef.current[t.id] }))
+            .filter((x) => x.st && (x.st.plays > 0 || x.st.ms > 0))
+            .sort((a, b) => (b.st!.ms || 0) - (a.st!.ms || 0))
+            .slice(0, 8)
+            .map(({ t, st }, i) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => {
+                  soundClick()
+                  playAll(tracks, t)
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'inherit',
+                  font: 'inherit',
+                  textAlign: 'left',
+                  padding: '0.4rem 0.2rem',
+                  cursor: 'pointer',
+                  borderRadius: 12,
+                }}
+              >
+                <span style={{ width: 20, opacity: 0.45, fontSize: '0.8rem', fontWeight: 700 }}>{i + 1}</span>
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    overflow: 'hidden',
+                    background: 'var(--gco-glass-bg)',
+                    flexShrink: 0,
+                    display: 'grid',
+                    placeItems: 'center',
+                  }}
+                >
+                  {t.coverDataUrl ? (
+                    <img src={t.coverDataUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <Icon.musicNote size={16} />
+                  )}
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <p style={{ margin: 0, fontWeight: 650, fontSize: '0.88rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {t.title}
+                  </p>
+                  <p style={{ margin: 0, fontSize: '0.72rem', opacity: 0.55 }}>
+                    {st!.plays} plays · {formatListenHours(st!.ms)}
+                  </p>
+                </div>
+              </button>
+            ))}
+          {Object.keys(listenStatsRef.current).length === 0 && (
+            <p style={{ fontSize: '0.82rem', color: 'var(--gco-ink-muted)', margin: 0 }}>
+              Reproduce canciones para ver estadísticas aquí.
+            </p>
+          )}
+        </div>
+
+        <h4 style={{ margin: '0 0 8px', fontSize: '0.88rem', fontWeight: 700 }}>Artistas más oídos</h4>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+          {(() => {
+            const byArtist: Record<string, { ms: number; plays: number }> = {}
+            for (const t of tracks) {
+              const st = listenStatsRef.current[t.id]
+              if (!st) continue
+              const name = t.artist?.trim() || 'Desconocido'
+              const cur = byArtist[name] ?? { ms: 0, plays: 0 }
+              cur.ms += st.ms
+              cur.plays += st.plays
+              byArtist[name] = cur
+            }
+            return Object.entries(byArtist)
+              .sort((a, b) => b[1].ms - a[1].ms)
+              .slice(0, 6)
+              .map(([name, st], i) => (
+                <div key={name} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: '0.85rem', padding: '0.25rem 0' }}>
+                  <span>
+                    <span style={{ opacity: 0.45, marginRight: 8 }}>{i + 1}</span>
+                    {name}
+                  </span>
+                  <span style={{ opacity: 0.55, fontSize: '0.75rem' }}>
+                    {st.plays} plays · {formatListenHours(st.ms)}
+                  </span>
+                </div>
+              ))
+          })()}
+        </div>
+
+        <h4 style={{ margin: '12px 0 8px', fontSize: '0.88rem', fontWeight: 700 }}>Listas con más tiempo</h4>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {playlists
+            .map((pl) => {
+              let ms = 0
+              let plays = 0
+              for (const id of pl.trackIds) {
+                const st = listenStatsRef.current[id]
+                if (!st) continue
+                ms += st.ms
+                plays += st.plays
+              }
+              return { pl, ms, plays }
+            })
+            .filter((x) => x.ms > 0 || x.plays > 0)
+            .sort((a, b) => b.ms - a.ms)
+            .slice(0, 5)
+            .map(({ pl, ms, plays }, i) => (
+              <button
+                key={pl.id}
+                type="button"
+                onClick={() => {
+                  soundClick()
+                  setTab('playlists')
+                  setPlDetailId(pl.id)
+                }}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'inherit',
+                  font: 'inherit',
+                  padding: '0.35rem 0',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <span>
+                  <span style={{ opacity: 0.45, marginRight: 8 }}>{i + 1}</span>
+                  {pl.name}
+                </span>
+                <span style={{ opacity: 0.55, fontSize: '0.75rem' }}>
+                  {plays} plays · {formatListenHours(ms)}
+                </span>
+              </button>
+            ))}
+        </div>
+        <p style={{ fontSize: '0.75rem', color: 'var(--gco-ink-muted)', marginTop: 14, marginBottom: 0, lineHeight: 1.5 }}>
+          Las estadísticas se guardan en este dispositivo. Las listas no duplican archivos en disco.
         </p>
       </div>
 
