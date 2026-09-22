@@ -45,6 +45,9 @@ const MOBILE_BAR_MAX_W = 300
 const DESKTOP_BAR_MAX_W = 560
 const SWIPE_MIN_PX = 64
 const QUEUE_LONGPRESS_MS = 280
+const PIP_BUBBLE_KEY = 'gco:pip-bubble-v1'
+const PIP_BUBBLE_MIN_W = 120
+const PIP_BUBBLE_MAX_W = 360
 
 type FloatEdge = 'left' | 'right' | 'top' | 'bottom' | null
 type FloatPos = { x: number; y: number; edge: FloatEdge; docked: boolean }
@@ -632,6 +635,27 @@ export function PlayerBar({ player, floating }: Props) {
   const barSizeRef = useRef({ w: 360, h: 56 })
 
   const [pipActive, setPipActive] = useState(false)
+  const [pipFallback, setPipFallback] = useState(false)
+  const [pipBubble, setPipBubble] = useState(() => {
+    try {
+      const raw = localStorage.getItem(PIP_BUBBLE_KEY)
+      if (raw) {
+        const o = JSON.parse(raw) as { x: number; y: number; w: number }
+        if (typeof o.x === 'number' && typeof o.y === 'number' && typeof o.w === 'number') return o
+      }
+    } catch {
+      /* */
+    }
+    return { x: -1, y: -1, w: 168 }
+  })
+  const pipBubbleDragRef = useRef<{
+    mode: 'move' | 'resize'
+    ox: number
+    oy: number
+    sx: number
+    sy: number
+    sw: number
+  } | null>(null)
   const [pipSupported, setPipSupported] = useState(false)
   const pipRequestedRef = useRef(false)
 
@@ -767,14 +791,36 @@ export function PlayerBar({ player, floating }: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [fullscreen, player, dur, locked])
 
+  /**
+   * REGLA DE ORO — una sola fuente de audio:
+   * El motor useMediaPlayer (<audio>) es SIEMPRE el único que emite sonido.
+   * Todos los <video> van muted=true y solo muestran imagen sincronizada.
+   * Así no hay eco ni doble reproducción al activar PiP / burbuja / portada↔vídeo.
+   */
+  const systemPipRef = useRef(false)
+
+  const forceVideoSilent = (el: HTMLVideoElement | null) => {
+    if (!el) return
+    try {
+      el.muted = true
+      el.defaultMuted = true
+      el.volume = 0
+      el.setAttribute('muted', '')
+    } catch {
+      /* */
+    }
+  }
+
   /* Carga blob vídeo */
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       const need =
-        !!t && hasVideo && (showVideo || fullscreen || pipRequestedRef.current || pipActive)
+        !!t &&
+        hasVideo &&
+        (showVideo || fullscreen || pipRequestedRef.current || pipActive || pipFallback)
       if (!need) {
-        if (!pipActive) {
+        if (!pipActive && !pipFallback) {
           setVideoUrl((prev) => {
             if (prev) URL.revokeObjectURL(prev)
             return null
@@ -787,6 +833,7 @@ export function PlayerBar({ player, floating }: Props) {
         if (cancelled || !blob) return
         const url = URL.createObjectURL(blob)
         setVideoUrl((prev) => {
+          if (prev === url) return prev
           if (prev) URL.revokeObjectURL(prev)
           return url
         })
@@ -797,14 +844,15 @@ export function PlayerBar({ player, floating }: Props) {
     return () => {
       cancelled = true
     }
-  }, [t?.id, t?.blobKey, hasVideo, showVideo, fullscreen, pipActive])
+  }, [t?.id, t?.blobKey, hasVideo, showVideo, fullscreen, pipActive, pipFallback])
 
-  /* Sync vídeo ↔ audio */
+  /* Sync tiempo/play del vídeo esclavo (siempre silencioso) */
   useEffect(() => {
     const v = videoRef.current
     if (!v || !videoUrl) return
+    forceVideoSilent(v)
     const target = player.currentMs / 1000
-    if (Math.abs(v.currentTime - target) > 0.35) {
+    if (Math.abs((v.currentTime || 0) - target) > 0.45) {
       try {
         v.currentTime = target
       } catch {
@@ -812,18 +860,32 @@ export function PlayerBar({ player, floating }: Props) {
       }
     }
     if (player.playing && v.paused) {
-      v.play().catch(() => {})
+      void v.play().catch(() => {})
     } else if (!player.playing && !v.paused) {
       v.pause()
     }
-  }, [player.currentMs, player.playing, videoUrl])
+  }, [player.currentMs, player.playing, videoUrl, pipActive, pipFallback])
 
-  /* PiP events */
+  /* Eventos PiP del documento — no tocar volumen del player */
   useEffect(() => {
-    const onEnter = () => setPipActive(true)
+    const onEnter = () => {
+      systemPipRef.current = true
+      setPipActive(true)
+      setPipFallback(false)
+      forceVideoSilent(videoRef.current)
+    }
     const onLeave = () => {
+      systemPipRef.current = false
       setPipActive(false)
       pipRequestedRef.current = false
+      forceVideoSilent(videoRef.current)
+      try {
+        const target = player.currentMs / 1000
+        const v = videoRef.current
+        if (v && Math.abs((v.currentTime || 0) - target) > 0.3) v.currentTime = target
+      } catch {
+        /* */
+      }
     }
     document.addEventListener('enterpictureinpicture', onEnter)
     document.addEventListener('leavepictureinpicture', onLeave)
@@ -831,7 +893,7 @@ export function PlayerBar({ player, floating }: Props) {
       document.removeEventListener('enterpictureinpicture', onEnter)
       document.removeEventListener('leavepictureinpicture', onLeave)
     }
-  }, [])
+  }, [player])
 
   /* Native fullscreen change */
   useEffect(() => {
@@ -1017,9 +1079,6 @@ export function PlayerBar({ player, floating }: Props) {
     openFullscreen()
   }
 
-  /* ── PiP: iOS webkit + estándar + fallback flotante (Capacitor WebView) ── */
-  const [pipFallback, setPipFallback] = useState(false)
-
   const exitAllPip = useCallback(async () => {
     const d = document as Document & {
       pictureInPictureElement?: Element | null
@@ -1043,11 +1102,17 @@ export function PlayerBar({ player, floating }: Props) {
     } catch {
       /* */
     }
+    systemPipRef.current = false
     setPipActive(false)
     setPipFallback(false)
     pipRequestedRef.current = false
+    forceVideoSilent(vid)
   }, [])
 
+  /**
+   * PiP de sistema: solo imagen en la ventanita del OS.
+   * El audio sigue ÚNICAMENTE en useMediaPlayer → sin eco.
+   */
   const togglePip = useCallback(async () => {
     soundClick()
     if (!hasVideo || !t) return
@@ -1058,7 +1123,7 @@ export function PlayerBar({ player, floating }: Props) {
       pictureInPictureEnabled?: boolean
     }
 
-    if (d.pictureInPictureElement || pipFallback || pipActive) {
+    if (d.pictureInPictureElement || systemPipRef.current || pipFallback || pipActive) {
       await exitAllPip()
       return
     }
@@ -1066,93 +1131,137 @@ export function PlayerBar({ player, floating }: Props) {
     setShowVideo(true)
     pipRequestedRef.current = true
 
-    const prepareVideo = (vid: HTMLVideoElement) => {
+    const tryEnter = async (vid: HTMLVideoElement): Promise<'system' | 'fallback'> => {
+      forceVideoSilent(vid)
       try {
         vid.setAttribute('playsinline', 'true')
         vid.setAttribute('webkit-playsinline', 'true')
-        vid.setAttribute('x5-playsinline', 'true')
-        vid.setAttribute('x5-video-player-type', 'h5')
-        ;(vid as HTMLVideoElement & { disableRemotePlayback?: boolean }).disableRemotePlayback = false
-        /* No forzar mute: iOS a veces exige audio activo tras gesto de usuario */
+        ;(vid as HTMLVideoElement & { disablePictureInPicture?: boolean }).disablePictureInPicture =
+          false
       } catch {
         /* */
       }
-    }
-
-    const tryEnter = async (vid: HTMLVideoElement): Promise<boolean> => {
-      prepareVideo(vid)
-      const wv = vid as HTMLVideoElement & {
-        webkitSupportsPresentationMode?: (m: string) => boolean
-        webkitSetPresentationMode?: (m: string) => void
-        webkitPresentationMode?: string
-        requestPictureInPicture?: () => Promise<PictureInPictureWindow>
+      try {
+        const target = player.currentMs / 1000
+        if (Math.abs((vid.currentTime || 0) - target) > 0.15) vid.currentTime = target
+      } catch {
+        /* */
       }
-
       try {
         if (vid.paused) await vid.play()
       } catch {
         /* */
       }
+      forceVideoSilent(vid)
 
-      /* iOS Safari / PWA */
+      const wv = vid as HTMLVideoElement & {
+        webkitSupportsPresentationMode?: (m: string) => boolean
+        webkitSetPresentationMode?: (m: string) => void
+        requestPictureInPicture?: () => Promise<PictureInPictureWindow>
+      }
+
+      /* iOS */
       if (typeof wv.webkitSupportsPresentationMode === 'function') {
         try {
           if (wv.webkitSupportsPresentationMode('picture-in-picture')) {
+            forceVideoSilent(vid)
             wv.webkitSetPresentationMode?.('picture-in-picture')
+            systemPipRef.current = true
             setPipActive(true)
             setPipFallback(false)
-            /* Cerrar FS de la app para ver el sistema PiP */
             closeFullscreen()
-            return true
+            return 'system'
           }
         } catch (err) {
           console.warn('[gco] webkit PiP', err)
         }
       }
 
-      /* Chrome / Edge / Android Chrome / algunos WebView */
+      /* Chrome / Android / Electron */
       if (typeof wv.requestPictureInPicture === 'function') {
         try {
-          if (d.pictureInPictureEnabled !== false) {
-            await wv.requestPictureInPicture()
-            setPipActive(true)
-            setPipFallback(false)
-            closeFullscreen()
-            return true
-          }
+          forceVideoSilent(vid)
+          await wv.requestPictureInPicture()
+          systemPipRef.current = true
+          setPipActive(true)
+          setPipFallback(false)
+          closeFullscreen()
+          return 'system'
         } catch (err) {
           console.warn('[gco] PiP standard', err)
         }
       }
 
-      /* Fallback Capacitor / WebView sin PiP de sistema: burbuja flotante */
+      forceVideoSilent(vid)
       setPipFallback(true)
       setPipActive(true)
       closeFullscreen()
-      return true
+      return 'fallback'
     }
 
     const attempt = (tries: number) => {
       const vid = videoRef.current
       if (!vid) {
-        if (tries > 0) window.setTimeout(() => attempt(tries - 1), 50)
+        if (tries > 0) window.setTimeout(() => attempt(tries - 1), 40)
         else {
-          /* Sin <video> aún: activar fallback de todos modos */
           setPipFallback(true)
           setPipActive(true)
           closeFullscreen()
         }
         return
       }
-      void (async () => {
-        const ok = await tryEnter(vid)
-        if (!ok && tries > 0) window.setTimeout(() => attempt(tries - 1), 80)
-      })()
+      void tryEnter(vid)
     }
+    attempt(15)
+  }, [hasVideo, t, pipFallback, pipActive, exitAllPip, closeFullscreen, player])
 
-    /* Misma cadena de gesto de usuario: primer intento casi inmediato */
-    window.setTimeout(() => attempt(12), 16)
-  }, [hasVideo, t, pipFallback, pipActive, exitAllPip, closeFullscreen])
+  const onPipBubblePointerDown = (e: ReactPointerEvent, mode: 'move' | 'resize') => {
+    e.preventDefault()
+    e.stopPropagation()
+    const el = e.currentTarget as HTMLElement
+    const root = el.closest('[data-pip-bubble]') as HTMLElement | null
+    const rect = root?.getBoundingClientRect()
+    pipBubbleDragRef.current = {
+      mode,
+      ox: e.clientX,
+      oy: e.clientY,
+      sx: rect?.left ?? pipBubble.x,
+      sy: rect?.top ?? pipBubble.y,
+      sw: rect?.width ?? pipBubble.w,
+    }
+    try {
+      ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
+    } catch {
+      /* */
+    }
+  }
+
+  const onPipBubblePointerMove = (e: ReactPointerEvent) => {
+    const d = pipBubbleDragRef.current
+    if (!d) return
+    if (d.mode === 'move') {
+      const nx = d.sx + (e.clientX - d.ox)
+      const ny = d.sy + (e.clientY - d.oy)
+      const w = pipBubble.w
+      const h = (w * 9) / 16
+      const c = clampPos(nx, ny, w, h)
+      setPipBubble((p) => ({ ...p, x: c.x, y: c.y }))
+    } else {
+      const dw = e.clientX - d.ox
+      const nw = clamp(d.sw + dw, PIP_BUBBLE_MIN_W, PIP_BUBBLE_MAX_W)
+      setPipBubble((p) => ({ ...p, w: nw }))
+    }
+  }
+
+  const onPipBubblePointerUp = () => {
+    if (!pipBubbleDragRef.current) return
+    pipBubbleDragRef.current = null
+    try {
+      localStorage.setItem(PIP_BUBBLE_KEY, JSON.stringify(pipBubble))
+    } catch {
+      /* */
+    }
+  }
 
   const toggleNativeFullscreen = async () => {
     soundClick()
@@ -2134,20 +2243,26 @@ export function PlayerBar({ player, floating }: Props) {
               {showVideo && videoUrl ? (
                 <video
                   ref={(el) => {
-                    videoRef.current = el
+                    /* Vista in-app: NO es el elemento PiP (ese vive en el host persistente) */
                     if (el) {
                       el.setAttribute('playsinline', 'true')
                       el.setAttribute('webkit-playsinline', 'true')
-                      el.setAttribute('x5-playsinline', 'true')
-                      el.setAttribute('x5-video-player-type', 'h5')
-                      el.setAttribute('x5-video-player-fullscreen', 'true')
+                      el.muted = true
+                      try {
+                        const target = player.currentMs / 1000
+                        if (Math.abs((el.currentTime || 0) - target) > 0.4) el.currentTime = target
+                      } catch {
+                        /* */
+                      }
+                      if (player.playing) void el.play().catch(() => {})
+                      else el.pause()
                     }
                   }}
                   src={videoUrl}
                   playsInline
+                  muted
                   preload="auto"
                   controls={false}
-                  disablePictureInPicture={false}
                   style={{
                     width: '100%',
                     height: '100%',
@@ -2369,14 +2484,14 @@ export function PlayerBar({ player, floating }: Props) {
                       ...glassIconStyle,
                       color: pipActive ? tokens.accent : tokens.glassIconColor,
                     }}
-                    disabled={!hasVideo || !pipSupported}
+                    disabled={!hasVideo}
                     aria-label="Vídeo en segundo plano (PiP)"
                     title={
                       !hasVideo
                         ? 'Solo disponible en pistas de vídeo'
-                        : !pipSupported
-                          ? 'PiP no soportado en este navegador'
-                          : 'Picture-in-Picture'
+                        : pipSupported
+                          ? 'Picture-in-Picture del sistema (sigue al salir de la app)'
+                          : 'PiP del sistema si está disponible · si no, burbuja flotante'
                     }
                     onClick={() => void togglePip()}
                   >
@@ -2633,87 +2748,208 @@ export function PlayerBar({ player, floating }: Props) {
     !!document.getElementById('gco-global-player-host')
 
   const pipFallbackUi =
-    pipFallback && hasVideo && videoUrl && typeof document !== 'undefined' ? (
-      <div
-        style={{
-          position: 'fixed',
-          right: 'max(12px, env(safe-area-inset-right, 0px))',
-          bottom: 'max(88px, calc(72px + env(safe-area-inset-bottom, 0px)))',
-          zIndex: 160,
-          width: 'min(42vw, 168px)',
-          aspectRatio: '16 / 9',
-          borderRadius: 16,
-          overflow: 'hidden',
-          boxShadow: '0 12px 40px rgba(0,0,0,0.45)',
-          border: tokens.floatBorder,
-          background: '#000',
-          pointerEvents: 'auto',
-        }}
-      >
-        <video
-          src={videoUrl}
-          playsInline
-          autoPlay
-          muted={false}
-          ref={(el) => {
-            if (el) {
-              el.setAttribute('playsinline', 'true')
-              el.setAttribute('webkit-playsinline', 'true')
-              try {
-                void el.play()
-              } catch {
-                /* */
-              }
+    pipFallback && hasVideo && videoUrl && typeof document !== 'undefined'
+      ? (() => {
+          const vw = typeof window !== 'undefined' ? window.innerWidth : 400
+          const vh = typeof window !== 'undefined' ? window.innerHeight : 700
+          const w = clamp(pipBubble.w, PIP_BUBBLE_MIN_W, PIP_BUBBLE_MAX_W)
+          const h = (w * 9) / 16
+          let x = pipBubble.x
+          let y = pipBubble.y
+          if (x < 0 || y < 0) {
+            x = Math.max(12, vw - w - 16)
+            y = Math.max(12, vh - h - 100)
+          }
+          const c = clampPos(x, y, w, h)
+          return (
+            <div
+              data-pip-bubble
+              onPointerMove={onPipBubblePointerMove}
+              onPointerUp={onPipBubblePointerUp}
+              onPointerCancel={onPipBubblePointerUp}
+              style={{
+                position: 'fixed',
+                left: c.x,
+                top: c.y,
+                width: w,
+                height: h,
+                zIndex: 170,
+                borderRadius: 16,
+                overflow: 'hidden',
+                boxShadow: '0 14px 44px rgba(0,0,0,0.5)',
+                border: tokens.floatBorder,
+                background: '#000',
+                pointerEvents: 'auto',
+                touchAction: 'none',
+                userSelect: 'none',
+              }}
+            >
+              {/* Solo imagen: audio sigue en el motor del player (sin doble sonido) */}
+              <video
+                src={videoUrl}
+                playsInline
+                muted
+                autoPlay
+                ref={(el) => {
+                  if (!el) return
+                  el.setAttribute('playsinline', 'true')
+                  el.setAttribute('webkit-playsinline', 'true')
+                  el.muted = true
+                  el.defaultMuted = true
+                  el.volume = 0
+                  try {
+                    const target = player.currentMs / 1000
+                    if (Math.abs((el.currentTime || 0) - target) > 0.4) el.currentTime = target
+                  } catch {
+                    /* */
+                  }
+                  if (player.playing) void el.play().catch(() => {})
+                  else el.pause()
+                }}
+                style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }}
+              />
+              {/* Zona de arrastre */}
+              <div
+                onPointerDown={(e) => onPipBubblePointerDown(e, 'move')}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  cursor: 'grab',
+                }}
+              />
+              <button
+                type="button"
+                aria-label="Cerrar vídeo flotante"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void exitAllPip()
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{
+                  position: 'absolute',
+                  top: 6,
+                  right: 6,
+                  width: 28,
+                  height: 28,
+                  borderRadius: 10,
+                  border: 'none',
+                  background: 'rgba(0,0,0,0.6)',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  display: 'grid',
+                  placeItems: 'center',
+                  fontSize: '0.9rem',
+                  zIndex: 2,
+                }}
+              >
+                ×
+              </button>
+              <button
+                type="button"
+                aria-label="Ampliar"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void exitAllPip()
+                  setShowVideo(true)
+                  setFullscreen(true)
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{
+                  position: 'absolute',
+                  left: 6,
+                  bottom: 6,
+                  border: 'none',
+                  borderRadius: 999,
+                  padding: '4px 10px',
+                  fontSize: '0.65rem',
+                  fontWeight: 700,
+                  background: 'rgba(0,0,0,0.6)',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  zIndex: 2,
+                }}
+              >
+                Ampliar
+              </button>
+              {/* Asa de redimensionar (esquina inferior derecha) */}
+              <div
+                onPointerDown={(e) => onPipBubblePointerDown(e, 'resize')}
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  bottom: 0,
+                  width: 28,
+                  height: 28,
+                  cursor: 'nwse-resize',
+                  zIndex: 3,
+                  background:
+                    'linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.45) 50%)',
+                }}
+                aria-label="Redimensionar"
+              />
+            </div>
+          )
+        })()
+      : null
+
+  /* Host persistente del <video> para PiP de sistema (no se desmonta al cerrar FS) */
+  const pipHostVideo =
+    hasVideo && videoUrl && typeof document !== 'undefined' ? (
+      <video
+        ref={(el) => {
+          videoRef.current = el
+          if (el) {
+            el.setAttribute('playsinline', 'true')
+            el.setAttribute('webkit-playsinline', 'true')
+            el.setAttribute('x5-playsinline', 'true')
+            el.setAttribute('x5-video-player-type', 'h5')
+            try {
+              ;(el as HTMLVideoElement & { disablePictureInPicture?: boolean }).disablePictureInPicture =
+                false
+            } catch {
+              /* */
             }
-          }}
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-        />
-        <button
-          type="button"
-          aria-label="Cerrar vídeo flotante"
-          onClick={() => void exitAllPip()}
-          style={{
-            position: 'absolute',
-            top: 6,
-            right: 6,
-            width: 28,
-            height: 28,
-            borderRadius: 10,
-            border: 'none',
-            background: 'rgba(0,0,0,0.55)',
-            color: '#fff',
-            cursor: 'pointer',
-            display: 'grid',
-            placeItems: 'center',
-            fontSize: '0.85rem',
-          }}
-        >
-          ×
-        </button>
-        <button
-          type="button"
-          aria-label="Abrir reproductor"
-          onClick={() => {
-            void exitAllPip()
-            setFullscreen(true)
-          }}
-          style={{
-            position: 'absolute',
-            left: 6,
-            bottom: 6,
-            border: 'none',
-            borderRadius: 999,
-            padding: '4px 10px',
-            fontSize: '0.65rem',
-            fontWeight: 700,
-            background: 'rgba(0,0,0,0.55)',
-            color: '#fff',
-            cursor: 'pointer',
-          }}
-        >
-          Ampliar
-        </button>
-      </div>
+            el.muted = true
+            el.defaultMuted = true
+            el.volume = 0
+            try {
+              const target = player.currentMs / 1000
+              if (Math.abs((el.currentTime || 0) - target) > 0.4) el.currentTime = target
+            } catch {
+              /* */
+            }
+            if (player.playing) void el.play().catch(() => {})
+            else el.pause()
+          }
+        }}
+        src={videoUrl}
+        playsInline
+        muted
+        preload="auto"
+        controls={false}
+        style={
+          systemPipRef.current || (typeof document !== 'undefined' && document.pictureInPictureElement)
+            ? {
+                /* Mientras está en PiP del OS el elemento puede quedar oculto */
+                position: 'fixed',
+                width: 1,
+                height: 1,
+                opacity: 0,
+                pointerEvents: 'none',
+                left: -9999,
+                top: 0,
+              }
+            : {
+                position: 'fixed',
+                width: 1,
+                height: 1,
+                opacity: 0,
+                pointerEvents: 'none',
+                left: -9999,
+                top: 0,
+              }
+        }
+      />
     ) : null
 
   return (
@@ -2723,6 +2959,7 @@ export function PlayerBar({ player, floating }: Props) {
         ? createPortal(fullscreenContent, document.body)
         : null}
       {pipFallbackUi ? createPortal(pipFallbackUi, document.body) : null}
+      {pipHostVideo ? createPortal(pipHostVideo, document.body) : null}
     </>
   )
 }

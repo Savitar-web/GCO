@@ -664,6 +664,10 @@ const mbGainLRef: { current: GainNode | null } = { current: null }
 const mbGainMRef: { current: GainNode | null } = { current: null }
 const mbGainHRef: { current: GainNode | null } = { current: null }
 const sumGainRef: { current: GainNode | null } = { current: null }
+/** 'hd' = ruta corta (máxima fidelidad). 'fx' = EQ/MB/glue. */
+const graphModeRef: { current: 'hd' | 'fx' | 'none' } = { current: 'none' }
+const lastMbOnRef = { current: false }
+const lastGlueOnRef = { current: false }
 const graphReady = { current: false }
 const outputModeRef: { current: OutputMode } = { current: 'none' }
 
@@ -772,45 +776,197 @@ function applyBandCompressor(
   rampParam(c.release, 0.22, 0.1)
 }
 
+function fxNeedsProcessing(fx: AudioFxState): boolean {
+  return (
+    Math.abs(fx.bass) > 0.08 ||
+    Math.abs(fx.mid) > 0.08 ||
+    Math.abs(fx.treble) > 0.08 ||
+    fx.vocalCut > 0.04 ||
+    Math.abs(fx.pan) > 0.03 ||
+    fx.spatial8d > 0.04 ||
+    fx.compressor > 0.04 ||
+    fx.mbAmount > 0.04
+  )
+}
+
+/**
+ * HD: src → masterGain → analyser → destination
+ * FX: src → EQ → voice → pan → (direct|multibanda) → master → (glue?) → analyser → dest
+ * El cruce multibanda SOLO se conecta si mbAmount > 0 (evita fase/suciedad con FX en 0).
+ */
+function rebuildGraphConnections(wantFx: boolean) {
+  const ctx = ctxRef.current
+  const src = mediaSourceRef.current
+  if (!ctx || !src || !gainNodeRef.current || !analyserRef.current) return
+
+  try {
+    try {
+      src.disconnect()
+    } catch {
+      /* */
+    }
+    for (const n of [
+      bassFilterRef.current,
+      midFilterRef.current,
+      trebleFilterRef.current,
+      voiceFilterRef.current,
+      panNodeRef.current,
+      mbLowLpRef.current,
+      mbMidHpRef.current,
+      mbMidLpRef.current,
+      mbHighHpRef.current,
+      mbCompLRef.current,
+      mbCompMRef.current,
+      mbCompHRef.current,
+      mbGainLRef.current,
+      mbGainMRef.current,
+      mbGainHRef.current,
+      sumGainRef.current,
+      gainNodeRef.current,
+      compRef.current,
+      analyserRef.current,
+    ]) {
+      try {
+        n?.disconnect()
+      } catch {
+        /* */
+      }
+    }
+
+    const master = gainNodeRef.current
+    const an = analyserRef.current
+
+    if (!wantFx) {
+      src.connect(master)
+      master.connect(an)
+      an.connect(ctx.destination)
+      try {
+        master.gain.setValueAtTime(clamp(gainRefState.current, 0, 3), ctx.currentTime)
+      } catch {
+        master.gain.value = clamp(gainRefState.current, 0, 3)
+      }
+      graphModeRef.current = 'hd'
+      lastMbOnRef.current = false
+      lastGlueOnRef.current = false
+      return
+    }
+
+    const eqB = bassFilterRef.current!
+    const eqM = midFilterRef.current!
+    const eqT = trebleFilterRef.current!
+    const voice = voiceFilterRef.current!
+    const pan = panNodeRef.current
+
+    src.connect(eqB)
+    eqB.connect(eqM)
+    eqM.connect(eqT)
+    eqT.connect(voice)
+    if (pan) voice.connect(pan)
+    const post = pan ?? voice
+
+    const fx = audioFxRef.current
+    const useMb = fx.mbAmount > 0.04
+    const useGlue = fx.compressor > 0.04
+
+    if (useMb && sumGainRef.current && mbLowLpRef.current) {
+      post.connect(mbLowLpRef.current)
+      mbLowLpRef.current.connect(mbCompLRef.current!)
+      mbCompLRef.current!.connect(mbGainLRef.current!)
+      mbGainLRef.current!.connect(sumGainRef.current)
+
+      post.connect(mbMidHpRef.current!)
+      mbMidHpRef.current!.connect(mbMidLpRef.current!)
+      mbMidLpRef.current!.connect(mbCompMRef.current!)
+      mbCompMRef.current!.connect(mbGainMRef.current!)
+      mbGainMRef.current!.connect(sumGainRef.current)
+
+      post.connect(mbHighHpRef.current!)
+      mbHighHpRef.current!.connect(mbCompHRef.current!)
+      mbCompHRef.current!.connect(mbGainHRef.current!)
+      mbGainHRef.current!.connect(sumGainRef.current)
+
+      sumGainRef.current.gain.value = 0.88
+      sumGainRef.current.connect(master)
+    } else {
+      post.connect(master)
+    }
+
+    if (useGlue && compRef.current) {
+      master.connect(compRef.current)
+      compRef.current.connect(an)
+    } else {
+      master.connect(an)
+    }
+    an.connect(ctx.destination)
+    graphModeRef.current = 'fx'
+    lastMbOnRef.current = useMb
+    lastGlueOnRef.current = useGlue
+  } catch (e) {
+    console.warn('[gco] rebuildGraphConnections', e)
+  }
+}
+
 function applyAudioFxNodes() {
   const fx = audioFxRef.current
   try {
-    /* EQ: rango moderado ±9 dB para no destruir el mix */
+    const wantFx = fxNeedsProcessing(fx)
+    const targetMode: 'hd' | 'fx' = wantFx ? 'fx' : 'hd'
+    const useMb = fx.mbAmount > 0.04
+    const useGlue = fx.compressor > 0.04
+    const needRebuild =
+      !!mediaSourceRef.current &&
+      (graphModeRef.current !== targetMode ||
+        (wantFx && (lastMbOnRef.current !== useMb || lastGlueOnRef.current !== useGlue)))
+
+    if (needRebuild) {
+      rebuildGraphConnections(wantFx)
+    }
+
+    if (!wantFx) {
+      if (gainNodeRef.current) {
+        rampParam(gainNodeRef.current.gain, clamp(gainRefState.current, 0, 3), 0.08)
+      }
+      if (spatial8dTimer != null) {
+        window.clearInterval(spatial8dTimer)
+        spatial8dTimer = null
+      }
+      return
+    }
+
     rampParam(bassFilterRef.current?.gain, clamp(fx.bass, -8, 8), 0.18)
     rampParam(midFilterRef.current?.gain, clamp(fx.mid, -8, 8), 0.18)
     rampParam(trebleFilterRef.current?.gain, clamp(fx.treble, -8, 8), 0.18)
 
-    /* Notch de voz suave: Q moderado, nunca extremo */
     if (voiceFilterRef.current) {
       const cut = clamp(fx.vocalCut, 0, 1)
-      /* Q 0.7…3.5 — antes llegaba a 8.5 y “comía” el mid */
-      rampParam(voiceFilterRef.current.Q, 0.7 + cut * 2.8, 0.15)
-      rampParam(voiceFilterRef.current.frequency, 1100 + cut * 250, 0.15)
+      if (cut <= 0.04) {
+        rampParam(voiceFilterRef.current.Q, 0.5, 0.12)
+        rampParam(voiceFilterRef.current.frequency, 1000, 0.12)
+      } else {
+        rampParam(voiceFilterRef.current.Q, 0.7 + cut * 2.2, 0.15)
+        rampParam(voiceFilterRef.current.frequency, 1100 + cut * 200, 0.15)
+      }
     }
 
     if (panNodeRef.current && fx.spatial8d <= 0) {
       rampParam(panNodeRef.current.pan, clamp(fx.pan, -1, 1), 0.1)
     }
 
-    /* Multibanda */
     const mb = clamp(fx.mbAmount, 0, 1)
     applyBandCompressor(mbCompLRef.current, mb, fx.mbThrL, fx.mbRatio)
     applyBandCompressor(mbCompMRef.current, mb, fx.mbThrM, fx.mbRatio)
     applyBandCompressor(mbCompHRef.current, mb, fx.mbThrH, fx.mbRatio)
-    /* Ganancias de banda (makeup por banda, ±6 dB) */
     const mbLin = (db: number) => Math.pow(10, clamp(db, -6, 6) / 20)
-    rampParam(mbGainLRef.current?.gain, mbLin(fx.mbLow), 0.12)
-    rampParam(mbGainMRef.current?.gain, mbLin(fx.mbMid), 0.12)
-    rampParam(mbGainHRef.current?.gain, mbLin(fx.mbHigh), 0.12)
+    rampParam(mbGainLRef.current?.gain, mb > 0.04 ? mbLin(fx.mbLow) : 1, 0.12)
+    rampParam(mbGainMRef.current?.gain, mb > 0.04 ? mbLin(fx.mbMid) : 1, 0.12)
+    rampParam(mbGainHRef.current?.gain, mb > 0.04 ? mbLin(fx.mbHigh) : 1, 0.12)
 
-    /* Glue / bus compressor post-sum — por defecto off */
     if (compRef.current) {
       const amt = clamp(fx.compressor, 0, 1)
-      if (amt <= 0.02) {
-        softBypassCompressor(compRef.current)
-      } else {
+      if (amt <= 0.04) softBypassCompressor(compRef.current)
+      else {
         const c = compRef.current
-        rampParam(c.threshold, clamp(fx.compThreshold, -60, 0) * amt, 0.12)
+        rampParam(c.threshold, clamp(fx.compThreshold, -60, 0), 0.12)
         rampParam(c.knee, clamp(fx.compKnee, 0, 40), 0.12)
         rampParam(c.ratio, 1 + (clamp(fx.compRatio, 1, 12) - 1) * amt, 0.12)
         rampParam(c.attack, clamp(fx.compAttack, 0.001, 0.5), 0.12)
@@ -818,23 +974,21 @@ function applyAudioFxNodes() {
       }
     }
 
-    /* Master gain + makeup (suave) */
-    if (gainNodeRef.current && ctxRef.current) {
-      const makeupLin = Math.pow(10, clamp(fx.compMakeup, -3, 6) / 20)
-      const base = clamp(gainRefState.current, 0, 3)
-      rampParam(gainNodeRef.current.gain, clamp(base * makeupLin, 0, 3.5), 0.1)
+    if (gainNodeRef.current) {
+      const makeup =
+        fx.compressor > 0.04 ? Math.pow(10, clamp(fx.compMakeup, -3, 6) / 20) : 1
+      rampParam(gainNodeRef.current.gain, clamp(gainRefState.current * makeup, 0, 3.5), 0.1)
     }
-  } catch {
-    /* */
+  } catch (e) {
+    console.warn('[gco] applyAudioFxNodes', e)
   }
 
-  /* Auto-pan 8D (sin saltos) */
   if (spatial8dTimer != null) {
     window.clearInterval(spatial8dTimer)
     spatial8dTimer = null
   }
-  if (fx.spatial8d > 0 && panNodeRef.current && typeof window !== 'undefined') {
-    const speed = clamp(fx.spatial8d, 0.15, 2.5)
+  if (fx.spatial8d > 0.04 && panNodeRef.current) {
+    const speed = clamp(fx.spatial8d, 0.1, 2.5)
     spatial8dTimer = window.setInterval(() => {
       spatial8dPhase += 0.028 * speed
       if (panNodeRef.current) {
@@ -847,6 +1001,7 @@ function applyAudioFxNodes() {
     }, 40)
   }
 }
+
 
 const mediaSessionReady = { current: false }
 const appleWebKit = { current: false }
@@ -890,7 +1045,10 @@ function cleanupUrl() {
 function applyElementVolume(audio: HTMLAudioElement) {
   const v = volumeRef.current
   const g = gainRefState.current
-  const makeupLin = Math.pow(10, clamp(audioFxRef.current.compMakeup, -6, 12) / 20)
+  const makeupLin =
+    audioFxRef.current.compressor > 0.04
+      ? Math.pow(10, clamp(audioFxRef.current.compMakeup, -6, 12) / 20)
+      : 1
   if (outputModeRef.current === 'webaudio') {
     audio.volume = clamp(v, 0, 1)
     if (gainNodeRef.current && ctxRef.current) {
@@ -959,8 +1117,8 @@ function ensureGraph(audio: HTMLAudioElement) {
 
     if (!analyserRef.current) {
       const an = ctx.createAnalyser()
-      an.fftSize = 512
-      an.smoothingTimeConstant = 0.75
+      an.fftSize = 2048
+      an.smoothingTimeConstant = 0.68
       an.minDecibels = -90
       an.maxDecibels = -10
       analyserRef.current = an
@@ -1070,8 +1228,7 @@ function ensureGraph(audio: HTMLAudioElement) {
     }
     if (!sumGainRef.current) {
       const g = ctx.createGain()
-      /* 3 bandas en paralelo ≈ +9.5 dB teórico; atenuamos para no saturar */
-      g.gain.value = 0.72
+      g.gain.value = 1
       sumGainRef.current = g
     }
     if (!gainNodeRef.current) {
@@ -1091,40 +1248,15 @@ function ensureGraph(audio: HTMLAudioElement) {
          * Cadena: src → EQ → voice → pan → multibanda → sum → master → glue → analyser → dest
          * Funciona en Chrome/Edge/Firefox, Electron, PWA Android y (con gesto de usuario) Safari/iOS PWA.
          */
+        /* Ruta HD por defecto: sin cruce ni glue (máxima fidelidad) */
         const src = mediaSourceRef.current
-        const eqB = bassFilterRef.current!
-        const eqM = midFilterRef.current!
-        const eqT = trebleFilterRef.current!
-        const voice = voiceFilterRef.current!
-        const pan = panNodeRef.current
-        const split = pan ?? voice
-
-        src.connect(eqB)
-        eqB.connect(eqM)
-        eqM.connect(eqT)
-        eqT.connect(voice)
-        if (pan) voice.connect(pan)
-
-        split.connect(mbLowLpRef.current!)
-        mbLowLpRef.current!.connect(mbCompLRef.current!)
-        mbCompLRef.current!.connect(mbGainLRef.current!)
-        mbGainLRef.current!.connect(sumGainRef.current!)
-
-        split.connect(mbMidHpRef.current!)
-        mbMidHpRef.current!.connect(mbMidLpRef.current!)
-        mbMidLpRef.current!.connect(mbCompMRef.current!)
-        mbCompMRef.current!.connect(mbGainMRef.current!)
-        mbGainMRef.current!.connect(sumGainRef.current!)
-
-        split.connect(mbHighHpRef.current!)
-        mbHighHpRef.current!.connect(mbCompHRef.current!)
-        mbCompHRef.current!.connect(mbGainHRef.current!)
-        mbGainHRef.current!.connect(sumGainRef.current!)
-
-        sumGainRef.current!.connect(gainNodeRef.current!)
-        gainNodeRef.current!.connect(compRef.current!)
-        compRef.current!.connect(analyserRef.current!)
+        src.connect(gainNodeRef.current!)
+        gainNodeRef.current!.connect(analyserRef.current!)
         analyserRef.current!.connect(ctx.destination)
+        gainNodeRef.current!.gain.value = clamp(gainRefState.current, 0, 3)
+        graphModeRef.current = 'hd'
+        lastMbOnRef.current = false
+        lastGlueOnRef.current = false
       } catch (err) {
         mediaSourceRef.current = null
         outputModeRef.current = 'native-nospec'
