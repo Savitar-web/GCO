@@ -636,7 +636,8 @@ export function PlayerBar({ player, floating }: Props) {
   const pipRequestedRef = useRef(false)
 
   /* Swipe fullscreen */
-  const swipeStartRef = useRef<{ x: number; y: number; t: number } | null>(null)
+  const swipeStartRef = useRef<{ x: number; y: number; t: number; fromHandle?: boolean; scrollTop?: number } | null>(null)
+  const fsScrollRef = useRef<HTMLDivElement | null>(null)
   const [fsDragY, setFsDragY] = useState(0)
 
   /* Queue long-press reorder */
@@ -1016,7 +1017,37 @@ export function PlayerBar({ player, floating }: Props) {
     openFullscreen()
   }
 
-  /* ── PiP (iOS Safari/PWA + Chrome/Android + desktop) ── */
+  /* ── PiP: iOS webkit + estándar + fallback flotante (Capacitor WebView) ── */
+  const [pipFallback, setPipFallback] = useState(false)
+
+  const exitAllPip = useCallback(async () => {
+    const d = document as Document & {
+      pictureInPictureElement?: Element | null
+      exitPictureInPicture?: () => Promise<void>
+    }
+    try {
+      if (d.pictureInPictureElement) await d.exitPictureInPicture?.()
+    } catch {
+      /* */
+    }
+    const vid = videoRef.current as
+      | (HTMLVideoElement & {
+          webkitPresentationMode?: string
+          webkitSetPresentationMode?: (m: string) => void
+        })
+      | null
+    try {
+      if (vid?.webkitPresentationMode === 'picture-in-picture') {
+        vid.webkitSetPresentationMode?.('inline')
+      }
+    } catch {
+      /* */
+    }
+    setPipActive(false)
+    setPipFallback(false)
+    pipRequestedRef.current = false
+  }, [])
+
   const togglePip = useCallback(async () => {
     soundClick()
     if (!hasVideo || !t) return
@@ -1027,23 +1058,29 @@ export function PlayerBar({ player, floating }: Props) {
       pictureInPictureEnabled?: boolean
     }
 
-    /* Salir si ya está en PiP (estándar) */
-    if (d.pictureInPictureElement) {
-      try {
-        await d.exitPictureInPicture?.()
-      } catch (err) {
-        console.warn('[gco] exit PiP', err)
-      }
-      setPipActive(false)
-      pipRequestedRef.current = false
+    if (d.pictureInPictureElement || pipFallback || pipActive) {
+      await exitAllPip()
       return
     }
 
     setShowVideo(true)
     pipRequestedRef.current = true
-    if (!fullscreen) setFullscreen(true)
 
-    const tryEnter = async (vid: HTMLVideoElement) => {
+    const prepareVideo = (vid: HTMLVideoElement) => {
+      try {
+        vid.setAttribute('playsinline', 'true')
+        vid.setAttribute('webkit-playsinline', 'true')
+        vid.setAttribute('x5-playsinline', 'true')
+        vid.setAttribute('x5-video-player-type', 'h5')
+        ;(vid as HTMLVideoElement & { disableRemotePlayback?: boolean }).disableRemotePlayback = false
+        /* No forzar mute: iOS a veces exige audio activo tras gesto de usuario */
+      } catch {
+        /* */
+      }
+    }
+
+    const tryEnter = async (vid: HTMLVideoElement): Promise<boolean> => {
+      prepareVideo(vid)
       const wv = vid as HTMLVideoElement & {
         webkitSupportsPresentationMode?: (m: string) => boolean
         webkitSetPresentationMode?: (m: string) => void
@@ -1051,23 +1088,21 @@ export function PlayerBar({ player, floating }: Props) {
         requestPictureInPicture?: () => Promise<PictureInPictureWindow>
       }
 
-      /* iOS / Safari: webkit presentation mode (funciona en PWA iOS 15+) */
+      try {
+        if (vid.paused) await vid.play()
+      } catch {
+        /* */
+      }
+
+      /* iOS Safari / PWA */
       if (typeof wv.webkitSupportsPresentationMode === 'function') {
         try {
-          if (wv.webkitPresentationMode === 'picture-in-picture') {
-            wv.webkitSetPresentationMode?.('inline')
-            setPipActive(false)
-            return true
-          }
           if (wv.webkitSupportsPresentationMode('picture-in-picture')) {
-            vid.muted = true
-            try {
-              await vid.play()
-            } catch {
-              /* autoplay policy */
-            }
             wv.webkitSetPresentationMode?.('picture-in-picture')
             setPipActive(true)
+            setPipFallback(false)
+            /* Cerrar FS de la app para ver el sistema PiP */
+            closeFullscreen()
             return true
           }
         } catch (err) {
@@ -1075,47 +1110,49 @@ export function PlayerBar({ player, floating }: Props) {
         }
       }
 
-      /* Estándar (Chrome, Edge, Android WebView reciente, desktop) */
-      if (typeof wv.requestPictureInPicture === 'function' && d.pictureInPictureEnabled !== false) {
+      /* Chrome / Edge / Android Chrome / algunos WebView */
+      if (typeof wv.requestPictureInPicture === 'function') {
         try {
-          vid.muted = true
-          try {
-            await vid.play()
-          } catch {
-            /* */
-          }
-          if (vid !== d.pictureInPictureElement) {
+          if (d.pictureInPictureEnabled !== false) {
             await wv.requestPictureInPicture()
+            setPipActive(true)
+            setPipFallback(false)
+            closeFullscreen()
+            return true
           }
-          setPipActive(true)
-          return true
         } catch (err) {
-          console.warn('[gco] PiP', err)
+          console.warn('[gco] PiP standard', err)
         }
       }
 
-      return false
+      /* Fallback Capacitor / WebView sin PiP de sistema: burbuja flotante */
+      setPipFallback(true)
+      setPipActive(true)
+      closeFullscreen()
+      return true
     }
 
-    /* Esperar a que el <video> exista en el DOM tras setShowVideo */
     const attempt = (tries: number) => {
       const vid = videoRef.current
       if (!vid) {
-        if (tries > 0) window.setTimeout(() => attempt(tries - 1), 80)
+        if (tries > 0) window.setTimeout(() => attempt(tries - 1), 50)
+        else {
+          /* Sin <video> aún: activar fallback de todos modos */
+          setPipFallback(true)
+          setPipActive(true)
+          closeFullscreen()
+        }
         return
       }
-      const run = async () => {
+      void (async () => {
         const ok = await tryEnter(vid)
-        if (!ok && tries > 0) window.setTimeout(() => attempt(tries - 1), 120)
-      }
-      if (vid.readyState >= 1) void run()
-      else {
-        vid.addEventListener('loadedmetadata', () => void run(), { once: true })
-        vid.load()
-      }
+        if (!ok && tries > 0) window.setTimeout(() => attempt(tries - 1), 80)
+      })()
     }
-    window.setTimeout(() => attempt(8), 60)
-  }, [hasVideo, t, fullscreen])
+
+    /* Misma cadena de gesto de usuario: primer intento casi inmediato */
+    window.setTimeout(() => attempt(12), 16)
+  }, [hasVideo, t, pipFallback, pipActive, exitAllPip, closeFullscreen])
 
   const toggleNativeFullscreen = async () => {
     soundClick()
@@ -1160,11 +1197,19 @@ export function PlayerBar({ player, floating }: Props) {
     bumpNativeIdle()
   }
 
-  /* ── Swipe gestures on fullscreen sheet ── */
+  /* ── Swipe: cierre solo desde asa / scrollTop≈0; no pelear con scroll vertical ── */
   const onFsPointerDown = (e: ReactPointerEvent) => {
     if (locked) return
-    if ((e.target as HTMLElement).closest('[data-no-swipe]')) return
-    swipeStartRef.current = { x: e.clientX, y: e.clientY, t: Date.now() }
+    const target = e.target as HTMLElement
+    const fromHandle = !!target.closest('[data-fs-handle]')
+    if (target.closest('button, input, textarea, a, [data-no-swipe]') && !fromHandle) return
+    swipeStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      t: Date.now(),
+      fromHandle,
+      scrollTop: fsScrollRef.current?.scrollTop ?? 0,
+    }
     setFsDragY(0)
   }
 
@@ -1172,8 +1217,11 @@ export function PlayerBar({ player, floating }: Props) {
     if (!swipeStartRef.current || locked) return
     const dy = e.clientY - swipeStartRef.current.y
     const dx = e.clientX - swipeStartRef.current.x
-    if (Math.abs(dy) > Math.abs(dx) && dy > 0 && fsTab === 'now') {
-      setFsDragY(Math.min(dy, 160))
+    const canDismiss =
+      !!swipeStartRef.current.fromHandle ||
+      (fsTab === 'now' && (swipeStartRef.current.scrollTop ?? 0) <= 4)
+    if (canDismiss && Math.abs(dy) > Math.abs(dx) && dy > 8) {
+      setFsDragY(Math.min(dy, 220))
     }
   }
 
@@ -1182,25 +1230,22 @@ export function PlayerBar({ player, floating }: Props) {
     swipeStartRef.current = null
     setFsDragY(0)
     if (!start || locked) return
+    if ((e.target as HTMLElement).closest('button, input, textarea, a') && !start.fromHandle) return
     const dx = e.clientX - start.x
     const dy = e.clientY - start.y
     const absX = Math.abs(dx)
     const absY = Math.abs(dy)
-    if (Date.now() - start.t > 900) return
-
-    /* Vertical down → cerrar */
-    if (absY > SWIPE_MIN_PX && absY > absX * 1.1 && dy > 0) {
+    if (Date.now() - start.t > 900) {
+      bumpIdle()
+      return
+    }
+    const canDismiss = !!start.fromHandle || (fsTab === 'now' && (start.scrollTop ?? 0) <= 4)
+    if (canDismiss && absY > SWIPE_MIN_PX && absY > absX * 1.2 && dy > 0) {
       closeFullscreen()
       return
     }
-
-    /*
-     * Horizontal sobre Cola ↔ Ahora ↔ Letra (cíclico):
-     *   swipe izquierda (dx < 0) → pestaña siguiente
-     *   swipe derecha  (dx > 0) → pestaña anterior
-     * Orden: queue → now → lyrics → queue …
-     */
-    if (absX > SWIPE_MIN_PX && absX > absY * 1.05) {
+    /* Tabs horizontales: solo gesto claro y sin scroll de contenido */
+    if (absX > SWIPE_MIN_PX && absX > absY * 1.3 && (start.scrollTop ?? 0) <= 8) {
       const order: FsTab[] = ['queue', 'now', 'lyrics']
       const i = order.indexOf(fsTab)
       const dir = dx < 0 ? 1 : -1
@@ -1967,36 +2012,75 @@ export function PlayerBar({ player, floating }: Props) {
     >
       <style>{globalCss}</style>
 
-      {/* Header */}
+      {/* Header — safe-area top + sin desbordar en notch/móvil */}
       <div
         data-no-swipe
+        data-fs-handle
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '10px 14px calc(6px + env(safe-area-inset-top, 0px))',
-          opacity: overlayVisible ? 1 : 0.25,
+          gap: 8,
+          paddingTop: 'max(10px, env(safe-area-inset-top, 0px))',
+          paddingLeft: 'max(12px, env(safe-area-inset-left, 0px))',
+          paddingRight: 'max(12px, env(safe-area-inset-right, 0px))',
+          paddingBottom: 8,
+          opacity: overlayVisible ? 1 : 0.35,
           transition: 'opacity 0.3s',
           flexShrink: 0,
+          boxSizing: 'border-box',
+          width: '100%',
+          maxWidth: '100%',
         }}
       >
         <button
           type="button"
           className="gco-pb-icon"
-          style={{ ...glassIconStyle, width: 40, height: 40 }}
+          style={{
+            ...glassIconStyle,
+            width: 36,
+            height: 36,
+            minWidth: 36,
+            flexShrink: 0,
+            borderRadius: 12,
+          }}
           aria-label="Cerrar"
           onClick={closeFullscreen}
         >
           <IconChevronDown />
         </button>
-        <div className="gco-swipe-hint" title="Desliza hacia abajo para cerrar" />
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 4,
+            minWidth: 0,
+            pointerEvents: 'none',
+          }}
+          title="Arrastra desde aquí hacia abajo para cerrar"
+        >
+          <div
+            style={{
+              width: 36,
+              height: 4,
+              borderRadius: 99,
+              background: themeMode === 'light' ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.28)',
+            }}
+          />
+          <span style={{ fontSize: '0.65rem', opacity: 0.45, fontWeight: 600 }}>Cerrar</span>
+        </div>
         <button
           type="button"
           className="gco-pb-icon"
           style={{
             ...glassIconStyle,
-            width: 40,
-            height: 40,
+            width: 36,
+            height: 36,
+            minWidth: 36,
+            flexShrink: 0,
+            borderRadius: 12,
             color: locked ? tokens.accent : tokens.glassIconColor,
           }}
           aria-label={locked ? 'Desbloquear' : 'Bloquear'}
@@ -2011,13 +2095,16 @@ export function PlayerBar({ player, floating }: Props) {
       </div>
 
       <div
+        ref={fsScrollRef}
         className="gco-pb-scroll"
         style={{
           flex: 1,
           overflowY: 'auto',
           overflowX: 'hidden',
-          padding: '0 18px 12px',
+          padding: '0 16px 12px',
           WebkitOverflowScrolling: 'touch',
+          overscrollBehavior: 'contain',
+          touchAction: 'pan-y',
         }}
       >
         {fsTab === 'now' && (
@@ -2058,7 +2145,6 @@ export function PlayerBar({ player, floating }: Props) {
                   }}
                   src={videoUrl}
                   playsInline
-                  muted
                   preload="auto"
                   controls={false}
                   disablePictureInPicture={false}
@@ -2546,12 +2632,97 @@ export function PlayerBar({ player, floating }: Props) {
     typeof document !== 'undefined' &&
     !!document.getElementById('gco-global-player-host')
 
+  const pipFallbackUi =
+    pipFallback && hasVideo && videoUrl && typeof document !== 'undefined' ? (
+      <div
+        style={{
+          position: 'fixed',
+          right: 'max(12px, env(safe-area-inset-right, 0px))',
+          bottom: 'max(88px, calc(72px + env(safe-area-inset-bottom, 0px)))',
+          zIndex: 160,
+          width: 'min(42vw, 168px)',
+          aspectRatio: '16 / 9',
+          borderRadius: 16,
+          overflow: 'hidden',
+          boxShadow: '0 12px 40px rgba(0,0,0,0.45)',
+          border: tokens.floatBorder,
+          background: '#000',
+          pointerEvents: 'auto',
+        }}
+      >
+        <video
+          src={videoUrl}
+          playsInline
+          autoPlay
+          muted={false}
+          ref={(el) => {
+            if (el) {
+              el.setAttribute('playsinline', 'true')
+              el.setAttribute('webkit-playsinline', 'true')
+              try {
+                void el.play()
+              } catch {
+                /* */
+              }
+            }
+          }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+        <button
+          type="button"
+          aria-label="Cerrar vídeo flotante"
+          onClick={() => void exitAllPip()}
+          style={{
+            position: 'absolute',
+            top: 6,
+            right: 6,
+            width: 28,
+            height: 28,
+            borderRadius: 10,
+            border: 'none',
+            background: 'rgba(0,0,0,0.55)',
+            color: '#fff',
+            cursor: 'pointer',
+            display: 'grid',
+            placeItems: 'center',
+            fontSize: '0.85rem',
+          }}
+        >
+          ×
+        </button>
+        <button
+          type="button"
+          aria-label="Abrir reproductor"
+          onClick={() => {
+            void exitAllPip()
+            setFullscreen(true)
+          }}
+          style={{
+            position: 'absolute',
+            left: 6,
+            bottom: 6,
+            border: 'none',
+            borderRadius: 999,
+            padding: '4px 10px',
+            fontSize: '0.65rem',
+            fontWeight: 700,
+            background: 'rgba(0,0,0,0.55)',
+            color: '#fff',
+            cursor: 'pointer',
+          }}
+        >
+          Ampliar
+        </button>
+      </div>
+    ) : null
+
   return (
     <>
       {hideBecauseGlobal ? null : miniBar}
       {fullscreen && typeof document !== 'undefined' && fullscreenContent
         ? createPortal(fullscreenContent, document.body)
         : null}
+      {pipFallbackUi ? createPortal(pipFallbackUi, document.body) : null}
     </>
   )
 }
