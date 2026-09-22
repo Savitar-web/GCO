@@ -36,7 +36,8 @@ export type RepeatMode = 'off' | 'one' | 'all'
 export type OutputMode = 'native' | 'native-nospec' | 'webaudio' | 'none'
 export type MediaPlayerApi = typeof api
 
-type CaptureAudioElement = HTMLAudioElement & {
+/** Tipado auxiliar para captureStream (Safari/Chrome). */
+export type CaptureAudioElement = HTMLAudioElement & {
   captureStream?: () => MediaStream
   mozCaptureStream?: () => MediaStream
 }
@@ -643,18 +644,34 @@ const loadGenRef: { current: number } = { current: 0 }
 const ctxRef: { current: AudioContext | null } = { current: null }
 const analyserRef: { current: AnalyserNode | null } = { current: null }
 const mediaSourceRef: { current: MediaElementAudioSourceNode | null } = { current: null }
-const streamSourceRef: { current: MediaStreamAudioSourceNode | null } = { current: null }
 const gainNodeRef: { current: GainNode | null } = { current: null }
 const bassFilterRef: { current: BiquadFilterNode | null } = { current: null }
 const midFilterRef: { current: BiquadFilterNode | null } = { current: null }
 const trebleFilterRef: { current: BiquadFilterNode | null } = { current: null }
 const voiceFilterRef: { current: BiquadFilterNode | null } = { current: null }
 const panNodeRef: { current: StereoPannerNode | null } = { current: null }
+/** Glue bus compressor (post-sum, suave). */
 const compRef: { current: DynamicsCompressorNode | null } = { current: null }
+/** Multibanda: 3 compresores + filtros de cruce + gains de banda. */
+const mbLowLpRef: { current: BiquadFilterNode | null } = { current: null }
+const mbMidHpRef: { current: BiquadFilterNode | null } = { current: null }
+const mbMidLpRef: { current: BiquadFilterNode | null } = { current: null }
+const mbHighHpRef: { current: BiquadFilterNode | null } = { current: null }
+const mbCompLRef: { current: DynamicsCompressorNode | null } = { current: null }
+const mbCompMRef: { current: DynamicsCompressorNode | null } = { current: null }
+const mbCompHRef: { current: DynamicsCompressorNode | null } = { current: null }
+const mbGainLRef: { current: GainNode | null } = { current: null }
+const mbGainMRef: { current: GainNode | null } = { current: null }
+const mbGainHRef: { current: GainNode | null } = { current: null }
+const sumGainRef: { current: GainNode | null } = { current: null }
 const graphReady = { current: false }
 const outputModeRef: { current: OutputMode } = { current: 'none' }
 
-/** FX de audio real (EQ + pan + corte de voz aproximado). */
+/**
+ * FX profesional: EQ suave + notch de voz + pan/8D + multibanda + glue.
+ * Parámetros se aplican con setTargetAtTime para evitar clics y “bomba” de calidad.
+ * Solo afecta la salida cuando outputMode === 'webaudio'.
+ */
 export type AudioFxState = {
   bass: number
   mid: number
@@ -662,6 +679,25 @@ export type AudioFxState = {
   vocalCut: number
   pan: number
   spatial8d: number
+  /** 0–1 intensidad del bus/glue compressor post-sum */
+  compressor: number
+  compThreshold: number
+  compKnee: number
+  compRatio: number
+  compAttack: number
+  compRelease: number
+  compMakeup: number
+  /** 0–1 intensidad multibanda (0 = bypass bands = unity) */
+  mbAmount: number
+  /** dB makeup relativo por banda */
+  mbLow: number
+  mbMid: number
+  mbHigh: number
+  /** umbrales por banda (dB) */
+  mbThrL: number
+  mbThrM: number
+  mbThrH: number
+  mbRatio: number
 }
 
 const DEFAULT_AUDIO_FX: AudioFxState = {
@@ -671,45 +707,147 @@ const DEFAULT_AUDIO_FX: AudioFxState = {
   vocalCut: 0,
   pan: 0,
   spatial8d: 0,
+  compressor: 0,
+  compThreshold: -22,
+  compKnee: 18,
+  compRatio: 2.5,
+  compAttack: 0.012,
+  compRelease: 0.28,
+  compMakeup: 0,
+  mbAmount: 0,
+  mbLow: 0,
+  mbMid: 0,
+  mbHigh: 0,
+  mbThrL: -28,
+  mbThrM: -24,
+  mbThrH: -26,
+  mbRatio: 2.8,
 }
 
 const audioFxRef: { current: AudioFxState } = { current: { ...DEFAULT_AUDIO_FX } }
 let spatial8dTimer: number | null = null
 let spatial8dPhase = 0
 
+/** Suavizado de AudioParam (evita artefactos al mover sliders). */
+function rampParam(param: AudioParam | undefined | null, value: number, sec = 0.14) {
+  if (!param || !ctxRef.current) return
+  try {
+    const t = ctxRef.current.currentTime
+    param.cancelScheduledValues(t)
+    param.setValueAtTime(param.value, t)
+    param.setTargetAtTime(value, t, Math.max(0.04, sec / 2.5))
+  } catch {
+    try {
+      param.value = value
+    } catch {
+      /* */
+    }
+  }
+}
+
+function softBypassCompressor(c: DynamicsCompressorNode) {
+  rampParam(c.threshold, 0, 0.05)
+  rampParam(c.knee, 0, 0.05)
+  rampParam(c.ratio, 1, 0.05)
+  rampParam(c.attack, 0.01, 0.05)
+  rampParam(c.release, 0.25, 0.05)
+}
+
+function applyBandCompressor(
+  c: DynamicsCompressorNode | null,
+  amount: number,
+  threshold: number,
+  ratio: number,
+) {
+  if (!c) return
+  const amt = clamp(amount, 0, 1)
+  if (amt <= 0.03) {
+    softBypassCompressor(c)
+    return
+  }
+  rampParam(c.threshold, clamp(threshold, -60, 0) * amt, 0.1)
+  rampParam(c.knee, 12 + (1 - amt) * 10, 0.1)
+  rampParam(c.ratio, 1 + (clamp(ratio, 1, 12) - 1) * amt, 0.1)
+  rampParam(c.attack, 0.008 + (1 - amt) * 0.02, 0.1)
+  rampParam(c.release, 0.22, 0.1)
+}
+
 function applyAudioFxNodes() {
   const fx = audioFxRef.current
   try {
-    if (bassFilterRef.current) bassFilterRef.current.gain.value = clamp(fx.bass, -12, 12)
-    if (midFilterRef.current) midFilterRef.current.gain.value = clamp(fx.mid, -12, 12)
-    if (trebleFilterRef.current) trebleFilterRef.current.gain.value = clamp(fx.treble, -12, 12)
+    /* EQ: rango moderado ±9 dB para no destruir el mix */
+    rampParam(bassFilterRef.current?.gain, clamp(fx.bass, -8, 8), 0.18)
+    rampParam(midFilterRef.current?.gain, clamp(fx.mid, -8, 8), 0.18)
+    rampParam(trebleFilterRef.current?.gain, clamp(fx.treble, -8, 8), 0.18)
+
+    /* Notch de voz suave: Q moderado, nunca extremo */
     if (voiceFilterRef.current) {
-      /* notch Q alto = más corte de banda vocal */
       const cut = clamp(fx.vocalCut, 0, 1)
-      voiceFilterRef.current.Q.value = 0.5 + cut * 8
-      voiceFilterRef.current.frequency.value = 1000 + cut * 400
+      /* Q 0.7…3.5 — antes llegaba a 8.5 y “comía” el mid */
+      rampParam(voiceFilterRef.current.Q, 0.7 + cut * 2.8, 0.15)
+      rampParam(voiceFilterRef.current.frequency, 1100 + cut * 250, 0.15)
     }
+
     if (panNodeRef.current && fx.spatial8d <= 0) {
-      panNodeRef.current.pan.value = clamp(fx.pan, -1, 1)
+      rampParam(panNodeRef.current.pan, clamp(fx.pan, -1, 1), 0.1)
+    }
+
+    /* Multibanda */
+    const mb = clamp(fx.mbAmount, 0, 1)
+    applyBandCompressor(mbCompLRef.current, mb, fx.mbThrL, fx.mbRatio)
+    applyBandCompressor(mbCompMRef.current, mb, fx.mbThrM, fx.mbRatio)
+    applyBandCompressor(mbCompHRef.current, mb, fx.mbThrH, fx.mbRatio)
+    /* Ganancias de banda (makeup por banda, ±6 dB) */
+    const mbLin = (db: number) => Math.pow(10, clamp(db, -6, 6) / 20)
+    rampParam(mbGainLRef.current?.gain, mbLin(fx.mbLow), 0.12)
+    rampParam(mbGainMRef.current?.gain, mbLin(fx.mbMid), 0.12)
+    rampParam(mbGainHRef.current?.gain, mbLin(fx.mbHigh), 0.12)
+
+    /* Glue / bus compressor post-sum — por defecto off */
+    if (compRef.current) {
+      const amt = clamp(fx.compressor, 0, 1)
+      if (amt <= 0.02) {
+        softBypassCompressor(compRef.current)
+      } else {
+        const c = compRef.current
+        rampParam(c.threshold, clamp(fx.compThreshold, -60, 0) * amt, 0.12)
+        rampParam(c.knee, clamp(fx.compKnee, 0, 40), 0.12)
+        rampParam(c.ratio, 1 + (clamp(fx.compRatio, 1, 12) - 1) * amt, 0.12)
+        rampParam(c.attack, clamp(fx.compAttack, 0.001, 0.5), 0.12)
+        rampParam(c.release, clamp(fx.compRelease, 0.05, 1), 0.12)
+      }
+    }
+
+    /* Master gain + makeup (suave) */
+    if (gainNodeRef.current && ctxRef.current) {
+      const makeupLin = Math.pow(10, clamp(fx.compMakeup, -3, 6) / 20)
+      const base = clamp(gainRefState.current, 0, 3)
+      rampParam(gainNodeRef.current.gain, clamp(base * makeupLin, 0, 3.5), 0.1)
     }
   } catch {
     /* */
   }
-  /* Auto-pan 8D */
+
+  /* Auto-pan 8D (sin saltos) */
   if (spatial8dTimer != null) {
     window.clearInterval(spatial8dTimer)
     spatial8dTimer = null
   }
   if (fx.spatial8d > 0 && panNodeRef.current && typeof window !== 'undefined') {
-    const speed = clamp(fx.spatial8d, 0.2, 3)
+    const speed = clamp(fx.spatial8d, 0.15, 2.5)
     spatial8dTimer = window.setInterval(() => {
-      spatial8dPhase += 0.04 * speed
+      spatial8dPhase += 0.028 * speed
       if (panNodeRef.current) {
-        panNodeRef.current.pan.value = Math.sin(spatial8dPhase) * 0.92
+        try {
+          panNodeRef.current.pan.value = Math.sin(spatial8dPhase) * 0.75
+        } catch {
+          /* */
+        }
       }
-    }, 32)
+    }, 40)
   }
 }
+
 const mediaSessionReady = { current: false }
 const appleWebKit = { current: false }
 const androidEnv = { current: false }
@@ -752,17 +890,19 @@ function cleanupUrl() {
 function applyElementVolume(audio: HTMLAudioElement) {
   const v = volumeRef.current
   const g = gainRefState.current
+  const makeupLin = Math.pow(10, clamp(audioFxRef.current.compMakeup, -6, 12) / 20)
   if (outputModeRef.current === 'webaudio') {
     audio.volume = clamp(v, 0, 1)
     if (gainNodeRef.current && ctxRef.current) {
       const t = ctxRef.current.currentTime
       const node = gainNodeRef.current
+      const target = clamp(g * makeupLin, 0, 4)
       try {
         node.gain.cancelScheduledValues(t)
         node.gain.setValueAtTime(node.gain.value, t)
-        node.gain.linearRampToValueAtTime(clamp(g, 0, 3), t + 0.04)
+        node.gain.linearRampToValueAtTime(target, t + 0.04)
       } catch {
-        node.gain.value = clamp(g, 0, 3)
+        node.gain.value = target
       }
     }
   } else {
@@ -792,32 +932,31 @@ function ensureAudioContext(): AudioContext | null {
   }
 }
 function ensureGraph(audio: HTMLAudioElement) {
+  void (audio as CaptureAudioElement)
   try {
-    if (graphReady.current) {
+    /* Ya tenemos cadena Web Audio completa → solo volumen */
+    if (graphReady.current && outputModeRef.current === 'webaudio' && mediaSourceRef.current) {
       applyElementVolume(audio)
       return
     }
-    const forceNativeOnly =
-      appleWebKit.current || androidEnv.current || nativeShell.current
-    if (appleWebKit.current) {
-      outputModeRef.current = 'native-nospec'
-      snapshot.outputMode = 'native-nospec'
-      graphReady.current = true
+    /* native / native-nospec: reintentar Web Audio si el usuario mueve el mezclador */
+    if (graphReady.current && outputModeRef.current !== 'webaudio' && mediaSourceRef.current) {
       applyElementVolume(audio)
-      setAudioSessionPlayback()
-      notify()
       return
     }
+
     const ctx = ensureAudioContext()
     if (!ctx) {
       outputModeRef.current = 'native-nospec'
       snapshot.outputMode = 'native-nospec'
       graphReady.current = true
       applyElementVolume(audio)
+      if (appleWebKit.current) setAudioSessionPlayback()
       notify()
       return
     }
     if (ctx.state === 'suspended') void ctx.resume().catch(() => {})
+
     if (!analyserRef.current) {
       const an = ctx.createAnalyser()
       an.fftSize = 512
@@ -826,76 +965,114 @@ function ensureGraph(audio: HTMLAudioElement) {
       an.maxDecibels = -10
       analyserRef.current = an
     }
-    const el = audio as CaptureAudioElement
-    const captureFn =
-      typeof el.captureStream === 'function'
-        ? () => el.captureStream!()
-        : typeof el.mozCaptureStream === 'function'
-          ? () => el.mozCaptureStream!()
-          : null
-    if (captureFn) {
-      try {
-        const stream = captureFn()
-        if (stream && stream.getAudioTracks().length > 0) {
-          streamSourceRef.current = ctx.createMediaStreamSource(stream)
-          streamSourceRef.current.connect(analyserRef.current)
-          outputModeRef.current = 'native'
-          snapshot.outputMode = 'native'
-          graphReady.current = true
-          applyElementVolume(audio)
-          notify()
-          return
-        }
-      } catch {
-        /* */
-      }
-    }
-    if (forceNativeOnly) {
-      outputModeRef.current = 'native-nospec'
-      snapshot.outputMode = 'native-nospec'
-      graphReady.current = true
-      applyElementVolume(audio)
-      notify()
-      return
-    }
+
+    /*
+     * PWA iOS / Android / desktop: preferimos MediaElementSource → FX → destination
+     * para que EQ/multibanda/pan se oigan. Si falla (política Safari antigua, etc.)
+     * caemos a native-nospec.
+     * Capacitor nativo: también intentamos Web Audio; MediaSession sigue en el <audio>.
+     */
+    /* EQ suave */
     if (!bassFilterRef.current) {
       const f = ctx.createBiquadFilter()
       f.type = 'lowshelf'
-      f.frequency.value = 180
-      f.gain.value = audioFxRef.current.bass
+      f.frequency.value = 160
+      f.gain.value = 0
       bassFilterRef.current = f
     }
     if (!midFilterRef.current) {
       const f = ctx.createBiquadFilter()
       f.type = 'peaking'
       f.frequency.value = 1000
-      f.Q.value = 0.9
-      f.gain.value = audioFxRef.current.mid
+      f.Q.value = 0.7
+      f.gain.value = 0
       midFilterRef.current = f
     }
     if (!trebleFilterRef.current) {
       const f = ctx.createBiquadFilter()
       f.type = 'highshelf'
-      f.frequency.value = 3200
-      f.gain.value = audioFxRef.current.treble
+      f.frequency.value = 3500
+      f.gain.value = 0
       trebleFilterRef.current = f
     }
     if (!voiceFilterRef.current) {
       const f = ctx.createBiquadFilter()
       f.type = 'notch'
-      f.frequency.value = 1200
-      f.Q.value = 1.2
-      f.gain.value = 0
+      f.frequency.value = 1100
+      f.Q.value = 0.7
       voiceFilterRef.current = f
     }
     if (!panNodeRef.current) {
       try {
         const p = ctx.createStereoPanner()
-        p.pan.value = audioFxRef.current.pan
+        p.pan.value = 0
         panNodeRef.current = p
       } catch {
         panNodeRef.current = null
       }
+    }
+
+    /* Multibanda Linkwitz-Riley approx @ 250 Hz / 2.5 kHz */
+    if (!mbLowLpRef.current) {
+      const f = ctx.createBiquadFilter()
+      f.type = 'lowpass'
+      f.frequency.value = 250
+      f.Q.value = 0.707
+      mbLowLpRef.current = f
+    }
+    if (!mbMidHpRef.current) {
+      const f = ctx.createBiquadFilter()
+      f.type = 'highpass'
+      f.frequency.value = 250
+      f.Q.value = 0.707
+      mbMidHpRef.current = f
+    }
+    if (!mbMidLpRef.current) {
+      const f = ctx.createBiquadFilter()
+      f.type = 'lowpass'
+      f.frequency.value = 2500
+      f.Q.value = 0.707
+      mbMidLpRef.current = f
+    }
+    if (!mbHighHpRef.current) {
+      const f = ctx.createBiquadFilter()
+      f.type = 'highpass'
+      f.frequency.value = 2500
+      f.Q.value = 0.707
+      mbHighHpRef.current = f
+    }
+    const makeComp = () => {
+      const c = ctx.createDynamicsCompressor()
+      c.threshold.value = 0
+      c.knee.value = 0
+      c.ratio.value = 1
+      c.attack.value = 0.01
+      c.release.value = 0.25
+      return c
+    }
+    if (!mbCompLRef.current) mbCompLRef.current = makeComp()
+    if (!mbCompMRef.current) mbCompMRef.current = makeComp()
+    if (!mbCompHRef.current) mbCompHRef.current = makeComp()
+    if (!mbGainLRef.current) {
+      const g = ctx.createGain()
+      g.gain.value = 1
+      mbGainLRef.current = g
+    }
+    if (!mbGainMRef.current) {
+      const g = ctx.createGain()
+      g.gain.value = 1
+      mbGainMRef.current = g
+    }
+    if (!mbGainHRef.current) {
+      const g = ctx.createGain()
+      g.gain.value = 1
+      mbGainHRef.current = g
+    }
+    if (!sumGainRef.current) {
+      const g = ctx.createGain()
+      /* 3 bandas en paralelo ≈ +9.5 dB teórico; atenuamos para no saturar */
+      g.gain.value = 0.72
+      sumGainRef.current = g
     }
     if (!gainNodeRef.current) {
       const g = ctx.createGain()
@@ -903,45 +1080,69 @@ function ensureGraph(audio: HTMLAudioElement) {
       gainNodeRef.current = g
     }
     if (!compRef.current) {
-      const c = ctx.createDynamicsCompressor()
-      c.threshold.value = -6
-      c.knee.value = 12
-      c.ratio.value = 4
-      c.attack.value = 0.003
-      c.release.value = 0.18
+      const c = makeComp()
       compRef.current = c
     }
+
     if (!mediaSourceRef.current) {
-      mediaSourceRef.current = ctx.createMediaElementSource(audio)
-      /* source → EQ → voice notch → pan → gain → comp → analyser → out */
-      const src = mediaSourceRef.current
-      const bass = bassFilterRef.current!
-      const mid = midFilterRef.current!
-      const treble = trebleFilterRef.current!
-      const voice = voiceFilterRef.current!
-      const pan = panNodeRef.current
-      const gain = gainNodeRef.current!
-      const comp = compRef.current!
-      const an = analyserRef.current!
-      src.connect(bass)
-      bass.connect(mid)
-      mid.connect(treble)
-      treble.connect(voice)
-      if (pan) {
-        voice.connect(pan)
-        pan.connect(gain)
-      } else {
-        voice.connect(gain)
+      try {
+        mediaSourceRef.current = ctx.createMediaElementSource(audio)
+        /**
+         * Cadena: src → EQ → voice → pan → multibanda → sum → master → glue → analyser → dest
+         * Funciona en Chrome/Edge/Firefox, Electron, PWA Android y (con gesto de usuario) Safari/iOS PWA.
+         */
+        const src = mediaSourceRef.current
+        const eqB = bassFilterRef.current!
+        const eqM = midFilterRef.current!
+        const eqT = trebleFilterRef.current!
+        const voice = voiceFilterRef.current!
+        const pan = panNodeRef.current
+        const split = pan ?? voice
+
+        src.connect(eqB)
+        eqB.connect(eqM)
+        eqM.connect(eqT)
+        eqT.connect(voice)
+        if (pan) voice.connect(pan)
+
+        split.connect(mbLowLpRef.current!)
+        mbLowLpRef.current!.connect(mbCompLRef.current!)
+        mbCompLRef.current!.connect(mbGainLRef.current!)
+        mbGainLRef.current!.connect(sumGainRef.current!)
+
+        split.connect(mbMidHpRef.current!)
+        mbMidHpRef.current!.connect(mbMidLpRef.current!)
+        mbMidLpRef.current!.connect(mbCompMRef.current!)
+        mbCompMRef.current!.connect(mbGainMRef.current!)
+        mbGainMRef.current!.connect(sumGainRef.current!)
+
+        split.connect(mbHighHpRef.current!)
+        mbHighHpRef.current!.connect(mbCompHRef.current!)
+        mbCompHRef.current!.connect(mbGainHRef.current!)
+        mbGainHRef.current!.connect(sumGainRef.current!)
+
+        sumGainRef.current!.connect(gainNodeRef.current!)
+        gainNodeRef.current!.connect(compRef.current!)
+        compRef.current!.connect(analyserRef.current!)
+        analyserRef.current!.connect(ctx.destination)
+      } catch (err) {
+        mediaSourceRef.current = null
+        outputModeRef.current = 'native-nospec'
+        snapshot.outputMode = 'native-nospec'
+        graphReady.current = true
+        applyElementVolume(audio)
+        if (appleWebKit.current) setAudioSessionPlayback()
+        notify()
+        return
       }
-      gain.connect(comp)
-      comp.connect(an)
-      an.connect(ctx.destination)
     }
+
     applyAudioFxNodes()
     outputModeRef.current = 'webaudio'
     snapshot.outputMode = 'webaudio'
     graphReady.current = true
     applyElementVolume(audio)
+    if (appleWebKit.current) setAudioSessionPlayback()
     notify()
   } catch {
     outputModeRef.current = 'native-nospec'
@@ -1579,19 +1780,55 @@ export const api = {
     return { ...audioFxRef.current }
   },
   setAudioFx(partial: Partial<AudioFxState>) {
+    const prev = audioFxRef.current
     audioFxRef.current = {
-      ...audioFxRef.current,
+      ...prev,
       ...partial,
-      bass: clamp(partial.bass ?? audioFxRef.current.bass, -12, 12),
-      mid: clamp(partial.mid ?? audioFxRef.current.mid, -12, 12),
-      treble: clamp(partial.treble ?? audioFxRef.current.treble, -12, 12),
-      vocalCut: clamp(partial.vocalCut ?? audioFxRef.current.vocalCut, 0, 1),
-      pan: clamp(partial.pan ?? audioFxRef.current.pan, -1, 1),
-      spatial8d: clamp(partial.spatial8d ?? audioFxRef.current.spatial8d, 0, 3),
+      bass: clamp(partial.bass ?? prev.bass, -8, 8),
+      mid: clamp(partial.mid ?? prev.mid, -8, 8),
+      treble: clamp(partial.treble ?? prev.treble, -8, 8),
+      vocalCut: clamp(partial.vocalCut ?? prev.vocalCut, 0, 1),
+      pan: clamp(partial.pan ?? prev.pan, -1, 1),
+      spatial8d: clamp(partial.spatial8d ?? prev.spatial8d, 0, 2.5),
+      compressor: clamp(partial.compressor ?? prev.compressor, 0, 1),
+      compThreshold: clamp(partial.compThreshold ?? prev.compThreshold, -60, 0),
+      compKnee: clamp(partial.compKnee ?? prev.compKnee, 0, 40),
+      compRatio: clamp(partial.compRatio ?? prev.compRatio, 1, 12),
+      compAttack: clamp(partial.compAttack ?? prev.compAttack, 0.001, 0.5),
+      compRelease: clamp(partial.compRelease ?? prev.compRelease, 0.05, 1),
+      compMakeup: clamp(partial.compMakeup ?? prev.compMakeup, -3, 6),
+      mbAmount: clamp(partial.mbAmount ?? prev.mbAmount, 0, 1),
+      mbLow: clamp(partial.mbLow ?? prev.mbLow, -6, 6),
+      mbMid: clamp(partial.mbMid ?? prev.mbMid, -6, 6),
+      mbHigh: clamp(partial.mbHigh ?? prev.mbHigh, -6, 6),
+      mbThrL: clamp(partial.mbThrL ?? prev.mbThrL, -60, 0),
+      mbThrM: clamp(partial.mbThrM ?? prev.mbThrM, -60, 0),
+      mbThrH: clamp(partial.mbThrH ?? prev.mbThrH, -60, 0),
+      mbRatio: clamp(partial.mbRatio ?? prev.mbRatio, 1, 12),
     }
+    void resumeAudioContext()
     if (audioRef.current) ensureGraph(audioRef.current)
     applyAudioFxNodes()
     notify()
+  },
+  get compressorReduction(): number {
+    try {
+      if (!compRef.current) return 0
+      return Math.abs(compRef.current.reduction ?? 0)
+    } catch {
+      return 0
+    }
+  },
+  get multibandReduction(): { low: number; mid: number; high: number } {
+    try {
+      return {
+        low: Math.abs(mbCompLRef.current?.reduction ?? 0),
+        mid: Math.abs(mbCompMRef.current?.reduction ?? 0),
+        high: Math.abs(mbCompHRef.current?.reduction ?? 0),
+      }
+    } catch {
+      return { low: 0, mid: 0, high: 0 }
+    }
   },
   resetAudioFx() {
     audioFxRef.current = { ...DEFAULT_AUDIO_FX }

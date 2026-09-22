@@ -1159,7 +1159,7 @@ function ImportPanelComponent({
   onImport,
   tracks,
 }: {
-  onImport: (files: File[] | FileList) => Promise<void>
+  onImport: (files: File[] | FileList) => void | Promise<void>
   tracks: TrackItem[]
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -1644,7 +1644,7 @@ function ImportPanelComponent({
         <input
           ref={fileRef}
           type="file"
-          accept="audio/*,video/mp4,video/webm,.mp3,.m4a,.aac,.wav,.ogg,.flac"
+          accept="audio/*,video/*,.mp3,.m4a,.m4b,.aac,.wav,.wave,.ogg,.oga,.opus,.flac,.webm,.mp4,.m4v,.mov,.caf,.aiff,.aif,.wma"
           multiple
           hidden
           onChange={(e) => {
@@ -2049,6 +2049,17 @@ export function MusicaHome() {
   const [recentDot, setRecentDot] = useState(0)
   const [importNotice, setImportNotice] = useState<string | null>(null)
   const [artistFilter, setArtistFilter] = useState<string | null>(null)
+  const [importQueue, setImportQueue] = useState<File[]>([])
+  const [importQueueIndex, setImportQueueIndex] = useState(0)
+  const [importReviewOpen, setImportReviewOpen] = useState(false)
+  const [importChoiceOpen, setImportChoiceOpen] = useState(false)
+  const [importPendingFiles, setImportPendingFiles] = useState<File[]>([])
+  const [reviewTitle, setReviewTitle] = useState('')
+  const [reviewArtist, setReviewArtist] = useState('')
+  const [reviewAlbum, setReviewAlbum] = useState('')
+  const [reviewYear, setReviewYear] = useState('')
+  const [reviewCover, setReviewCover] = useState<string | undefined>(undefined)
+  const [reviewBusy, setReviewBusy] = useState(false)
 
   const [menu, setMenu] = useState<TrackMenuState | null>(null)
   const [assignTrack, setAssignTrack] = useState<TrackItem | null>(null)
@@ -2057,7 +2068,7 @@ export function MusicaHome() {
   const [newPlDraft, setNewPlDraft] = useState('')
 
   // ── Editor de portada ──
-  const [editCover, setEditCover] = useState<string | undefined>(undefined)
+  const [editCover, setEditCover] = useState<string | null | undefined>(undefined)
   const [coverPending, setCoverPending] = useState<{ src: string; w: number; h: number } | null>(null)
   const [coverZoom, setCoverZoom] = useState(1)
   const [coverPosX, setCoverPosX] = useState(50)
@@ -2080,7 +2091,23 @@ export function MusicaHome() {
     vocalCut: 0,
     pan: 0,
     spatial8d: 0,
+    compressor: 0,
+    compThreshold: -22,
+    compKnee: 18,
+    compRatio: 2.5,
+    compAttack: 0.012,
+    compRelease: 0.28,
+    compMakeup: 0,
+    mbAmount: 0,
+    mbLow: 0,
+    mbMid: 0,
+    mbHigh: 0,
+    mbThrL: -28,
+    mbThrM: -24,
+    mbThrH: -26,
+    mbRatio: 2.8,
   })
+  const [listenStatsVersion, setListenStatsVersion] = useState(0)
   const [progressColor, setProgressColor] = useState(() => getBarPrefs().progressColor)
   const plDragFromRef = useRef<string | null>(null)
   const plLongPressRef = useRef<number | null>(null)
@@ -2258,63 +2285,163 @@ export function MusicaHome() {
     return pl
   }
 
-  const onImport = async (files: FileList | File[] | null) => {
-    const list = files ? Array.from(files) : []
-    if (!list.length) return
-
-    let enrichedCount = 0
-
-    for (const file of list) {
-      const ok =
-        file.type.startsWith('audio/') ||
-        file.type.startsWith('video/') ||
-        /\.(mp3|m4a|aac|wav|ogg|flac|opus|mp4|webm)$/i.test(file.name)
-      if (!ok) {
-        soundFail()
-        continue
-      }
-      try {
-        const t = await importTrackFile(file)
-        soundSuccess()
-
-        const meta = await extractAudioMetadata(file)
-        const patch: Partial<TrackItem> = {}
-        if (meta.title && (!t.title || /^(track|audio|untitled|sin t[ií]tulo)/i.test(t.title))) {
-          patch.title = meta.title
-        }
-        if (meta.artist && (!t.artist || /^(desconocido|unknown)$/i.test(t.artist))) {
-          patch.artist = meta.artist
-        }
-        if (meta.album && !t.album) patch.album = meta.album
-        if (meta.year && !t.year) patch.year = meta.year
-        if (meta.coverDataUrl && !t.coverDataUrl) patch.coverDataUrl = meta.coverDataUrl
-
-        let enrichedTrack = t
-        if (Object.keys(patch).length) {
-          await updateTrack(t.id, patch)
-          enrichedTrack = { ...t, ...patch }
-          enrichedCount += 1
-        }
-
-        if (playlists.length > 0) {
-          setAssignTrack(enrichedTrack)
-          setAssignIds([])
-          setNewPlDraft('')
-        }
-      } catch {
-        soundFail()
-      }
-    }
-
-    await refresh()
-    setTab('library')
-    if (enrichedCount > 0) {
-      setImportNotice(
-        enrichedCount === 1
-          ? 'Se detectaron metadatos (portada/artista/álbum/año) en 1 archivo.'
-          : `Se detectaron metadatos en ${enrichedCount} archivos.`
+  const isImportableMediaFile = (file: File) => {
+    const name = file.name || ''
+    const type = (file.type || '').toLowerCase()
+    /* iOS PWA a menudo reporta type vacío o application/octet-stream */
+    if (type.startsWith('audio/') || type.startsWith('video/')) return true
+    if (
+      !type ||
+      type === 'application/octet-stream' ||
+      type === 'application/x-mpegurl' ||
+      type === 'binary/octet-stream'
+    ) {
+      return /\.(mp3|m4a|m4b|aac|wav|wave|ogg|oga|opus|flac|webm|mp4|m4v|mov|caf|aiff|aif|wma|alac|3gp|mkv)$/i.test(
+        name,
       )
     }
+    return /\.(mp3|m4a|m4b|aac|wav|ogg|opus|flac|webm|mp4|mov|caf|aiff|aif)$/i.test(name)
+  }
+
+  const enrichTrackFromFile = async (file: File, t: TrackItem) => {
+    const meta = await extractAudioMetadata(file)
+    const patch: Partial<TrackItem> = {}
+    if (meta.title && (!t.title || /^(track|audio|untitled|sin t[ií]tulo)/i.test(t.title))) {
+      patch.title = meta.title
+    }
+    if (meta.artist && (!t.artist || /^(desconocido|unknown)$/i.test(t.artist))) {
+      patch.artist = meta.artist
+    }
+    if (meta.album && !t.album) patch.album = meta.album
+    if (meta.year && !t.year) patch.year = meta.year
+    if (meta.coverDataUrl && !t.coverDataUrl) patch.coverDataUrl = meta.coverDataUrl
+    if (Object.keys(patch).length) {
+      await updateTrack(t.id, patch)
+      return { track: { ...t, ...patch }, enriched: true as const }
+    }
+    return { track: t, enriched: false as const }
+  }
+
+  const onImport = async (
+    files: FileList | File[] | null,
+    opts?: { mode?: 'quick' | 'review' },
+  ) => {
+    const list = (files ? Array.from(files) : []).filter(isImportableMediaFile)
+    if (!list.length) {
+      soundFail()
+      setImportNotice('Ningún archivo de audio/vídeo reconocido. Prueba MP3, M4A, WAV, FLAC, AAC…')
+      return
+    }
+
+    const mode = opts?.mode ?? (list.length > 1 ? 'review' : 'quick')
+
+    if (mode === 'review' && list.length >= 1) {
+      setImportQueue(list)
+      setImportQueueIndex(0)
+      setImportReviewOpen(true)
+      await prepareImportReviewItem(list[0])
+      return
+    }
+
+    /* Importar rápido: metadatos embebidos, sin wizard */
+    let okCount = 0
+    let enrichedCount = 0
+    let failCount = 0
+    for (const file of list) {
+      try {
+        const t = await importTrackFile(file)
+        const { enriched } = await enrichTrackFromFile(file, t)
+        if (enriched) enrichedCount += 1
+        okCount += 1
+      } catch {
+        failCount += 1
+      }
+    }
+    await refresh()
+    setTab('library')
+    if (okCount > 0) soundSuccess()
+    if (failCount > 0) soundFail()
+    setImportNotice(
+      failCount === 0
+        ? `Importadas ${okCount} pista${okCount === 1 ? '' : 's'}${enrichedCount ? ` · metadatos en ${enrichedCount}` : ''}.`
+        : `Importadas ${okCount}, fallaron ${failCount}.`,
+    )
+  }
+
+  const prepareImportReviewItem = async (file: File) => {
+    setReviewBusy(true)
+    try {
+      const base = file.name.replace(/\.[^.]+$/, '') || 'Sin título'
+      setReviewTitle(base)
+      setReviewArtist('Desconocido')
+      setReviewAlbum('')
+      setReviewYear('')
+      setReviewCover(undefined)
+      const meta = await extractAudioMetadata(file)
+      if (meta.title) setReviewTitle(meta.title)
+      if (meta.artist) setReviewArtist(meta.artist)
+      if (meta.album) setReviewAlbum(meta.album)
+      if (meta.year) setReviewYear(meta.year)
+      if (meta.coverDataUrl) setReviewCover(meta.coverDataUrl)
+    } catch {
+      /* metadatos opcionales */
+    } finally {
+      setReviewBusy(false)
+    }
+  }
+
+  const commitReviewImport = async (skip = false) => {
+    const file = importQueue[importQueueIndex]
+    if (!file) {
+      setImportReviewOpen(false)
+      setImportQueue([])
+      return
+    }
+    if (!skip) {
+      setReviewBusy(true)
+      try {
+        const t = await importTrackFile(file)
+        await updateTrack(t.id, {
+          title: reviewTitle.trim() || t.title,
+          artist: reviewArtist.trim() || t.artist,
+          album: reviewAlbum.trim() || undefined,
+          year: reviewYear.trim() || undefined,
+          coverDataUrl: reviewCover ?? t.coverDataUrl,
+        })
+        soundSuccess()
+      } catch {
+        soundFail()
+      } finally {
+        setReviewBusy(false)
+      }
+    }
+    const next = importQueueIndex + 1
+    if (next >= importQueue.length) {
+      setImportReviewOpen(false)
+      setImportQueue([])
+      setImportQueueIndex(0)
+      await refresh()
+      setTab('library')
+      setImportNotice(`Revisión terminada · ${importQueue.length} archivo(s).`)
+      return
+    }
+    setImportQueueIndex(next)
+    await prepareImportReviewItem(importQueue[next])
+  }
+
+  const startImportChoice = (files: FileList | File[] | null) => {
+    const list = (files ? Array.from(files) : []).filter(isImportableMediaFile)
+    if (!list.length) {
+      soundFail()
+      setImportNotice('Ningún archivo de audio/vídeo reconocido.')
+      return
+    }
+    if (list.length === 1) {
+      void onImport(list, { mode: 'review' })
+      return
+    }
+    setImportPendingFiles(list)
+    setImportChoiceOpen(true)
   }
 
   const playAll = (list: TrackItem[], start?: TrackItem) => {
@@ -2359,10 +2486,12 @@ export function MusicaHome() {
     setEditYear(t.year ?? '')
     setEditAlbum(t.album ?? '')
     setEditLyrics(t.lyrics ?? '')
+    setEditCover(t.coverDataUrl ?? undefined)
     setCoverPending(null)
     setCoverZoom(1)
     setCoverPosX(50)
     setCoverPosY(50)
+    setCoverBusy(false)
   }
 
   const saveEdit = async () => {
@@ -2377,6 +2506,8 @@ export function MusicaHome() {
     })
     soundSuccess()
     setEditId(null)
+    setEditCover(undefined)
+    setCoverPending(null)
     await refresh()
   }
 
@@ -3439,7 +3570,12 @@ export function MusicaHome() {
   ) : (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 10, flexWrap: 'wrap' }}>
-        <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>Tus listas</h2>
+        <div>
+          <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800 }}>Listas de reproducción</h2>
+          <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--gco-ink-muted)' }}>
+            {playlists.length} lista{playlists.length === 1 ? '' : 's'} · arrastra pistas para ordenar
+          </p>
+        </div>
         <GlassButton
           onClick={() => {
             soundClick()
@@ -3631,32 +3767,68 @@ export function MusicaHome() {
             beatReactive
           />
         </div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 16, flexWrap: 'wrap' }}>
-          {(specShowAll ? ALL_SPEC_STYLES.map((x) => x.id) : SPEC_STYLES).map((s) => (
+        <div
+          style={{
+            marginTop: 18,
+            padding: '1rem 1rem 0.85rem',
+            borderRadius: 20,
+            border: '1px solid var(--gco-glass-border)',
+            background: 'color-mix(in srgb, var(--gco-glass-bg, rgba(255,255,255,0.04)) 88%, transparent)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800 }}>Estilos de espectro</h4>
             <button
-              key={s}
               type="button"
-              className={`glass-button ${specStyle === s ? '' : 'secondary'}`}
-              style={{ fontSize: '0.75rem', padding: '0.35rem 0.7rem' }}
+              className="glass-button secondary"
+              style={{ fontSize: '0.7rem', padding: '0.28rem 0.6rem', borderRadius: 999 }}
               onClick={() => {
                 soundClick()
-                setSpecStyle(s)
+                setSpecShowAll((v) => !v)
               }}
             >
-              {specLabel(s)}
+              {specShowAll ? 'Vista compacta' : `Ver todos (${ALL_SPEC_STYLES.length})`}
             </button>
-          ))}
-          <button
-            type="button"
-            className="glass-button secondary"
-            style={{ fontSize: '0.75rem', padding: '0.35rem 0.7rem' }}
-            onClick={() => {
-              soundClick()
-              setSpecShowAll((v) => !v)
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))',
+              gap: 8,
             }}
           >
-            {specShowAll ? 'Menos estilos' : `Todos (${ALL_SPEC_STYLES.length})`}
-          </button>
+            {(specShowAll ? ALL_SPEC_STYLES.map((x) => x.id) : SPEC_STYLES).map((s) => {
+              const on = specStyle === s
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => {
+                    soundClick()
+                    setSpecStyle(s)
+                  }}
+                  style={{
+                    border: on ? '1.5px solid var(--gco-primary)' : '1px solid var(--gco-glass-border)',
+                    background: on
+                      ? 'color-mix(in srgb, var(--gco-primary) 18%, transparent)'
+                      : 'var(--gco-glass-bg, rgba(255,255,255,0.03))',
+                    color: on ? 'var(--gco-primary)' : 'inherit',
+                    borderRadius: 14,
+                    padding: '0.65rem 0.4rem',
+                    cursor: 'pointer',
+                    font: 'inherit',
+                    fontSize: '0.72rem',
+                    fontWeight: on ? 700 : 550,
+                    textAlign: 'center',
+                    boxShadow: on ? '0 4px 16px color-mix(in srgb, var(--gco-primary) 25%, transparent)' : 'none',
+                    transition: 'border 0.15s ease, background 0.15s ease, transform 0.12s ease',
+                  }}
+                >
+                  {specLabel(s)}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         {/* Mezcla de audio REAL (Web Audio EQ + pan + vocal cut) */}
@@ -3677,25 +3849,84 @@ export function MusicaHome() {
             <button
               type="button"
               className="glass-button secondary"
-              style={{ fontSize: '0.7rem', padding: '0.3rem 0.65rem' }}
+              style={{ fontSize: '0.7rem', padding: '0.3rem 0.65rem', borderRadius: 999 }}
               onClick={() => {
                 soundClick()
-                setAudioFxUi({ bass: 0, mid: 0, treble: 0, vocalCut: 0, pan: 0, spatial8d: 0 })
+                setAudioFxUi({
+                  bass: 0,
+                  mid: 0,
+                  treble: 0,
+                  vocalCut: 0,
+                  pan: 0,
+                  spatial8d: 0,
+                  compressor: 0,
+                  compThreshold: -22,
+                  compKnee: 18,
+                  compRatio: 2.5,
+                  compAttack: 0.012,
+                  compRelease: 0.28,
+                  compMakeup: 0,
+                  mbAmount: 0,
+                  mbLow: 0,
+                  mbMid: 0,
+                  mbHigh: 0,
+                  mbThrL: -28,
+                  mbThrM: -24,
+                  mbThrH: -26,
+                  mbRatio: 2.8,
+                })
                 ;(player as { resetAudioFx?: () => void }).resetAudioFx?.()
               }}
             >
-              Restaurar
+              Restaurar limpio
             </button>
           </div>
-          <p style={{ margin: '0 0 12px', fontSize: '0.72rem', opacity: 0.55, lineHeight: 1.45 }}>
-            Cambia el sonido de verdad (EQ + estéreo). En iOS/Android nativo puede estar limitado si el motor usa salida nativa.
-            «Instrumental» atenúa la zona de voz (~1 kHz). «8D» mueve el pan automáticamente.
-          </p>
+          <div
+            style={{
+              margin: '0 0 14px',
+              padding: '0.65rem 0.8rem',
+              borderRadius: 14,
+              background: 'color-mix(in srgb, var(--gco-primary) 10%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--gco-primary) 22%, transparent)',
+              fontSize: '0.72rem',
+              lineHeight: 1.5,
+              opacity: 0.9,
+            }}
+          >
+            Procesado con rampas suaves (±8 dB EQ). Multibanda y glue en Off por defecto.
+            <br />
+            <strong style={{ opacity: 0.95 }}>
+              Motor: {(player as { outputMode?: string }).outputMode ?? '—'}
+            </strong>
+            {' · '}
+            {(player as { outputMode?: string }).outputMode === 'webaudio'
+              ? 'FX activos (deberías oír EQ/pan/compresión).'
+              : 'FX limitados: pulsa ▶ otra vez o «Activar FX» tras un toque.'}
+          </div>
+          <button
+            type="button"
+            className="glass-button secondary"
+            style={{ fontSize: '0.72rem', marginBottom: 12, width: '100%' }}
+            onClick={() => {
+              soundClick()
+              try {
+                ;(player as { resumeAudioContext?: () => void }).resumeAudioContext?.()
+              } catch {
+                /* */
+              }
+              /* Reaplicar FX fuerza ensureGraph en el motor */
+              ;(player as { setAudioFx?: (p: Record<string, number>) => void }).setAudioFx?.({
+                ...audioFxUi,
+              })
+            }}
+          >
+            Activar / reiniciar motor FX (Web Audio)
+          </button>
           {(
             [
-              { key: 'bass', label: 'Graves', min: -12, max: 12, step: 0.5, fmt: (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB` },
-              { key: 'mid', label: 'Medios', min: -12, max: 12, step: 0.5, fmt: (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB` },
-              { key: 'treble', label: 'Agudos', min: -12, max: 12, step: 0.5, fmt: (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB` },
+              { key: 'bass', label: 'Graves', min: -8, max: 8, step: 0.5, fmt: (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB` },
+              { key: 'mid', label: 'Medios', min: -8, max: 8, step: 0.5, fmt: (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB` },
+              { key: 'treble', label: 'Agudos', min: -8, max: 8, step: 0.5, fmt: (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB` },
               { key: 'vocalCut', label: 'Instrumental / −voz', min: 0, max: 1, step: 0.05, fmt: (v: number) => `${Math.round(v * 100)}%` },
               { key: 'pan', label: 'Balance L ↔ R', min: -1, max: 1, step: 0.05, fmt: (v: number) => (v === 0 ? 'Centro' : v < 0 ? `L ${Math.abs(v).toFixed(2)}` : `R ${v.toFixed(2)}`) },
               { key: 'spatial8d', label: 'Espacial 8D', min: 0, max: 2.5, step: 0.1, fmt: (v: number) => (v <= 0 ? 'Off' : `${v.toFixed(1)}×`) },
@@ -3730,6 +3961,201 @@ export function MusicaHome() {
               </span>
             </label>
           ))}
+          <div
+            style={{
+              marginTop: 14,
+              paddingTop: 12,
+              borderTop: '1px solid var(--gco-glass-border)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: 800 }}>Multibanda (Low / Mid / High)</h4>
+              <span style={{ fontSize: '0.7rem', opacity: 0.55 }}>
+                {audioFxUi.mbAmount <= 0.03 ? 'Off' : `${Math.round(audioFxUi.mbAmount * 100)}%`}
+              </span>
+            </div>
+            <p style={{ margin: '0 0 10px', fontSize: '0.7rem', opacity: 0.5, lineHeight: 1.4 }}>
+              Cruce ~250 Hz / 2.5 kHz. Comprime cada banda por separado (estilo mastering). Empieza en Off para no alterar el mix.
+            </p>
+            {(
+              [
+                { key: 'mbAmount', label: 'Cantidad MB', min: 0, max: 1, step: 0.05, fmt: (v: number) => (v <= 0.03 ? 'Off' : `${Math.round(v * 100)}%`) },
+                { key: 'mbLow', label: 'Graves banda', min: -6, max: 6, step: 0.5, fmt: (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB` },
+                { key: 'mbMid', label: 'Medios banda', min: -6, max: 6, step: 0.5, fmt: (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB` },
+                { key: 'mbHigh', label: 'Agudos banda', min: -6, max: 6, step: 0.5, fmt: (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB` },
+                { key: 'mbRatio', label: 'Ratio MB', min: 1, max: 8, step: 0.1, fmt: (v: number) => `${v.toFixed(1)}:1` },
+              ] as const
+            ).map((row) => (
+              <label
+                key={row.key}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(90px, 1fr) 1.6fr auto',
+                  gap: 10,
+                  alignItems: 'center',
+                  marginBottom: 8,
+                  fontSize: '0.76rem',
+                }}
+              >
+                <span style={{ fontWeight: 600 }}>{row.label}</span>
+                <input
+                  type="range"
+                  min={row.min}
+                  max={row.max}
+                  step={row.step}
+                  value={audioFxUi[row.key]}
+                  onChange={(e) => {
+                    const v = Number(e.target.value)
+                    setAudioFxUi((prev) => ({ ...prev, [row.key]: v }))
+                  }}
+                  style={{ width: '100%', accentColor: 'var(--gco-primary)' }}
+                />
+                <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.75, minWidth: 56, textAlign: 'right' }}>
+                  {row.fmt(audioFxUi[row.key])}
+                </span>
+              </label>
+            ))}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+              <button type="button" className="glass-button secondary" style={{ fontSize: '0.7rem' }} onClick={() => { soundClick(); setAudioFxUi((p) => ({ ...p, mbAmount: 0 })) }}>MB Off</button>
+              <button type="button" className="glass-button secondary" style={{ fontSize: '0.7rem' }} onClick={() => { soundClick(); setAudioFxUi((p) => ({ ...p, mbAmount: 0.4, mbLow: 1, mbMid: 0, mbHigh: 0.5, mbRatio: 2.2 })) }}>Punch suave</button>
+              <button type="button" className="glass-button secondary" style={{ fontSize: '0.7rem' }} onClick={() => { soundClick(); setAudioFxUi((p) => ({ ...p, mbAmount: 0.55, mbLow: 2, mbMid: -0.5, mbHigh: 1.5, mbRatio: 3 })) }}>Clarity</button>
+            </div>
+          </div>
+
+          <div
+            style={{
+              marginTop: 14,
+              paddingTop: 12,
+              borderTop: '1px solid var(--gco-glass-border)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: 800 }}>Glue / bus compressor</h4>
+              <span style={{ fontSize: '0.7rem', opacity: 0.55 }}>
+                {audioFxUi.compressor <= 0.02 ? 'Bypass' : `${Math.round(audioFxUi.compressor * 100)}%`}
+              </span>
+            </div>
+            <p style={{ margin: '0 0 10px', fontSize: '0.7rem', opacity: 0.5, lineHeight: 1.4 }}>
+              Suaviza picos y sube el cuerpo del tema. Ideal con volumen forzado alto para evitar clipping.
+            </p>
+            {(
+              [
+                { key: 'compressor', label: 'Cantidad', min: 0, max: 1, step: 0.05, fmt: (v: number) => (v <= 0.02 ? 'Off' : `${Math.round(v * 100)}%`) },
+                { key: 'compThreshold', label: 'Umbral', min: -60, max: 0, step: 1, fmt: (v: number) => `${v.toFixed(0)} dB` },
+                { key: 'compRatio', label: 'Ratio', min: 1, max: 20, step: 0.5, fmt: (v: number) => `${v.toFixed(1)}:1` },
+                { key: 'compKnee', label: 'Knee', min: 0, max: 40, step: 1, fmt: (v: number) => `${v.toFixed(0)} dB` },
+                { key: 'compAttack', label: 'Attack', min: 0, max: 0.2, step: 0.001, fmt: (v: number) => `${(v * 1000).toFixed(0)} ms` },
+                { key: 'compRelease', label: 'Release', min: 0.05, max: 1, step: 0.01, fmt: (v: number) => `${(v * 1000).toFixed(0)} ms` },
+                { key: 'compMakeup', label: 'Makeup', min: -6, max: 12, step: 0.5, fmt: (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB` },
+              ] as const
+            ).map((row) => (
+              <label
+                key={row.key}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(90px, 1fr) 1.6fr auto',
+                  gap: 10,
+                  alignItems: 'center',
+                  marginBottom: 8,
+                  fontSize: '0.76rem',
+                }}
+              >
+                <span style={{ fontWeight: 600 }}>{row.label}</span>
+                <input
+                  type="range"
+                  min={row.min}
+                  max={row.max}
+                  step={row.step}
+                  value={audioFxUi[row.key]}
+                  onChange={(e) => {
+                    const v = Number(e.target.value)
+                    setAudioFxUi((prev) => ({ ...prev, [row.key]: v }))
+                  }}
+                  style={{ width: '100%', accentColor: 'var(--gco-primary)' }}
+                />
+                <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.75, minWidth: 56, textAlign: 'right' }}>
+                  {row.fmt(audioFxUi[row.key])}
+                </span>
+              </label>
+            ))}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4, marginBottom: 4 }}>
+              <button
+                type="button"
+                className="glass-button secondary"
+                style={{ fontSize: '0.7rem' }}
+                onClick={() => {
+                  soundClick()
+                  setAudioFxUi((p) => ({
+                    ...p,
+                    compressor: 0,
+                  }))
+                }}
+              >
+                Off
+              </button>
+              <button
+                type="button"
+                className="glass-button secondary"
+                style={{ fontSize: '0.7rem' }}
+                onClick={() => {
+                  soundClick()
+                  setAudioFxUi((p) => ({
+                    ...p,
+                    compressor: 0.45,
+                    compThreshold: -28,
+                    compKnee: 18,
+                    compRatio: 2.5,
+                    compAttack: 0.01,
+                    compRelease: 0.3,
+                    compMakeup: 1,
+                  }))
+                }}
+              >
+                Suave
+              </button>
+              <button
+                type="button"
+                className="glass-button secondary"
+                style={{ fontSize: '0.7rem' }}
+                onClick={() => {
+                  soundClick()
+                  setAudioFxUi((p) => ({
+                    ...p,
+                    compressor: 0.75,
+                    compThreshold: -18,
+                    compKnee: 6,
+                    compRatio: 6,
+                    compAttack: 0.003,
+                    compRelease: 0.18,
+                    compMakeup: 3,
+                  }))
+                }}
+              >
+                Radio
+              </button>
+              <button
+                type="button"
+                className="glass-button secondary"
+                style={{ fontSize: '0.7rem' }}
+                onClick={() => {
+                  soundClick()
+                  setAudioFxUi((p) => ({
+                    ...p,
+                    compressor: 1,
+                    compThreshold: -8,
+                    compKnee: 2,
+                    compRatio: 12,
+                    compAttack: 0.001,
+                    compRelease: 0.12,
+                    compMakeup: 2,
+                  }))
+                }}
+              >
+                Limitador
+              </button>
+            </div>
+          </div>
+
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
             <button
               type="button"
@@ -3884,7 +4310,7 @@ export function MusicaHome() {
 
   const importPanel = (
     <ImportPanelComponent
-      onImport={onImport}
+      onImport={(files) => { startImportChoice(files) }}
       tracks={tracks}
     />
   )
@@ -3909,22 +4335,117 @@ export function MusicaHome() {
           style={{ ['--fill' as unknown as string]: `${(volumeBoost / 300) * 100}%` } as React.CSSProperties}
         />
         <p style={{ fontSize: '0.9rem', marginTop: 6, fontWeight: 600 }}>{volumeBoost}%</p>
+        <p style={{ fontSize: '0.72rem', color: 'var(--gco-ink-muted)', margin: '8px 0 0', lineHeight: 1.45 }}>
+          Combínalo con el glue compressor en Mezcla para evitar clipping.
+        </p>
       </div>
 
-      <div className="glass-card" style={{ padding: '1.2rem 1.25rem', border: '1px solid var(--gco-glass-border)' }}>
-        <h3 style={{ marginBottom: 14, fontSize: '0.98rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div className="glass-card" style={{ padding: '1.25rem 1.3rem', border: '1px solid var(--gco-glass-border)', borderRadius: 22 }}>
+        <h3 style={{ marginBottom: 12, fontSize: '1rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8 }} data-prefs-v={listenStatsVersion}>
+          <Icon.gear size={17} /> Preferencias de reproducción
+        </h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {(
+            [
+              {
+                key: 'autoplay',
+                label: 'Continuar al terminar',
+                hint: 'Pasa a la siguiente de la cola automáticamente',
+                get: () => localStorage.getItem('gco:pref-autoplay') !== '0',
+                set: (v: boolean) => localStorage.setItem('gco:pref-autoplay', v ? '1' : '0'),
+              },
+              {
+                key: 'resume',
+                label: 'Recordar posición',
+                hint: 'Retoma el minuto al volver a la pista',
+                get: () => localStorage.getItem('gco:pref-resume') !== '0',
+                set: (v: boolean) => localStorage.setItem('gco:pref-resume', v ? '1' : '0'),
+              },
+              {
+                key: 'haptic',
+                label: 'Vibración al interactuar',
+                hint: 'Feedback háptico en móvil al arrastrar / long-press',
+                get: () => localStorage.getItem('gco:pref-haptic') !== '0',
+                set: (v: boolean) => localStorage.setItem('gco:pref-haptic', v ? '1' : '0'),
+              },
+            ] as const
+          ).map((row) => {
+            const on = row.get()
+            return (
+              <button
+                key={row.key}
+                type="button"
+                onClick={() => {
+                  soundClick()
+                  row.set(!on)
+                  setListenStatsVersion((n) => n + 1)
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  padding: '0.7rem 0.85rem',
+                  borderRadius: 14,
+                  border: '1px solid var(--gco-glass-border)',
+                  background: 'var(--gco-glass-bg, rgba(255,255,255,0.03))',
+                  color: 'inherit',
+                  font: 'inherit',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                }}
+              >
+                <span>
+                  <span style={{ display: 'block', fontWeight: 650, fontSize: '0.88rem' }}>{row.label}</span>
+                  <span style={{ display: 'block', fontSize: '0.72rem', opacity: 0.55, marginTop: 2 }}>{row.hint}</span>
+                </span>
+                <span
+                  style={{
+                    width: 42,
+                    height: 24,
+                    borderRadius: 99,
+                    background: on ? 'var(--gco-primary)' : 'var(--gco-glass-border)',
+                    position: 'relative',
+                    flexShrink: 0,
+                    transition: 'background 0.15s ease',
+                  }}
+                >
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: 3,
+                      left: on ? 20 : 3,
+                      width: 18,
+                      height: 18,
+                      borderRadius: '50%',
+                      background: '#fff',
+                      transition: 'left 0.15s ease',
+                      boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
+                    }}
+                  />
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="glass-card" style={{ padding: '1.25rem 1.3rem', border: '1px solid var(--gco-glass-border)', borderRadius: 22 }}>
+        <h3 style={{ marginBottom: 14, fontSize: '1rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8 }}>
           <Icon.palette size={17} /> Personalización
         </h3>
+
         <label
           style={{
             fontSize: '0.85rem',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            marginBottom: 16,
-            padding: '0.5rem 0.75rem',
-            borderRadius: 12,
+            marginBottom: 14,
+            padding: '0.55rem 0.8rem',
+            borderRadius: 14,
             background: 'var(--gco-glass-bg, rgba(255,255,255,0.04))',
+            border: '1px solid var(--gco-glass-border)',
           }}
         >
           <span>Color barra de progreso</span>
@@ -3939,7 +4460,43 @@ export function MusicaHome() {
           />
         </label>
 
-        <p style={{ fontSize: '0.85rem', marginBottom: 8, fontWeight: 600 }}>Colores del espectro</p>
+        <p style={{ fontSize: '0.85rem', marginBottom: 8, fontWeight: 700 }}>Paletas de espectro</p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          {(
+            [
+              { name: 'Aqua', a: '#22E6C5', b: '#8B5CF6', c: '#F472B6' },
+              { name: 'Sunset', a: '#FF6B35', b: '#F7C59F', c: '#EF476F' },
+              { name: 'Ocean', a: '#00B4D8', b: '#0077B6', c: '#90E0EF' },
+              { name: 'Neon', a: '#39FF14', b: '#FF00FF', c: '#00FFFF' },
+              { name: 'Gold', a: '#F5C542', b: '#E8A317', c: '#FFF3B0' },
+              { name: 'Ice', a: '#E0F7FA', b: '#81D4FA', c: '#B39DDB' },
+              { name: 'Fire', a: '#FF3D00', b: '#FF9100', c: '#FFEA00' },
+              { name: 'Mono', a: '#FFFFFF', b: '#A0A0A0', c: '#505050' },
+            ] as const
+          ).map((pal) => (
+            <button
+              key={pal.name}
+              type="button"
+              className="glass-button secondary"
+              style={{ fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: 6, padding: '0.35rem 0.65rem' }}
+              onClick={() => {
+                soundClick()
+                setSpecColor(pal.a)
+                setSpecColorB(pal.b)
+                setSpecColorC(pal.c)
+              }}
+            >
+              <span style={{ display: 'flex', gap: 2 }}>
+                {[pal.a, pal.b, pal.c].map((c) => (
+                  <span key={c} style={{ width: 10, height: 10, borderRadius: 99, background: c, border: '1px solid rgba(255,255,255,0.2)' }} />
+                ))}
+              </span>
+              {pal.name}
+            </button>
+          ))}
+        </div>
+
+        <p style={{ fontSize: '0.85rem', marginBottom: 8, fontWeight: 700 }}>Colores manuales</p>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
           <label style={{ fontSize: '0.78rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
             A <input type="color" value={specColor} onChange={(e) => setSpecColor(e.target.value)} />
@@ -3952,7 +4509,25 @@ export function MusicaHome() {
           </label>
         </div>
 
-        <p style={{ fontSize: '0.85rem', marginBottom: 8, fontWeight: 600 }}>Efectos del espectro</p>
+        <p style={{ fontSize: '0.85rem', marginBottom: 8, fontWeight: 700 }}>Estilo de espectro</p>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12, maxHeight: 140, overflow: 'auto' }}>
+          {ALL_SPEC_STYLES.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className={`glass-button ${specStyle === s.id ? '' : 'secondary'}`}
+              style={{ fontSize: '0.7rem', padding: '0.3rem 0.55rem' }}
+              onClick={() => {
+                soundClick()
+                setSpecStyle(s.id)
+              }}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        <p style={{ fontSize: '0.85rem', marginBottom: 8, fontWeight: 700 }}>Efectos visuales</p>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {([1, 2, 3] as const).map((n) => (
             <button
@@ -4575,6 +5150,182 @@ export function MusicaHome() {
         </div>
       )}
 
+      {importChoiceOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100,
+            background: 'rgba(0,0,0,0.55)',
+            display: 'grid',
+            placeItems: 'center',
+            padding: 16,
+            animation: 'gcoFadeIn 0.2s ease',
+          }}
+          onClick={() => setImportChoiceOpen(false)}
+        >
+          <div
+            className="glass-card"
+            style={{
+              width: 'min(420px, 100%)',
+              padding: '1.35rem 1.4rem',
+              border: '1px solid var(--gco-glass-border)',
+              borderRadius: 22,
+              animation: 'gcoScaleIn 0.25s ease',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: '0 0 8px', fontWeight: 800 }}>Importar {importPendingFiles.length} archivos</h3>
+            <p style={{ margin: '0 0 16px', fontSize: '0.85rem', color: 'var(--gco-ink-muted)', lineHeight: 1.5 }}>
+              Elige cómo quieres guardarlas. En iOS/Android PWA conviene «Importar rápido» si son muchas.
+            </p>
+            <GlassButton
+              onClick={() => {
+                soundClick()
+                setImportChoiceOpen(false)
+                const files = importPendingFiles
+                setImportPendingFiles([])
+                void onImport(files, { mode: 'quick' })
+              }}
+            >
+              Importar rápido
+            </GlassButton>
+            <p style={{ fontSize: '0.75rem', color: 'var(--gco-ink-muted)', margin: '6px 0 14px' }}>
+              Usa metadatos originales (título, artista, portada) sin revisar una a una.
+            </p>
+            <button
+              type="button"
+              className="glass-button secondary"
+              style={{ width: '100%' }}
+              onClick={() => {
+                soundClick()
+                setImportChoiceOpen(false)
+                const files = importPendingFiles
+                setImportPendingFiles([])
+                void onImport(files, { mode: 'review' })
+              }}
+            >
+              Revisar una a una
+            </button>
+            <p style={{ fontSize: '0.75rem', color: 'var(--gco-ink-muted)', margin: '6px 0 14px' }}>
+              Edita título, artista, álbum y portada antes de guardar cada pista.
+            </p>
+            <button
+              type="button"
+              className="glass-button secondary"
+              style={{ width: '100%' }}
+              onClick={() => {
+                setImportChoiceOpen(false)
+                setImportPendingFiles([])
+              }}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {importReviewOpen && importQueue[importQueueIndex] && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100,
+            background: 'rgba(0,0,0,0.55)',
+            display: 'grid',
+            placeItems: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            className="glass-card gco-scroll-y"
+            style={{
+              width: 'min(440px, 100%)',
+              maxHeight: '92vh',
+              overflow: 'auto',
+              padding: '1.25rem 1.3rem',
+              border: '1px solid var(--gco-glass-border)',
+              borderRadius: 22,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h3 style={{ margin: 0, fontWeight: 800 }}>Preparar pista</h3>
+              <span style={{ fontSize: '0.8rem', opacity: 0.6 }}>
+                {importQueueIndex + 1} / {importQueue.length}
+              </span>
+            </div>
+            <p style={{ fontSize: '0.78rem', color: 'var(--gco-ink-muted)', marginTop: 0, wordBreak: 'break-all' }}>
+              {importQueue[importQueueIndex].name}
+              {reviewBusy ? ' · leyendo metadatos…' : ''}
+            </p>
+            <div
+              style={{
+                width: 120,
+                height: 120,
+                borderRadius: 18,
+                overflow: 'hidden',
+                margin: '0 auto 14px',
+                background: 'var(--gco-glass-bg)',
+                border: '1px solid var(--gco-glass-border)',
+                display: 'grid',
+                placeItems: 'center',
+              }}
+            >
+              {reviewCover ? (
+                <img src={reviewCover} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <Icon.musicNote size={36} />
+              )}
+            </div>
+            <label style={{ fontSize: '0.78rem', display: 'block', marginBottom: 4 }}>Título</label>
+            <input className="glass-input" value={reviewTitle} onChange={(e) => setReviewTitle(e.target.value)} style={{ marginBottom: 10 }} />
+            <label style={{ fontSize: '0.78rem', display: 'block', marginBottom: 4 }}>Artista</label>
+            <input className="glass-input" value={reviewArtist} onChange={(e) => setReviewArtist(e.target.value)} style={{ marginBottom: 10 }} />
+            <label style={{ fontSize: '0.78rem', display: 'block', marginBottom: 4 }}>Álbum</label>
+            <input className="glass-input" value={reviewAlbum} onChange={(e) => setReviewAlbum(e.target.value)} style={{ marginBottom: 10 }} />
+            <label style={{ fontSize: '0.78rem', display: 'block', marginBottom: 4 }}>Año</label>
+            <input className="glass-input" value={reviewYear} onChange={(e) => setReviewYear(e.target.value)} style={{ marginBottom: 14 }} />
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <GlassButton onClick={() => void commitReviewImport(false)} disabled={reviewBusy}>
+                {reviewBusy ? 'Guardando…' : 'Importar esta'}
+              </GlassButton>
+              <button type="button" className="glass-button secondary" onClick={() => void commitReviewImport(true)} disabled={reviewBusy}>
+                Saltar
+              </button>
+              <button
+                type="button"
+                className="glass-button secondary"
+                onClick={() => {
+                  setImportReviewOpen(false)
+                  setImportQueue([])
+                  setImportQueueIndex(0)
+                }}
+              >
+                Cancelar todo
+              </button>
+            </div>
+            <button
+              type="button"
+              className="glass-button secondary"
+              style={{ marginTop: 10, width: '100%', fontSize: '0.8rem' }}
+              onClick={() => {
+                soundClick()
+                setImportReviewOpen(false)
+                const rest = importQueue.slice(importQueueIndex)
+                setImportQueue([])
+                void onImport(rest, { mode: 'quick' })
+              }}
+            >
+              Importar el resto rápido
+            </button>
+          </div>
+        </div>
+      )}
+
       {editing && (
         <div
           role="dialog"
@@ -4587,7 +5338,7 @@ export function MusicaHome() {
             placeItems: 'center',
             padding: 16,
           }}
-          onClick={() => setEditId(null)}
+          onClick={() => { setEditId(null); setEditCover(undefined); setCoverPending(null) }}
         >
           <div
             className="glass-card gco-scroll-y gco-menu-glass"
@@ -4793,7 +5544,7 @@ export function MusicaHome() {
               >
                 <Icon.trash size={14} /> Borrar pista
               </button>
-              <button type="button" className="glass-button secondary" onClick={() => setEditId(null)}>
+              <button type="button" className="glass-button secondary" onClick={() => { setEditId(null); setEditCover(undefined); setCoverPending(null) }}>
                 Cancelar
               </button>
             </div>

@@ -118,11 +118,14 @@ export interface Story {
   apa: string
   note: string
   tags: string[]
+  /** Glosario de palabras clave del texto original, tocables en pantalla. */
+  glossary?: { word: string; es: string; note?: string }[]
 }
 
 type Screen =
   | 'hub'
   | 'learn'
+  | 'vocab'
   | 'play'
   | 'result'
   | 'levels'
@@ -131,6 +134,8 @@ type Screen =
   | 'story'
   | 'dictionary'
   | 'dictLang'
+  | 'review'
+  | 'achievements'
 
 const LS = {
   unlocked: 'gco.idiomas.unlocked.v3',
@@ -144,6 +149,10 @@ const LS = {
   bestTime: 'gco.idiomas.bestTime.v3',
   completed: 'gco.idiomas.completed.v3',
   dictionary: 'gco.idiomas.dictionary.v1',
+  skipVocab: 'gco.idiomas.skipVocab.v1',
+  streak: 'gco.idiomas.streak.v1',
+  bestStreak: 'gco.idiomas.bestStreak.v1',
+  storyFilter: 'gco.idiomas.storyFilter.v1',
 }
 
 function readJSON<T>(key: string, fallback: T): T {
@@ -738,6 +747,52 @@ interface LexItem {
   etymology?: string
   /** Bloques morfológicos: prefijo + raíz + sufijo. */
   lexemes?: string[]
+  /** Aproximación de pronunciación leída "a la española", sonido por sonido. */
+  phoneticEs?: string
+  /** Categoría temática (para agrupar el vocabulario en unidades). */
+  topic?: string
+}
+
+/**
+ * A partir de marcas convencionales dentro del texto de etimología
+ * (OE = Old English, ON = Old Norse, OF = Old French, ME = Middle English,
+ * lat. = latín, gr. = griego) deduce una franja histórica aproximada y
+ * legible para explicar "desde cuándo existe" una palabra sin inventar
+ * fechas exactas que la fuente no da.
+ */
+function originEraLabel(etymology?: string): string | null {
+  if (!etymology) return null
+  const e = etymology
+  if (/\bOE\b/.test(e))
+    return 'Inglés antiguo (Old English), documentado aprox. entre los años 450 y 1150 d. C., tras la llegada de anglos, sajones y jutos a Britania.'
+  if (/\bON\b/.test(e))
+    return 'Nórdico antiguo (Old Norse), llevado a Inglaterra por los vikingos entre los siglos VIII y XI.'
+  if (/\bOF\b/.test(e))
+    return 'Francés antiguo (Old French), incorporado al inglés sobre todo tras la conquista normanda de 1066.'
+  if (/\bME\b/.test(e))
+    return 'Inglés medio (Middle English), entre aprox. 1150 y 1500, época de Chaucer.'
+  if (/lat\./.test(e))
+    return 'Raíz latina: llegó al inglés directamente del latín culto o a través del francés, muchas veces en el Renacimiento (s. XV–XVII).'
+  if (/gr\./.test(e))
+    return 'Raíz griega: entró al inglés vía el latín culto, típico del vocabulario científico y académico.'
+  return null
+}
+
+/** Reproduce el audio de una palabra o frase con la voz del navegador. */
+const TTS_LANG: Record<LangId, string> = {
+  es: 'es-ES', en: 'en-US', ja: 'ja-JP', zh: 'zh-CN', fr: 'fr-FR', pt: 'pt-PT', de: 'de-DE', it: 'it-IT',
+}
+function speak(text: string, lang: LangId) {
+  try {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return
+    window.speechSynthesis.cancel()
+    const u = new SpeechSynthesisUtterance(text)
+    u.lang = TTS_LANG[lang] || 'en-US'
+    u.rate = 0.92
+    window.speechSynthesis.speak(u)
+  } catch {
+    /* noop: síntesis de voz no disponible en este dispositivo */
+  }
 }
 
 const EN_LEX: LexItem[] = [
@@ -801,7 +856,68 @@ const EN_LEX: LexItem[] = [
   { es: 'información', target: 'information', note: 'Incontable en inglés: no "informations".', root: 'form-', etymology: 'lat. īnformātiō < īnformāre (dar forma). informative, inform. -ation abstracto; incontable.', lexemes: ['in', 'form', 'ation'] },
   { es: 'decisión', target: 'decision', note: 'Sufijo -sion; verbo decide.', root: 'cid-/cis-', etymology: 'lat. dēcīsiō < dēcīdere (cortar). decisive, concise. -sion tras base en -d/-t.', lexemes: ['de', 'cis', 'ion'] },
   { es: 'posible', target: 'possible', note: 'Sufijo -ible/-able de posibilidad.', root: 'poss-', etymology: 'lat. possibilis < posse (poder). possibility, impossible. -ible = capaz de.', lexemes: ['poss', 'ible'] },
-  { es: 'realidad', target: 'reality', note: 'Sufijo -ity; adjetivo real.', root: 'real-', etymology: 'lat. reālitās < rēs (cosa). realistic, realize. -ity = cualidad abstracta.', lexemes: ['real', 'ity'] },
+  { es: 'realidad', target: 'reality', note: 'Sufijo -ity; adjetivo real.', root: 'real-', etymology: 'lat. reālitās < rēs (cosa). realistic, realize. -ity = cualidad abstracta.', lexemes: ['real', 'ity'], phoneticEs: 'ri-Á-li-ti (el acento cae en la segunda sílaba, no en la primera como en español).', topic: 'abstracto' },
+
+  // ---- Unidad: números y cantidad ----
+  { es: 'uno', target: 'one', note: 'Se escribe "one" pero la w- inicial es muda: suena /wʌn/.', root: 'one', etymology: 'OE ān < PIE *oi-no-. alone (all + one), only, once.', lexemes: ['one'], phoneticEs: 'wan (como "wan", con la w de "web").', topic: 'números' },
+  { es: 'dos', target: 'two', note: 'La w es muda: suena igual que "too" y "to".', root: 'two', etymology: 'OE twā < PIE *dwóh. twin, twice, between.', lexemes: ['two'], phoneticEs: 'tu (idéntico a "too").', topic: 'números' },
+  { es: 'tres', target: 'three', note: 'El sonido "th" no existe en español: lengua entre los dientes.', root: 'three', etymology: 'OE þrēo < PIE *tréyes. third, threefold.', lexemes: ['three'], phoneticEs: 'zrí, con la lengua asomando entre los dientes al decir la "z".', topic: 'números' },
+  { es: 'diez', target: 'ten', note: 'Cognado lejano de "diez" vía la raíz indoeuropea *dekm̥.', root: 'ten', etymology: 'OE tīen < PIE *dekm̥. tenth, ten-year.', lexemes: ['ten'], phoneticEs: 'ten.', topic: 'números' },
+  { es: 'cien', target: 'hundred', note: 'No es cognado directo de "ciento"; ese es "cent-" (century, percent).', root: 'hund-', etymology: 'OE hundred < PIE *dkm̥tóm. hundredth. cent- < lat. centum, mismo origen indoeuropeo por otra vía.', lexemes: ['hund', 'red'], phoneticEs: 'JÁN-dred.', topic: 'números' },
+  { es: 'primero', target: 'first', note: 'Superlativo irregular; no sigue el patrón -est de "fastest".', root: 'first', etymology: 'OE fyrst, superlativo de fore (delante). foremost.', lexemes: ['first'], phoneticEs: 'ferst (la "r" se pronuncia suave, casi fundida en la vocal).', topic: 'números' },
+  { es: 'último', target: 'last', note: 'También significa "durar" como verbo (to last).', root: 'last', etymology: 'OE latost, superlativo de late (tarde). lasting.', lexemes: ['last'], phoneticEs: 'last.', topic: 'números' },
+
+  // ---- Unidad: familia y personas ----
+  { es: 'padre', target: 'father', note: 'Cognado indoeuropeo con "padre" (ambos de *pətḗr).', root: 'father', etymology: 'OE fæder < PIE *pətḗr. paternal < lat. pater (misma raíz, otra vía).', lexemes: ['father'], phoneticEs: 'FÁ-der (la "th" se pronuncia con la lengua entre los dientes, como una "d" suave).', topic: 'familia' },
+  { es: 'madre', target: 'mother', note: 'Cognado con "madre" vía la raíz *méh₂tēr.', root: 'mother', etymology: 'OE mōdor < PIE *méh₂tēr. maternal < lat. mater.', lexemes: ['mother'], phoneticEs: 'MÁ-der.', topic: 'familia' },
+  { es: 'hermano', target: 'brother', note: 'Cognado con "hermano" no; con "fraterno" sí (misma raíz PIE).', root: 'brother', etymology: 'OE brōþor < PIE *bʰréh₂tēr. brotherhood. fraternal < lat. frater.', lexemes: ['brother'], phoneticEs: 'BRÁ-der.', topic: 'familia' },
+  { es: 'hermana', target: 'sister', note: 'Préstamo nórdico que desplazó a la forma nativa OE sweostor.', root: 'sister', etymology: 'ON systir < PIE *swésōr. sisterhood.', lexemes: ['sister'], phoneticEs: 'SÍS-ter.', topic: 'familia' },
+  { es: 'hijo/hija', target: 'child / son / daughter', note: '"Child" es genérico; "son" e hijo varón, "daughter" hija.', root: 'child', etymology: 'son < OE sunu (PIE *suHnús). daughter < OE dohtor.', lexemes: ['son', 'daughter'], phoneticEs: 'san / DÓ-ter (la "gh" de daughter no suena).', topic: 'familia' },
+  { es: 'amor', target: 'love', note: 'La v suena suave, casi entre v y f muy sonora del español.', root: 'love', etymology: 'OE lufu < PIE *lewbʰ- (desear). lovely, beloved.', lexemes: ['love'], phoneticEs: 'lav (rima con "of").', topic: 'emociones' },
+  { es: 'miedo', target: 'fear', note: 'También "afraid" como adjetivo (to be afraid of).', root: 'fear', etymology: 'OE fǣr (peligro súbito). fearful, fearless.', lexemes: ['fear'], phoneticEs: 'fíer.', topic: 'emociones' },
+  { es: 'enojado', target: 'angry', note: 'De "anger" (ira), préstamo nórdico.', root: 'ang-', etymology: 'ON angr (aflicción) + -y. anger, angrily.', lexemes: ['angr', 'y'], phoneticEs: 'ÁN-gri.', topic: 'emociones' },
+
+  // ---- Unidad: cuerpo y salud ----
+  { es: 'cabeza', target: 'head', note: 'No confundir con "heat" (calor): distinta vocal.', root: 'head', etymology: 'OE hēafod < PIE *kaput-. heading, headache.', lexemes: ['head'], phoneticEs: 'jed (la "ea" suena como "e" corta, no como "i").', topic: 'cuerpo' },
+  { es: 'corazón', target: 'heart', note: 'La r no se pronuncia con fuerza en inglés británico.', root: 'heart', etymology: 'OE heorte < PIE *ḱḗr. heartbeat, sweetheart.', lexemes: ['heart'], phoneticEs: 'jart.', topic: 'cuerpo' },
+  { es: 'salud', target: 'health', note: 'Emparentado con "whole" (entero/sano).', root: 'heal-', etymology: 'OE hǣlþ < hāl (entero, sano). healthy, healthcare.', lexemes: ['heal', 'th'], phoneticEs: 'jelz (la "th" final se pronuncia con la lengua entre los dientes).', topic: 'cuerpo' },
+  { es: 'enfermo', target: 'sick / ill', note: '"Sick" más común en AmE cotidiano; "ill" más formal/BrE.', root: 'sick', etymology: 'OE sēoc. sickness. ill < ON illr (malo).', lexemes: ['sick'], phoneticEs: 'sik.', topic: 'cuerpo' },
+
+  // ---- Unidad: tecnología y mundo moderno ----
+  { es: 'computadora', target: 'computer', note: 'Del verbo "to compute" (calcular), del latín.', root: 'comput-', etymology: 'lat. computare (calcular con) < com- + putare (pensar/contar). computation, computing.', lexemes: ['com', 'put', 'er'], phoneticEs: 'kom-PIÚ-ter.', topic: 'tecnología' },
+  { es: 'teléfono', target: 'phone / telephone', note: 'Del griego: tele (lejos) + phone (sonido).', root: 'phone', etymology: 'gr. tēle (lejos) + phōnē (voz/sonido), acuñado en el s. XIX. telephone, microphone, symphony.', lexemes: ['tele', 'phone'], phoneticEs: 'foun (la "ph" suena como "f").', topic: 'tecnología' },
+  { es: 'internet', target: 'internet', note: 'Compuesto moderno: inter- (entre) + net (red), de 1974.', root: 'inter-net', etymology: 'lat. inter (entre) + OE net (red de pescar). Acuñado como "interconnected network" en los años 70.', lexemes: ['inter', 'net'], phoneticEs: 'ÍN-ter-net.', topic: 'tecnología' },
+  { es: 'contraseña', target: 'password', note: 'Compuesto transparente: pass (pasar) + word (palabra).', root: 'pass-word', etymology: 'pass < OF passer + OE word. Uso moderno desde la informática del s. XX.', lexemes: ['pass', 'word'], phoneticEs: 'PÁS-uord.', topic: 'tecnología' },
+  { es: 'pantalla', target: 'screen', note: 'Originalmente "biombo/mampara" antes de significar pantalla.', root: 'screen', etymology: 'OF escren (mampara contra el fuego). Sentido de "pantalla de proyección" desde el s. XIX–XX.', lexemes: ['screen'], phoneticEs: 'skrin.', topic: 'tecnología' },
+
+  // ---- Unidad: trabajo y negocios ----
+  { es: 'empresa', target: 'company / business', note: '"Company" = compañía; "business" = negocio/actividad.', root: 'compan-', etymology: 'company < lat. companio (com- + panis, "el que comparte pan"). business < OE bisig (ocupado).', lexemes: ['com', 'pan', 'y'], phoneticEs: 'KÁM-pa-ni.', topic: 'trabajo' },
+  { es: 'reunión', target: 'meeting', note: 'Del verbo "to meet" (encontrarse) + -ing.', root: 'meet', etymology: 'OE mētan (encontrar). meeting, meet up.', lexemes: ['meet', 'ing'], phoneticEs: 'MÍ-ting.', topic: 'trabajo' },
+  { es: 'sueldo', target: 'salary', note: 'Del latín "sal" (sal): en Roma parte del pago era en sal.', root: 'sal-', etymology: 'lat. salarium (ración de sal para soldados) < sal. salaried.', lexemes: ['sal', 'ary'], phoneticEs: 'SÁ-la-ri.', topic: 'trabajo' },
+  { es: 'jefe', target: 'boss', note: 'Préstamo del neerlandés "baas" en el inglés americano colonial.', root: 'boss', etymology: 'del neerlandés baas (maestro/patrón), incorporado en el s. XVII en Norteamérica.', lexemes: ['boss'], phoneticEs: 'bos.', topic: 'trabajo' },
+
+  // ---- Unidad: viajes ----
+  { es: 'viaje', target: 'trip / journey', note: '"Trip" es corto/informal; "journey" más largo/con proceso.', root: 'journ-', etymology: 'journey < OF journée (lo que dura un día) < lat. diurnus (diario).', lexemes: ['journ', 'ey'], phoneticEs: 'YIÓR-ni (la "j" inglesa suena como la "y" fuerte argentina).', topic: 'viajes' },
+  { es: 'aeropuerto', target: 'airport', note: 'Compuesto moderno: air (aire) + port (puerto).', root: 'air-port', etymology: 'air < OF air < lat. aer. port < lat. portus. Palabra acuñada con la aviación, s. XX.', lexemes: ['air', 'port'], phoneticEs: 'ÉR-port.', topic: 'viajes' },
+  { es: 'equipaje', target: 'luggage / baggage', note: '"Luggage" más BrE; "baggage" más AmE (y también sentido figurado).', root: 'lug-', etymology: 'luggage < to lug (arrastrar con esfuerzo) + -age. baggage < OF bagage.', lexemes: ['lug', 'age'], phoneticEs: 'LÁ-guish.', topic: 'viajes' },
+  { es: 'pasaporte', target: 'passport', note: 'Compuesto: pass (pasar) + port (puerto), documento para pasar puertos.', root: 'pass-port', etymology: 'OF passeport, para autorizar el paso por puertos fortificados, s. XV.', lexemes: ['pass', 'port'], phoneticEs: 'PÁS-port.', topic: 'viajes' },
+
+  // ---- Unidad: phrasal verbs esenciales ----
+  { es: 'rendirse / darse por vencido', target: 'give up', note: 'Phrasal verb: give (dar) + up (arriba/completamente).', root: 'give-up', etymology: 'give < OE giefan. up < OE up. El sentido idiomático "abandonar" se fija en inglés medio.', lexemes: ['give', 'up'], phoneticEs: 'guiv ap.', topic: 'phrasal verbs' },
+  { es: 'buscar (información)', target: 'look up', note: 'Phrasal verb: look (mirar) + up, buscar en una fuente.', root: 'look-up', etymology: 'look < OE lōcian. Sentido de "consultar" desde el uso con diccionarios, s. XIX.', lexemes: ['look', 'up'], phoneticEs: 'luk ap.', topic: 'phrasal verbs' },
+  { es: 'seguir adelante', target: 'go on', note: 'Phrasal verb: go (ir) + on (continuidad).', root: 'go-on', etymology: 'go < OE gān. on < OE on/an.', lexemes: ['go', 'on'], phoneticEs: 'gou on.', topic: 'phrasal verbs' },
+  { es: 'despegar (avión) / triunfar', target: 'take off', note: 'Phrasal verb: take (tomar) + off (fuera/separación).', root: 'take-off', etymology: 'take < ON taka. off < OE of (variante acentuada de "of").', lexemes: ['take', 'off'], phoneticEs: 'teik of.', topic: 'phrasal verbs' },
+  { es: 'aparecer / presentarse', target: 'show up', note: 'Phrasal verb coloquial: show (mostrar) + up.', root: 'show-up', etymology: 'show < OE scēawian (mirar/mostrar). Uso coloquial "presentarse" desde el s. XIX en EE. UU.', lexemes: ['show', 'up'], phoneticEs: 'shóu ap.', topic: 'phrasal verbs' },
+
+  // ---- Unidad: vocabulario abstracto y académico (greco-latino) ----
+  { es: 'democracia', target: 'democracy', note: 'Griego: demos (pueblo) + kratos (poder/gobierno).', root: 'demo-', etymology: 'gr. dēmokratía < dēmos (pueblo) + krátos (poder), s. V a. C. en Atenas; entra al inglés vía el francés en el s. XVI.', lexemes: ['demo', 'cracy'], phoneticEs: 'di-MÓ-kra-si.', topic: 'academia' },
+  { es: 'biología', target: 'biology', note: 'Griego: bios (vida) + logos (estudio), acuñado en 1802.', root: 'bio-', etymology: 'gr. bíos (vida) + lógos (palabra/estudio). Acuñado como término científico moderno a principios del s. XIX.', lexemes: ['bio', 'logy'], phoneticEs: 'bai-Ó-lo-yi.', topic: 'academia' },
+  { es: 'psicología', target: 'psychology', note: 'Griego: psyche (alma/mente) + logos (estudio).', root: 'psycho-', etymology: 'gr. psȳkhḗ (alma, aliento) + lógos. La "p" inicial es muda en inglés.', lexemes: ['psycho', 'logy'], phoneticEs: 'sai-KÓ-lo-yi (la "p" no suena).', topic: 'academia' },
+  { es: 'tecnología', target: 'technology', note: 'Griego: techne (arte/oficio) + logos (estudio).', root: 'techno-', etymology: 'gr. tékhnē (arte, destreza) + lógos. Uso moderno consolidado en el s. XX.', lexemes: ['techno', 'logy'], phoneticEs: 'tek-NÓ-lo-yi.', topic: 'academia' },
+  { es: 'economía', target: 'economy', note: 'Griego: oikos (casa) + nomos (ley/administración).', root: 'eco-', etymology: 'gr. oikonomía < oîkos (casa) + nómos (ley). economic, economics.', lexemes: ['eco', 'nomy'], phoneticEs: 'i-KÓ-no-mi.', topic: 'academia' },
+  { es: 'importante', target: 'important', note: 'Del latín "importare" (traer consigo, tener peso).', root: 'import-', etymology: 'lat. importare < in- + portare (llevar). importance, importantly.', lexemes: ['im', 'port', 'ant'], phoneticEs: 'im-PÓR-tant.', topic: 'academia' },
+  { es: 'diferente', target: 'different', note: 'Del latín "differre" (llevar en direcciones distintas).', root: 'differ-', etymology: 'lat. differre < dis- (aparte) + ferre (llevar). difference, differently.', lexemes: ['dif', 'fer', 'ent'], phoneticEs: 'DÍ-fe-rent.', topic: 'academia' },
+  { es: 'necesario', target: 'necessary', note: 'Del latín "necesse" (ineludible).', root: 'necess-', etymology: 'lat. necessarius < necesse (inevitable). necessity, unnecessary.', lexemes: ['necess', 'ary'], phoneticEs: 'NÉ-se-se-ri.', topic: 'academia' },
 ]
 
 const FR_LEX: LexItem[] = [
@@ -2399,6 +2515,64 @@ export function generateLevelBank(lang: LangId, count = TOTAL_LEVELS): Question[
   return Array.from({ length: count }, (_, i) => generateQuestion(i + 1, lang))
 }
 
+const MODE_CYCLE: GameMode[] = [
+  'translate_to_es',
+  'translate_from_es',
+  'grammar_deduce',
+  'cognate_logic',
+  'particle_or_order',
+  'false_friends',
+  'morphology',
+  'contextual_usage',
+  'reading_comprehension',
+]
+
+/** Modo que le tocará a un nivel dado (misma regla que generateQuestion). */
+export function modeForLevel(level: number, preferredMode?: GameMode | 'auto'): GameMode {
+  const L = clamp(Math.floor(level) || 1, 1, TOTAL_LEVELS)
+  return preferredMode && preferredMode !== 'auto'
+    ? preferredMode
+    : MODE_CYCLE[(L - 1) % MODE_CYCLE.length]
+}
+
+/**
+ * Vocabulario que aparecerá alrededor de un nivel: se usa para "enseñar antes
+ * de jugar". Devuelve una pequeña ventana de palabras del banco léxico del
+ * idioma, centrada en la palabra que ese nivel usará, para que el jugador
+ * llegue a la pregunta ya conociendo el significado, la etimología y cómo
+ * pronunciarlas.
+ */
+export function previewLexForLevel(lang: LangId, level: number, windowSize = 4): LexItem[] {
+  const lex = LEX_BY_LANG[lang]
+  if (!lex.length) return []
+  const L = clamp(Math.floor(level) || 1, 1, TOTAL_LEVELS)
+  const centerIdx = (L - 1) % lex.length
+  const items: LexItem[] = []
+  const seen = new Set<number>()
+  for (let offset = 0; offset < Math.min(windowSize, lex.length); offset++) {
+    const idx = (centerIdx + offset) % lex.length
+    if (seen.has(idx)) break
+    seen.add(idx)
+    items.push(lex[idx])
+  }
+  return items
+}
+
+/** Si el nivel es de tipo gramatical, devuelve la estructura clave a repasar antes de jugar. */
+export function previewGrammarForLevel(
+  lang: LangId,
+  level: number,
+  preferredMode?: GameMode | 'auto'
+): GrammarItem | null {
+  const mode = modeForLevel(level, preferredMode)
+  const grammarModes: GameMode[] = ['grammar_deduce', 'particle_or_order', 'morphology', 'false_friends']
+  if (!grammarModes.includes(mode)) return null
+  const grammar = GRAMMAR_BY_LANG[lang]
+  if (!grammar || !grammar.length) return null
+  const L = clamp(Math.floor(level) || 1, 1, TOTAL_LEVELS)
+  return grammar[(L - 1) % grammar.length]
+}
+
 // -----------------------------------------------------------------------------
 // Historias de lectura (bilingües + APA)
 // -----------------------------------------------------------------------------
@@ -2710,6 +2884,15 @@ What impresses is not tourist mystery but social logistics: coordinating seasona
     apa: 'Parker Pearson, M. (2012). Stonehenge: Exploring the greatest Stone Age mystery. Simon & Schuster.',
     note: 'Arqueología contemporánea de Stonehenge.',
     tags: ['Stonehenge', 'prehistoria', 'calendario', 'Britania'],
+    glossary: [
+      { word: 'stones', es: 'piedras', note: 'OE stān; cognado germánico general.' },
+      { word: 'outcome', es: 'resultado', note: 'out (fuera) + come (venir): "lo que sale".' },
+      { word: 'labor', es: 'trabajo / labor', note: 'lat. labor (esfuerzo, fatiga).' },
+      { word: 'traveled', es: 'viajaron', note: 'to travel < OF travailler (trabajar con esfuerzo).' },
+      { word: 'seasonal', es: 'estacional', note: 'season (estación) < lat. sationem (siembra).' },
+      { word: 'calendar', es: 'calendario', note: 'lat. kalendarium < kalendae (primer día del mes).' },
+      { word: 'landscape', es: 'paisaje', note: 'land (tierra) + -scape (vista/forma); préstamo del neerlandés.' },
+    ],
   },
   {
     id: 'en-magna-carta',
@@ -3335,7 +3518,85 @@ Studiare la Resistenza significa studiare come si nomina l’antifascismo in pub
     note: 'Historia de la Resistencia italiana.',
     tags: ['Resistencia', '1943', 'antifascismo', 'memoria'],
   },
+  {
+    id: 'en-wright-brothers',
+    region: 'Estados Unidos',
+    titleEs: 'Los hermanos Wright: doce segundos que cambiaron el mundo',
+    titleOriginal: 'The Wright Brothers: twelve seconds that changed the world',
+    lang: 'en',
+    textEs: `Antes de ser famosos, Orville y Wilbur Wright reparaban bicicletas en un pequeño taller de Dayton, Ohio. No tenían formación universitaria en ingeniería, pero tenían algo más raro: paciencia para fallar mil veces sin rendirse.
 
+Durante años estudiaron cómo volaban los pájaros. Construyeron un túnel de viento casero para probar más de doscientas formas de alas. Cada fracaso les enseñaba algo que ningún libro explicaba todavía, porque en 1900 nadie sabía realmente cómo volar una máquina más pesada que el aire.
+
+La mañana del 17 de diciembre de 1903, en las dunas de Kitty Hawk, Carolina del Norte, con un viento frío y constante, Orville se tendió sobre el ala inferior del Flyer. El motor rugió. La máquina avanzó por un riel de madera y, por primera vez en la historia documentada, un ser humano voló en una máquina motorizada más pesada que el aire. Duró doce segundos y recorrió treinta y siete metros: menos que la longitud de un avión comercial actual.
+
+Ese mismo día hicieron tres vuelos más, el último de casi un minuto. Un pequeño grupo de testigos lo presenció; casi nadie en el mundo se enteró de inmediato. Los periódicos tardaron años en tomarse en serio la noticia. Sin embargo, en menos de una generación, el avión transformaría la guerra, el comercio y la manera en que la humanidad entiende la distancia.`,
+    textOriginal: `Before they were famous, Orville and Wilbur Wright repaired bicycles in a small workshop in Dayton, Ohio. They had no university training in engineering, but they had something rarer: patience to fail a thousand times without giving up.
+
+For years they studied how birds flew. They built a homemade wind tunnel to test more than two hundred wing shapes. Every failure taught them something no book explained yet, because in 1900 nobody really knew how to fly a machine heavier than air.
+
+On the morning of December 17, 1903, on the dunes of Kitty Hawk, North Carolina, with a cold steady wind, Orville lay down on the lower wing of the Flyer. The engine roared. The machine moved along a wooden rail and, for the first time in documented history, a human being flew in a powered, heavier-than-air machine. It lasted twelve seconds and covered thirty-seven meters: less than the length of a modern airliner.
+
+That same day they made three more flights, the last one lasting almost a minute. A small group of witnesses saw it happen; almost nobody in the world found out right away. Newspapers took years to take the news seriously. Yet within less than a generation, the airplane would transform warfare, commerce, and the way humanity understands distance.`,
+    apa: 'McCullough, D. (2015). The Wright brothers. Simon & Schuster.',
+    note: 'Biografía narrativa de los hermanos Wright y el primer vuelo motorizado.',
+    tags: ['Wright brothers', 'aviación', 'Kitty Hawk', 'invención', 'inglés'],
+    glossary: [
+      { word: 'workshop', es: 'taller', note: 'work (trabajo) + shop (tienda/local); compuesto transparente.' },
+      { word: 'training', es: 'formación / entrenamiento', note: 'De to train, del francés antiguo trainer.' },
+      { word: 'patience', es: 'paciencia', note: 'Del latín patientia < pati (sufrir/soportar).' },
+      { word: 'failed', es: 'fallar / fracasar', note: 'fail < OF faillir < lat. fallere (engañar, fallar).' },
+      { word: 'birds', es: 'pájaros / aves', note: 'OE bird; palabra netamente germánica.' },
+      { word: 'built', es: 'construyeron', note: 'Pasado irregular de to build (OE byldan).' },
+      { word: 'wind', es: 'viento', note: 'OE wind < PIE *h₂wéh₁-n̥to- (soplar). Cognado lejano con "viento".' },
+      { word: 'engine', es: 'motor', note: 'engine < OF engin < lat. ingenium (ingenio). Mismo origen que "ingenio".' },
+      { word: 'roared', es: 'rugió', note: 'to roar, palabra onomatopéyica germánica.' },
+      { word: 'heavier', es: 'más pesado', note: 'Comparativo irregular de heavy (OE hefig).' },
+      { word: 'witnesses', es: 'testigos', note: 'witness < OE witnes < witan (saber). El testigo es "el que sabe".' },
+      { word: 'newspapers', es: 'periódicos', note: 'Compuesto: news (noticias) + papers (papeles).' },
+      { word: 'generation', es: 'generación', note: 'lat. generatio < generare (engendrar).' },
+      { word: 'distance', es: 'distancia', note: 'lat. distantia < distare (estar aparte).' },
+    ],
+  },
+  {
+    id: 'en-rosetta-stone',
+    region: 'Egipto / Reino Unido',
+    titleEs: 'La Piedra de Rosetta: la llave que abrió un idioma perdido',
+    titleOriginal: 'The Rosetta Stone: the key that unlocked a lost language',
+    lang: 'en',
+    textEs: `Durante más de mil años, nadie en el mundo sabía leer los jeroglíficos egipcios. El conocimiento se había perdido casi por completo cuando el antiguo Egipto dejó de existir como civilización independiente. Los símbolos tallados en templos y tumbas parecían hermosos pero mudos.
+
+En 1799, soldados franceses que trabajaban cerca de la ciudad de Rashid (que los europeos llamaban Rosetta), en el delta del Nilo, encontraron un fragmento de piedra oscura al reforzar una fortaleza. La piedra tenía el mismo texto escrito tres veces, en tres sistemas distintos: jeroglíficos egipcios, escritura demótica egipcia y griego antiguo.
+
+Como los eruditos ya podían leer griego, tenían por fin un punto de comparación. Pero descifrar los jeroglíficos tomó más de veinte años. El joven lingüista francés Jean-François Champollion dedicó su vida a este problema desde la adolescencia. En 1822 anunció que había encontrado la clave: los jeroglíficos no eran solo símbolos ni solo sonidos, sino una mezcla de ambos.
+
+El descubrimiento abrió de golpe toda la historia escrita del antiguo Egipto: nombres de faraones, oraciones, contratos, cartas de amor y listas de impuestos que habían permanecido en silencio durante casi dos mil años. Hoy la Piedra de Rosetta se exhibe en Londres y su nombre se usa como metáfora de cualquier cosa que sirve para descifrar algo antes incomprensible.`,
+    textOriginal: `For more than a thousand years, nobody in the world could read Egyptian hieroglyphs. The knowledge had been almost completely lost once ancient Egypt stopped existing as an independent civilization. The symbols carved on temples and tombs looked beautiful but silent.
+
+In 1799, French soldiers working near the city of Rashid (which Europeans called Rosetta), in the Nile delta, found a fragment of dark stone while reinforcing a fortress. The stone carried the same text written three times, in three different systems: Egyptian hieroglyphs, Egyptian demotic script, and ancient Greek.
+
+Since scholars could already read Greek, they finally had a point of comparison. But decoding the hieroglyphs took more than twenty years. The young French linguist Jean-François Champollion devoted his life to this problem from his teenage years. In 1822 he announced he had found the key: hieroglyphs were not only symbols nor only sounds, but a mixture of both.
+
+The discovery suddenly opened up the entire written history of ancient Egypt: pharaohs' names, prayers, contracts, love letters, and tax lists that had remained silent for almost two thousand years. Today the Rosetta Stone is on display in London, and its name is used as a metaphor for anything that helps decode something previously incomprehensible.`,
+    apa: 'Robinson, A. (2012). Cracking the Egyptian code: The Revolutionary life of Jean-François Champollion. Oxford University Press.',
+    note: 'Historia del desciframiento de los jeroglíficos egipcios.',
+    tags: ['Piedra de Rosetta', 'jeroglíficos', 'Champollion', 'escritura', 'inglés'],
+    glossary: [
+      { word: 'lost', es: 'perdido', note: 'Participio irregular de to lose (OE losian).' },
+      { word: 'symbols', es: 'símbolos', note: 'gr. sýmbolon (señal de reconocimiento) vía el latín.' },
+      { word: 'soldiers', es: 'soldados', note: 'soldier < OF soldier < soulde (paga, de ahí "soldado" = el pagado).' },
+      { word: 'fragment', es: 'fragmento', note: 'lat. fragmentum < frangere (romper).' },
+      { word: 'fortress', es: 'fortaleza', note: 'lat. fortis (fuerte) + -ess.' },
+      { word: 'scholars', es: 'eruditos / estudiosos', note: 'De scholar < lat. schola (escuela).' },
+      { word: 'decoding', es: 'descifrar', note: 'de- (deshacer) + code (código, del lat. codex).' },
+      { word: 'devoted', es: 'dedicó', note: 'to devote < lat. devovere (consagrar por voto).' },
+      { word: 'announced', es: 'anunció', note: 'lat. annuntiare < ad- + nuntiare (anunciar).' },
+      { word: 'discovery', es: 'descubrimiento', note: 'dis- (quitar) + cover (cubrir); "quitar lo que cubre".' },
+      { word: 'contracts', es: 'contratos', note: 'lat. contractus < contrahere (contraer, pactar).' },
+      { word: 'display', es: 'exhibición / exhibirse', note: 'OF despleier (desplegar), mismo origen que "desplegar".' },
+      { word: 'incomprehensible', es: 'incomprensible', note: 'lat. in- + comprehendere (comprender, agarrar juntos).' },
+    ],
+  },
 ]
 
 // -----------------------------------------------------------------------------
@@ -3383,6 +3644,16 @@ export function IdiomasGame() {
     readJSON(LS.dictionary, [])
   )
   const [dictFilterLang, setDictFilterLang] = useState<LangId | 'all'>('all')
+  const [pendingLevel, setPendingLevel] = useState<number | null>(null)
+  const [skipVocabPreview, setSkipVocabPreview] = useState(() => readJSON(LS.skipVocab, false))
+  const [winStreak, setWinStreak] = useState(() => readJSON(LS.streak, 0))
+  const [bestStreak, setBestStreak] = useState(() => readJSON(LS.bestStreak, 0))
+  const [storyFilterLang, setStoryFilterLang] = useState<LangId | 'all'>(() =>
+    readJSON(LS.storyFilter, 'all')
+  )
+  const [activeGloss, setActiveGloss] = useState<{ word: string; es: string; note?: string } | null>(
+    null
+  )
   const startedAtRef = useRef<number>(0)
 
   const profile = LANG_PROFILES[lang]
@@ -3405,6 +3676,14 @@ export function IdiomasGame() {
   useEffect(() => {
     writeJSON(LS.mode, preferredMode)
   }, [preferredMode])
+
+  useEffect(() => {
+    writeJSON(LS.skipVocab, skipVocabPreview)
+  }, [skipVocabPreview])
+
+  useEffect(() => {
+    writeJSON(LS.storyFilter, storyFilterLang)
+  }, [storyFilterLang])
 
   const startLevel = useCallback(
     (id: number) => {
@@ -3446,6 +3725,21 @@ export function IdiomasGame() {
     [lang, preferredMode, currentMap, completedLevels, unlocked]
   )
 
+  /** Punto de entrada a un nivel: primero enseña el vocabulario que aparecerá
+   * en las opciones, y solo entonces deja jugar (salvo que el usuario haya
+   * elegido saltar este paso). */
+  const openVocab = useCallback(
+    (n: number) => {
+      if (skipVocabPreview) {
+        startLevel(n)
+        return
+      }
+      setPendingLevel(n)
+      setScreen('vocab')
+    },
+    [skipVocabPreview, startLevel]
+  )
+
   const onSelectOption = (idx: number) => {
     if (answered || !question) return
     setSelected(idx)
@@ -3466,6 +3760,16 @@ export function IdiomasGame() {
       setWins((w) => {
         const n = w + 1
         writeJSON(LS.wins, n)
+        return n
+      })
+      setWinStreak((s) => {
+        const n = s + 1
+        writeJSON(LS.streak, n)
+        setBestStreak((b) => {
+          const nb = Math.max(b, n)
+          writeJSON(LS.bestStreak, nb)
+          return nb
+        })
         return n
       })
       const sc = readJSON<Record<string, number>>(LS.scores, {})
@@ -3520,6 +3824,8 @@ export function IdiomasGame() {
         writeJSON(LS.fails, n)
         return n
       })
+      setWinStreak(0)
+      writeJSON(LS.streak, 0)
       setLastGrade(null)
     }
     setScreen('result')
@@ -3628,7 +3934,7 @@ export function IdiomasGame() {
         </div>
 
         <div className="id-actions">
-          <button className="id-btn primary" type="button" onClick={() => startLevel(currentLevel)}>
+          <button className="id-btn primary" type="button" onClick={() => openVocab(currentLevel)}>
             Continuar · Nivel {currentLevel} · {levelToCefr(currentLevel)}
           </button>
           <button className="id-btn" type="button" onClick={() => setScreen('modes')}>
@@ -3650,6 +3956,22 @@ export function IdiomasGame() {
           >
             📚 Mi diccionario · {dictEntries.length} logros
           </button>
+          <button className="id-btn" type="button" onClick={() => setScreen('review')}>
+            🔁 Repaso espaciado · {dictEntries.length} palabras
+          </button>
+          <button className="id-btn" type="button" onClick={() => setScreen('achievements')}>
+            🏆 Logros
+          </button>
+          {winStreak >= 2 && (
+            <motion.p
+              className="id-streak-line"
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 14 }}
+            >
+              🔥 Racha actual: {winStreak} aciertos seguidos · Mejor racha: {bestStreak}
+            </motion.p>
+          )}
           <p className="id-stats-line">
             Aciertos: {wins} · Fallos: {fails} · Desbloqueado ({profile.name}): {unlocked}/
             {TOTAL_LEVELS} · Completados: {(completedMap[lang] ?? []).length}
@@ -3657,6 +3979,16 @@ export function IdiomasGame() {
           <p className="id-stats-line">
             Modo: {preferredMode === 'auto' ? 'Automático (ciclo)' : MODE_LABELS[preferredMode]}
           </p>
+          <div className="id-progress-track" aria-label="Progreso de niveles completados">
+            <motion.div
+              className="id-progress-fill"
+              initial={{ width: 0 }}
+              animate={{
+                width: `${Math.min(100, Math.round(((completedMap[lang] ?? []).length / TOTAL_LEVELS) * 100))}%`,
+              }}
+              transition={{ duration: 0.6, ease: 'easeOut' }}
+            />
+          </div>
         </div>
       </div>
     )
@@ -3766,6 +4098,133 @@ export function IdiomasGame() {
     )
   }
 
+  // ---- REPASO ESPACIADO ----
+  if (screen === 'review') {
+    const queue = [...dictEntries].sort(
+      (a, b) => new Date(a.completedAt).getTime() - new Date(b.completedAt).getTime()
+    )
+    const markReviewed = (id: string) => {
+      const next = dictEntries.map((e) =>
+        e.id === id ? { ...e, completedAt: new Date().toISOString() } : e
+      )
+      setDictEntries(next)
+      writeJSON(LS.dictionary, next)
+    }
+    return (
+      <div className="id-root">
+        <style>{CSS}</style>
+        <header className="id-top">
+          <button className="id-icon" onClick={() => setScreen('hub')}>
+            ←
+          </button>
+          <div className="id-top-title">
+            <h1>Repaso espaciado</h1>
+            <p>Las palabras que repasaste hace más tiempo aparecen primero</p>
+          </div>
+        </header>
+        {queue.length === 0 ? (
+          <div className="id-card" style={{ padding: 16 }}>
+            <p className="id-meta">
+              Aún no tienes palabras para repasar. Completa algunos niveles y volverán aquí cuando
+              convenga refrescarlas.
+            </p>
+          </div>
+        ) : (
+          <div className="id-story-list">
+            {queue.slice(0, 20).map((e) => (
+              <article key={e.id} className="id-dict-card">
+                <div className="id-story-head">
+                  <span className="id-flag">{LANG_PROFILES[e.lang].flag}</span>
+                  <strong>
+                    Nv. {e.level} · {e.cefr}
+                  </strong>
+                  <button
+                    type="button"
+                    className="id-speak-btn"
+                    onClick={() => speak(e.correctAnswer, e.lang)}
+                  >
+                    🔊
+                  </button>
+                </div>
+                <p className="id-dict-prompt">{e.prompt}</p>
+                <p className="id-dict-answer">
+                  <strong>Respuesta:</strong> {e.correctAnswer}
+                </p>
+                <p className="id-explain">{e.explanation}</p>
+                <p className="id-meta">
+                  Último repaso: {new Date(e.completedAt).toLocaleDateString()}
+                </p>
+                <button
+                  className="id-btn primary"
+                  type="button"
+                  onClick={() => markReviewed(e.id)}
+                >
+                  Ya la repasé
+                </button>
+              </article>
+            ))}
+          </div>
+        )}
+        <div className="id-actions">
+          <button className="id-btn" type="button" onClick={() => setScreen('hub')}>
+            Volver al menú
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ---- LOGROS ----
+  if (screen === 'achievements') {
+    const totalCompleted = Object.values(completedMap).reduce((sum, arr) => sum + arr.length, 0)
+    const langsPracticed = Object.keys(completedMap).filter((k) => (completedMap[k] ?? []).length > 0).length
+    const badges: { title: string; desc: string; earned: boolean }[] = [
+      { title: 'Primer paso', desc: 'Completa tu primer nivel.', earned: totalCompleted >= 1 },
+      { title: 'Constancia', desc: 'Consigue una racha de 5 aciertos seguidos.', earned: bestStreak >= 5 },
+      { title: 'Racha de hierro', desc: 'Consigue una racha de 15 aciertos seguidos.', earned: bestStreak >= 15 },
+      { title: 'Coleccionista', desc: 'Guarda 20 palabras en tu diccionario.', earned: dictEntries.length >= 20 },
+      { title: 'Erudito', desc: 'Guarda 75 palabras en tu diccionario.', earned: dictEntries.length >= 75 },
+      { title: 'Políglota en camino', desc: 'Practica al menos 3 idiomas distintos.', earned: langsPracticed >= 3 },
+      { title: 'Lector de historias', desc: 'Abre al menos una historia en el modo lectura.', earned: !!storyId },
+      { title: 'Maratonista', desc: 'Completa 50 niveles en total.', earned: totalCompleted >= 50 },
+    ]
+    return (
+      <div className="id-root">
+        <style>{CSS}</style>
+        <header className="id-top">
+          <button className="id-icon" onClick={() => setScreen('hub')}>
+            ←
+          </button>
+          <div className="id-top-title">
+            <h1>Logros</h1>
+            <p>{badges.filter((b) => b.earned).length}/{badges.length} conseguidos</p>
+          </div>
+        </header>
+        <div className="id-story-list">
+          {badges.map((b) => (
+            <motion.article
+              key={b.title}
+              className={`id-dict-card ${b.earned ? 'earned' : 'locked-badge'}`}
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+            >
+              <div className="id-story-head">
+                <span>{b.earned ? '🏆' : '🔒'}</span>
+                <strong>{b.title}</strong>
+              </div>
+              <p className="id-meta">{b.desc}</p>
+            </motion.article>
+          ))}
+        </div>
+        <div className="id-actions">
+          <button className="id-btn" type="button" onClick={() => setScreen('hub')}>
+            Volver al menú
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   // ---- MODES ----
   if (screen === 'modes') {
     const modes: (GameMode | 'auto')[] = [
@@ -3810,7 +4269,7 @@ export function IdiomasGame() {
           ))}
         </div>
         <div className="id-actions">
-          <button className="id-btn primary" type="button" onClick={() => startLevel(currentLevel)}>
+          <button className="id-btn primary" type="button" onClick={() => openVocab(currentLevel)}>
             Jugar con este modo
           </button>
           <button className="id-btn" type="button" onClick={() => setScreen('hub')}>
@@ -3847,7 +4306,7 @@ export function IdiomasGame() {
                 type="button"
                 className={`id-level-cell ${locked ? 'locked' : ''} ${n === currentLevel ? 'current' : ''} ${done ? 'done' : ''}`}
                 disabled={locked || done}
-                onClick={() => !locked && !done && startLevel(n)}
+                onClick={() => !locked && !done && openVocab(n)}
                 title={done ? 'Ya completado' : locked ? 'Bloqueado' : `Nivel ${n}`}
               >
                 <span className="cefr">{cefr}</span>
@@ -3858,6 +4317,130 @@ export function IdiomasGame() {
           })}
         </div>
       </div>
+    )
+  }
+
+  // ---- VOCAB PREVIEW (antes de jugar cada nivel) ----
+  if (screen === 'vocab' && pendingLevel !== null) {
+    const words = previewLexForLevel(lang, pendingLevel, 4)
+    const grammarPeek = previewGrammarForLevel(lang, pendingLevel, preferredMode)
+    const upcomingMode = modeForLevel(pendingLevel, preferredMode)
+    return (
+      <motion.div
+        className="id-root"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25 }}
+      >
+        <style>{CSS}</style>
+        <header className="id-top">
+          <button className="id-icon" onClick={() => setScreen('levels')} aria-label="Volver">
+            ←
+          </button>
+          <div className="id-top-title">
+            <h1>
+              Antes del nivel {pendingLevel} <span className="id-cefr-badge">{levelToCefr(pendingLevel)}</span>
+            </h1>
+            <p>
+              {profile.flag} {profile.name} · {MODE_LABELS[upcomingMode]}
+            </p>
+          </div>
+        </header>
+
+        <p className="id-meta" style={{ marginBottom: 10 }}>
+          Antes de responder, conoce estas palabras: su significado, de dónde vienen, desde cuándo
+          existen y cómo pronunciarlas leyendo desde el español. Cuando termines, ya sabrás todo lo
+          que necesitas para acertar.
+        </p>
+
+        {words.length === 0 && (
+          <div className="id-card" style={{ padding: 16 }}>
+            <p className="id-meta">
+              Este nivel es de gramática o lectura; revisa la estructura clave abajo y luego
+              comienza.
+            </p>
+          </div>
+        )}
+
+        <div className="id-vocab-list">
+          {words.map((w) => {
+            const era = originEraLabel(w.etymology)
+            return (
+              <article key={`${w.es}-${w.target}`} className="id-vocab-card">
+                <div className="id-vocab-head">
+                  <h3>{w.target}</h3>
+                  <button
+                    type="button"
+                    className="id-speak-btn"
+                    onClick={() => speak(w.target, lang)}
+                    aria-label={`Escuchar ${w.target}`}
+                    title="Escuchar pronunciación"
+                  >
+                    🔊
+                  </button>
+                </div>
+                <p className="id-vocab-es">
+                  <strong>Significa:</strong> {w.es}
+                  {w.topic && <span className="id-vocab-topic"> · {w.topic}</span>}
+                </p>
+                <p className="id-vocab-note">{w.note}</p>
+                {w.phoneticEs && (
+                  <p className="id-vocab-phonetic">
+                    <strong>Cómo leerla desde el español:</strong> {w.phoneticEs}
+                  </p>
+                )}
+                {w.etymology && (
+                  <p className="id-vocab-etym">
+                    <strong>De dónde viene:</strong> {w.etymology}
+                  </p>
+                )}
+                {era && (
+                  <p className="id-vocab-era">
+                    <strong>¿Desde cuándo existe?</strong> {era}
+                  </p>
+                )}
+                {w.root && (
+                  <p className="id-vocab-root">
+                    <strong>Raíz para memorizar:</strong> {w.root}
+                  </p>
+                )}
+              </article>
+            )
+          })}
+        </div>
+
+        {grammarPeek && (
+          <div className="id-card" style={{ padding: 14, marginTop: 12 }}>
+            <h3>Estructura clave de este nivel</h3>
+            <p className="id-rule-hint">
+              <strong>{grammarPeek.ruleHint}</strong>
+            </p>
+            <p className="id-rule-explain">{grammarPeek.ruleExplain}</p>
+          </div>
+        )}
+
+        <label className="id-skip-row">
+          <input
+            type="checkbox"
+            checked={skipVocabPreview}
+            onChange={(e) => setSkipVocabPreview(e.target.checked)}
+          />
+          No mostrar el vocabulario antes de cada nivel (puedes reactivarlo cuando quieras)
+        </label>
+
+        <div className="id-actions">
+          <button
+            className="id-btn primary"
+            type="button"
+            onClick={() => pendingLevel !== null && startLevel(pendingLevel)}
+          >
+            Ya lo sé · Empezar nivel {pendingLevel}
+          </button>
+          <button className="id-btn" type="button" onClick={() => setScreen('levels')}>
+            Volver al mapa de niveles
+          </button>
+        </div>
+      </motion.div>
     )
   }
 
@@ -3877,10 +4460,30 @@ export function IdiomasGame() {
         </header>
         <p className="id-meta" style={{ marginBottom: 8 }}>
           Elige una historia. Dentro podrás alternar entre el texto en español y el idioma original
-          para leer coma por coma y punto por punto.
+          para leer coma por coma y punto por punto, y tocar las palabras subrayadas para ver su
+          traducción.
         </p>
+        <div className="id-lang-toggle" style={{ marginBottom: 10 }}>
+          <button
+            type="button"
+            className={`id-toggle-btn ${storyFilterLang === 'all' ? 'active' : ''}`}
+            onClick={() => setStoryFilterLang('all')}
+          >
+            Todos los idiomas
+          </button>
+          {Array.from(new Set(STORIES.map((s) => s.lang))).map((id) => (
+            <button
+              key={id}
+              type="button"
+              className={`id-toggle-btn ${storyFilterLang === id ? 'active' : ''}`}
+              onClick={() => setStoryFilterLang(id)}
+            >
+              {LANG_PROFILES[id].flag} {LANG_PROFILES[id].name}
+            </button>
+          ))}
+        </div>
         <div className="id-story-list">
-          {STORIES.map((s) => (
+          {STORIES.filter((s) => storyFilterLang === 'all' || s.lang === storyFilterLang).map((s) => (
             <button
               key={s.id}
               type="button"
@@ -3907,6 +4510,28 @@ export function IdiomasGame() {
   // ---- STORY VIEW ----
   if (screen === 'story' && activeStory) {
     const showOriginal = storyLangMode === 'original'
+    const glossMap = new Map(
+      (activeStory.glossary ?? []).map((g) => [g.word.toLowerCase(), g])
+    )
+    const renderWithGlossary = (text: string) => {
+      if (!showOriginal || glossMap.size === 0) return text
+      const tokens = text.split(/([a-zA-ZÀ-ÿ'’]+)/)
+      return tokens.map((tok, i) => {
+        const key = tok.toLowerCase().replace(/['’]/g, '')
+        const g = glossMap.get(key)
+        if (!g) return <span key={i}>{tok}</span>
+        return (
+          <button
+            key={i}
+            type="button"
+            className="id-gloss-word"
+            onClick={() => setActiveGloss(g)}
+          >
+            {tok}
+          </button>
+        )
+      })
+    }
     return (
       <div className="id-root">
         <style>{CSS}</style>
@@ -3942,14 +4567,51 @@ export function IdiomasGame() {
 
         <article className="id-card id-story-body">
           <div className="id-essay">
-            {showOriginal ? activeStory.textOriginal : activeStory.textEs}
+            {showOriginal ? renderWithGlossary(activeStory.textOriginal) : activeStory.textEs}
           </div>
+          {showOriginal && glossMap.size > 0 && (
+            <p className="id-meta" style={{ marginTop: 8 }}>
+              Toca cualquier palabra subrayada para ver su traducción y una nota breve.
+            </p>
+          )}
           <h3>Referencia (APA)</h3>
           <p className="id-apa-inline">
             <em>{activeStory.apa}</em>
           </p>
           <p className="id-apa-note">{activeStory.note}</p>
         </article>
+
+        <AnimatePresence>
+          {activeGloss && (
+            <motion.div
+              className="id-gloss-popover"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              onClick={() => setActiveGloss(null)}
+            >
+              <div className="id-gloss-card" onClick={(e) => e.stopPropagation()}>
+                <div className="id-vocab-head">
+                  <h3>{activeGloss.word}</h3>
+                  <button
+                    type="button"
+                    className="id-speak-btn"
+                    onClick={() => speak(activeGloss.word, activeStory.lang)}
+                  >
+                    🔊
+                  </button>
+                </div>
+                <p className="id-vocab-es">
+                  <strong>Significa:</strong> {activeGloss.es}
+                </p>
+                {activeGloss.note && <p className="id-vocab-note">{activeGloss.note}</p>}
+                <button className="id-btn" type="button" onClick={() => setActiveGloss(null)}>
+                  Cerrar
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <div className="id-actions">
           <button className="id-btn" type="button" onClick={() => setScreen('reading')}>
@@ -4018,15 +4680,17 @@ export function IdiomasGame() {
           <h2 className="id-prompt">{question.prompt}</h2>
           <div className="id-options">
             {question.options.map((opt, idx) => (
-              <button
+              <motion.button
                 key={`${question.id}-${idx}`}
                 type="button"
                 className={`id-opt ${selected === idx ? 'picked' : ''}`}
                 onClick={() => onSelectOption(idx)}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.97 }}
               >
                 <span className="id-opt-letter">{String.fromCharCode(65 + idx)}</span>
                 <span>{opt}</span>
-              </button>
+              </motion.button>
             ))}
           </div>
         </div>
@@ -4052,19 +4716,50 @@ export function IdiomasGame() {
             </p>
           </div>
         </header>
-        <div className={`id-result-banner ${correct ? 'ok' : 'bad'}`}>
+        <motion.div
+          className={`id-result-banner ${correct ? 'ok' : 'bad'}`}
+          initial={{ scale: 0.85, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 16 }}
+        >
           {correct ? '✓ Bien razonado' : '✗ Aún no · usa el consejo del nivel'}
-        </div>
+        </motion.div>
 
         {correct && lastGrade && (
-          <div className="id-grade-card">
+          <motion.div
+            className="id-grade-card"
+            initial={{ scale: 0.8, opacity: 0, y: 12 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 15, delay: 0.1 }}
+          >
+            {lastGrade.grade === 'S' && (
+              <div className="id-confetti" aria-hidden="true">
+                {Array.from({ length: 14 }, (_, i) => (
+                  <motion.span
+                    key={i}
+                    className="id-confetti-piece"
+                    initial={{ opacity: 0, scale: 0, x: 0, y: 0, rotate: 0 }}
+                    animate={{
+                      opacity: [0, 1, 1, 0],
+                      scale: [0, 1, 1, 0.6],
+                      x: Math.cos((i / 14) * Math.PI * 2) * 90,
+                      y: Math.sin((i / 14) * Math.PI * 2) * 90 - 20,
+                      rotate: i * 37,
+                    }}
+                    transition={{ duration: 1.1, delay: 0.15, ease: 'easeOut' }}
+                  >
+                    {['✦', '★', '✧', '●'][i % 4]}
+                  </motion.span>
+                ))}
+              </div>
+            )}
             <div className="id-grade-letter">{lastGrade.grade}</div>
             <div className="id-grade-stars">{'★'.repeat(lastGrade.stars)}{'☆'.repeat(5 - lastGrade.stars)}</div>
             <p>{lastGrade.comment}</p>
             <p className="id-meta">
               Tiempo: {lastGrade.seconds}s · Intentos en este nivel: {lastGrade.attempts}
             </p>
-          </div>
+          </motion.div>
         )}
 
         <div className="id-card">
@@ -4115,7 +4810,7 @@ export function IdiomasGame() {
             <button
               className="id-btn primary"
               type="button"
-              onClick={() => startLevel(Math.min(TOTAL_LEVELS, levelId + 1))}
+              onClick={() => openVocab(Math.min(TOTAL_LEVELS, levelId + 1))}
             >
               Siguiente nivel
             </button>
