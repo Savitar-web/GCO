@@ -85,6 +85,9 @@ export interface Question {
   rootFocus?: string
   /** Etimología o nota nutritiva para el diccionario personal. */
   etymology?: string
+  /** Explicación real de cada opción, alineada por posición con `options`,
+   * sin indicar cuál es correcta. Se usa en la clase previa al nivel. */
+  optionNotes?: string[]
 }
 
 /** Entrada del diccionario personal: niveles superados con contexto de aprendizaje. */
@@ -120,6 +123,8 @@ export interface Story {
   tags: string[]
   /** Glosario de palabras clave del texto original, tocables en pantalla. */
   glossary?: { word: string; es: string; note?: string }[]
+  /** Desglose frase por frase: original, traducción y por qué se escribe/lee así. */
+  sentences?: { original: string; es: string; note: string }[]
 }
 
 type Screen =
@@ -187,11 +192,11 @@ function clamp(n: number, min: number, max: number) {
 
 /** CEFR según número de nivel (progresión propia por idioma). */
 export function levelToCefr(level: number): CefrLevel {
-  if (level <= 40) return 'A1'
-  if (level <= 60) return 'A2'
-  if (level <= 120) return 'B1'
-  if (level <= 240) return 'B2'
-  if (level <= 480) return 'C1'
+  if (level <= 200) return 'A1'
+  if (level <= 400) return 'A2'
+  if (level <= 800) return 'B1'
+  if (level <= 1400) return 'B2'
+  if (level <= 2200) return 'C1'
   return 'C2'
 }
 
@@ -732,6 +737,87 @@ const MODE_HELP: Record<GameMode, string> = {
   contextual_usage: 'Ves una palabra y eliges el contexto correcto y cómo se interpreta o escribe en ese uso.',
 }
 
+/**
+ * Clase técnica por modo de juego: el marco pedagógico y terminológico que
+ * antecede a cada nivel. Se combina con los datos concretos del nivel
+ * (palabra, regla, etimología) para producir una explicación extensa y no
+ * genérica en cada pantalla, sin depender de un texto único por nivel.
+ */
+const MODE_LESSON: Record<GameMode, { title: string; body: string[] }> = {
+  translate_to_es: {
+    title: 'Traducción semántica: del significante al significado',
+    body: [
+      'En lingüística se distingue el significante (la forma sonora o escrita de una palabra) del significado (el concepto al que remite). Traducir no es sustituir un significante por otro de manera mecánica, sino identificar qué concepto comparte una palabra extranjera con una palabra española, incluso cuando la forma no se parece en nada.',
+      'Esta clase trabaja con lo que la lexicografía llama el "campo semántico": el conjunto de matices que una palabra puede cubrir. Muchas palabras no tienen un equivalente único en español, sino un abanico de opciones según el registro (formal, coloquial), el dialecto o el contexto de uso. Por eso cada palabra de esta lección incluye una nota de uso, no solo una traducción aislada.',
+      'Presta atención también a la categoría gramatical (sustantivo, verbo, adjetivo): dos idiomas rara vez cortan la realidad en las mismas categorías, así que la traducción correcta depende de qué función cumple la palabra en la frase.',
+    ],
+  },
+  translate_from_es: {
+    title: 'Producción activa: de la idea a la forma correcta',
+    body: [
+      'Traducir DESDE el español es más exigente que traducir HACIA el español, porque aquí no reconoces una forma dada: debes producirla tú, aplicando reglas de morfología (cómo se forman las palabras), de sintaxis (cómo se ordenan) y, en muchos idiomas, de flexión (cómo cambia una palabra según género, número, tiempo o caso).',
+      'Este modo entrena la llamada "competencia productiva": la capacidad de generar lenguaje correcto, no solo de reconocerlo pasivamente al leer. Por eso cada palabra de esta clase incluye su irregularidad más frecuente (un pasado irregular, un plural que no sigue el patrón general, un género que hay que memorizar) porque ahí es donde suelen fallar incluso los aprendices avanzados.',
+      'Un truco profesional: memoriza siempre la palabra dentro de un bloque mínimo de contexto (un artículo, una preposición fija, una colocación habitual) en vez de memorizarla suelta; la memoria lingüística funciona mejor por asociación que por lista aislada.',
+    ],
+  },
+  grammar_deduce: {
+    title: 'Deducción gramatical: la regla detrás del caso',
+    body: [
+      'La gramática no es una lista arbitraria de excepciones: es un sistema de reglas que, una vez entendidas, se aplican a cientos de casos nuevos sin memorizarlos uno por uno. Esta clase te da la regla general antes de pedirte que la apliques a un caso concreto, siguiendo el método deductivo: de lo general a lo particular.',
+      'Vas a trabajar sobre todo con morfología verbal (cómo cambia la forma del verbo según persona, tiempo, aspecto y modo) y con concordancia (cómo unas palabras "acuerdan" su forma con otras, por ejemplo un adjetivo con el género y número del sustantivo que modifica).',
+      'La estrategia correcta no es adivinar por parecido con el español, sino identificar qué categoría gramatical exige la regla explicada abajo y descartar sistemáticamente cualquier opción que la viole.',
+    ],
+  },
+  cognate_logic: {
+    title: 'Cognados y raíces: la memoria histórica de las palabras',
+    body: [
+      'Un cognado es una palabra que comparte origen etimológico con otra de un idioma distinto, aunque hayan evolucionado por caminos separados durante siglos o milenios: "nación" y "nation" son cognados porque ambas descienden del latín "natio". Reconocer cognados es una de las estrategias más rentables para ampliar vocabulario rápidamente en idiomas emparentados.',
+      'Esta clase descompone cada palabra en su raíz o lexema (el núcleo de significado que se repite en toda una familia de palabras) para que aprendas a reconocer ese núcleo en palabras que nunca viste antes. Por ejemplo, una vez que sabes que "-tion/-ción" marca un sustantivo abstracto derivado de un verbo, puedes deducir el significado de docenas de palabras nuevas sin memorizarlas todas.',
+      'Cuidado: no todo parecido es cognado real. Cuando dos palabras se parecen por pura coincidencia fonética sin compartir origen, se llaman "cognados falsos" o forman parte del fenómeno de false friends, que se trabaja en otro modo de esta app.',
+    ],
+  },
+  particle_or_order: {
+    title: 'Sintaxis: partículas, artículos y el orden de las palabras',
+    body: [
+      'La sintaxis estudia cómo se combinan las palabras para formar frases con sentido. Dos herramientas sintácticas fundamentales son las partículas (palabras funcionales pequeñas —artículos, preposiciones, marcadores gramaticales— que no llevan significado léxico pleno pero organizan la frase) y el orden de palabras, que en muchos idiomas no es libre sino que marca la función de cada elemento.',
+      'En idiomas como el japonés, las partículas (は, が, を, に, で) cumplen el trabajo que en español hacen las preposiciones y el orden de palabras combinados; identificarlas correctamente es más importante que memorizar vocabulario suelto. En idiomas europeos, el orden SVO (Sujeto-Verbo-Objeto) es la norma, pero varía en subordinadas, preguntas o énfasis.',
+      'Esta clase te muestra la partícula o el patrón de orden exacto que se pondrá a prueba, para que entres a la pregunta reconociendo la estructura antes de leer las opciones.',
+    ],
+  },
+  false_friends: {
+    title: 'False friends: la trampa del parecido engañoso',
+    body: [
+      'Un "false friend" (falso amigo) es una palabra que se parece mucho, en forma escrita o sonora, a una palabra de tu idioma nativo, pero que tiene un significado distinto —a veces completamente opuesto—. Son una de las causas más frecuentes de malentendidos entre hablantes de idiomas emparentados, precisamente porque el parecido genera una falsa sensación de seguridad.',
+      'Lingüísticamente, los false friends surgen de tres maneras: (1) dos palabras que comparten origen etimológico pero divergieron de significado con el tiempo (deriva semántica), (2) coincidencia fonética pura sin relación histórica, o (3) préstamos que cambiaron de sentido al entrar a otro idioma.',
+      'La defensa contra un false friend nunca es la intuición ni el parecido: es el contexto de la frase y, cuando existe duda, verificar el significado real en vez de asumir la traducción "obvia". Esta clase te muestra exactamente la trampa antes de que puedas caer en ella.',
+    ],
+  },
+  morphology: {
+    title: 'Morfología: cómo se construyen las palabras por dentro',
+    body: [
+      'La morfología estudia la estructura interna de las palabras: cómo se combinan una raíz (el núcleo de significado) con afijos —prefijos (antes de la raíz) y sufijos (después de la raíz)— para formar palabras nuevas o modificar su función gramatical. Es, junto con la sintaxis, uno de los dos grandes niveles de organización de cualquier lengua.',
+      'Reconocer sufijos productivos (que se repiten en muchas palabras con la misma función, como -ción, -mente, -able en español, o -tion, -ly, -able en inglés) multiplica tu vocabulario sin necesidad de memorizar cada palabra por separado: si entiendes el patrón, puedes deducir palabras que nunca estudiaste.',
+      'Esta clase descompone la palabra del nivel en sus bloques morfológicos exactos para que practiques ese análisis antes de responder, en vez de memorizar la palabra entera como una unidad opaca.',
+    ],
+  },
+  reading_comprehension: {
+    title: 'Comprensión lectora: leer para extraer información precisa',
+    body: [
+      'La comprensión lectora no consiste en entender cada palabra por separado, sino en construir el sentido global de un texto y, sobre todo, en saber localizar la información exacta que responde a una pregunta concreta, una habilidad que en pedagogía se llama "lectura de rastreo" o scanning, distinta de la "lectura profunda" que analiza matices.',
+      'Los textos históricos y culturales de esta app suelen concentrar la respuesta en una cláusula clave: una nominalización (sustantivo derivado de un verbo, como "consentimiento" de "consentir"), una conjunción causal ("porque", "since", "因为") o un marcador temporal. Entrenarte para detectar esas señales estructurales es más eficiente que releer el texto entero cada vez.',
+      'Esta clase te da el pasaje completo y una pista sobre qué tipo de marcador o cláusula debes rastrear, para que tu primera lectura ya sea una lectura dirigida y no una lectura a ciegas.',
+    ],
+  },
+  contextual_usage: {
+    title: 'Uso contextual: la misma palabra, significados distintos',
+    body: [
+      'Muchas palabras son polisémicas: tienen varios significados relacionados (o a veces no relacionados en absoluto, en cuyo caso hablamos de homonimia) y solo el contexto —las palabras que la acompañan— permite decidir cuál aplica. "Bank" en inglés puede ser una entidad financiera o la orilla de un río; "banco" en español, un asiento, una entidad financiera o un cardumen de peces.',
+      'La pragmática, la rama de la lingüística que estudia cómo el contexto determina el significado, nos dice que el cerebro humano resuelve la ambigüedad casi instantáneamente gracias a las palabras vecinas (colocaciones): "sat on the bank" activa el sentido de "orilla" mucho antes de terminar la frase, porque "sat on" no combina naturalmente con una entidad financiera.',
+      'Esta clase te muestra la palabra polisémica y el contexto exacto en el que aparecerá, para que entrenes esa misma resolución rápida de ambigüedad antes de enfrentar la pregunta.',
+    ],
+  },
+}
+
 // -----------------------------------------------------------------------------
 // Banco léxico y reglas por idioma
 // -----------------------------------------------------------------------------
@@ -792,6 +878,112 @@ function speak(text: string, lang: LangId) {
     window.speechSynthesis.speak(u)
   } catch {
     /* noop: síntesis de voz no disponible en este dispositivo */
+  }
+}
+
+/**
+ * Lee en voz alta un texto largo (la "clase" completa), partiéndolo en
+ * fragmentos cortos para que el motor de síntesis del navegador no falle
+ * con utterances demasiado largas. Devuelve una función para detener la
+ * lectura a mitad de camino.
+ */
+function speakLesson(paragraphs: string[], lang: LangId, onDone?: () => void): () => void {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+    onDone?.()
+    return () => {}
+  }
+  window.speechSynthesis.cancel()
+  const chunks = paragraphs
+    .join(' ')
+    .split(/(?<=[.!?])\s+/)
+    .filter((s) => s.trim().length > 0)
+  let stopped = false
+  const playFrom = (i: number) => {
+    if (stopped || i >= chunks.length) {
+      if (!stopped) onDone?.()
+      return
+    }
+    const u = new SpeechSynthesisUtterance(chunks[i])
+    u.lang = TTS_LANG[lang] || 'en-US'
+    u.rate = 0.98
+    u.onend = () => playFrom(i + 1)
+    u.onerror = () => playFrom(i + 1)
+    window.speechSynthesis.speak(u)
+  }
+  playFrom(0)
+  return () => {
+    stopped = true
+    try {
+      window.speechSynthesis.cancel()
+    } catch {
+      /* noop */
+    }
+  }
+}
+
+/**
+ * Pequeño sintetizador de efectos de sonido con la Web Audio API: no
+ * depende de archivos externos, así que funciona sin conexión, algo
+ * imprescindible para una app offline-first.
+ */
+let sharedAudioCtx: AudioContext | null = null
+function getAudioCtx(): AudioContext | null {
+  try {
+    if (typeof window === 'undefined') return null
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext
+    if (!Ctx) return null
+    if (!sharedAudioCtx) sharedAudioCtx = new Ctx()
+    if (sharedAudioCtx.state === 'suspended') sharedAudioCtx.resume().catch(() => {})
+    return sharedAudioCtx
+  } catch {
+    return null
+  }
+}
+type SfxKind = 'flip' | 'correct' | 'wrong' | 'click' | 'levelup' | 'start' | 'toggle'
+function playSfx(kind: SfxKind) {
+  const ctx = getAudioCtx()
+  if (!ctx) return
+  const now = ctx.currentTime
+  const tone = (freq: number, start: number, dur: number, type: OscillatorType, gainPeak: number) => {
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = type
+    osc.frequency.setValueAtTime(freq, now + start)
+    gain.gain.setValueAtTime(0, now + start)
+    gain.gain.linearRampToValueAtTime(gainPeak, now + start + 0.012)
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + start + dur)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start(now + start)
+    osc.stop(now + start + dur + 0.02)
+  }
+  switch (kind) {
+    case 'flip':
+      tone(520, 0, 0.09, 'triangle', 0.05)
+      break
+    case 'click':
+      tone(340, 0, 0.05, 'square', 0.03)
+      break
+    case 'toggle':
+      tone(420, 0, 0.06, 'sine', 0.04)
+      break
+    case 'correct':
+      tone(523.25, 0, 0.12, 'sine', 0.06)
+      tone(659.25, 0.1, 0.16, 'sine', 0.06)
+      break
+    case 'wrong':
+      tone(220, 0, 0.16, 'sawtooth', 0.05)
+      tone(174.6, 0.1, 0.2, 'sawtooth', 0.04)
+      break
+    case 'levelup':
+      tone(523.25, 0, 0.1, 'sine', 0.06)
+      tone(659.25, 0.09, 0.1, 'sine', 0.06)
+      tone(783.99, 0.18, 0.22, 'sine', 0.07)
+      break
+    case 'start':
+      tone(392, 0, 0.08, 'sine', 0.04)
+      tone(494, 0.07, 0.12, 'sine', 0.05)
+      break
   }
 }
 
@@ -918,6 +1110,33 @@ const EN_LEX: LexItem[] = [
   { es: 'importante', target: 'important', note: 'Del latín "importare" (traer consigo, tener peso).', root: 'import-', etymology: 'lat. importare < in- + portare (llevar). importance, importantly.', lexemes: ['im', 'port', 'ant'], phoneticEs: 'im-PÓR-tant.', topic: 'academia' },
   { es: 'diferente', target: 'different', note: 'Del latín "differre" (llevar en direcciones distintas).', root: 'differ-', etymology: 'lat. differre < dis- (aparte) + ferre (llevar). difference, differently.', lexemes: ['dif', 'fer', 'ent'], phoneticEs: 'DÍ-fe-rent.', topic: 'academia' },
   { es: 'necesario', target: 'necessary', note: 'Del latín "necesse" (ineludible).', root: 'necess-', etymology: 'lat. necessarius < necesse (inevitable). necessity, unnecessary.', lexemes: ['necess', 'ary'], phoneticEs: 'NÉ-se-se-ri.', topic: 'academia' },
+
+  // ---- Unidad: verbos irregulares de alta frecuencia ----
+  { es: 'ir', target: 'go', note: 'Pasado "went" y participio "gone": went no viene de "go" sino de otro verbo antiguo (wend). Presente: go/goes; pasado: went; participio: gone.', root: 'go', etymology: 'OE gān (presente) + wendan (pasado, "wend"). Con el tiempo "went" reemplazó al pasado original de go. Caso único de supleción total en inglés.', lexemes: ['go', 'went', 'gone'], phoneticEs: 'gou (pasado: uent; participio: gon).', topic: 'verbos irregulares' },
+  { es: 'ser/estar', target: 'be', note: 'El verbo más irregular del inglés: am/is/are en presente, was/were en pasado, been en participio.', root: 'be', etymology: 'OE bēon, wesan, y otras raíces fusionadas en un solo paradigma muy irregular por herencia germánica antigua.', lexemes: ['be', 'was', 'were', 'been'], phoneticEs: 'bi (pasado: uaz/uér; participio: bin).', topic: 'verbos irregulares' },
+  { es: 'tener', target: 'have', note: 'Pasado y participio idénticos: had. Presente 3.ª persona: has.', root: 'have', etymology: 'OE habban < PIE *kap- (agarrar). Cognado lejano con "capturar".', lexemes: ['have', 'had'], phoneticEs: 'jav (pasado y participio: jad).', topic: 'verbos irregulares' },
+  { es: 'hacer', target: 'do', note: 'No confundir con "make" (fabricar/crear); "do" es hacer una acción/actividad. Pasado: did; participio: done.', root: 'do', etymology: 'OE dōn < PIE *dʰeh₁- (poner, hacer). Cognado con el griego thesis.', lexemes: ['do', 'did', 'done'], phoneticEs: 'du (pasado: did; participio: dan).', topic: 'verbos irregulares' },
+  { es: 'ver', target: 'see', note: 'Cambio vocálico (ablaut) típico de verbos germánicos fuertes. Pasado: saw; participio: seen.', root: 'see', etymology: 'OE sēon < PIE *sekʷ- (percibir/ver). El pasado "saw" muestra el patrón ablaut e→a→e del inglés antiguo.', lexemes: ['see', 'saw', 'seen'], phoneticEs: 'si (pasado: so; participio: sin).', topic: 'verbos irregulares' },
+  { es: 'venir', target: 'come', note: 'Presente y participio comparten la misma forma escrita: come. Pasado: came.', root: 'come', etymology: 'OE cuman < PIE *gʷem- (ir/venir). Cognado remoto con "venir" por otra rama indoeuropea distinta.', lexemes: ['come', 'came'], phoneticEs: 'kam (pasado: kéim).', topic: 'verbos irregulares' },
+  { es: 'tomar/llevar', target: 'take', note: 'Préstamo nórdico que desplazó verbos nativos ingleses más antiguos. Pasado: took; participio: taken.', root: 'take', etymology: 'ON taka, incorporado en la época vikinga (s. IX–XI), reemplazando gradualmente al verbo nativo OE niman.', lexemes: ['take', 'took', 'taken'], phoneticEs: 'téik (pasado: tuk; participio: téiken).', topic: 'verbos irregulares' },
+  { es: 'dar', target: 'give', note: 'También préstamo nórdico antiguo, como "take". Pasado: gave; participio: given.', root: 'give', etymology: 'ON gefa, reforzando o reemplazando al nativo OE giefan en dialectos del norte de Inglaterra.', lexemes: ['give', 'gave', 'given'], phoneticEs: 'guiv (pasado: guéiv; participio: guíven).', topic: 'verbos irregulares' },
+  { es: 'saber/conocer', target: 'know', note: 'La "k" inicial es muda: se pronuncia como si empezara con "n". Pasado: knew; participio: known.', root: 'know', etymology: 'OE cnāwan < PIE *ǵneh₃- (conocer). Cognado directo con el latín (g)noscere, origen de "conocer".', lexemes: ['know', 'knew', 'known'], phoneticEs: 'nóu, la "k" no suena (pasado: niú; participio: nóun).', topic: 'verbos irregulares' },
+  { es: 'pensar', target: 'think', note: 'Pasado y participio irregulares idénticos: thought, con cambio total de forma.', root: 'think', etymology: 'OE þencan < PIE *tong- (sentir/pensar). El pasado "thought" conserva una forma muy antigua del inglés medieval.', lexemes: ['think', 'thought'], phoneticEs: 'zink (pasado y participio: zot, con la "z" de lengua entre dientes).', topic: 'verbos irregulares' },
+
+  // ---- Unidad: conectores y marcadores discursivos ----
+  { es: 'sin embargo', target: 'however', note: 'Conector de contraste, más formal que "but"; suele ir con coma y a menudo abre frase.', root: 'how-ever', etymology: 'how (OE hū) + ever (OE æfre): "de cualquier manera que sea" > sentido concesivo/contrastivo desde el inglés medio.', lexemes: ['how', 'ever'], phoneticEs: 'jau-É-ver.', topic: 'conectores' },
+  { es: 'por lo tanto', target: 'therefore', note: 'Conector de consecuencia lógica, típico de textos formales y académicos.', root: 'there-fore', etymology: 'there (OE þǣr) + for (por causa de). Literalmente "por eso/por aquello".', lexemes: ['there', 'fore'], phoneticEs: 'DÉR-for.', topic: 'conectores' },
+  { es: 'aunque', target: 'although', note: 'Más formal que "though" y suele ir al inicio de la frase; "though" es más informal y puede ir al final.', root: 'al-though', etymology: 'all + though (OE þēah, "aun si"). El prefijo "al-" refuerza el sentido concesivo.', lexemes: ['al', 'though'], phoneticEs: 'ol-ZÓU.', topic: 'conectores' },
+  { es: 'además', target: 'moreover', note: 'Añade información con énfasis formal; sinónimo cercano: "furthermore" (aún más formal).', root: 'more-over', etymology: 'more (más) + over (encima): "por encima/más allá de lo dicho".', lexemes: ['more', 'over'], phoneticEs: 'mor-ÓU-ver.', topic: 'conectores' },
+  { es: 'mientras tanto', target: 'meanwhile', note: 'Marcador temporal de simultaneidad entre dos acciones o escenas.', root: 'mean-while', etymology: 'mean (intermedio, OF meien) + while (OE hwīl, "espacio de tiempo").', lexemes: ['mean', 'while'], phoneticEs: 'MIN-uail.', topic: 'conectores' },
+  { es: 'a pesar de', target: 'despite', note: 'Va directo + sustantivo/gerundio, sin "of"; su sinónimo "in spite of" sí lleva preposición extra.', root: 'de-spite', etymology: 'despite < OF despit < lat. despectus (menosprecio); el sentido concesivo moderno surge en inglés medio.', lexemes: ['de', 'spite'], phoneticEs: 'dis-PÁIT.', topic: 'conectores' },
+
+  // ---- Unidad: preposiciones clave ----
+  { es: 'entre (dos)', target: 'between', note: 'Se usa para exactamente dos elementos; para tres o más se usa "among".', root: 'be-tween', etymology: 'OE betwēonum < be- + twēon (dos). Relacionado con "two".', lexemes: ['be', 'tween'], phoneticEs: 'bi-TUÍN.', topic: 'preposiciones' },
+  { es: 'entre (varios)', target: 'among', note: 'Para tres o más elementos o un grupo indiferenciado; no se usa para exactamente dos.', root: 'a-mong', etymology: 'OE on gemonge ("en medio de la mezcla") < mengan (mezclar).', lexemes: ['a', 'mong'], phoneticEs: 'a-MÁNG.', topic: 'preposiciones' },
+  { es: 'durante', target: 'during', note: 'Se usa con un periodo de tiempo (during the summer), no con una duración numérica (esa es "for").', root: 'dur-ing', etymology: 'de "to dure" (durar) < lat. durare + -ing. Originalmente participio de un verbo hoy caído en desuso.', lexemes: ['dur', 'ing'], phoneticEs: 'DIÚ-ring.', topic: 'preposiciones' },
+  { es: 'desde (tiempo)', target: 'since', note: 'Marca el punto de inicio de una acción que continúa; se combina con present perfect.', root: 'since', etymology: 'OE siððan ("después de que"), contraído en inglés medio a "since".', lexemes: ['since'], phoneticEs: 'sins.', topic: 'preposiciones' },
+  { es: 'hasta', target: 'until', note: 'Sinónimo más informal/hablado: "till". "Until" es neutro y también puede abrir frase.', root: 'un-til', etymology: 'ON til (hasta) + un- intensivo, fusionado en inglés medio.', lexemes: ['un', 'til'], phoneticEs: 'an-TÍL.', topic: 'preposiciones' },
 ]
 
 const FR_LEX: LexItem[] = [
@@ -1327,6 +1546,10 @@ interface GrammarItem {
   correctIndex: number
   explanation: string
   passage?: string
+  /** Explicación real de CADA opción (misma posición que `options`), sin
+   * decir cuál es correcta: qué forma/estructura es y por qué alguien la
+   * consideraría, para que la clase enseñe el paradigma completo. */
+  optionNotes?: string[]
 }
 
 const EN_GRAMMAR: GrammarItem[] = [
@@ -1338,6 +1561,16 @@ const EN_GRAMMAR: GrammarItem[] = [
     options: ['go', 'goes', 'going', 'gone', 'went', 'goed', 'goe', 'to go'],
     correctIndex: 1,
     explanation: 'En presente simple, la 3.ª persona singular (he/she/it) añade -s/-es: goes.',
+    optionNotes: [
+      'Forma base/infinitivo sin marcar persona: es la forma del diccionario y también la que usan I/you/we/they en presente.',
+      '3.ª persona singular del presente: añade -s a la forma base.',
+      'Gerundio/participio presente: se usa tras "be" (is going) o como sustantivo verbal, nunca solo como verbo principal en presente simple.',
+      'Participio pasado: se usa tras "have" (has gone) o "be" (is gone), no como presente.',
+      'Pasado simple irregular: se usa para acciones terminadas en el pasado, no en presente.',
+      'Forma inventada que aplica la terminación regular -ed a un verbo irregular; no existe en inglés.',
+      'Ortografía incorrecta: le falta la -s de concordancia y la -es completa.',
+      'Infinitivo con partícula "to": se usa tras otros verbos (want to go), no como verbo conjugado principal.',
+    ],
   },
   {
     prompt: '¿Cuál es el plural de “child”?',
@@ -1347,6 +1580,16 @@ const EN_GRAMMAR: GrammarItem[] = [
     options: ['childs', 'childes', 'children', 'childrens', 'child', 'childer', 'kids', 'childen'],
     correctIndex: 2,
     explanation: 'Child → children es un plural irregular histórico; no se forma con -s.',
+    optionNotes: [
+      'Aplica la regla regular -s a un sustantivo irregular; esa forma no existe en inglés estándar.',
+      'Variante inventada con -es; tampoco existe.',
+      'Plural irregular real, formado históricamente con el sufijo germánico -er más un cambio de raíz, no con -s.',
+      'Añade una -s extra a una palabra que ya es plural; redundante e incorrecto.',
+      'Es la forma singular, no el plural.',
+      'Forma histórica/dialectal antigua que sobrevive solo en algunos dialectos regionales, no en el inglés estándar.',
+      'Sinónimo coloquial de "children" (niños/críos), pero no es el plural gramatical de "child".',
+      'Variante mal escrita, le falta la "r" antes de la terminación.',
+    ],
   },
   {
     prompt: 'Completa: “I have ____ this book.”',
@@ -1356,6 +1599,16 @@ const EN_GRAMMAR: GrammarItem[] = [
     options: ['readed', 'read', 'reading', 'reads', 'rode', 'written', 'red', 'reed'],
     correctIndex: 1,
     explanation: 'El participio de read es read (pronunciado /red/). Have read = presente perfecto.',
+    optionNotes: [
+      'Aplica -ed a un verbo irregular; no existe, porque "read" no cambia de forma escrita en pasado/participio.',
+      'Forma correcta de pasado y participio: se escribe igual que el presente pero se pronuncia distinto (/red/ en pasado/participio frente a /riːd/ en presente).',
+      'Gerundio: se usa tras "be" (is reading), no tras "have".',
+      '3.ª persona singular del presente, no una forma de participio.',
+      'Pasado irregular del verbo "ride" (montar): verbo distinto, no de "read".',
+      'Participio del verbo "write" (escribir): verbo relacionado en significado pero gramaticalmente distinto de "read".',
+      'El color rojo: homófono de la pronunciación del pasado de "read", pero una palabra completamente distinta.',
+      'Sustantivo que significa "junco" (la planta): homófono del presente de "read", sin relación gramatical.',
+    ],
   },
   {
     prompt: 'Orden natural de adjetivos: “a ____ box”',
@@ -1374,6 +1627,16 @@ const EN_GRAMMAR: GrammarItem[] = [
     ],
     correctIndex: 1,
     explanation: 'Se prefiere “nice small wooden box”: opinión, tamaño, material.',
+    optionNotes: [
+      'Coloca el material antes que el tamaño y la opinión: invierte el orden preferido (opinión → tamaño → material).',
+      'Sigue el orden preferido del inglés: opinión (nice) → tamaño (small) → material (wooden).',
+      'Coloca el material antes que la opinión: orden poco natural para un hablante nativo.',
+      'Empieza por el material, orden invertido respecto al patrón esperado.',
+      'La opinión va correctamente al inicio, pero intercambia el orden de tamaño y material.',
+      'Empieza por el tamaño en vez de la opinión, orden distinto al preferido.',
+      'Solo usa dos adjetivos (material + tamaño): falta el de opinión y el orden interno también está invertido.',
+      'Solo usa dos adjetivos (opinión + material): omite el tamaño por completo.',
+    ],
   },
   {
     prompt: 'False friend: en inglés, “actually” significa…',
@@ -1392,6 +1655,16 @@ const EN_GRAMMAR: GrammarItem[] = [
     ],
     correctIndex: 1,
     explanation: 'Actually = en realidad. “Actualmente” se dice currently / nowadays.',
+    optionNotes: [
+      'Es justo la trampa del false friend: se parece a "actually" pero en realidad significa "currently/nowadays" en inglés, no esto.',
+      'Significado real de "actually" en inglés: se usa para corregir o matizar algo dicho antes, o para introducir un dato sorprendente.',
+      'Se relaciona con el verbo "to act" (actuar), una palabra distinta de "actually".',
+      'Se dice "active" en inglés; comparte raíz remota con "actually" pero no es su significado.',
+      'Se acerca al sentido de "actualmente/currently", que es precisamente el significado que "actually" NO tiene (ese es el false friend a evitar).',
+      'Se diría "in the end" o "eventually" en inglés; no es el sentido de "actually".',
+      'Se dice "almost" o "nearly" en inglés; no está relacionado con "actually".',
+      'Se dice "never" en inglés; no está relacionado con "actually".',
+    ],
   },
   {
     prompt: 'Elige el phrasal verb: “buscar información en un diccionario”',
@@ -1401,6 +1674,16 @@ const EN_GRAMMAR: GrammarItem[] = [
     options: ['look after', 'look up', 'look for', 'look out', 'look into', 'look down', 'look over', 'look on'],
     correctIndex: 1,
     explanation: 'Look up = consultar (palabra). Look for = buscar; look after = cuidar.',
+    optionNotes: [
+      'Cuidar de alguien o algo, como cuidar niños o una mascota.',
+      'Consultar una palabra o un dato en una fuente, como un diccionario o internet.',
+      'Buscar algo que no se tiene o no se encuentra todavía.',
+      'Tener cuidado, prestar atención ante un peligro inminente.',
+      'Investigar o examinar un asunto con detenimiento.',
+      '(look down on) Mirar con desprecio a alguien, sentirse superior.',
+      'Revisar algo de forma rápida y superficial, echarle un vistazo.',
+      'Observar como espectador, sin participar en lo que ocurre.',
+    ],
   },
   {
     prompt: 'Artículo correcto: “____ university is big.” (hablando de una concreta conocida)',
@@ -1410,6 +1693,16 @@ const EN_GRAMMAR: GrammarItem[] = [
     options: ['A', 'An', 'The', '∅ (ninguno)', 'Some', 'Any', 'This only', 'Those'],
     correctIndex: 2,
     explanation: 'Si es definida/conocida en el discurso: the university.',
+    optionNotes: [
+      'Artículo indefinido: se usa ante un referente no identificado específicamente por el oyente, y ante sonido consonántico.',
+      'Artículo indefinido: igual función que "a", pero ante sonido vocálico.',
+      'Artículo definido: se usa cuando el oyente puede identificar el referente exacto del que se habla.',
+      'Ausencia de artículo: típica con sustantivos plurales o incontables en sentido genérico, no con un singular contable ya identificado.',
+      'Cuantificador indefinido, usado con cantidades no especificadas; no marca definitud de un referente único.',
+      'Cuantificador usado sobre todo en negaciones y preguntas; tampoco marca definitud.',
+      'Demostrativo que señala algo específico y cercano; funciona de forma distinta al artículo definido.',
+      'Demostrativo plural; no corresponde a un sustantivo singular como "university".',
+    ],
   },
   {
     prompt: 'Negación correcta en inglés estándar:',
@@ -1428,6 +1721,16 @@ const EN_GRAMMAR: GrammarItem[] = [
     ],
     correctIndex: 1,
     explanation: 'Estándar: don’t + anything. La doble negación no es la norma del inglés estándar.',
+    optionNotes: [
+      'Doble negación de polaridad (don\'t + nothing): existe en variedades no estándar del inglés, pero no en el estándar escrito.',
+      'Negación estándar única: auxiliar negado (don\'t) más una palabra de polaridad positiva bajo negación (anything).',
+      '"No" no funciona como negador directo de verbos en inglés (a diferencia del español); además falta el auxiliar "do".',
+      'Falta el auxiliar "do" y, además, hay doble negación de polaridad.',
+      'Mezcla incorrectamente "does" (3.ª persona) con el sujeto "I" (1.ª persona); debería ser "don\'t".',
+      'Falta el auxiliar "do"; es un calco directo de estructuras de negación de otros idiomas.',
+      '"Ain\'t" es una contracción no estándar de am not/isn\'t/haven\'t, combinada aquí además con doble negación.',
+      'Usa gerundio sin el auxiliar "be"; no forma una negación verbal válida en presente simple.',
+    ],
   },
   {
     prompt: 'El sufijo “-tion” en “nation”, “information”, “decision” suele indicar…',
@@ -1446,6 +1749,16 @@ const EN_GRAMMAR: GrammarItem[] = [
     ],
     correctIndex: 1,
     explanation: '-tion/-sion crea sustantivos abstractos (nación, información, decisión). Cognado de -ción/-sión.',
+    optionNotes: [
+      'Los adverbios de modo se forman con -ly (quickly, slowly), no con -tion.',
+      'Función real de -tion/-sion: sufijo latino que forma sustantivos abstractos, a menudo derivados de un verbo (nombra un proceso o su resultado).',
+      '-tion no marca plural; el plural regular se marca con -s (nations).',
+      'El pasado se marca con -ed en verbos regulares, no con el sufijo -tion.',
+      'El inglés moderno no marca género gramatical en los sustantivos comunes; -tion no cumple esa función.',
+      'Los modales son palabras independientes como can/must/should; categoría totalmente distinta de un sufijo derivativo.',
+      'El único artículo definido del inglés es "the"; -tion no cumple esa función.',
+      'Las preposiciones son palabras independientes (in, on, at); -tion es un sufijo, no una palabra funcional propia.',
+    ],
   },
   {
     prompt: '“If it rains, we will stay home.” Es un condicional de tipo…',
@@ -1455,6 +1768,320 @@ const EN_GRAMMAR: GrammarItem[] = [
     options: ['0 (verdades generales)', '1 (posible en el futuro)', '2 (hipótesis presente)', '3 (hipótesis pasada)', 'mixto solo', 'imperativo', 'subjuntivo latino', 'ninguno'],
     correctIndex: 1,
     explanation: 'If + presente, will + verbo = 1.ª condicional (posible/real en el futuro).',
+    optionNotes: [
+      'Usa presente + presente (if you heat ice, it melts) para hechos siempre verdaderos, no para una situación futura concreta como la de la frase.',
+      'Usa if + presente, will + verbo, para situaciones reales o probables en el futuro: justo la estructura de la frase dada.',
+      'Usa if + pasado, would + verbo, para situaciones hipotéticas o poco probables: estructura distinta a la de la frase.',
+      'Usa if + past perfect, would have + participio, para un pasado que ya no se puede cambiar.',
+      'Combina tiempos de distintos tipos de condicional (por ejemplo 2.ª+3.ª); la frase dada sigue un patrón puro, no mixto.',
+      'Da órdenes directas (Stay home!) sin estructura condicional con "if" seguida de consecuencia.',
+      'No es una categoría del sistema de condicionales inglés moderno, que se organiza por tipos numerados, no por modo subjuntivo latino.',
+      'La frase sí sigue un patrón condicional identificable y nombrado, así que descartar cualquier tipo no es correcto.',
+    ],
+  },
+  {
+    prompt: '“If I had more time, I would learn Japanese.” ¿Qué tipo de condicional es y qué expresa?',
+    ruleHint: '2.ª condicional: if + pasado simple, would + verbo base.',
+    ruleExplain: 'La 2.ª condicional describe una situación hipotética o irreal en el presente/futuro. El pasado simple aquí NO indica tiempo pasado real, sino irrealidad (un uso llamado "pasado no factual" o "irrealis"). "Would" marca la consecuencia hipotética.',
+    failAdvice: 'Fíjate en si la situación es real y futura (1.ª) o hipotética y presente (2.ª).',
+    options: ['1.ª: probable en el futuro', '2.ª: hipótesis irreal en el presente', '3.ª: hipótesis irreal en el pasado', '0: verdad general', 'imperativo condicional', 'futuro simple', 'presente perfecto', 'ninguno de los anteriores'],
+    correctIndex: 1,
+    explanation: 'If + pasado simple, would + verbo = 2.ª condicional: hipótesis irreal en el presente o futuro cercano.',
+    optionNotes: [
+      'Usa if + presente, will + verbo (1.ª condicional); la frase dada usa if + pasado, would + verbo, una estructura distinta.',
+      'Estructura real de la frase: if + pasado simple, would + verbo base, para algo hipotético no factual en el presente.',
+      'Usaría if + past perfect (had + participio) y would have + participio; no es lo que aparece en esta frase.',
+      'Usa presente + presente para hechos siempre ciertos, sin "would"; no coincide con la frase.',
+      'No es una categoría estándar reconocida del sistema de condicionales inglés.',
+      'Sería "will + verbo" sin una cláusula "if" hipotética con verbo en pasado.',
+      'Usaría have/has + participio; estructura ausente en esta frase.',
+      'La frase sí encaja claramente en un tipo de condicional reconocible, así que descartarlos todos no es correcto.',
+    ],
+  },
+  {
+    prompt: '“If she had studied, she would have passed the exam.” ¿Qué tipo de condicional es?',
+    ruleHint: '3.ª condicional: if + past perfect, would have + participio.',
+    ruleExplain: 'La 3.ª condicional habla de un pasado que ya no se puede cambiar: describe cómo habría sido el resultado si una condición pasada (que NO se cumplió) hubiera sido distinta. Es el equivalente inglés del "si hubiera... habría..." español.',
+    failAdvice: 'Busca la combinación past perfect (had + participio) + would have + participio: esa es la marca inconfundible de la 3.ª condicional.',
+    options: ['1.ª condicional', '2.ª condicional', '3.ª condicional: pasado irreal', 'condicional cero', 'futuro perfecto', 'presente perfecto continuo', 'pasado simple narrativo', 'imperativo negado'],
+    correctIndex: 2,
+    explanation: 'If + had + participio (past perfect), would have + participio = 3.ª condicional: lo que habría pasado si el pasado hubiera sido distinto.',
+    optionNotes: [
+      'Usaría if + presente, will + verbo; aquí se usa "had studied / would have passed", una estructura distinta.',
+      'Usaría if + pasado simple, would + verbo base; aquí el verbo tras "if" está un paso más atrás, en past perfect (had studied).',
+      'Estructura exacta de la frase: if + past perfect, would have + participio, para un pasado que ya no puede cambiarse.',
+      'Usaría presente + presente para verdades generales, no esta combinación de pasados.',
+      'Sería "will have + participio", sin cláusula "if" hipotética sobre el pasado.',
+      'Sería have/has been + gerundio; forma totalmente distinta a la de esta frase.',
+      'Sería solo "studied/passed" sin "had" ni "would have": una narración simple sin hipótesis.',
+      'Daría una orden negativa (Don\'t study!); no tiene relación con esta estructura condicional.',
+    ],
+  },
+  {
+    prompt: '“She was cooking dinner when the phone rang.” ¿Qué combinación de tiempos es y qué función cumple?',
+    ruleHint: 'Past continuous (acción en curso) + past simple (interrupción puntual).',
+    ruleExplain: 'El past continuous (was/were + gerundio) describe una acción en desarrollo en un momento del pasado, como un telón de fondo. El past simple marca un evento puntual que interrumpe esa acción. Es el patrón clásico "estaba haciendo X cuando pasó Y".',
+    failAdvice: 'Identifica cuál acción es el "fondo" continuo y cuál es el evento puntual que lo corta.',
+    options: ['dos pasados simples paralelos', 'past continuous + past simple: fondo + interrupción', 'presente perfecto + pasado', 'futuro en el pasado', 'pasado perfecto + presente', 'dos presentes continuos', 'condicional mixto', 'subjuntivo pasado'],
+    correctIndex: 1,
+    explanation: 'Was cooking (continuo, fondo) + rang (simple, evento puntual que interrumpe) es el patrón estándar para narrar interrupciones.',
+    optionNotes: [
+      'Sería "cooked... rang", dos acciones puntuales sin relación de fondo/interrupción; no es la estructura de la frase dada.',
+      'Estructura real: "was cooking" (continuo, de fondo) + "rang" (simple, el evento que interrumpe).',
+      'Usaría "has cooked", conectando pasado con presente; no es el caso de esta frase narrativa.',
+      'Usaría "was going to cook", una intención pasada sobre el futuro, distinta de esta frase.',
+      'Usaría "had cooked... rings", una combinación que no aparece en la frase.',
+      'Usaría "is cooking... is ringing", tiempos presentes, no pasados como en la frase.',
+      'Combinaría partes de distintas condicionales con "if" y "would"; esta frase no tiene ninguna condicional.',
+      'Sería una forma hipotética tipo "if I were", ausente en esta frase puramente narrativa.',
+    ],
+  },
+  {
+    prompt: '“I used to play the guitar, but I don’t anymore.” ¿Qué expresa “used to”?',
+    ruleHint: '“Used to” + infinitivo: hábito o estado pasado que ya no ocurre.',
+    ruleExplain: '“Used to” es una estructura especial (no un verbo modal ni un tiempo verbal estándar) que expresa hábitos o estados que existieron en el pasado pero ya terminaron. Se diferencia de "would" (que solo sirve para hábitos repetidos, no estados) y del pasado simple (que no enfatiza el contraste "antes sí, ahora no").',
+    failAdvice: 'Busca la idea de contraste explícito entre un pasado habitual y un presente distinto.',
+    options: ['acción en curso ahora', 'hábito o estado pasado que ya no es cierto', 'obligación presente', 'posibilidad futura', 'orden o consejo', 'acción repetida que continúa hoy', 'pasado perfecto', 'condicional'],
+    correctIndex: 1,
+    explanation: '"Used to" + infinitivo describe un hábito o estado pasado terminado: antes tocaba la guitarra, ahora no.',
+    optionNotes: [
+      'Eso lo expresaría el presente continuo (I am playing); "used to" mira siempre al pasado, no al presente.',
+      'Función real de "used to": un hábito o estado que existía antes pero ya no es cierto, con un contraste explícito.',
+      'La obligación se expresa con "must/have to", no con "used to".',
+      'La posibilidad futura se expresaría con "might/could/will possibly", no con una estructura de pasado.',
+      'Una orden o consejo se expresaría con imperativo o "should", no con "used to".',
+      'Si continuara hoy, se usaría presente simple (I play); "used to" implica precisamente que ya terminó.',
+      'Usaría "had played", una forma distinta a "used to play".',
+      'Usaría "would play" en un contexto hipotético con "if"; "used to" no necesita esa condición.',
+    ],
+  },
+  {
+    prompt: 'Voz pasiva: “The letter ____ by Maria yesterday.”',
+    ruleHint: 'Pasiva: be (en el tiempo correcto) + participio pasado + by + agente.',
+    ruleExplain: 'La voz pasiva se forma con el verbo "to be" conjugado en el tiempo que corresponda, más el participio pasado del verbo principal. El agente (quien hace la acción) es opcional y, si aparece, va introducido por "by". Aquí "yesterday" exige pasado simple de "be": was.',
+    failAdvice: 'Conjuga "be" en el tiempo que pide el marcador temporal, y usa el participio pasado del verbo principal.',
+    options: ['is written', 'was written', 'writes', 'wrote', 'has written', 'was write', 'is wrote', 'will write'],
+    correctIndex: 1,
+    explanation: '"Yesterday" pide pasado; pasiva pasado = was/were + participio: was written.',
+    optionNotes: [
+      'Pasiva en presente (be + participio); no coincide con "yesterday", que pide pasado.',
+      'Pasiva en pasado: was (pasado de be) + written (participio); la forma correcta para "yesterday".',
+      'Voz activa, presente, 3.ª persona; ni es pasiva ni es el tiempo que pide la frase.',
+      'Voz activa, pasado; correcto en tiempo pero no en voz (el sujeto "the letter" recibe la acción, no la realiza).',
+      'Voz activa, presente perfecto; ni es pasiva ni encaja con "yesterday" (que exige pasado simple, no perfecto).',
+      'Combina correctamente el auxiliar pasivo "was" pero deja el verbo en forma base en vez de participio; error de forma.',
+      'Mezcla el auxiliar en presente con un participio irregular mal formado; ninguna de las dos partes es correcta aquí.',
+      'Voz activa, futuro; no es pasiva ni coincide con "yesterday" (pasado).',
+    ],
+  },
+  {
+    prompt: 'Voz activa vs. pasiva: ¿por qué un hablante elige “The bridge was built in 1889” en vez de “Someone built the bridge in 1889”?',
+    ruleHint: 'La pasiva se prefiere cuando el agente es desconocido, irrelevante u obvio por contexto.',
+    ruleExplain: 'La elección entre voz activa y pasiva no es solo gramatical: es pragmática. Se prefiere la pasiva cuando el foco de la frase es el paciente (lo que recibe la acción) y el agente es desconocido, poco importante o se sobreentiende. En textos históricos y científicos, la pasiva es extremadamente frecuente por esta razón.',
+    failAdvice: 'Piensa en qué elemento de la frase es el foco de interés real: si es el objeto/resultado, la pasiva suele ser más natural.',
+    options: ['porque el inglés no tiene voz activa', 'porque el agente (quién lo construyó) es desconocido o irrelevante aquí', 'porque el verbo "build" es siempre pasivo', 'por pura preferencia sin razón', 'porque "bridge" es un sustantivo incontable', 'porque falta un artículo', 'porque 1889 exige pasiva', 'no hay ninguna razón funcional'],
+    correctIndex: 1,
+    explanation: 'La pasiva enfoca el resultado (el puente) cuando el agente (quién lo construyó) no importa o no se conoce con precisión.',
+    optionNotes: [
+      'Es falso: el inglés tiene ambas voces; la pregunta es sobre cuándo se prefiere una u otra, no sobre la existencia de la voz activa.',
+      'Razón pragmática real: en textos históricos se prefiere la pasiva cuando el foco es el resultado y el agente es desconocido o irrelevante.',
+      'Es falso: "build" funciona en ambas voces según el contexto (they built the bridge / the bridge was built).',
+      'La elección de voz sí responde a una razón comunicativa concreta (qué elemento es el foco de la frase), no es arbitraria.',
+      'Es falso: "bridge" es un sustantivo contable normal (a bridge, two bridges); eso no influye en la elección de voz.',
+      'Ambas versiones de la frase llevan correctamente el artículo "the"; no hay ningún problema de artículos aquí.',
+      'Una fecha no exige por sí sola ninguna voz gramatical; "someone built it in 1889" es perfectamente válido.',
+      'Existe una razón pragmática clara y explicable (el foco informativo), así que negar que haya alguna razón no es correcto.',
+    ],
+  },
+  {
+    prompt: 'Verbo modal de deducción: “She isn’t answering; she ____ be asleep.”',
+    ruleHint: 'Modales epistémicos: must (deducción fuerte), might/could (posibilidad), can’t (deducción negativa fuerte).',
+    ruleExplain: 'Los modales tienen usos "epistémicos": no expresan obligación sino el grado de certeza del hablante sobre algo. "Must" para una deducción muy probable a partir de evidencia; "might/could" para una posibilidad más débil; "can’t" para descartar algo con fuerza.',
+    failAdvice: 'Piensa en el nivel de certeza que transmite la evidencia: no contestar sugiere una deducción bastante segura.',
+    options: ['can', 'must', 'may not', 'shall', 'need', 'ought', 'will', 'used to'],
+    correctIndex: 1,
+    explanation: '"Must" expresa una deducción lógica fuerte a partir de evidencia (no contesta → probablemente duerme).',
+    optionNotes: [
+      'Expresa capacidad o posibilidad general; no una deducción fuerte basada en la evidencia del momento.',
+      'Modal epistémico de deducción fuerte: la evidencia (no contesta) hace muy probable la conclusión de que duerme.',
+      'Expresa posibilidad negativa débil, lo cual contradice el tono de deducción bastante segura que sugiere la situación.',
+      'Modal de futuro/ofrecimiento formal (shall we?); no de deducción sobre un estado actual.',
+      'Expresa necesidad, no una conclusión lógica derivada de la evidencia disponible.',
+      'Modal de consejo/obligación moral (ought to); no de deducción epistémica en esta forma.',
+      'Modal de futuro/predicción voluntaria; no se usa para deducir algo sobre el presente a partir de evidencia.',
+      'Expresa un hábito pasado ya terminado; no tiene relación con hacer una deducción sobre el presente.',
+    ],
+  },
+  {
+    prompt: 'Discurso indirecto: Maria said, “I am tired.” → Maria said (that) she ____ tired.',
+    ruleHint: 'Backshift: al reportar, el tiempo verbal suele retroceder una posición.',
+    ruleExplain: 'En el estilo indirecto (reported speech), cuando el verbo introductorio está en pasado ("said"), el tiempo del verbo citado normalmente retrocede: presente → pasado, pasado → pasado perfecto, etc. Este fenómeno se llama "backshift" y también cambian los pronombres y algunos marcadores temporales (now→then, today→that day).',
+    failAdvice: 'Identifica el tiempo original ("am", presente) y aplica el retroceso correspondiente.',
+    options: ['is', 'was', 'has been', 'be', 'were', 'is being', 'had been', 'will be'],
+    correctIndex: 1,
+    explanation: 'Presente ("am") retrocede a pasado simple ("was") al reportar con un verbo introductorio en pasado.',
+    optionNotes: [
+      'Es la forma original citada, en presente; en discurso indirecto con verbo introductorio en pasado, esta forma retrocede.',
+      'Pasado simple: resultado correcto del backshift desde "am/is" cuando el verbo introductorio ("said") está en pasado.',
+      'Presente perfecto: sería el backshift de un present perfect original ("I have been tired"), no del presente simple "am".',
+      'Forma base/infinitivo, sin conjugar; no puede funcionar sola como verbo principal reportado.',
+      'Pasado plural o subjuntivo; no concuerda con el sujeto singular "she" en este contexto reportado.',
+      'Presente continuo: sería el backshift si el original fuera "I am being tired", una frase distinta a la citada.',
+      'Past perfect: sería el backshift de un pasado simple original, no de un presente como "am".',
+      'Futuro: no es el resultado del backshift de un presente simple tras un verbo introductorio en pasado.',
+    ],
+  },
+  {
+    prompt: '¿Gerundio o infinitivo? “I enjoy ____ new languages.”',
+    ruleHint: 'Ciertos verbos exigen gerundio (-ing) como complemento; otros exigen infinitivo (to + verbo).',
+    ruleExplain: 'En inglés, el complemento verbal (gerundio vs. infinitivo) no es intercambiable libremente: depende del verbo principal. "Enjoy", "avoid", "finish", "suggest" exigen gerundio. "Want", "decide", "hope", "plan" exigen infinitivo con "to". Es una lista que se memoriza por verbo, no por regla lógica universal.',
+    failAdvice: 'Memoriza "enjoy" como un verbo de la lista que exige gerundio (-ing), nunca infinitivo.',
+    options: ['to learn', 'learning', 'learn', 'learned', 'to learning', 'learns', 'having learned', 'to have learned'],
+    correctIndex: 1,
+    explanation: '"Enjoy" exige gerundio: enjoy learning (nunca "enjoy to learn").',
+    optionNotes: [
+      'Infinitivo con "to": "enjoy" no acepta esta forma, aunque muchos otros verbos sí la piden (like "want to learn").',
+      'Gerundio: la forma exigida por "enjoy" como complemento verbal directo.',
+      'Forma base sin "-ing" ni "to": no funciona como complemento directo de "enjoy".',
+      'Pasado/participio: no es la forma de complemento que pide "enjoy" tras de sí.',
+      'Combinación inválida de infinitivo "to" con gerundio "-ing" a la vez; no existe como forma verbal en inglés.',
+      '3.ª persona del presente: no puede funcionar como complemento verbal tras otro verbo conjugado como "enjoy".',
+      'Gerundio perfecto: indica una acción completada antes de otra; válido en otros contextos, pero no el complemento simple que pide "enjoy" aquí.',
+      'Infinitivo perfecto: tampoco es la forma que "enjoy" exige como complemento.',
+    ],
+  },
+  {
+    prompt: '¿Gerundio o infinitivo? “She decided ____ a new career.”',
+    ruleHint: '"Decide" pertenece al grupo de verbos que exigen infinitivo con "to".',
+    ruleExplain: 'A diferencia de "enjoy", el verbo "decide" pertenece al segundo gran grupo: verbos que van seguidos de infinitivo con "to" (decide, want, plan, hope, promise, agree, refuse). No hay una regla fonética o semántica que prediga el grupo con certeza total; se aprende por exposición y memorización de patrones.',
+    failAdvice: 'Recuerda "decide to + verbo" como un bloque fijo, igual que "want to" o "plan to".',
+    options: ['starting', 'to start', 'start', 'started', 'to starting', 'starts', 'having started', 'to have started'],
+    correctIndex: 1,
+    explanation: '"Decide" exige infinitivo con "to": decided to start.',
+    optionNotes: [
+      'Gerundio: "decide" no lo acepta como complemento directo (a diferencia de verbos como "enjoy").',
+      'Infinitivo con "to": la forma exigida por "decide" como complemento verbal.',
+      'Forma base sin "to": no es el complemento que pide "decide" conjugado.',
+      'Pasado/participio: no funciona como complemento de "decide" en este patrón.',
+      'Combinación inválida de infinitivo y gerundio a la vez; esta forma no existe en inglés.',
+      '3.ª persona del presente: no es un complemento verbal válido tras "decide".',
+      'Gerundio perfecto: forma válida en otros contextos, pero no el complemento simple que pide "decide" aquí.',
+      'Infinitivo perfecto: posible en otros usos, pero no el patrón simple "decide to + verbo" de esta frase.',
+    ],
+  },
+  {
+    prompt: 'Cláusula relativa: “The woman ____ lives next door is a doctor.”',
+    ruleHint: 'Pronombres relativos: who (personas, sujeto), which (cosas), that (ambos, informal), whose (posesión).',
+    ruleExplain: 'Las cláusulas relativas añaden información sobre un sustantivo. Cuando el antecedente es una persona y funciona como sujeto de la cláusula, se usa "who" (o "that" en registro informal). "Which" se reserva para cosas y animales, nunca para personas en inglés estándar.',
+    failAdvice: 'El antecedente ("the woman") es una persona que funciona como sujeto de "lives": eso exige "who".',
+    options: ['which', 'who', 'whom', 'whose', 'what', 'where', 'when', 'why'],
+    correctIndex: 1,
+    explanation: '"Who" para personas como sujeto de la cláusula relativa: the woman who lives next door.',
+    optionNotes: [
+      'Pronombre relativo para cosas o animales; nunca se usa para personas en inglés estándar.',
+      'Pronombre relativo para personas que funcionan como sujeto de la cláusula: el caso exacto de "the woman ... lives".',
+      'Pronombre relativo para personas como objeto (no sujeto) de la cláusula, de registro formal; aquí "the woman" es sujeto de "lives", no objeto.',
+      'Pronombre relativo posesivo ("de quien"), usado cuando se indica posesión, no una simple sustitución de sujeto.',
+      'No funciona como pronombre relativo que introduce una cláusula sobre un antecedente ya mencionado como "the woman".',
+      'Pronombre relativo de lugar, usado cuando el antecedente es un sitio, no una persona.',
+      'Pronombre relativo de tiempo, usado cuando el antecedente es un momento, no una persona.',
+      'Pronombre relativo de razón, usado con antecedentes como "the reason", no con personas.',
+    ],
+  },
+  {
+    prompt: 'Comparativo irregular: “This problem is ____ than the last one.” (bad)',
+    ruleHint: 'Comparativos irregulares no siguen el patrón -er ni more + adjetivo.',
+    ruleExplain: 'Un pequeño grupo de adjetivos y adverbios muy frecuentes tiene comparativos y superlativos completamente irregulares, heredados de formas antiguas del inglés: good→better→best, bad→worse→worst, far→further/farther→furthest/farthest. No siguen ni el patrón regular corto (-er) ni el largo (more + adjetivo).',
+    failAdvice: 'No apliques la regla general (-er o more); estos adjetivos cambian de raíz por completo.',
+    options: ['badder', 'more bad', 'worse', 'baddest', 'worst', 'more worse', 'the bad', 'badly'],
+    correctIndex: 2,
+    explanation: 'Bad → worse (comparativo) → worst (superlativo): irregular, sin -er ni more.',
+    optionNotes: [
+      'Aplica la terminación regular -er a un adjetivo irregular; esa forma no existe en inglés estándar.',
+      'Aplica la estructura larga "more + adjetivo" a un adjetivo que en realidad cambia de raíz por completo; no es la forma estándar.',
+      'Comparativo irregular real de "bad", con cambio total de raíz heredado del inglés antiguo.',
+      'Aplica el superlativo regular -est a un adjetivo irregular; no existe, y además esta frase pide un comparativo, no un superlativo.',
+      'Es el superlativo irregular de "bad" ("el peor de todos"), correcto en forma pero no en función: esta frase compara solo dos cosas, no exige un superlativo.',
+      'Combina incorrectamente la forma larga "more" con la forma ya irregular "worse": doble marca de comparativo, redundante e incorrecta.',
+      'Usa el artículo "the" con el adjetivo sin ninguna marca comparativa; así no se compara nada.',
+      'Es un adverbio ("mal"), no un adjetivo comparativo; no puede describir a "problem" tras el verbo "is".',
+    ],
+  },
+  {
+    prompt: 'Countable/uncountable: “How ____ information do you need?”',
+    ruleHint: '"Information" es un sustantivo incontable en inglés (aunque "información" tenga plural en español).',
+    ruleExplain: 'Muchos sustantivos abstractos que en español pueden pluralizarse ("informaciones", "consejos", "muebles") son incontables en inglés y no admiten plural ni "many": information, advice, furniture, news. Con incontables se usa "much", no "many".',
+    failAdvice: '"Information" no tiene plural en inglés estándar; descarta cualquier opción que trate la palabra como contable.',
+    options: ['many', 'much', 'a lot', 'few', 'these', 'those informations', 'a', 'an'],
+    correctIndex: 1,
+    explanation: '"Information" es incontable: se usa "much information", nunca "many informations".',
+    optionNotes: [
+      'Cuantificador para sustantivos contables en plural (many books); "information" es incontable, así que no encaja aquí.',
+      'Cuantificador correcto para sustantivos incontables como "information".',
+      'Cuantificador informal que funciona con contables e incontables, pero la construcción "how ____" de esta frase exige específicamente "much" o "many", no esta forma.',
+      'Cuantificador para contables en plural con sentido de escasez (few books); no aplica a un incontable.',
+      'Demostrativo plural que exige un sustantivo contable en plural; "information" no lo es.',
+      'Pluraliza incorrectamente un sustantivo incontable, un error típico por el plural "informaciones" que sí existe en español.',
+      'Artículo indefinido singular contable; "information" en su sentido general no se usa con "a".',
+      'Igual que "a" pero ante sonido vocálico; tampoco aplica a un incontable como "information".',
+    ],
+  },
+  {
+    prompt: 'Preposición de tiempo: “The meeting is ____ Monday ____ 9 a.m.”',
+    ruleHint: 'On + días; at + horas precisas; in + meses/años/periodos largos.',
+    ruleExplain: 'Las preposiciones de tiempo en inglés siguen una jerarquía bastante fija: "in" para periodos largos (meses, años, estaciones), "on" para días y fechas concretas, "at" para horas exactas y algunas expresiones fijas (at night, at the weekend en inglés británico). No hay una lógica única; se memoriza por categoría.',
+    failAdvice: 'Separa la pregunta en dos huecos: uno pide preposición de día, el otro de hora exacta.',
+    options: ['in / on', 'on / at', 'at / in', 'in / at', 'on / on', 'at / at', 'to / at', 'on / in'],
+    correctIndex: 1,
+    explanation: 'Días de la semana → "on" (on Monday); horas exactas → "at" (at 9 a.m.).',
+    optionNotes: [
+      '"In" no se usa para días de la semana (esa función corresponde a "on"); el segundo hueco tampoco usaría "on" para una hora exacta.',
+      'Combinación correcta: "on" para el día (on Monday) y "at" para la hora exacta (at 9 a.m.).',
+      'Invierte el uso esperado: "at" no se usa para días, e "in" no se usa para horas exactas.',
+      '"In" no es la preposición para días de la semana; el segundo hueco sí sería correcto, pero el primero no.',
+      'Usa "on" también para la hora, cuando las horas exactas piden "at", no "on".',
+      'Usa "at" también para el día, cuando los días de la semana piden "on", no "at".',
+      '"To" no es una preposición de tiempo para señalar un día concreto; no encaja en el primer hueco.',
+      'El primer hueco sería correcto ("on Monday"), pero "in" no se usa para horas exactas, así que el segundo falla.',
+    ],
+  },
+  {
+    prompt: 'Question tag: “You like coffee, ____?”',
+    ruleHint: 'Las question tags invierten la polaridad: afirmativa → tag negativo, y viceversa.',
+    ruleExplain: 'Una question tag repite el auxiliar de la frase principal (o "do/does/did" si no hay auxiliar) y el pronombre sujeto, invirtiendo la polaridad: si la frase es afirmativa, el tag es negativo, y viceversa. Se usa para confirmar algo que el hablante cree cierto, buscando acuerdo.',
+    failAdvice: 'La frase principal es afirmativa y usa "like" (sin auxiliar visible) → el tag necesita "do" en negativo.',
+    options: ['do you', "don't you", 'aren\'t you', 'isn\'t it', 'do it', 'don\'t it', 'are you', 'will you'],
+    correctIndex: 1,
+    explanation: '"You like coffee" (afirmativa, sin auxiliar) → tag con do-support en negativo: don’t you?',
+    optionNotes: [
+      'Tag afirmativo con "do"; pero la frase principal ya es afirmativa, así que el tag debería ser negativo, no afirmativo.',
+      'Tag negativo con do-support: correcto porque "you like coffee" es afirmativa y usa un verbo léxico sin auxiliar propio.',
+      'Usaría el auxiliar "be", pero la frase principal usa el verbo léxico "like", no "be"; el tag debe repetir el mismo tipo de auxiliar.',
+      'Usa el pronombre "it" y el auxiliar "be", pero el sujeto real de la frase es "you", no "it".',
+      'Mezcla el auxiliar "do" con el pronombre objeto "it" en vez del sujeto "you"; estructura incorrecta para un tag.',
+      'Combina correctamente la negación con "do", pero con el pronombre equivocado ("it" en vez de "you").',
+      'Tag afirmativo con "be": doblemente incorrecto, ni la polaridad ni el auxiliar coinciden con la frase principal.',
+      'Tag de futuro con "will"; la frase principal está en presente simple, no en futuro.',
+    ],
+  },
+  {
+    prompt: 'Phrasal verb con partícula que cambia el significado por completo: “The plane will ____ at 6 p.m.”',
+    ruleHint: '"Take off" (despegar) vs. "take" (tomar): la partícula "off" crea un significado nuevo, no aditivo.',
+    ruleExplain: 'Un phrasal verb "opaco" (idiomático) tiene un significado que no se puede predecir sumando el significado del verbo más la partícula por separado: "take" (tomar) + "off" (fuera) no da "tomar fuera", sino "despegar" (un avión) o "quitarse" (ropa). Hay que memorizarlo como una unidad léxica completa.',
+    failAdvice: 'Piensa en qué hace un avión a una hora programada: la respuesta es un phrasal verb idiomático completo, no una palabra suelta.',
+    options: ['take', 'take off', 'take up', 'take in', 'take on', 'take out', 'take over', 'take down'],
+    correctIndex: 1,
+    explanation: '"Take off" = despegar (avión); el significado no se deduce sumando "take" + "off" literalmente.',
+    optionNotes: [
+      'Verbo simple "tomar"; sin partícula no expresa la idea de que un avión despegue.',
+      'Phrasal verb idiomático real: "despegar" (un avión) o "quitarse" (ropa); el significado no es la suma literal de sus partes.',
+      'Empezar una afición o actividad nueva (take up painting), o también ocupar espacio o tiempo.',
+      'Absorber información, engañar a alguien, o acoger a alguien en casa, según el contexto.',
+      'Asumir una responsabilidad o un reto, o contratar a alguien.',
+      'Sacar algo de un lugar, o llevar a alguien a salir (invitarlo a comer, por ejemplo).',
+      'Asumir el control de algo, tomar el mando de una situación o empresa.',
+      'Anotar algo por escrito, o derribar/desmontar una estructura.',
+    ],
   },
 ]
 
@@ -2214,7 +2841,7 @@ const READING_BY_LANG: Record<LangId, ReadingItem[]> = {
 }
 
 /** Total de niveles objetivo */
-export const TOTAL_LEVELS = 500
+export const TOTAL_LEVELS = 3000
 
 function buildOptions(
   correct: string,
@@ -2239,7 +2866,7 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
   const grammar = GRAMMAR_BY_LANG[lang]
   const reading = READING_BY_LANG[lang] ?? []
   const cefr = levelToCefr(L)
-  const difficulty = (clamp(1 + Math.floor((L - 1) / 80), 1, 5) as 1 | 2 | 3 | 4 | 5)
+  const difficulty = (clamp(1 + Math.floor((L - 1) / 500), 1, 5) as 1 | 2 | 3 | 4 | 5)
 
   const modeCycle: GameMode[] = [
     'translate_to_es',
@@ -2258,11 +2885,12 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
       ? preferredMode
       : modeCycle[(L - 1) % modeCycle.length]
 
-  const rotateOptions = (options: string[], correctIndex: number, salt: number) => {
+  const rotateOptions = (options: string[], correctIndex: number, salt: number, notes?: string[]) => {
     const rot = salt % options.length
     const rotated = [...options.slice(rot), ...options.slice(0, rot)]
     const newCorrect = (correctIndex - rot + options.length) % options.length
-    return { options: rotated, correctIndex: newCorrect }
+    const rotatedNotes = notes ? [...notes.slice(rot), ...notes.slice(0, rot)] : undefined
+    return { options: rotated, correctIndex: newCorrect, notes: rotatedNotes }
   }
 
   // Reading
@@ -2289,7 +2917,7 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
 
   // Contextual usage: palabra → contexto
   if (mode === 'contextual_usage') {
-    const contexts: Record<string, { prompt: string; options: string[]; correctIndex: number; hint: string; explain: string; advice: string }> = {
+    const contexts: Record<string, { prompt: string; options: string[]; correctIndex: number; hint: string; explain: string; advice: string; optionNotes: string[] }> = {
       en: {
         prompt: 'Palabra: 「bank」. En “we sat on the bank of the river”, ¿qué significa?',
         options: ['banco financiero', 'orilla del río', 'banqueta', 'archivo', 'pendiente', 'empresa', 'moneda', 'puente'],
@@ -2297,6 +2925,16 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
         hint: 'Polisemia: institución vs orilla.',
         explain: 'bank of the river = orilla.',
         advice: 'Mira el complemento “of the river”; no asumas siempre el sentido financiero.',
+        optionNotes: [
+          'Es el sentido más frecuente de "bank" en inglés cotidiano y de negocios: la institución que guarda dinero. Se usa en frases como "go to the bank" o "bank account".',
+          '"Bank" también nombra el terreno elevado a los lados de un río o lago: es un sustantivo de geografía física, muy común en textos de naturaleza y en la expresión "riverbank".',
+          '"Banqueta" no es un significado real de "bank" en inglés; en cambio "banquette" (con -tte) sí existe como préstamo del francés para un tipo de asiento tapizado.',
+          '"Archivo" corresponde más bien a "file" o "archive" en inglés; no es un sentido de "bank", aunque "data bank" (banco de datos) sí existe como compuesto.',
+          '"Pendiente" (de un terreno) se dice "slope" en inglés; no es un significado de "bank", aunque ambos describen accidentes del terreno.',
+          '"Empresa" se dice "company" o "firm"; "bank" es un tipo específico de empresa financiera, no la palabra genérica para cualquier empresa.',
+          '"Moneda" se dice "coin" o "currency"; no es un sentido de "bank", aunque el dinero se relacione con los bancos.',
+          '"Puente" se dice "bridge"; no comparte raíz ni sentido con "bank", aunque ambos aparecen típicamente junto a un río.',
+        ],
       },
       es: {
         prompt: 'Palabra: 「banco」. En “nos sentamos en un banco del parque”, ¿qué significa?',
@@ -2305,6 +2943,16 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
         hint: 'Polisemia según complemento.',
         explain: 'banco del parque = asiento.',
         advice: 'El complemento “del parque” orienta al asiento, no al banco financiero.',
+        optionNotes: [
+          'Es el sentido financiero de "banco": la institución que gestiona dinero, cuentas y préstamos. Es el significado más frecuente fuera de contexto.',
+          'Un mueble alargado para sentarse, típico de parques, plazas e iglesias. Este sentido viene del mismo origen germánico que "banca" (el mueble de madera).',
+          'Un "banco de peces" es un grupo numeroso de peces nadando juntos; es una metáfora antigua que comparó la fila de peces con la fila de asientos.',
+          'Un lugar donde se guardan documentos; en español se dice "archivo", no "banco", aunque "banco de datos" sí es un compuesto real.',
+          'Un "banco de datos" (o "base de datos") es un compuesto técnico informático; no es el sentido aislado de "banco" sin más contexto.',
+          'La "orilla" de un río se llama así en español; "banco" solo se usa para orilla en el compuesto específico "banco de arena" (acumulación de arena bajo el agua).',
+          'Una "empresa" es cualquier negocio; un banco es un tipo específico de empresa financiera, no el término genérico.',
+          'Una "caja fuerte" es donde se guarda dinero en casa u oficina; no es sinónimo de "banco", aunque ambos se asocian con guardar dinero.',
+        ],
       },
       fr: {
         prompt: 'Palabra: 「temps」. En “quel temps fait-il ?”, ¿qué significa?',
@@ -2313,6 +2961,16 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
         hint: 'Expresión fija con faire → clima.',
         explain: 'quel temps fait-il = qué tiempo hace.',
         advice: 'La construcción con “fait-il” apunta al clima, no al reloj.',
+        optionNotes: [
+          'Es el sentido de "tiempo" como duración medible con reloj o calendario; en francés general "temps" cubre este sentido, pero no es el que activa la expresión "faire" + tiempo.',
+          'El clima o estado atmosférico de un momento dado; en francés se pregunta con la construcción fija "quel temps fait-il", literalmente "qué tiempo hace", igual que en español.',
+          'El "tiempo verbal" (presente, pasado, futuro) se dice también "temps" en gramática francesa, pero ese sentido técnico no aparece con el verbo "faire".',
+          'El "tempo" musical (velocidad de una pieza) se dice igual en italiano y se usa como préstamo en música; en francés cotidiano no se llama así.',
+          'Una "época" histórica se puede decir "temps" en expresiones como "en ce temps-là" (en aquella época), pero no es el sentido activado por "quel temps fait-il".',
+          'Un "horario" se dice "horaire" en francés, una palabra distinta de "temps".',
+          'Un "retraso" se dice "retard" en francés; no comparte forma con "temps" aunque ambos se relacionen con el reloj.',
+          'Un "calendario" se dice "calendrier"; es una palabra distinta, aunque relacionada semánticamente con medir el tiempo.',
+        ],
       },
       ja: {
         prompt: 'Elemento: 「は」 como partícula de tema. ¿Cómo se pronuncia?',
@@ -2321,6 +2979,16 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
         hint: 'Lectura especial de partícula.',
         explain: 'は tema = wa.',
         advice: 'No uses la lectura del kana independiente; la partícula tema se lee wa.',
+        optionNotes: [
+          'Es la lectura normal del carácter は cuando aparece dentro de una palabra (como en 話す, "hanasu", hablar); esta es la lectura "por defecto" del kana, pero NO la que usa como partícula gramatical.',
+          'Es la lectura histórica que se fijó por convención cuando は funciona como partícula de tema (wa), un caso especial heredado de la pronunciación del japonés antiguo, distinto de su lectura normal.',
+          'は con un pequeño diacrítico (゛) se convierte en ば y se lee "ba"; es un kana totalmente distinto (con dakuten), no una lectura alternativa del mismo carácter.',
+          'は con el diacrítico círculo (゜) se convierte en ぱ y se lee "pa" (handakuten); tampoco es una lectura de は sin modificar.',
+          '"Ga" corresponde a otra partícula japonesa distinta (が), que marca el sujeto gramatical, no el tema; se escribe con un carácter diferente.',
+          '"Wo" (を) es la partícula que marca el objeto directo del verbo; es un carácter y una función gramatical distintos de は.',
+          '"A" no es una lectura de は; podría confundirse por la vocal final, pero は siempre lleva la consonante h/w, nunca se lee como vocal sola.',
+          '"Ho" corresponde al kana ほ, visualmente parecido a は pero un carácter completamente distinto con su propia lectura fija.',
+        ],
       },
       zh: {
         prompt: 'Partícula 「了」 en “我吃了” (cambio/completado). ¿Qué marca?',
@@ -2329,6 +2997,16 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
         hint: 'Aspecto, no tiempo europeo exacto.',
         explain: '了 aspectual de completado/cambio.',
         advice: 'No lo equinares automáticamente a un pretérito único; piensa en aspecto o cambio de estado.',
+        optionNotes: [
+          'El futuro en chino no se marca con 了 sino con adverbios como 会 (huì) o 将 (jiāng); 了 mira hacia atrás (algo ya sucedido o cambiado), no hacia adelante.',
+          'Esta es la función real de 了 como partícula aspectual: marca que una acción se completó o que un estado cambió, un concepto llamado "aspecto" (distinto del tiempo verbal europeo, que marca cuándo, no si algo terminó).',
+          'El plural en chino mandarín generalmente no se marca en el sustantivo con una partícula como 了; se marca con 们 (men) solo en pronombres/personas, o se sobreentiende por contexto.',
+          'La posesión en chino se marca con la partícula 的 (de), un carácter y una función completamente distintos de 了.',
+          'La voz pasiva en chino se marca con 被 (bèi), no con 了; 了 puede aparecer en frases pasivas, pero no es lo que crea la pasiva.',
+          'El comparativo en chino se forma con 比 (bǐ) + adjetivo, una estructura sintáctica distinta que no usa 了.',
+          'Un clasificador (como 个, 只, 本) es una palabra que acompaña obligatoriamente a los sustantivos contables en chino; es una categoría gramatical distinta de las partículas aspectuales como 了.',
+          'El tono es un rasgo fonético (la melodía de la sílaba) que existe en todas las sílabas chinas; no es una función gramatical de 了, que es átono (sin tono marcado) en este uso.',
+        ],
       },
       pt: {
         prompt: 'Expresión 「a gente」 (PT-BR). ¿Qué concordancia verbal usa?',
@@ -2337,6 +3015,16 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
         hint: 'Significa “nosotros” pero concuerda en 3.ª singular.',
         explain: 'A gente vai / fala.',
         advice: 'No conjugues en 1.ª plural con a gente en el patrón coloquial brasileño descrito.',
+        optionNotes: [
+          'Es la concordancia "lógica" que uno esperaría porque "a gente" significa "nosotros"; sin embargo, gramaticalmente "a gente" es un sustantivo singular (como "la gente" en español), así que esta opción parece correcta por significado pero no lo es por forma gramatical.',
+          'Es la concordancia real: como "a gente" es sintácticamente un sustantivo femenino singular, el verbo debe concordar en 3.ª persona del singular (como con "ela"), aunque el significado sea plural ("nosotros").',
+          'La 2.ª persona singular ("tu vais/tu fala") no corresponde a "a gente", que no incluye al interlocutor de forma gramatical directa como "tú".',
+          'La 1.ª persona singular ("eu vou") correspondería a "yo", no a "a gente", que siempre implica un grupo aunque concuerde en singular.',
+          'La 3.ª persona plural ("eles vão") sería la concordancia si dijéramos "eles" (ellos), pero "a gente" es gramaticalmente singular, no plural.',
+          'El imperativo es un modo verbal para dar órdenes, no una persona gramatical; no es la categoría que resuelve esta pregunta de concordancia.',
+          'El infinitivo es la forma no conjugada del verbo (ir, falar); no expresa concordancia con ningún sujeto, así que no aplica aquí.',
+          'El gerundio (indo, falando) expresa una acción en curso, no concordancia de persona; tampoco resuelve la pregunta planteada.',
+        ],
       },
       de: {
         prompt: 'Conjunción 「weil」. ¿Qué hace al verbo conjugado de la subordinada?',
@@ -2345,6 +3033,16 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
         hint: 'Nebensatz: verbo al final.',
         explain: 'weil ich müde bin.',
         advice: 'Dentro de la subordinada con weil no dejes el verbo en V2.',
+        optionNotes: [
+          'La "segunda posición" (V2) es la regla del verbo conjugado en oraciones PRINCIPALES alemanas (Ich bin müde); "weil" introduce una subordinada, donde esta regla V2 deja de aplicar.',
+          'Esta es la regla real: las conjunciones subordinantes como "weil", "dass", "wenn" u "obwohl" envían el verbo conjugado al final de la cláusula (Nebensatz), un rasgo característico de la sintaxis alemana ausente en español.',
+          'El verbo nunca desaparece de una subordinada alemana; "weil" reordena la frase, pero el verbo conjugado sigue presente, solo que al final.',
+          'El imperativo es un modo verbal para dar órdenes; "weil" introduce una explicación causal, no una orden, así que esta categoría no aplica.',
+          'El infinitivo es la forma base del verbo (sein, gehen); en la subordinada con "weil" el verbo va conjugado (bin, gehe), no en infinitivo.',
+          'Colocar el verbo "al inicio" es lo que ocurre en preguntas de sí/no alemanas (Bist du müde?), un patrón distinto al de las subordinadas con "weil".',
+          'Decir que "no cambia" ignora la regla real: el verbo sí cambia de posición respecto a una oración principal equivalente, precisamente por ser una subordinada.',
+          'Un verbo modal (können, müssen, wollen) es una categoría de verbos auxiliares de significado; "weil" es una conjunción que afecta el ORDEN de palabras, no crea ni exige un verbo modal.',
+        ],
       },
       it: {
         prompt: 'Palabra 「camera」 en hotel. ¿Qué significa?',
@@ -2353,10 +3051,20 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
         hint: 'False friend con “cámara”.',
         explain: 'camera = habitación.',
         advice: 'En contexto hotelero no elijas cámara fotográfica.',
+        optionNotes: [
+          'Es la trampa del false friend: en español "cámara" evoca de inmediato el dispositivo fotográfico, pero en italiano ese objeto se llama "macchina fotografica", una palabra totalmente distinta.',
+          'Este es el significado real de "camera" en italiano: habitación (de dormir, de hotel). Comparte origen etimológico lejano con "cámara" (ambas del latín camera, "bóveda/recinto"), pero el significado moderno divergió por completo.',
+          'Un "salón" o sala de estar se dice "salotto" o "soggiorno" en italiano; no es el sentido de "camera", que se reserva para la habitación de dormir.',
+          'Una "cocina" se dice "cucina" en italiano; es una palabra hermana del español "cocina", pero distinta de "camera".',
+          'Un "baño" se dice "bagno" en italiano; es un false friend leve con "baño" en español (que suenan algo parecido), pero no tiene relación con "camera".',
+          'La "recepción" de un hotel se dice "reception" (préstamo del inglés) o "portineria"; no se relaciona con "camera".',
+          'Un "ascensor" se dice "ascensore" en italiano, cognado directo del español; no tiene relación con "camera".',
+          'Un "pasillo" se dice "corridoio" en italiano; tampoco se relaciona con "camera", aunque ambos son partes comunes de un hotel.',
+        ],
       },
     }
     const c = contexts[lang] ?? contexts.en
-    const rotated = rotateOptions(c.options, c.correctIndex, L + 3)
+    const rotated = rotateOptions(c.options, c.correctIndex, L + 3, c.optionNotes)
     return {
       id: `${lang}-ctx-${L}`,
       lang,
@@ -2371,6 +3079,7 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
       correctIndex: rotated.correctIndex,
       explanation: c.explain,
       difficulty,
+      optionNotes: rotated.notes,
     }
   }
 
@@ -2383,7 +3092,7 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
     grammar.length > 0
   ) {
     const g = grammar[(L - 1) % grammar.length]
-    const rotated = rotateOptions(g.options, g.correctIndex, L)
+    const rotated = rotateOptions(g.options, g.correctIndex, L, g.optionNotes)
     return {
       id: `${lang}-g-${L}`,
       lang,
@@ -2399,6 +3108,7 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
       correctIndex: rotated.correctIndex,
       explanation: g.explanation,
       difficulty,
+      optionNotes: rotated.notes,
     }
   }
 
@@ -2510,6 +3220,20 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
   }
 }
 
+
+/** Busca en el banco léxico del idioma la entrada que corresponde a un
+ * texto de opción exacto (en español o en el idioma activo), para poder
+ * explicar individualmente cada opción de una pregunta real. */
+export function findLexEntry(lang: LangId, text: string): LexItem | undefined {
+  const lex = LEX_BY_LANG[lang]
+  const clean = text.trim().toLowerCase()
+  return lex.find((it) => {
+    const es = it.es.trim().toLowerCase()
+    const target = it.target.trim().toLowerCase()
+    const targetFirst = target.split(/[/(]/)[0].trim()
+    return es === clean || target === clean || targetFirst === clean
+  })
+}
 
 export function generateLevelBank(lang: LangId, count = TOTAL_LEVELS): Question[] {
   return Array.from({ length: count }, (_, i) => generateQuestion(i + 1, lang))
@@ -3557,6 +4281,28 @@ That same day they made three more flights, the last one lasting almost a minute
       { word: 'generation', es: 'generación', note: 'lat. generatio < generare (engendrar).' },
       { word: 'distance', es: 'distancia', note: 'lat. distantia < distare (estar aparte).' },
     ],
+    sentences: [
+      {
+        original: 'Before they were famous, Orville and Wilbur Wright repaired bicycles in a small workshop in Dayton, Ohio.',
+        es: 'Antes de ser famosos, Orville y Wilbur Wright reparaban bicicletas en un pequeño taller de Dayton, Ohio.',
+        note: 'En inglés el verbo va en pasado simple ("repaired") sin auxiliar, porque es una acción habitual terminada; en español usamos el pretérito imperfecto ("reparaban") para lo habitual. "Before they were famous" se lee "bifór dei uér féimas": la "th" de "they" no existe en español, se pronuncia con la lengua entre los dientes.',
+      },
+      {
+        original: 'They had no university training in engineering, but they had something rarer: patience to fail a thousand times without giving up.',
+        es: 'No tenían formación universitaria en ingeniería, pero tenían algo más raro: paciencia para fallar mil veces sin rendirse.',
+        note: '"Had" es el pasado de "have" (tener/haber); en inglés un solo verbo cubre ambos sentidos del español. "Giving up" es un phrasal verb (dar + arriba = rendirse); no se traduce palabra por palabra. Se lee "guívin ap".',
+      },
+      {
+        original: 'For years they studied how birds flew.',
+        es: 'Durante años estudiaron cómo volaban los pájaros.',
+        note: 'El orden es sujeto-verbo-objeto fijo en inglés ("they studied how birds flew"); en español el orden es más libre. "Flew" es el pasado irregular de "fly" (volar); no lleva "-ed" porque es un verbo irregular, algo que hay que memorizar caso por caso.',
+      },
+      {
+        original: 'On the morning of December 17, 1903, on the dunes of Kitty Hawk, North Carolina, a human being flew in a powered, heavier-than-air machine for the first time in documented history.',
+        es: 'La mañana del 17 de diciembre de 1903, en las dunas de Kitty Hawk, Carolina del Norte, un ser humano voló en una máquina motorizada más pesada que el aire por primera vez en la historia documentada.',
+        note: 'En inglés las fechas se dicen "December seventeenth" aunque se escriban "December 17": el ordinal va en el habla aunque no en el número escrito. "Heavier-than-air" es un adjetivo compuesto con guiones, típico del inglés para empaquetar una idea completa antes del sustantivo.',
+      },
+    ],
   },
   {
     id: 'en-rosetta-stone',
@@ -3596,6 +4342,78 @@ The discovery suddenly opened up the entire written history of ancient Egypt: ph
       { word: 'display', es: 'exhibición / exhibirse', note: 'OF despleier (desplegar), mismo origen que "desplegar".' },
       { word: 'incomprehensible', es: 'incomprensible', note: 'lat. in- + comprehendere (comprender, agarrar juntos).' },
     ],
+    sentences: [
+      {
+        original: 'For more than a thousand years, nobody in the world could read Egyptian hieroglyphs.',
+        es: 'Durante más de mil años, nadie en el mundo podía leer los jeroglíficos egipcios.',
+        note: '"Nobody... could" es la forma negativa de capacidad en pasado: "could" es el pasado del modal "can". En español usamos "nadie podía" con doble negación implícita (nadie + podía, sin "no"); en inglés "nobody" ya es suficiente, no se añade "not". Se lee "nóubadi kud rid".',
+      },
+      {
+        original: 'In 1799, French soldiers found a fragment of dark stone while reinforcing a fortress.',
+        es: 'En 1799, soldados franceses encontraron un fragmento de piedra oscura mientras reforzaban una fortaleza.',
+        note: '"While reinforcing" usa gerundio tras "while" para indicar una acción simultánea de fondo, sin necesidad de repetir el sujeto ("while they were reinforcing" también es correcto, pero el gerundio solo es más económico). El adjetivo "dark" va antes del sustantivo "stone", como siempre en inglés.',
+      },
+      {
+        original: 'The young French linguist Jean-François Champollion devoted his life to this problem.',
+        es: 'El joven lingüista francés Jean-François Champollion dedicó su vida a este problema.',
+        note: 'Nota el orden de los adjetivos antes del sustantivo: "the young French linguist" (edad + nacionalidad + sustantivo), siguiendo la jerarquía de adjetivos prenominales del inglés. "Devoted... to" pide la preposición "to", no "for" ni "at".',
+      },
+    ],
+  },
+  {
+    id: 'en-spelling-history',
+    region: 'Inglaterra',
+    titleEs: 'Por qué el inglés se escribe distinto de como se pronuncia',
+    titleOriginal: 'Why English is written differently from how it sounds',
+    lang: 'en',
+    textEs: `Cualquier estudiante serio de inglés nota rápido algo extraño: "through", "though", "tough" y "cough" comparten las letras "-ough" pero se pronuncian de cuatro maneras completamente distintas. Esto no es un accidente ni un capricho: es el resultado de mil años de historia acumulada sobre la misma ortografía.
+
+La razón principal tiene nombre técnico: el Gran Cambio Vocálico (Great Vowel Shift), un proceso que ocurrió entre los siglos XV y XVII, en el que la pronunciación de las vocales largas del inglés cambió radicalmente, pero la escritura, ya fijada por los primeros impresores, se quedó prácticamente congelada. Por eso "name" se escribe casi igual que en 1400, pero ya no suena como sonaba entonces.
+
+A esto se suma que el inglés tomó préstamos masivos de tres fuentes distintas en momentos distintos: vocabulario germánico nativo (house, water, love), francés normando tras 1066 (justice, royal, beauty) y latín/griego culto desde el Renacimiento (biology, photograph, democracy). Cada capa de préstamos trajo sus propias reglas de escritura, y el inglés nunca hizo una reforma ortográfica general para unificarlas, a diferencia del español o el italiano.
+
+La buena noticia para quien aprende en serio: la irregularidad no es aleatoria. Si conoces el origen de una palabra (germánico, francés o greco-latino), puedes predecir bastante bien cómo se escribe y cómo se pronuncia. Por eso esta app te muestra la etimología de cada palabra antes de preguntarte: no es un dato curioso, es una herramienta real de pronunciación y ortografía.`,
+    textOriginal: `Any serious English learner notices something strange quite quickly: "through", "though", "tough", and "cough" share the letters "-ough" but are pronounced in four completely different ways. This is not an accident or a whim: it is the result of a thousand years of history piled onto the same spelling system.
+
+The main reason has a technical name: the Great Vowel Shift, a process that took place between the 15th and 17th centuries, in which the pronunciation of English long vowels changed radically, while the spelling, already fixed by the earliest printers, remained almost frozen. That is why "name" is spelled almost as it was in 1400, but it no longer sounds the way it did then.
+
+On top of that, English borrowed massively from three different sources at different times: native Germanic vocabulary (house, water, love), Norman French after 1066 (justice, royal, beauty), and learned Latin/Greek since the Renaissance (biology, photograph, democracy). Each layer of borrowing brought its own spelling rules, and English never underwent a general spelling reform to unify them, unlike Spanish or Italian.
+
+The good news for a serious learner: the irregularity is not random. If you know a word's origin (Germanic, French, or Greco-Latin), you can predict fairly well how it is spelled and how it is pronounced. That is why this app shows you the etymology of every word before quizzing you: it is not a fun fact, it is a real pronunciation and spelling tool.`,
+    apa: 'Crystal, D. (2012). Spell it out: The singular story of English spelling. Profile Books.',
+    note: 'Historia de la ortografía inglesa y el Gran Cambio Vocálico.',
+    tags: ['ortografía', 'Great Vowel Shift', 'pronunciación', 'historia del inglés', 'inglés'],
+    glossary: [
+      { word: 'strange', es: 'extraño / raro', note: 'OF estrange < lat. extraneus (de fuera). Mismo origen que "extraño".' },
+      { word: 'accident', es: 'accidente / casualidad', note: 'lat. accidens < accidere (caer sobre, suceder).' },
+      { word: 'result', es: 'resultado', note: 're- (otra vez) + lat. saltare (saltar): "rebotar de vuelta".' },
+      { word: 'history', es: 'historia', note: 'gr. historía (investigación, relato) vía el latín.' },
+      { word: 'shift', es: 'cambio / desplazamiento', note: 'OE sciftan (dividir, organizar); el sentido de "cambio" es tardío.' },
+      { word: 'pronunciation', es: 'pronunciación', note: 'lat. pronuntiare < pro- + nuntiare (anunciar).' },
+      { word: 'printers', es: 'impresores', note: 'print < OF preinte < lat. premere (presionar).' },
+      { word: 'frozen', es: 'congelado', note: 'Participio de "freeze" (OE frēosan), verbo germánico irregular.' },
+      { word: 'borrowed', es: 'tomó prestado', note: 'OE borgian; en lingüística, "borrowing" es el término técnico para préstamo léxico.' },
+      { word: 'unify', es: 'unificar', note: 'lat. unus (uno) + facere (hacer): "hacer uno".' },
+      { word: 'predict', es: 'predecir', note: 'lat. prae- (antes) + dicere (decir).' },
+      { word: 'quizzing', es: 'poniendo a prueba / preguntando', note: 'origen incierto, posiblemente del s. XVIII; hoy es el verbo estándar para "examinar con preguntas".' },
+    ],
+    sentences: [
+      {
+        original: 'Any serious English learner notices something strange quite quickly.',
+        es: 'Cualquier estudiante serio de inglés nota algo extraño bastante rápido.',
+        note: '"Quite quickly" combina un intensificador ("quite", bastante) con un adverbio en -ly formado a partir de "quick" (rápido). La mayoría de adverbios de modo en inglés se forman añadiendo "-ly" al adjetivo, igual que "-mente" en español.',
+      },
+      {
+        original: 'This is not an accident or a whim: it is the result of a thousand years of history.',
+        es: 'Esto no es un accidente ni un capricho: es el resultado de mil años de historia.',
+        note: 'En inglés, "not... or" equivale a "ni... ni" del español cuando hay negación explícita con "not": "not an accident or a whim" = "ni un accidente ni un capricho". El uso de los dos puntos para explicar/ampliar funciona igual que en español.',
+      },
+      {
+        original: 'If you know a word\'s origin, you can predict fairly well how it is spelled.',
+        es: 'Si conoces el origen de una palabra, puedes predecir bastante bien cómo se escribe.',
+        note: 'El posesivo sajón "word\'s origin" (apóstrofe + s) equivale a "origen de la palabra": el poseedor va primero, seguido de \'s, y luego lo poseído. "How it is spelled" es una pregunta indirecta insertada como objeto, con el orden sujeto-verbo normal (no el orden invertido de una pregunta directa).',
+      },
+    ],
   },
 ]
 
@@ -3629,7 +4447,7 @@ export function IdiomasGame() {
   const [fails, setFails] = useState(() => readJSON(LS.fails, 0))
   const [hintOpen, setHintOpen] = useState(false)
   const [storyId, setStoryId] = useState<string | null>(null)
-  const [storyLangMode, setStoryLangMode] = useState<'es' | 'original'>('es')
+  const [storyLangMode, setStoryLangMode] = useState<'es' | 'original' | 'breakdown'>('es')
   const [attemptsMap, setAttemptsMap] = useState<Record<string, number>>(() =>
     readJSON(LS.attempts, {})
   )
@@ -3645,6 +4463,9 @@ export function IdiomasGame() {
   )
   const [dictFilterLang, setDictFilterLang] = useState<LangId | 'all'>('all')
   const [pendingLevel, setPendingLevel] = useState<number | null>(null)
+  const [pendingQuestion, setPendingQuestion] = useState<Question | null>(null)
+  const [revealed, setRevealed] = useState<Set<number>>(new Set())
+  const [lessonAudioOn, setLessonAudioOn] = useState(false)
   const [skipVocabPreview, setSkipVocabPreview] = useState(() => readJSON(LS.skipVocab, false))
   const [winStreak, setWinStreak] = useState(() => readJSON(LS.streak, 0))
   const [bestStreak, setBestStreak] = useState(() => readJSON(LS.bestStreak, 0))
@@ -3685,10 +4506,9 @@ export function IdiomasGame() {
     writeJSON(LS.storyFilter, storyFilterLang)
   }, [storyFilterLang])
 
-  const startLevel = useCallback(
+  const resolveTarget = useCallback(
     (id: number) => {
       let target = id
-      // Si ya está completado, avanzar al siguiente no completado desbloqueado
       if (completedLevels.has(target)) {
         let found = false
         for (let n = target + 1; n <= TOTAL_LEVELS; n++) {
@@ -3708,7 +4528,15 @@ export function IdiomasGame() {
           }
         }
       }
-      const q = generateQuestion(target, lang, preferredMode)
+      return target
+    },
+    [completedLevels, unlocked]
+  )
+
+  const startLevel = useCallback(
+    (id: number, preset?: Question) => {
+      const target = preset ? preset.level : resolveTarget(id)
+      const q = preset ?? generateQuestion(target, lang, preferredMode)
       setLevelId(target)
       const nextCurrent = { ...currentMap, [lang]: target }
       setCurrentMap(nextCurrent)
@@ -3720,28 +4548,37 @@ export function IdiomasGame() {
       setHintOpen(false)
       setLastGrade(null)
       startedAtRef.current = Date.now()
+      playSfx('start')
       setScreen('play')
     },
-    [lang, preferredMode, currentMap, completedLevels, unlocked]
+    [lang, preferredMode, currentMap, resolveTarget]
   )
 
-  /** Punto de entrada a un nivel: primero enseña el vocabulario que aparecerá
-   * en las opciones, y solo entonces deja jugar (salvo que el usuario haya
-   * elegido saltar este paso). */
+  /** Punto de entrada a un nivel: primero da la clase con el vocabulario y la
+   * regla que aparecerán en la pregunta, y solo entonces deja jugar (salvo
+   * que el usuario haya elegido saltar este paso). La pregunta se genera una
+   * sola vez aquí y se reutiliza al jugar, para que la clase describa
+   * exactamente las opciones reales, sin sorpresas de un nuevo sorteo. */
   const openVocab = useCallback(
     (n: number) => {
+      const target = resolveTarget(n)
       if (skipVocabPreview) {
-        startLevel(n)
+        startLevel(target)
         return
       }
-      setPendingLevel(n)
+      const q = generateQuestion(target, lang, preferredMode)
+      setPendingLevel(target)
+      setPendingQuestion(q)
+      setRevealed(new Set())
+      setLessonAudioOn(false)
       setScreen('vocab')
     },
-    [skipVocabPreview, startLevel]
+    [skipVocabPreview, startLevel, resolveTarget, lang, preferredMode]
   )
 
   const onSelectOption = (idx: number) => {
     if (answered || !question) return
+    playSfx('click')
     setSelected(idx)
     const ok = idx === question.correctIndex
     setCorrect(ok)
@@ -3788,6 +4625,7 @@ export function IdiomasGame() {
         writeJSON(LS.unlocked, nextUnlocked)
       }
       const g = gradePerformance(seconds, attempts)
+      playSfx(g.grade === 'S' || g.grade === 'A' ? 'levelup' : 'correct')
       setLastGrade({ ...g, seconds, attempts })
       const best = readJSON<Record<string, number>>(LS.bestTime, {})
       if (!best[key] || seconds < best[key]) {
@@ -3824,6 +4662,7 @@ export function IdiomasGame() {
         writeJSON(LS.fails, n)
         return n
       })
+      playSfx('wrong')
       setWinStreak(0)
       writeJSON(LS.streak, 0)
       setLastGrade(null)
@@ -3856,7 +4695,10 @@ export function IdiomasGame() {
                 key={id}
                 type="button"
                 className={`id-lang-btn ${lang === id ? 'active' : ''}`}
-                onClick={() => setLang(id)}
+                onClick={() => {
+                  playSfx('toggle')
+                  setLang(id)
+                }}
               >
                 <span className="id-flag">{p.flag}</span>
                 <span>{p.name}</span>
@@ -3890,8 +4732,8 @@ export function IdiomasGame() {
                   <br />
                   <strong>Hablantes:</strong> {profile.speakers}
                   <br />
-                  <strong>Progresión CEFR:</strong> 1–40 A1 · 41–60 A2 · 61–120 B1 · 121–240 B2 ·
-                  241–480 C1 · 481+ C2 (por idioma).
+                  <strong>Progresión CEFR:</strong> 1–200 A1 · 201–400 A2 · 401–800 B1 · 801–1400 B2 ·
+                  1401–2200 C1 · 2201–{TOTAL_LEVELS} C2 (por idioma, hasta el nivel {TOTAL_LEVELS}).
                 </p>
                 <div className="id-essay">{profile.essay}</div>
                 <h3>Reglas clave (claras y aplicables)</h3>
@@ -4320,104 +5162,215 @@ export function IdiomasGame() {
     )
   }
 
-  // ---- VOCAB PREVIEW (antes de jugar cada nivel) ----
-  if (screen === 'vocab' && pendingLevel !== null) {
-    const words = previewLexForLevel(lang, pendingLevel, 4)
-    const grammarPeek = previewGrammarForLevel(lang, pendingLevel, preferredMode)
-    const upcomingMode = modeForLevel(pendingLevel, preferredMode)
+  // ---- CLASE (lección extensa antes de jugar cada nivel) ----
+  if (screen === 'vocab' && pendingLevel !== null && pendingQuestion) {
+    const q = pendingQuestion
+    const lesson = MODE_LESSON[q.mode]
+    const era = originEraLabel(q.etymology)
+    const allRevealed = revealed.size >= q.options.length
+    const toggleReveal = (idx: number) => {
+      setRevealed((prev) => {
+        const next = new Set(prev)
+        if (!next.has(idx)) {
+          next.add(idx)
+          playSfx('flip')
+        }
+        return next
+      })
+    }
+    const lessonParagraphs = [
+      ...lesson.body,
+      `Regla específica de este nivel: ${q.ruleHint}`,
+      q.ruleExplain,
+      q.etymology ? `Etimología relevante: ${q.etymology}` : '',
+      era ?? '',
+    ].filter(Boolean)
+    const toggleLessonAudio = () => {
+      if (lessonAudioOn) {
+        window.speechSynthesis?.cancel()
+        setLessonAudioOn(false)
+        return
+      }
+      playSfx('toggle')
+      setLessonAudioOn(true)
+      speakLesson(
+        [lesson.title, ...lessonParagraphs, 'Ahora, las opciones que verás en la pregunta:',
+          ...q.options],
+        lang,
+        () => setLessonAudioOn(false)
+      )
+    }
     return (
       <motion.div
-        className="id-root"
-        initial={{ opacity: 0, y: 10 }}
+        className="id-root id-lesson-root"
+        initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25 }}
+        transition={{ duration: 0.3 }}
       >
         <style>{CSS}</style>
+        <div className="id-glass-blob b1" aria-hidden="true" />
+        <div className="id-glass-blob b2" aria-hidden="true" />
         <header className="id-top">
-          <button className="id-icon" onClick={() => setScreen('levels')} aria-label="Volver">
+          <button
+            className="id-icon"
+            onClick={() => {
+              window.speechSynthesis?.cancel()
+              setLessonAudioOn(false)
+              setScreen('levels')
+            }}
+            aria-label="Volver"
+          >
             ←
           </button>
           <div className="id-top-title">
             <h1>
-              Antes del nivel {pendingLevel} <span className="id-cefr-badge">{levelToCefr(pendingLevel)}</span>
+              Clase · Nivel {pendingLevel} <span className="id-cefr-badge">{q.cefr}</span>
             </h1>
             <p>
-              {profile.flag} {profile.name} · {MODE_LABELS[upcomingMode]}
+              {profile.flag} {profile.name} · {MODE_LABELS[q.mode]} · dificultad {q.difficulty}/5
             </p>
           </div>
         </header>
 
-        <p className="id-meta" style={{ marginBottom: 10 }}>
-          Antes de responder, conoce estas palabras: su significado, de dónde vienen, desde cuándo
-          existen y cómo pronunciarlas leyendo desde el español. Cuando termines, ya sabrás todo lo
-          que necesitas para acertar.
-        </p>
-
-        {words.length === 0 && (
-          <div className="id-card" style={{ padding: 16 }}>
-            <p className="id-meta">
-              Este nivel es de gramática o lectura; revisa la estructura clave abajo y luego
-              comienza.
-            </p>
+        <motion.article
+          className="id-lesson-card id-glass-panel"
+          initial={{ opacity: 0, scale: 0.97 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.05, duration: 0.3 }}
+        >
+          <div className="id-lesson-head">
+            <h2>{lesson.title}</h2>
+            <button
+              type="button"
+              className={`id-audio-toggle ${lessonAudioOn ? 'playing' : ''}`}
+              onClick={toggleLessonAudio}
+            >
+              {lessonAudioOn ? '⏹ Detener lectura' : '🔊 Leer toda la clase en voz alta'}
+            </button>
           </div>
-        )}
+          {lessonParagraphs.map((p, i) => (
+            <p key={i} className="id-lesson-p">
+              {p}
+            </p>
+          ))}
+          {q.passage && (
+            <div className="id-passage">
+              <h3>Texto de este nivel</h3>
+              <p>{q.passage}</p>
+            </div>
+          )}
+        </motion.article>
+
+        <div className="id-lesson-gate">
+          <p className="id-meta">
+            Antes de leer la pregunta, interpreta cada una de las {q.options.length} opciones:
+            toca cada tarjeta, piensa qué crees que significa o qué función cumple, y luego revela
+            la explicación. Aquí no se dice cuál es la respuesta correcta — eso lo decides tú al
+            leer la pregunta. Reveladas: {revealed.size}/{q.options.length}
+            {allRevealed ? ' · ¡Listo!' : ''}
+          </p>
+          <div className="id-progress-track small">
+            <motion.div
+              className="id-progress-fill"
+              animate={{ width: `${(revealed.size / q.options.length) * 100}%` }}
+              transition={{ duration: 0.3 }}
+            />
+          </div>
+        </div>
 
         <div className="id-vocab-list">
-          {words.map((w) => {
-            const era = originEraLabel(w.etymology)
+          {q.options.map((opt, idx) => {
+            const entry = findLexEntry(lang, opt)
+            const isOpen = revealed.has(idx)
             return (
-              <article key={`${w.es}-${w.target}`} className="id-vocab-card">
-                <div className="id-vocab-head">
-                  <h3>{w.target}</h3>
-                  <button
-                    type="button"
-                    className="id-speak-btn"
-                    onClick={() => speak(w.target, lang)}
-                    aria-label={`Escuchar ${w.target}`}
-                    title="Escuchar pronunciación"
-                  >
-                    🔊
-                  </button>
-                </div>
-                <p className="id-vocab-es">
-                  <strong>Significa:</strong> {w.es}
-                  {w.topic && <span className="id-vocab-topic"> · {w.topic}</span>}
-                </p>
-                <p className="id-vocab-note">{w.note}</p>
-                {w.phoneticEs && (
-                  <p className="id-vocab-phonetic">
-                    <strong>Cómo leerla desde el español:</strong> {w.phoneticEs}
-                  </p>
-                )}
-                {w.etymology && (
-                  <p className="id-vocab-etym">
-                    <strong>De dónde viene:</strong> {w.etymology}
-                  </p>
-                )}
-                {era && (
-                  <p className="id-vocab-era">
-                    <strong>¿Desde cuándo existe?</strong> {era}
-                  </p>
-                )}
-                {w.root && (
-                  <p className="id-vocab-root">
-                    <strong>Raíz para memorizar:</strong> {w.root}
-                  </p>
-                )}
-              </article>
+              <motion.article
+                key={`${q.id}-opt-${idx}`}
+                className={`id-vocab-card id-glass-panel ${isOpen ? 'open' : 'closed'}`}
+                whileHover={{ y: -3 }}
+                layout
+              >
+                <button
+                  type="button"
+                  className="id-vocab-flip-btn"
+                  onClick={() => toggleReveal(idx)}
+                >
+                  <div className="id-vocab-head">
+                    <span className="id-opt-letter">{String.fromCharCode(65 + idx)}</span>
+                    <h3>{opt}</h3>
+                    {entry && (
+                      <span
+                        className="id-speak-btn"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          speak(entry.target, lang)
+                        }}
+                        role="button"
+                        aria-label="Escuchar pronunciación"
+                      >
+                        🔊
+                      </span>
+                    )}
+                  </div>
+                  {!isOpen && (
+                    <p className="id-vocab-guess">
+                      ¿Qué crees que significa? Toca para interpretar y revelar la explicación.
+                    </p>
+                  )}
+                </button>
+                <AnimatePresence initial={false}>
+                  {isOpen && (
+                    <motion.div
+                      className="id-vocab-body"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                    >
+                      {entry ? (
+                        <>
+                          <p className="id-vocab-es">
+                            <strong>Significa:</strong> {entry.es}
+                            {entry.topic && <span className="id-vocab-topic"> · {entry.topic}</span>}
+                          </p>
+                          <p className="id-vocab-note">{entry.note}</p>
+                          {entry.phoneticEs && (
+                            <p className="id-vocab-phonetic">
+                              <strong>Cómo leerla desde el español:</strong> {entry.phoneticEs}
+                            </p>
+                          )}
+                          {entry.etymology && (
+                            <p className="id-vocab-etym">
+                              <strong>De dónde viene:</strong> {entry.etymology}
+                            </p>
+                          )}
+                          {entry.root && (
+                            <p className="id-vocab-root">
+                              <strong>Raíz para memorizar:</strong> {entry.root}
+                            </p>
+                          )}
+                        </>
+                      ) : q.optionNotes && q.optionNotes[idx] ? (
+                        <p className="id-vocab-note">{q.optionNotes[idx]}</p>
+                      ) : q.mode === 'reading_comprehension' ? (
+                        <p className="id-vocab-note">
+                          Esta opción es una posible lectura del pasaje de arriba. Vuelve al texto y
+                          localiza literalmente dónde dice algo parecido a "{opt}" (o dónde queda
+                          claro que NO lo dice): la respuesta correcta siempre se puede señalar con
+                          el dedo en el pasaje, no se adivina.
+                        </p>
+                      ) : (
+                        <p className="id-vocab-note">
+                          Todavía no tenemos el desglose línea por línea de esta opción para{' '}
+                          {profile.name}. Usa la regla explicada arriba ({q.ruleHint}) para
+                          analizarla tú mismo: ¿qué forma o estructura es, y qué exige la regla?
+                        </p>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.article>
             )
           })}
         </div>
-
-        {grammarPeek && (
-          <div className="id-card" style={{ padding: 14, marginTop: 12 }}>
-            <h3>Estructura clave de este nivel</h3>
-            <p className="id-rule-hint">
-              <strong>{grammarPeek.ruleHint}</strong>
-            </p>
-            <p className="id-rule-explain">{grammarPeek.ruleExplain}</p>
-          </div>
-        )}
 
         <label className="id-skip-row">
           <input
@@ -4425,17 +5378,24 @@ export function IdiomasGame() {
             checked={skipVocabPreview}
             onChange={(e) => setSkipVocabPreview(e.target.checked)}
           />
-          No mostrar el vocabulario antes de cada nivel (puedes reactivarlo cuando quieras)
+          No mostrar la clase antes de cada nivel (puedes reactivarla cuando quieras)
         </label>
 
         <div className="id-actions">
-          <button
-            className="id-btn primary"
+          <motion.button
+            className={`id-btn primary id-glow-btn ${!allRevealed ? 'disabled' : ''}`}
             type="button"
-            onClick={() => pendingLevel !== null && startLevel(pendingLevel)}
+            disabled={!allRevealed}
+            whileHover={allRevealed ? { scale: 1.02 } : {}}
+            whileTap={allRevealed ? { scale: 0.97 } : {}}
+            onClick={() => {
+              if (!allRevealed) return
+              window.speechSynthesis?.cancel()
+              startLevel(pendingQuestion.level, pendingQuestion)
+            }}
           >
-            Ya lo sé · Empezar nivel {pendingLevel}
-          </button>
+            {allRevealed ? `Ya interpreté todo · Leer la pregunta y responder` : `Interpreta las ${q.options.length} opciones para continuar`}
+          </motion.button>
           <button className="id-btn" type="button" onClick={() => setScreen('levels')}>
             Volver al mapa de niveles
           </button>
@@ -4510,6 +5470,7 @@ export function IdiomasGame() {
   // ---- STORY VIEW ----
   if (screen === 'story' && activeStory) {
     const showOriginal = storyLangMode === 'original'
+    const showBreakdown = storyLangMode === 'breakdown'
     const glossMap = new Map(
       (activeStory.glossary ?? []).map((g) => [g.word.toLowerCase(), g])
     )
@@ -4540,7 +5501,7 @@ export function IdiomasGame() {
             ←
           </button>
           <div className="id-top-title">
-            <h1>{showOriginal ? activeStory.titleOriginal : activeStory.titleEs}</h1>
+            <h1>{showOriginal || showBreakdown ? activeStory.titleOriginal : activeStory.titleEs}</h1>
             <p>
               {activeStory.region} · {LANG_PROFILES[activeStory.lang].flag}{' '}
               {LANG_PROFILES[activeStory.lang].name}
@@ -4551,7 +5512,7 @@ export function IdiomasGame() {
         <div className="id-lang-toggle">
           <button
             type="button"
-            className={`id-toggle-btn ${!showOriginal ? 'active' : ''}`}
+            className={`id-toggle-btn ${storyLangMode === 'es' ? 'active' : ''}`}
             onClick={() => setStoryLangMode('es')}
           >
             Español
@@ -4563,23 +5524,70 @@ export function IdiomasGame() {
           >
             Original ({LANG_PROFILES[activeStory.lang].nativeName})
           </button>
+          <button
+            type="button"
+            className={`id-toggle-btn ${showBreakdown ? 'active' : ''}`}
+            onClick={() => setStoryLangMode('breakdown')}
+          >
+            🔍 Frase por frase
+          </button>
         </div>
 
-        <article className="id-card id-story-body">
-          <div className="id-essay">
-            {showOriginal ? renderWithGlossary(activeStory.textOriginal) : activeStory.textEs}
-          </div>
-          {showOriginal && glossMap.size > 0 && (
-            <p className="id-meta" style={{ marginTop: 8 }}>
-              Toca cualquier palabra subrayada para ver su traducción y una nota breve.
+        {!showBreakdown && (
+          <article className="id-card id-story-body">
+            <div className="id-essay">
+              {showOriginal ? renderWithGlossary(activeStory.textOriginal) : activeStory.textEs}
+            </div>
+            {showOriginal && glossMap.size > 0 && (
+              <p className="id-meta" style={{ marginTop: 8 }}>
+                Toca cualquier palabra subrayada para ver su traducción y una nota breve.
+              </p>
+            )}
+            <h3>Referencia (APA)</h3>
+            <p className="id-apa-inline">
+              <em>{activeStory.apa}</em>
             </p>
-          )}
-          <h3>Referencia (APA)</h3>
-          <p className="id-apa-inline">
-            <em>{activeStory.apa}</em>
-          </p>
-          <p className="id-apa-note">{activeStory.note}</p>
-        </article>
+            <p className="id-apa-note">{activeStory.note}</p>
+          </article>
+        )}
+
+        {showBreakdown && (
+          <article className="id-card id-story-body">
+            <p className="id-meta" style={{ marginBottom: 10 }}>
+              Cada frase del texto original, su traducción y una explicación de por qué se escribe
+              así en {LANG_PROFILES[activeStory.lang].name} y cómo se lee desde el español.
+            </p>
+            {(activeStory.sentences ?? []).length === 0 && (
+              <p className="id-meta">
+                Esta historia todavía no tiene el desglose frase por frase disponible. Usa el modo
+                "Original" con el glosario tocable mientras lo agregamos.
+              </p>
+            )}
+            <div className="id-breakdown-list">
+              {(activeStory.sentences ?? []).map((s, i) => (
+                <div key={i} className="id-breakdown-item id-glass-panel">
+                  <div className="id-vocab-head">
+                    <span className="id-opt-letter">{i + 1}</span>
+                    <h3 className="id-breakdown-original">{s.original}</h3>
+                    <span
+                      className="id-speak-btn"
+                      role="button"
+                      onClick={() => speak(s.original, activeStory.lang)}
+                    >
+                      🔊
+                    </span>
+                  </div>
+                  <p className="id-breakdown-es">
+                    <strong>Traducción:</strong> {s.es}
+                  </p>
+                  <p className="id-breakdown-note">
+                    <strong>Por qué se escribe/lee así:</strong> {s.note}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </article>
+        )}
 
         <AnimatePresence>
           {activeGloss && (
@@ -4649,7 +5657,10 @@ export function IdiomasGame() {
           <button
             type="button"
             className="id-hint-btn"
-            onClick={() => setHintOpen((v) => !v)}
+            onClick={() => {
+              playSfx('toggle')
+              setHintOpen((v) => !v)
+            }}
             aria-expanded={hintOpen}
           >
             💡 Pista / regla {hintOpen ? '▾' : '▸'}
@@ -5288,8 +6299,324 @@ const CSS = `
   background: color-mix(in srgb, #4ADE80 14%, transparent);
   border: 1px solid color-mix(in srgb, #4ADE80 30%, transparent);
 }
+
+/* =========================================================================
+   Liquid glass avanzado · clase previa, vocabulario, logros, confeti
+   ========================================================================= */
+
+@keyframes id-float-blob {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(18px, -22px) scale(1.08); }
+  66% { transform: translate(-14px, 14px) scale(0.95); }
+}
+@keyframes id-shimmer-border {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+@keyframes id-pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, #3AA0FF 45%, transparent); }
+  50% { box-shadow: 0 0 0 10px color-mix(in srgb, #3AA0FF 0%, transparent); }
+}
+
+.id-lesson-root {
+  position: relative;
+  overflow: hidden;
+}
+.id-glass-blob {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(40px);
+  opacity: 0.35;
+  pointer-events: none;
+  z-index: 0;
+  animation: id-float-blob 14s ease-in-out infinite;
+}
+.id-glass-blob.b1 {
+  width: 220px; height: 220px;
+  background: radial-gradient(circle, #3AA0FF, transparent 70%);
+  top: -60px; left: -40px;
+}
+.id-glass-blob.b2 {
+  width: 260px; height: 260px;
+  background: radial-gradient(circle, #8B7CF6, transparent 70%);
+  bottom: -80px; right: -60px;
+  animation-delay: 4s;
+}
+
+.id-glass-panel {
+  position: relative;
+  z-index: 1;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--gco-ink, #fff) 16%, transparent);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--gco-ink, #fff) 10%, transparent), color-mix(in srgb, var(--gco-ink, #fff) 3%, transparent));
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 25%, transparent),
+    0 8px 30px rgba(0,0,0,0.18);
+}
+
+.id-lesson-card {
+  padding: 18px;
+  margin-bottom: 14px;
+}
+.id-lesson-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.id-lesson-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-family: var(--font-display, "Space Grotesk", Inter, sans-serif);
+}
+.id-audio-toggle {
+  appearance: none;
+  border: 1px solid color-mix(in srgb, #8B7CF6 45%, transparent);
+  background:
+    linear-gradient(120deg, color-mix(in srgb, #8B7CF6 22%, transparent), color-mix(in srgb, #3AA0FF 22%, transparent), color-mix(in srgb, #8B7CF6 22%, transparent));
+  background-size: 200% 100%;
+  color: inherit;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.id-audio-toggle.playing {
+  animation: id-shimmer-border 2.4s linear infinite, id-pulse-glow 1.8s ease-in-out infinite;
+}
+.id-lesson-p {
+  font-size: 0.92rem;
+  line-height: 1.55;
+  opacity: 0.92;
+  margin: 0 0 10px;
+}
+.id-lesson-gate {
+  margin: 4px 0 10px;
+}
+.id-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gco-ink, #fff) 10%, transparent);
+  overflow: hidden;
+  margin-top: 8px;
+}
+.id-progress-track.small { height: 6px; }
+.id-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #3AA0FF, #8B7CF6, #4ADE80);
+  background-size: 200% 100%;
+  animation: id-shimmer-border 3s linear infinite;
+}
+.id-streak-line {
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, #FF8A3D 16%, transparent);
+  border: 1px solid color-mix(in srgb, #FF8A3D 35%, transparent);
+  margin: 8px 0;
+}
+
+.id-vocab-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.id-vocab-card {
+  padding: 0;
+  overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+.id-vocab-card.open {
+  border-color: color-mix(in srgb, #3AA0FF 55%, transparent);
+}
+.id-vocab-flip-btn {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: inherit;
+  padding: 14px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.id-vocab-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.id-vocab-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-family: var(--font-display, "Space Grotesk", Inter, sans-serif);
+  flex: 1;
+}
+.id-vocab-guess {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.65;
+  font-style: italic;
+}
+.id-vocab-body {
+  padding: 0 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+}
+.id-vocab-es { margin: 0; font-size: 0.92rem; }
+.id-vocab-topic {
+  font-size: 0.75rem;
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.id-vocab-note { margin: 0; font-size: 0.86rem; opacity: 0.85; line-height: 1.4; }
+.id-vocab-phonetic, .id-vocab-etym, .id-vocab-era, .id-vocab-root {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.4;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--gco-ink, #fff) 6%, transparent);
+}
+.id-vocab-verdict {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 10px;
+}
+.id-vocab-verdict.yes {
+  background: color-mix(in srgb, #4ADE80 18%, transparent);
+  color: color-mix(in srgb, #4ADE80 85%, var(--gco-ink, #fff));
+}
+.id-vocab-verdict.no {
+  background: color-mix(in srgb, #FF6B4A 16%, transparent);
+}
+.id-speak-btn {
+  flex-shrink: 0;
+  width: 1.8rem;
+  height: 1.8rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, #3AA0FF 16%, transparent);
+  border: 1px solid color-mix(in srgb, #3AA0FF 30%, transparent);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.id-skip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  opacity: 0.8;
+  margin: 12px 0;
+  cursor: pointer;
+}
+.id-glow-btn {
+  position: relative;
+}
+.id-glow-btn:not(.disabled) {
+  animation: id-pulse-glow 2.2s ease-in-out infinite;
+}
+.id-glow-btn.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.id-gloss-word {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-bottom: 2px dotted color-mix(in srgb, #3AA0FF 60%, transparent);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+.id-gloss-popover {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 50;
+  padding: 12px;
+}
+.id-gloss-card {
+  width: 100%;
+  max-width: 460px;
+  border-radius: 18px 18px 8px 8px;
+  border: 1px solid color-mix(in srgb, var(--gco-ink, #fff) 18%, transparent);
+  background: color-mix(in srgb, var(--gco-ink, #fff) 10%, #111);
+  backdrop-filter: blur(24px) saturate(160%);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.id-confetti {
+  position: relative;
+  height: 0;
+}
+.id-confetti-piece {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  font-size: 1.1rem;
+  color: #3AA0FF;
+}
+
+.id-dict-card.earned {
+  border-color: color-mix(in srgb, #FFD24A 55%, transparent);
+  background: color-mix(in srgb, #FFD24A 10%, transparent);
+}
+.id-dict-card.locked-badge { opacity: 0.55; }
+
 @media (max-width: 480px) {
   .id-lang-btn { font-size: 0.78rem; padding: 7px 10px; }
   .id-opt { font-size: 0.88rem; }
+  .id-lesson-head { flex-direction: column; align-items: stretch; }
+  .id-audio-toggle { width: 100%; text-align: center; }
+}
+.id-breakdown-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.id-breakdown-item {
+  padding: 12px 14px;
+}
+.id-breakdown-original {
+  margin: 0;
+  font-size: 1rem;
+  flex: 1;
+}
+.id-breakdown-es, .id-breakdown-note {
+  margin: 6px 0 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+.id-breakdown-note {
+  opacity: 0.85;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--gco-ink, #fff) 6%, transparent);
+  margin-top: 8px;
 }
 `

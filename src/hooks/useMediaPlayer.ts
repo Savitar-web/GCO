@@ -237,26 +237,70 @@ async function requestUnrestrictedBatteryIfNeeded() {
     const plugin = (
       mod as { BatteryOptimization?: BatteryOptimizationPlugin } | null
     )?.BatteryOptimization
-    if (!plugin) return
-    if (plugin.isBatteryOptimizationEnabled) {
-      const status = await plugin
-        .isBatteryOptimizationEnabled()
-        .catch(() => ({ enabled: false }))
-      if (status?.enabled && plugin.requestDisableBatteryOptimization) {
-        await plugin.requestDisableBatteryOptimization().catch(() => {})
-      }
-      return
-    }
-    if (plugin.isIgnoringBatteryOptimizations) {
-      const st = await plugin.isIgnoringBatteryOptimizations().catch(() => null)
-      const ignoring = !!(st?.value ?? st?.isIgnoring)
-      if (!ignoring && plugin.requestIgnoreBatteryOptimizations) {
-        await plugin.requestIgnoreBatteryOptimizations().catch(() => {})
+    if (plugin) {
+      if (plugin.isBatteryOptimizationEnabled) {
+        const status = await plugin
+          .isBatteryOptimizationEnabled()
+          .catch(() => ({ enabled: false }))
+        if (status?.enabled && plugin.requestDisableBatteryOptimization) {
+          await plugin.requestDisableBatteryOptimization().catch(() => {})
+        }
+      } else if (plugin.isIgnoringBatteryOptimizations) {
+        const st = await plugin.isIgnoringBatteryOptimizations().catch(() => null)
+        const ignoring = !!(st?.value ?? st?.isIgnoring)
+        if (!ignoring && plugin.requestIgnoreBatteryOptimizations) {
+          await plugin.requestIgnoreBatteryOptimizations().catch(() => {})
+        }
       }
     }
   } catch {
-    /* plugin ausente: el usuario puede excluir la app en Ajustes → Batería */
+    /* plugin ausente */
   }
+  // Intent implícito REQUEST_IGNORE_BATTERY_OPTIMIZATIONS (si el WebView lo permite)
+  try {
+    if (isCapacitorAndroid()) {
+      const Cap = getCapacitor() as CapacitorBridge & {
+        Plugins?: { App?: { openUrl?: (o: { url: string }) => Promise<void> } }
+      }
+      // No forzamos el intent de package (algunos OEM lo bloquean); el plugin de arriba basta.
+      void Cap
+    }
+  } catch {
+    /* */
+  }
+}
+
+/**
+ * Guía OEM para que el gadget/notificación no muera en segundo plano.
+ * Samsung One UI: Ajustes → Apps → GCO → Batería → Sin restricciones.
+ * Xiaomi/Redmi HyperOS: Autostart ON + Batería Sin restricciones + notificaciones.
+ */
+export function getOemBackgroundTips(): string[] {
+  const tips: string[] = [
+    'Activa notificaciones de GCO (Android 13+ lo exige para la barra de medios).',
+    'Batería → Sin restricciones / Unrestricted para GCO.',
+  ]
+  if (isSamsungDevice()) {
+    tips.push(
+      'Samsung One UI: Ajustes → Aplicaciones → GCO → Batería → Sin restricciones.',
+      'One UI 6–8: permite “Actividad en segundo plano” y no desactives la notificación de medios.',
+      'Now Bar: aparece si MediaSession está en playing con metadata + positionState.',
+    )
+  }
+  if (isXiaomiFamily()) {
+    tips.push(
+      'Xiaomi/Redmi/POCO HyperOS: Ajustes → Apps → Permisos → Autostart → GCO ON.',
+      'Ajustes → Apps → GCO → Ahorro de batería → Sin restricciones.',
+      'Seguridad → Autostart (o “Inicio automático”) debe incluir GCO.',
+    )
+  }
+  const ver = androidMajorVersion()
+  if (ver != null && ver >= 14) {
+    tips.push(
+      'Android 14+: el FGS mediaPlayback debe declarar foregroundServiceType=mediaPlayback en el manifest.',
+    )
+  }
+  return tips
 }
 
 /**
@@ -1315,17 +1359,38 @@ async function resumeAudioContext() {
   else api.refreshMediaSession()
 }
 
+let positionMetaRefreshCounter = 0
 function startPositionTick() {
   stopPositionTick()
   if (!isBrowser()) return
+  positionMetaRefreshCounter = 0
   const tick = () => {
     const audio = audioRef.current
     if (!audio || !playingRef.current) return
+    try {
+      const desired = clamp(rateRef.current || 1, 0.5, 2)
+      if (Math.abs((audio.playbackRate || 1) - desired) > 0.01) {
+        audio.playbackRate = desired
+        try {
+          audio.preservesPitch = true
+        } catch {
+          /* */
+        }
+      }
+    } catch {
+      /* */
+    }
     const dur = (audio.duration || 0) * 1000 || snapshot.durationMs
     const pos = (audio.currentTime || 0) * 1000
+    snapshot.currentMs = pos
+    if (dur > 0) snapshot.durationMs = dur
     void updatePositionState(dur, pos, rateRef.current)
+    positionMetaRefreshCounter += 1
+    if (isCapacitorAndroid() && trackRef.current && positionMetaRefreshCounter % 5 === 0) {
+      void updateMediaSessionMetadata(trackRef.current)
+    }
   }
-  positionTickTimer = window.setInterval(tick, 500)
+  positionTickTimer = window.setInterval(tick, 800)
   tick()
 }
 function stopPositionTick() {
@@ -1334,27 +1399,69 @@ function stopPositionTick() {
     positionTickTimer = null
   }
 }
+function restorePlaybackClock() {
+  const audio = audioRef.current
+  if (!audio) return
+  const desired = clamp(rateRef.current || 1, 0.5, 2)
+  try {
+    // Evita el "ralentiza y luego acelera" al volver de segundo plano:
+    // algunos WebView reinician playbackRate a 1 o acumulan drift.
+    if (Math.abs((audio.playbackRate || 1) - desired) > 0.001) {
+      audio.playbackRate = desired
+    }
+    try {
+      audio.preservesPitch = true
+    } catch {
+      /* */
+    }
+  } catch {
+    /* */
+  }
+  applyElementVolume(audio)
+}
+
 function bindPageLifecycle() {
   if (pageLifecycleBound || !isBrowser()) return
   pageLifecycleBound = true
   const onVisible = () => {
-    if (document.visibilityState === 'visible') void resumeAudioContext()
+    if (document.visibilityState !== 'visible') return
+    void resumeAudioContext().then(() => {
+      restorePlaybackClock()
+      // Re-empujar rate y position al sistema tras resume
+      const a = audioRef.current
+      if (a && wantPlayingRef.current) {
+        try {
+          if (a.paused) void a.play().catch(() => {})
+        } catch {
+          /* */
+        }
+        const dur = (a.duration || 0) * 1000 || snapshot.durationMs
+        void updatePositionState(dur, (a.currentTime || 0) * 1000, rateRef.current)
+      }
+    })
   }
   document.addEventListener('visibilitychange', onVisible)
   window.addEventListener('focus', onVisible)
   window.addEventListener('pageshow', (ev) => {
-    void resumeAudioContext()
-    if (ev.persisted) void resumeAudioContext()
+    void resumeAudioContext().then(() => restorePlaybackClock())
+    if (ev.persisted) {
+      window.setTimeout(() => {
+        void resumeAudioContext().then(() => restorePlaybackClock())
+      }, 120)
+    }
   })
   // NO cortar el tick en pagehide si queremos seguir sonando: en Android el
   // seekbar del gadget se congela si dejamos de empujar setPositionState.
   window.addEventListener('pagehide', () => {
     if (!wantPlayingRef.current) stopPositionTick()
+    else restorePlaybackClock()
   })
   if (isIOSAny()) {
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
-        window.setTimeout(() => void resumeAudioContext(), 300)
+        window.setTimeout(() => {
+          void resumeAudioContext().then(() => restorePlaybackClock())
+        }, 280)
       }
     })
   }
@@ -1803,6 +1910,12 @@ async function prepareAndroidBackgroundPlayback() {
   void requestUnrestrictedBatteryIfNeeded()
   await loadCapMediaSession()
   await ensureMediaSessionHandlers()
+  // Empuje temprano de estado vacío → FGS a veces se arma mejor antes del play
+  try {
+    await setMediaSessionPlaybackState(playingRef.current ? 'playing' : 'paused')
+  } catch {
+    /* */
+  }
 }
 
 async function armNativeSessionThenPlay(t: TrackItem, audio: HTMLAudioElement) {
@@ -1812,10 +1925,23 @@ async function armNativeSessionThenPlay(t: TrackItem, audio: HTMLAudioElement) {
   if (durHint > 0) {
     await updatePositionState(durHint, (audio.currentTime || 0) * 1000, rateRef.current)
   }
+  // Restaurar rate ANTES del play (evita arranque a 1.0 y luego jump)
+  try {
+    audio.playbackRate = clamp(rateRef.current || 1, 0.5, 2)
+    audio.preservesPitch = true
+  } catch {
+    /* */
+  }
   await audio.play()
   playingRef.current = true
   snapshot.playing = true
   snapshot.error = null
+  try {
+    audio.playbackRate = clamp(rateRef.current || 1, 0.5, 2)
+    audio.preservesPitch = true
+  } catch {
+    /* */
+  }
   await setMediaSessionPlaybackState('playing')
   const dur = (audio.duration || 0) * 1000 || snapshot.durationMs
   await updatePositionState(dur, (audio.currentTime || 0) * 1000, rateRef.current)
@@ -1968,17 +2094,31 @@ export const api = {
     notify()
   },
   setPlaybackRate(r: number) {
-    const val = clamp(r, 0.5, 2)
+    const val = clamp(Number(r) || 1, 0.5, 2)
     rateRef.current = val
     snapshot.rate = val
     const audio = audioRef.current
     if (audio) {
-      audio.playbackRate = val
+      try {
+        audio.playbackRate = val
+      } catch {
+        /* */
+      }
       try {
         audio.preservesPitch = true
       } catch {
         /* */
       }
+      // Algunos WebView (Samsung/Xiaomi) ignoran el primer set: reintento suave
+      window.setTimeout(() => {
+        try {
+          if (audioRef.current && Math.abs(audioRef.current.playbackRate - val) > 0.01) {
+            audioRef.current.playbackRate = val
+          }
+        } catch {
+          /* */
+        }
+      }, 60)
       void updatePositionState(
         (audio.duration || 0) * 1000,
         (audio.currentTime || 0) * 1000,
@@ -2158,6 +2298,7 @@ export const api = {
   },
   resumeAudioContext,
   bootstrapNativePlayback,
+  getOemBackgroundTips,
   async requestNotificationsPermission() {
     notifPermAsked = false
     const ok = await ensureAndroidNotificationPermission()

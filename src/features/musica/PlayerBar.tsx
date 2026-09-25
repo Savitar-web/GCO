@@ -79,9 +79,15 @@ function detectThemeMode(): AppThemeMode {
       (localStorage.getItem('gco:theme') || localStorage.getItem('theme') || '')) ||
     ''
   const blob = `${attr} ${cls} ${stored}`.toLowerCase()
-  if (/rainbow|arco|iris|pride|neon/.test(blob)) return 'rainbow'
-  if (/light|claro|day|sunrise/.test(blob)) return 'light'
-  if (/dark|oscuro|night|midnight/.test(blob)) return 'dark'
+  if (/rainbow|arco|iris|pride/.test(blob)) return 'rainbow'
+  // Temas claros / luminosos de theme.css
+  if (
+    /\blight\b|claro|day|sunrise|solarpunk|light-academia|cottagecore|dreamcore|liminal|memphis|bauhaus|neumorphism|scandinavian|corporate-memphis|frutiger-aero|windowscore/.test(
+      blob,
+    )
+  )
+    return 'light'
+  if (/dark|oscuro|night|midnight|cyberpunk|spacecore|nightcore/.test(blob)) return 'dark'
   try {
     if (window.matchMedia('(prefers-color-scheme: light)').matches) return 'light'
   } catch {
@@ -119,70 +125,46 @@ function useAppThemeMode(): AppThemeMode {
   return mode
 }
 
-function useThemeTokens(mode: AppThemeMode) {
+function useThemeTokens(_mode: AppThemeMode) {
+  /* 100 % CSS vars de theme.css — pastilla/fullscreen siguen cualquier data-theme */
   return useMemo(() => {
     const accent = 'var(--gco-primary)'
-    const onAccent = 'var(--gco-on-primary, #0B1220)'
-    if (mode === 'light') {
-      return {
-        accent,
-        onAccent,
-        floatBg: 'linear-gradient(145deg, rgba(255,255,255,0.94), rgba(244,246,252,0.92))',
-        floatBorder: '1px solid rgba(15,20,40,0.1)',
-        floatShadow: '0 12px 36px rgba(20,30,60,0.14), inset 0 1px 0 rgba(255,255,255,0.9)',
-        floatColor: 'var(--gco-ink, #12141c)',
-        floatMuted: 'var(--gco-ink-muted, rgba(18,20,28,0.55))',
-        fsBg: 'radial-gradient(ellipse at top, #eef1f8 0%, #dfe5f2 45%, #d0d7e8 100%)',
-        fsColor: 'var(--gco-ink, #12141c)',
-        glassBg: 'rgba(255,255,255,0.55)',
-        glassBorder: '1px solid rgba(20,30,50,0.1)',
-        glassIconBg: 'rgba(255,255,255,0.72)',
-        glassIconColor: 'var(--gco-ink, #12141c)',
-        liquid: {
-          background: 'rgba(255,255,255,0.55)',
-          border: '1px solid rgba(20,30,50,0.1)',
-          backdropFilter: 'blur(24px) saturate(1.4)',
-          WebkitBackdropFilter: 'blur(24px) saturate(1.4)',
-          boxShadow: '0 10px 30px rgba(30,40,70,0.12), inset 0 1px 0 rgba(255,255,255,0.85)',
-        } as CSSProperties,
-        progressTrack: 'rgba(20,30,50,0.12)',
-        heatBase: 0.06,
-        overlayBg: 'linear-gradient(transparent 30%, rgba(0,0,0,0.72) 100%)',
-        surfaceMuted: 'rgba(0,0,0,0.05)',
-      }
-    }
+    const onAccent = 'var(--gco-button-text, var(--gco-on-primary, #0B1220))'
     return {
       accent,
       onAccent,
-      floatBg: 'linear-gradient(145deg, rgba(28,32,48,0.95), rgba(14,16,28,0.92))',
-      floatBorder: '1px solid rgba(255,255,255,0.12)',
-      floatShadow: '0 12px 40px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.1)',
-      floatColor: '#F3F5FA',
-      floatMuted: 'rgba(243,245,250,0.65)',
-      fsBg: 'radial-gradient(ellipse at top, #1a1f35 0%, #0a0c14 55%)',
-      fsColor: '#F3F5FA',
-      glassBg: 'rgba(255,255,255,0.1)',
-      glassBorder: '1px solid rgba(255,255,255,0.12)',
-      glassIconBg: 'rgba(255,255,255,0.1)',
-      glassIconColor: '#F3F5FA',
+      radius: 'var(--gco-card-radius, 22px)',
+      radiusSm: 'var(--gco-radius-sm, 14px)',
+      radiusPill: 'var(--gco-radius-pill, 999px)',
+      iconR: 'var(--gco-icon-radius, 50%)',
+      floatBg: 'var(--gco-glass-bg, var(--gco-bg-elevated))',
+      floatBorder: 'var(--gco-border-width, 1px) solid var(--gco-glass-border)',
+      floatShadow: 'var(--gco-shadow)',
+      floatColor: 'var(--gco-ink)',
+      floatMuted: 'var(--gco-ink-muted)',
+      fsBg: 'var(--gco-bg)',
+      fsColor: 'var(--gco-ink)',
+      glassBg: 'var(--gco-glass-bg)',
+      glassBorder: 'var(--gco-border-width, 1px) solid var(--gco-glass-border)',
+      glassIconBg: 'color-mix(in srgb, var(--gco-glass-bg) 88%, var(--gco-primary) 6%)',
+      glassIconColor: 'var(--gco-ink)',
       liquid: {
-        background: 'rgba(255,255,255,0.08)',
-        border: '1px solid rgba(255,255,255,0.14)',
-        backdropFilter: 'blur(24px) saturate(1.5)',
-        WebkitBackdropFilter: 'blur(24px) saturate(1.5)',
-        boxShadow: '0 10px 34px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.14)',
+        background: 'var(--gco-glass-bg)',
+        border: 'var(--gco-border-width, 1px) solid var(--gco-glass-border)',
+        backdropFilter: 'blur(var(--gco-glass-blur, 20px)) saturate(var(--gco-glass-saturate, 1.35))',
+        WebkitBackdropFilter:
+          'blur(var(--gco-glass-blur, 20px)) saturate(var(--gco-glass-saturate, 1.35))',
+        boxShadow: 'var(--gco-shadow)',
+        borderRadius: 'var(--gco-card-radius, 22px)',
       } as CSSProperties,
-      progressTrack: 'rgba(255,255,255,0.12)',
-      heatBase: 0.04,
-      overlayBg: 'linear-gradient(transparent 28%, rgba(0,0,0,0.78) 100%)',
-      surfaceMuted: 'rgba(255,255,255,0.06)',
+      progressTrack: 'color-mix(in srgb, var(--gco-ink) 12%, transparent)',
+      heatBase: 0.05,
+      overlayBg:
+        'linear-gradient(transparent 28%, color-mix(in srgb, var(--gco-bg) 12%, #000 88%) 100%)',
+      surfaceMuted: 'color-mix(in srgb, var(--gco-ink) 6%, transparent)',
     }
-  }, [mode])
+  }, [])
 }
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Utils
- * ═══════════════════════════════════════════════════════════════════════════ */
 
 function isMobileViewport() {
   if (typeof window === 'undefined') return false
@@ -486,10 +468,69 @@ function buildGlobalCss(mode: AppThemeMode) {
 .gco-pb-scroll::-webkit-scrollbar { width: 5px; }
 .gco-pb-scroll::-webkit-scrollbar-thumb { background: ${isLight ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)'}; border-radius: 999px; }
 .gco-pb-icon:hover { filter: brightness(1.1); }
+.gco-play-main {
+  background: var(--gco-primary) !important;
+  color: var(--gco-button-text, var(--gco-on-primary, #0B1220)) !important;
+  border: none !important;
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--gco-primary) 42%, transparent) !important;
+}
+.gco-play-main:hover { filter: brightness(1.08); }
+.gco-progress-fill {
+  background: var(--gco-primary) !important;
+}
+.gco-fs-range {
+  accent-color: var(--gco-primary);
+}
+.gco-queue-search {
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: var(--gco-radius-sm, 14px);
+  border: var(--gco-border-width, 1px) solid var(--gco-glass-border);
+  background: var(--gco-glass-bg);
+  color: var(--gco-ink);
+  padding: 0.55rem 0.85rem;
+  font: inherit;
+  font-size: 0.88rem;
+  outline: none;
+}
+.gco-queue-search:focus {
+  border-color: color-mix(in srgb, var(--gco-primary) 55%, var(--gco-glass-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--gco-primary) 25%, transparent);
+}
+.gco-float-progress {
+  height: 3px;
+  width: 100%;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gco-ink) 12%, transparent);
+  overflow: hidden;
+  margin-top: 4px;
+}
+.gco-float-progress > i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--gco-primary);
+  transition: width 0.2s linear;
+}
+.gco-native-ctrl {
+  background: var(--gco-glass-bg) !important;
+  color: var(--gco-ink) !important;
+  border: var(--gco-border-width, 1px) solid var(--gco-glass-border) !important;
+  border-radius: var(--gco-icon-radius, 12px) !important;
+}
+.gco-float-times {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.62rem;
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+  line-height: 1;
+}
 .gco-pb-icon:active { transform: scale(0.92); }
 .gco-pb-icon:disabled { opacity: 0.32; cursor: not-allowed; }
 .gco-float-bar {
-  border-radius: 22px;
+  border-radius: var(--gco-card-radius, 22px);
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -533,12 +574,12 @@ function buildGlobalCss(mode: AppThemeMode) {
 }
 .gco-fs-range::-webkit-slider-thumb {
   -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
-  background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.35); margin-top: -5px;
+  background: var(--gco-primary); box-shadow: 0 2px 8px color-mix(in srgb, var(--gco-primary) 40%, #000); margin-top: -5px;
   border: none;
 }
 .gco-fs-range::-moz-range-thumb {
   width: 16px; height: 16px; border-radius: 50%;
-  background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.35); border: none;
+  background: var(--gco-primary); box-shadow: 0 2px 8px color-mix(in srgb, var(--gco-primary) 40%, #000); border: none;
 }
 .gco-seg {
   display: inline-flex; padding: 3px; border-radius: 999px;
@@ -599,12 +640,11 @@ ${
 export function PlayerBar({ player, floating }: Props) {
   const themeMode = useAppThemeMode()
   const tokens = useThemeTokens(themeMode)
-  const prefs = getBarPrefs()
-  const progressColor = prefs.progressColor || tokens.accent
 
   const t = player.track
   const [fullscreen, setFullscreen] = useState(false)
   const [fsTab, setFsTab] = useState<FsTab>('now')
+  const [queueSearch, setQueueSearch] = useState('')
   const [queue, setQueue] = useState<TrackItem[]>([])
   const [showVideo, setShowVideo] = useState(false)
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
@@ -681,7 +721,7 @@ export function PlayerBar({ player, floating }: Props) {
   const glassIconStyle: CSSProperties = {
     width: 40,
     height: 40,
-    borderRadius: 14,
+    borderRadius: tokens.iconR || 'var(--gco-icon-radius, 14px)',
     border: tokens.glassBorder,
     background: tokens.glassIconBg,
     color: tokens.glassIconColor,
@@ -689,16 +729,16 @@ export function PlayerBar({ player, floating }: Props) {
     placeItems: 'center',
     cursor: 'pointer',
     padding: 0,
-    backdropFilter: 'blur(14px)',
-    WebkitBackdropFilter: 'blur(14px)',
+    backdropFilter: 'blur(var(--gco-glass-blur, 14px))',
+    WebkitBackdropFilter: 'blur(var(--gco-glass-blur, 14px))',
     flexShrink: 0,
-    transition: 'background-color 0.15s ease, transform 0.1s ease',
+    transition: 'background-color 0.15s ease, transform 0.1s ease, border-radius 0.3s ease',
   }
 
   const seekChipStyle: CSSProperties = {
     width: 32,
     height: 32,
-    borderRadius: '50%',
+    borderRadius: tokens.iconR,
     border: tokens.glassBorder,
     background: tokens.glassIconBg,
     color: tokens.glassIconColor,
@@ -846,13 +886,24 @@ export function PlayerBar({ player, floating }: Props) {
     }
   }, [t?.id, t?.blobKey, hasVideo, showVideo, fullscreen, pipActive, pipFallback])
 
-  /* Sync tiempo/play del vídeo esclavo (siempre silencioso) */
+  /* Sync suave del vídeo esclavo (SIEMPRE muted → sin doble audio ni click).
+     Umbral alto evita congelar/saltar al corregir drift; rate sigue al audio. */
   useEffect(() => {
     const v = videoRef.current
     if (!v || !videoUrl) return
     forceVideoSilent(v)
+    try {
+      // Misma velocidad que el motor de audio (evita desfase al cambiar rate)
+      const r = typeof player.rate === 'number' && player.rate > 0 ? player.rate : 1
+      if (Math.abs((v.playbackRate || 1) - r) > 0.01) v.playbackRate = r
+    } catch {
+      /* */
+    }
     const target = player.currentMs / 1000
-    if (Math.abs((v.currentTime || 0) - target) > 0.45) {
+    const drift = Math.abs((v.currentTime || 0) - target)
+    // Solo resincronizar si el desfase es grande (>0.85s). Correcciones
+    // frecuentes provocan freeze/unfreeze en Android WebView y PWA iOS.
+    if (drift > 0.85 && Number.isFinite(target)) {
       try {
         v.currentTime = target
       } catch {
@@ -862,9 +913,13 @@ export function PlayerBar({ player, floating }: Props) {
     if (player.playing && v.paused) {
       void v.play().catch(() => {})
     } else if (!player.playing && !v.paused) {
-      v.pause()
+      try {
+        v.pause()
+      } catch {
+        /* */
+      }
     }
-  }, [player.currentMs, player.playing, videoUrl, pipActive, pipFallback])
+  }, [player.currentMs, player.playing, player.rate, videoUrl, pipActive, pipFallback])
 
   /* Eventos PiP del documento — no tocar volumen del player */
   useEffect(() => {
@@ -1114,106 +1169,154 @@ export function PlayerBar({ player, floating }: Props) {
    * El audio sigue ÚNICAMENTE en useMediaPlayer → sin eco.
    */
   const togglePip = useCallback(async () => {
-    soundClick()
     if (!hasVideo || !t) return
-
+    soundClick()
     const d = document as Document & {
       pictureInPictureElement?: Element | null
       exitPictureInPicture?: () => Promise<void>
       pictureInPictureEnabled?: boolean
     }
 
+    /* Salir si ya hay PiP */
     if (d.pictureInPictureElement || systemPipRef.current || pipFallback || pipActive) {
       await exitAllPip()
       return
     }
 
-    setShowVideo(true)
     pipRequestedRef.current = true
+    const ensureVid = async (): Promise<HTMLVideoElement | null> => {
+      let vid = videoRef.current
+      if (!vid) {
+        /* Espera al host persistente */
+        for (let i = 0; i < 20; i++) {
+          await new Promise((r) => setTimeout(r, 40))
+          vid = videoRef.current
+          if (vid) break
+        }
+      }
+      return vid
+    }
 
-    const tryEnter = async (vid: HTMLVideoElement): Promise<'system' | 'fallback'> => {
+    const prepVideo = async (vid: HTMLVideoElement) => {
       forceVideoSilent(vid)
+      vid.setAttribute('playsinline', 'true')
+      vid.setAttribute('webkit-playsinline', 'true')
+      vid.setAttribute('x5-playsinline', 'true')
       try {
-        vid.setAttribute('playsinline', 'true')
-        vid.setAttribute('webkit-playsinline', 'true')
         ;(vid as HTMLVideoElement & { disablePictureInPicture?: boolean }).disablePictureInPicture =
           false
       } catch {
         /* */
       }
+      const target = player.currentMs / 1000
       try {
-        const target = player.currentMs / 1000
-        if (Math.abs((vid.currentTime || 0) - target) > 0.15) vid.currentTime = target
+        if (Math.abs((vid.currentTime || 0) - target) > 0.5) vid.currentTime = target
       } catch {
         /* */
       }
       try {
-        if (vid.paused) await vid.play()
+        const r = typeof player.rate === 'number' && player.rate > 0 ? player.rate : 1
+        vid.playbackRate = r
       } catch {
         /* */
       }
       forceVideoSilent(vid)
+      if (vid.paused) {
+        try {
+          await vid.play()
+        } catch {
+          /* */
+        }
+      }
+      forceVideoSilent(vid)
+    }
 
+    const tryWebkitPip = (vid: HTMLVideoElement): boolean => {
       const wv = vid as HTMLVideoElement & {
         webkitSupportsPresentationMode?: (m: string) => boolean
         webkitSetPresentationMode?: (m: string) => void
-        requestPictureInPicture?: () => Promise<PictureInPictureWindow>
+        webkitPresentationMode?: string
       }
-
-      /* iOS */
-      if (typeof wv.webkitSupportsPresentationMode === 'function') {
-        try {
+      try {
+        if (typeof wv.webkitSupportsPresentationMode === 'function') {
           if (wv.webkitSupportsPresentationMode('picture-in-picture')) {
-            forceVideoSilent(vid)
             wv.webkitSetPresentationMode?.('picture-in-picture')
             systemPipRef.current = true
             setPipActive(true)
             setPipFallback(false)
             closeFullscreen()
-            return 'system'
+            return true
           }
-        } catch (err) {
-          console.warn('[gco] webkit PiP', err)
         }
-      }
-
-      /* Chrome / Android / Electron */
-      if (typeof wv.requestPictureInPicture === 'function') {
-        try {
-          forceVideoSilent(vid)
-          await wv.requestPictureInPicture()
+        /* Algunos WebKit aceptan set sin supports */
+        if (typeof wv.webkitSetPresentationMode === 'function') {
+          wv.webkitSetPresentationMode('picture-in-picture')
           systemPipRef.current = true
           setPipActive(true)
           setPipFallback(false)
           closeFullscreen()
-          return 'system'
-        } catch (err) {
-          console.warn('[gco] PiP standard', err)
+          return true
         }
+      } catch (err) {
+        console.warn('[gco] webkit PiP:', err)
       }
+      return false
+    }
 
-      forceVideoSilent(vid)
+    const tryStandardPip = async (vid: HTMLVideoElement): Promise<boolean> => {
+      try {
+        if (d.pictureInPictureEnabled !== false && typeof vid.requestPictureInPicture === 'function') {
+          await vid.requestPictureInPicture()
+          systemPipRef.current = true
+          setPipActive(true)
+          setPipFallback(false)
+          closeFullscreen()
+          return true
+        }
+      } catch (err) {
+        console.warn('[gco] standard PiP:', err)
+      }
+      return false
+    }
+
+    const activateFallback = () => {
       setPipFallback(true)
       setPipActive(true)
       closeFullscreen()
-      return 'fallback'
     }
 
-    const attempt = (tries: number) => {
-      const vid = videoRef.current
+    try {
+      const vid = await ensureVid()
       if (!vid) {
-        if (tries > 0) window.setTimeout(() => attempt(tries - 1), 40)
-        else {
-          setPipFallback(true)
-          setPipActive(true)
-          closeFullscreen()
-        }
+        activateFallback()
         return
       }
-      void tryEnter(vid)
+      await prepVideo(vid)
+
+      /* Orden: iOS/WebKit primero (Safari, PWA iOS, Capacitor iOS), luego estándar */
+      if (tryWebkitPip(vid)) return
+      if (await tryStandardPip(vid)) return
+
+      /* Reintento tras un frame (iOS a veces necesita play() asentado) */
+      await new Promise((r) => requestAnimationFrame(() => r(undefined)))
+      forceVideoSilent(vid)
+      if (vid.paused) {
+        try {
+          await vid.play()
+        } catch {
+          /* */
+        }
+      }
+      if (tryWebkitPip(vid)) return
+      if (await tryStandardPip(vid)) return
+
+      activateFallback()
+    } catch (err) {
+      console.warn('[gco] togglePip:', err)
+      activateFallback()
     }
-    attempt(15)
   }, [hasVideo, t, pipFallback, pipActive, exitAllPip, closeFullscreen, player])
+
 
   const onPipBubblePointerDown = (e: ReactPointerEvent, mode: 'move' | 'resize') => {
     e.preventDefault()
@@ -1501,7 +1604,7 @@ export function PlayerBar({ player, floating }: Props) {
               right: 0,
               bottom: large ? 8 : 5,
               height: large ? 8 : 5,
-              borderRadius: 999,
+              borderRadius: tokens.radiusPill,
               overflow: 'hidden',
               background: tokens.progressTrack,
               display: 'flex',
@@ -1521,15 +1624,16 @@ export function PlayerBar({ player, floating }: Props) {
             ))}
           </div>
           <div
+            className="gco-progress-fill"
             style={{
               position: 'absolute',
               left: 0,
               bottom: large ? 8 : 5,
               height: large ? 8 : 5,
               width: `${pct}%`,
-              borderRadius: 999,
-              background: progressColor,
-              boxShadow: `0 0 12px color-mix(in srgb, ${progressColor} 50%, transparent)`,
+              borderRadius: tokens.radiusPill,
+              background: 'var(--gco-primary)',
+              boxShadow: '0 0 12px color-mix(in srgb, var(--gco-primary) 50%, transparent)',
               pointerEvents: 'none',
             }}
           />
@@ -1649,16 +1753,16 @@ export function PlayerBar({ player, floating }: Props) {
 
         <button
           type="button"
-          className="gco-pb-icon"
+          className="gco-pb-icon gco-play-main"
           style={{
             ...glassIconStyle,
             width: mainSize,
             height: mainSize,
-            borderRadius: big ? 24 : 14,
-            background: tokens.accent,
-            color: tokens.onAccent,
+            borderRadius: 'var(--gco-icon-radius, 50%)',
+            background: 'var(--gco-primary)',
+            color: 'var(--gco-button-text, var(--gco-on-primary, #0B1220))',
             border: 'none',
-            boxShadow: `0 8px 28px color-mix(in srgb, ${tokens.accent} 45%, transparent)`,
+            boxShadow: '0 8px 28px color-mix(in srgb, var(--gco-primary) 42%, transparent)',
           }}
           aria-label={player.playing ? 'Pausar' : 'Reproducir'}
           onClick={() => {
@@ -1740,7 +1844,7 @@ export function PlayerBar({ player, floating }: Props) {
         justifyContent: 'flex-end',
         padding: '16px 14px calc(16px + env(safe-area-inset-bottom, 0px))',
         transition: 'opacity 0.35s ease',
-        color: '#fff',
+        color: 'var(--gco-ink)',
       }}
       onClick={(e) => {
         e.stopPropagation()
@@ -1784,7 +1888,7 @@ export function PlayerBar({ player, floating }: Props) {
           style={{
             background: 'rgba(255,255,255,0.12)',
             border: '1px solid rgba(255,255,255,0.2)',
-            color: '#fff',
+            color: 'var(--gco-ink)',
           }}
         >
           <button
@@ -1817,7 +1921,7 @@ export function PlayerBar({ player, floating }: Props) {
           style={{
             background: 'rgba(255,255,255,0.12)',
             border: '1px solid rgba(255,255,255,0.2)',
-            color: '#fff',
+            color: 'var(--gco-ink)',
           }}
         >
           <button
@@ -1852,9 +1956,11 @@ export function PlayerBar({ player, floating }: Props) {
             ...glassIconStyle,
             width: 36,
             height: 36,
-            borderRadius: 12,
-            color: locked ? tokens.accent : '#fff',
-            background: locked ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.12)',
+            borderRadius: tokens.radiusSm,
+            color: locked ? 'var(--gco-primary)' : 'var(--gco-ink)',
+            background: locked
+              ? 'color-mix(in srgb, var(--gco-primary) 28%, transparent)'
+              : 'var(--gco-glass-bg)',
             pointerEvents: 'auto',
           }}
           aria-label={locked ? 'Desbloquear' : 'Bloquear controles'}
@@ -1889,7 +1995,7 @@ export function PlayerBar({ player, floating }: Props) {
         height: COLLAPSED_SIZE,
         display: 'grid',
         placeItems: 'center',
-        borderRadius: 16,
+        borderRadius: tokens.radiusSm,
         overflow: 'hidden',
         padding: 0,
         cursor: 'grab',
@@ -1916,15 +2022,15 @@ export function PlayerBar({ player, floating }: Props) {
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 10,
-        padding: '8px 12px',
+        gap: 8,
+        padding: '6px 10px 5px',
         width: '100%',
         maxWidth: barMaxW,
         background: tokens.floatBg,
         border: tokens.floatBorder,
         boxShadow: tokens.floatShadow,
         color: tokens.floatColor,
-        borderRadius: 22,
+        borderRadius: tokens.radius,
         boxSizing: 'border-box',
       }}
     >
@@ -1947,7 +2053,7 @@ export function PlayerBar({ player, floating }: Props) {
           style={{
             width: 40,
             height: 40,
-            borderRadius: 12,
+            borderRadius: tokens.radiusSm,
             overflow: 'hidden',
             flexShrink: 0,
             background: themeMode === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)',
@@ -1969,26 +2075,40 @@ export function PlayerBar({ player, floating }: Props) {
             style={{
               margin: 0,
               fontWeight: 700,
-              fontSize: '0.85rem',
+              fontSize: '0.82rem',
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
+              lineHeight: 1.15,
             }}
           >
             {t?.title || 'Sin título'}
           </p>
           <p
             style={{
-              margin: '2px 0 0',
-              fontSize: '0.72rem',
+              margin: '1px 0 0',
+              fontSize: '0.68rem',
               opacity: 0.55,
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
+              lineHeight: 1.15,
             }}
           >
             {t?.artist || '—'}
           </p>
+          {/* Progreso compacto: no agranda la pastilla */}
+          <div className="gco-float-progress" aria-hidden>
+            <i
+              style={{
+                width: `${dur > 0 ? Math.min(100, (player.currentMs / dur) * 100) : 0}%`,
+              }}
+            />
+          </div>
+          <div className="gco-float-times" aria-hidden>
+            <span>{formatTrackTime(player.currentMs)}</span>
+            <span>{formatRemaining(player.currentMs, dur)}</span>
+          </div>
         </div>
       </button>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
@@ -1996,7 +2116,7 @@ export function PlayerBar({ player, floating }: Props) {
           type="button"
           data-no-drag
           className="gco-pb-icon"
-          style={{ ...glassIconStyle, width: 36, height: 36, borderRadius: 12 }}
+          style={{ ...glassIconStyle, width: 36, height: 36, borderRadius: tokens.radiusSm }}
           aria-label="Anterior"
           onClick={(e) => {
             e.stopPropagation()
@@ -2009,14 +2129,14 @@ export function PlayerBar({ player, floating }: Props) {
         <button
           type="button"
           data-no-drag
-          className="gco-pb-icon"
+          className="gco-pb-icon gco-play-main"
           style={{
             ...glassIconStyle,
             width: 40,
             height: 40,
-            borderRadius: 14,
-            background: tokens.accent,
-            color: tokens.onAccent,
+            borderRadius: tokens.radiusSm,
+            background: 'var(--gco-primary)',
+            color: 'var(--gco-button-text, var(--gco-on-primary, #0B1220))',
             border: 'none',
           }}
           aria-label={player.playing ? 'Pausar' : 'Reproducir'}
@@ -2032,7 +2152,7 @@ export function PlayerBar({ player, floating }: Props) {
           type="button"
           data-no-drag
           className="gco-pb-icon"
-          style={{ ...glassIconStyle, width: 36, height: 36, borderRadius: 12 }}
+          style={{ ...glassIconStyle, width: 36, height: 36, borderRadius: tokens.radiusSm }}
           aria-label="Siguiente"
           onClick={(e) => {
             e.stopPropagation()
@@ -2060,10 +2180,14 @@ export function PlayerBar({ player, floating }: Props) {
           ? COLLAPSED_SIZE
           : Math.min(barMaxW, typeof window !== 'undefined' ? window.innerWidth - 24 : barMaxW),
         maxWidth: barMaxW,
-        background: floatPos.docked ? tokens.floatBg : undefined,
-        border: floatPos.docked ? tokens.floatBorder : undefined,
-        boxShadow: floatPos.docked ? tokens.floatShadow : undefined,
+        background: tokens.floatBg,
+        border: tokens.floatBorder,
+        boxShadow: tokens.floatShadow,
         color: tokens.floatColor,
+        borderRadius: floatPos.docked ? tokens.radiusSm : tokens.radius,
+        backdropFilter: 'blur(var(--gco-glass-blur, 20px)) saturate(var(--gco-glass-saturate, 1.35))',
+        WebkitBackdropFilter:
+          'blur(var(--gco-glass-blur, 20px)) saturate(var(--gco-glass-saturate, 1.35))',
         overflow: 'hidden',
         touchAction: 'none',
         userSelect: 'none',
@@ -2092,7 +2216,7 @@ export function PlayerBar({ player, floating }: Props) {
   const fullscreenContent = t ? (
     <div
       ref={fsRootRef}
-      className="gco-fs-root"
+      className="gco-fs-root glass-card"
       data-theme={themeMode}
       style={{
         position: 'fixed',
@@ -2129,11 +2253,11 @@ export function PlayerBar({ player, floating }: Props) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: 8,
-          paddingTop: 'max(10px, env(safe-area-inset-top, 0px))',
-          paddingLeft: 'max(12px, env(safe-area-inset-left, 0px))',
-          paddingRight: 'max(12px, env(safe-area-inset-right, 0px))',
-          paddingBottom: 8,
+          gap: 10,
+          paddingTop: 'max(12px, env(safe-area-inset-top, 0px))',
+          paddingLeft: 'max(14px, env(safe-area-inset-left, 0px))',
+          paddingRight: 'max(14px, env(safe-area-inset-right, 0px))',
+          paddingBottom: 10,
           opacity: overlayVisible ? 1 : 0.35,
           transition: 'opacity 0.3s',
           flexShrink: 0,
@@ -2147,11 +2271,11 @@ export function PlayerBar({ player, floating }: Props) {
           className="gco-pb-icon"
           style={{
             ...glassIconStyle,
-            width: 36,
-            height: 36,
-            minWidth: 36,
+            width: 42,
+            height: 42,
+            minWidth: 42,
             flexShrink: 0,
-            borderRadius: 12,
+            borderRadius: 'var(--gco-icon-radius, 14px)',
           }}
           aria-label="Cerrar"
           onClick={closeFullscreen}
@@ -2189,7 +2313,7 @@ export function PlayerBar({ player, floating }: Props) {
             height: 36,
             minWidth: 36,
             flexShrink: 0,
-            borderRadius: 12,
+            borderRadius: tokens.radiusSm,
             color: locked ? tokens.accent : tokens.glassIconColor,
           }}
           aria-label={locked ? 'Desbloquear' : 'Bloquear'}
@@ -2250,7 +2374,7 @@ export function PlayerBar({ player, floating }: Props) {
                       el.muted = true
                       try {
                         const target = player.currentMs / 1000
-                        if (Math.abs((el.currentTime || 0) - target) > 0.4) el.currentTime = target
+                        if (Math.abs((el.currentTime || 0) - target) > 0.9) el.currentTime = target
                       } catch {
                         /* */
                       }
@@ -2508,10 +2632,32 @@ export function PlayerBar({ player, floating }: Props) {
             <h2 style={{ fontSize: '1.05rem', margin: '4px 0 8px', fontWeight: 800 }}>
               Cola · {queue.length}
             </h2>
+            <div style={{ marginBottom: 10, position: 'relative' }}>
+              <input
+                className="gco-queue-search"
+                type="search"
+                enterKeyHint="search"
+                placeholder="Buscar en la cola…"
+                value={queueSearch}
+                onChange={(e) => setQueueSearch(e.target.value)}
+                aria-label="Buscar en la cola"
+              />
+            </div>
             <p style={{ margin: '0 0 12px', fontSize: '0.75rem', opacity: 0.5 }}>
               Mantén pulsado ⠿ y arrastra · en PC puedes arrastrar la fila
             </p>
-            {queue.map((item, i) => {
+            {queue
+              .map((item, i) => ({ item, i }))
+              .filter(({ item }) => {
+                const q = queueSearch.trim().toLowerCase()
+                if (!q) return true
+                return (
+                  (item.title || '').toLowerCase().includes(q) ||
+                  (item.artist || '').toLowerCase().includes(q) ||
+                  (item.album || '').toLowerCase().includes(q)
+                )
+              })
+              .map(({ item, i }) => {
               const active = item.id === t.id
               const isDrag = queueDraggingIdx === i
               const isDrop = queueDropIdx === i && queueDraggingIdx != null && queueDraggingIdx !== i
@@ -2534,7 +2680,7 @@ export function PlayerBar({ player, floating }: Props) {
                     alignItems: 'center',
                     gap: 10,
                     padding: '0.6rem 0.55rem',
-                    borderRadius: 16,
+                    borderRadius: tokens.radiusSm,
                     background: active
                       ? themeMode === 'light'
                         ? 'rgba(0,0,0,0.06)'
@@ -2601,7 +2747,7 @@ export function PlayerBar({ player, floating }: Props) {
                       style={{
                         width: 42,
                         height: 42,
-                        borderRadius: 10,
+                        borderRadius: 'var(--gco-radius-xs, 10px)',
                         overflow: 'hidden',
                         flexShrink: 0,
                         background:
@@ -2646,7 +2792,7 @@ export function PlayerBar({ player, floating }: Props) {
         )}
 
         {fsTab === 'lyrics' && (
-          <div style={{ borderRadius: 22, padding: '14px 16px', ...tokens.liquid }} data-no-swipe>
+          <div style={{ borderRadius: tokens.radius, padding: '14px 16px', ...tokens.liquid }} data-no-swipe>
             <h2 style={{ fontSize: '1.05rem', margin: '0 0 10px', fontWeight: 800 }}>Letra</h2>
             <pre
               style={{
@@ -2682,7 +2828,7 @@ export function PlayerBar({ player, floating }: Props) {
             gridTemplateColumns: '1fr 1fr 1fr',
             gap: 6,
             padding: 5,
-            borderRadius: 26,
+            borderRadius: tokens.radiusPill,
             ...tokens.liquid,
           }}
         >
@@ -2711,7 +2857,7 @@ export function PlayerBar({ player, floating }: Props) {
                   fontSize: '0.72rem',
                   fontWeight: on ? 700 : 500,
                   padding: '0.6rem 0.3rem',
-                  borderRadius: 20,
+                  borderRadius: tokens.radiusSm,
                   background: on
                     ? themeMode === 'light'
                       ? 'rgba(0,0,0,0.08)'
@@ -2774,7 +2920,7 @@ export function PlayerBar({ player, floating }: Props) {
                 width: w,
                 height: h,
                 zIndex: 170,
-                borderRadius: 16,
+                borderRadius: tokens.radiusSm,
                 overflow: 'hidden',
                 boxShadow: '0 14px 44px rgba(0,0,0,0.5)',
                 border: tokens.floatBorder,
@@ -2799,7 +2945,7 @@ export function PlayerBar({ player, floating }: Props) {
                   el.volume = 0
                   try {
                     const target = player.currentMs / 1000
-                    if (Math.abs((el.currentTime || 0) - target) > 0.4) el.currentTime = target
+                    if (Math.abs((el.currentTime || 0) - target) > 0.9) el.currentTime = target
                   } catch {
                     /* */
                   }
@@ -2831,10 +2977,10 @@ export function PlayerBar({ player, floating }: Props) {
                   right: 6,
                   width: 28,
                   height: 28,
-                  borderRadius: 10,
+                  borderRadius: 'var(--gco-radius-xs, 10px)',
                   border: 'none',
                   background: 'rgba(0,0,0,0.6)',
-                  color: '#fff',
+                  color: 'var(--gco-ink)',
                   cursor: 'pointer',
                   display: 'grid',
                   placeItems: 'center',
@@ -2859,12 +3005,12 @@ export function PlayerBar({ player, floating }: Props) {
                   left: 6,
                   bottom: 6,
                   border: 'none',
-                  borderRadius: 999,
+                  borderRadius: tokens.radiusPill,
                   padding: '4px 10px',
                   fontSize: '0.65rem',
                   fontWeight: 700,
                   background: 'rgba(0,0,0,0.6)',
-                  color: '#fff',
+                  color: 'var(--gco-ink)',
                   cursor: 'pointer',
                   zIndex: 2,
                 }}
@@ -2914,7 +3060,7 @@ export function PlayerBar({ player, floating }: Props) {
             el.volume = 0
             try {
               const target = player.currentMs / 1000
-              if (Math.abs((el.currentTime || 0) - target) > 0.4) el.currentTime = target
+              if (Math.abs((el.currentTime || 0) - target) > 0.9) el.currentTime = target
             } catch {
               /* */
             }

@@ -635,6 +635,1658 @@
   --gco-overlay: rgba(20, 8, 36, 0.6);
 }
 
+[data-theme='raygun-gothic'] {
+  --gco-bg: #1a1520;
+  --gco-bg-elevated: #2a2035;
+  --gco-primary: #e8b86d;
+  --gco-primary-dim: rgba(232,184,109,0.2);
+  --gco-secondary: #c45c3a;
+  --gco-secondary-dim: rgba(196,92,58,0.18);
+  --gco-accent: #7eb8c9;
+  --gco-ink: #f5e6d3;
+  --gco-ink-muted: rgba(245,230,211,0.65);
+  --gco-ink-faint: rgba(245,230,211,0.4);
+  --gco-button-text: #1a1520;
+  --gco-glass-bg: rgba(232,184,109,0.08);
+  --gco-glass-bg-hover: rgba(232,184,109,0.14);
+  --gco-glass-border: rgba(232,184,109,0.28);
+  --gco-glass-highlight: rgba(255,220,160,0.25);
+  --gco-glass-blur: 16px;
+  --gco-glass-saturate: 1.2;
+  --gco-input-bg: rgba(0,0,0,0.35);
+  --gco-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  --gco-shadow-lg: 0 24px 60px rgba(0,0,0,0.55);
+  --gco-orb-1: rgba(232,184,109,0.15);
+  --gco-orb-2: rgba(126,184,201,0.1);
+  --gco-orb-3: rgba(196,92,58,0.08);
+  --gco-hairline: rgba(232,184,109,0.15);
+  --gco-separator: rgba(232,184,109,0.2);
+  --gco-overlay: rgba(10,8,12,0.65);
+  --gco-radius: 4px;
+  --gco-radius-sm: 2px;
+  --gco-radius-xs: 2px;
+  --gco-radius-pill: 4px;
+  --font-body: 'Space Grotesk', 'Inter', sans-serif;
+  --font-display: 'Space Grotesk', sans-serif;
+}
+
+[data-theme='cluttercore'] {
+  --gco-bg: #2d1f2f;
+  --gco-bg-elevated: #3d2a40;
+  --gco-primary: #ff6b9d;
+  --gco-primary-dim: rgba(255,107,157,0.22);
+  --gco-secondary: #ffe66d;
+  --gco-secondary-dim: rgba(255,230,109,0.2);
+  --gco-accent: #4ecdc4;
+  --gco-ink: #fff5f7;
+  --gco-ink-muted: rgba(255,245,247,0.7);
+  --gco-ink-faint: rgba(255,245,247,0.45);
+  --gco-button-text: #2d1f2f;
+  --gco-glass-bg: rgba(255,107,157,0.12);
+  --gco-glass-bg-hover: rgba(255,107,157,0.18);
+  --gco-glass-border: rgba(255,230,109,0.35);
+  --gco-glass-highlight: rgba(255,255,255,0.2);
+  --gco-glass-blur: 14px;
+  --gco-glass-saturate: 1.4;
+  --gco-input-bg: rgba(0,0,0,0.3);
+  --gco-shadow: 0 8px 28px rgba(255,107,157,0.25);
+  --gco-shadow-lg: 0 16px 48px rgba(0,0,0,0.4);
+  --gco-orb-1: rgba(255,107,157,0.2);
+  --gco-orb-2: rgba(255,230,109,0.15);
+  --gco-orb-3: rgba(78,205,196,0.12);
+  --gco-hairline: rgba(255,230,109,0.2);
+  --gco-separator: rgba(255,107,157,0.25);
+  --gco-overlay: rgba(30,15,35,0.6);
+  --gco-radius: 18px;
+  --gco-radius-sm: 12px;
+  --gco-radius-xs: 8px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', sans-serif;
+  --font-display: 'Space Grotesk', sans-serif;
+}
+
+[data-theme='oceancore'] {
+  --gco-bg: #0a1628;
+  --gco-bg-elevated: #0f2438;
+  --gco-primary: #3dd6c3;
+  --gco-primary-dim: rgba(61,214,195,0.2);
+  --gco-secondary: #1b7fbf;
+  --gco-secondary-dim: rgba(27,127,191,0.2);
+  --gco-accent: #7ec8e3;
+  --gco-ink: #e8f7fc;
+  --gco-ink-muted: rgba(232,247,252,0.65);
+  --gco-ink-faint: rgba(232,247,252,0.4);
+  --gco-button-text: #0a1628;
+  --gco-glass-bg: rgba(61,214,195,0.08);
+  --gco-glass-bg-hover: rgba(61,214,195,0.14);
+  --gco-glass-border: rgba(126,200,227,0.25);
+  --gco-glass-highlight: rgba(180,240,255,0.2);
+  --gco-glass-blur: 22px;
+  --gco-glass-saturate: 1.45;
+  --gco-input-bg: rgba(0,20,40,0.45);
+  --gco-shadow: 0 12px 40px rgba(10,40,60,0.5);
+  --gco-shadow-lg: 0 24px 60px rgba(5,20,40,0.6);
+  --gco-orb-1: rgba(61,214,195,0.16);
+  --gco-orb-2: rgba(27,127,191,0.14);
+  --gco-orb-3: rgba(126,200,227,0.1);
+  --gco-hairline: rgba(126,200,227,0.15);
+  --gco-separator: rgba(61,214,195,0.2);
+  --gco-overlay: rgba(5,15,30,0.65);
+  --gco-radius: 28px;
+  --gco-radius-sm: 18px;
+  --gco-radius-xs: 12px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', sans-serif;
+  --font-display: 'Space Grotesk', sans-serif;
+}
+
+[data-theme='spacecore'] {
+  --gco-bg: #050510;
+  --gco-bg-elevated: #0c0c1c;
+  --gco-primary: #a78bfa;
+  --gco-primary-dim: rgba(167,139,250,0.2);
+  --gco-secondary: #38bdf8;
+  --gco-secondary-dim: rgba(56,189,248,0.18);
+  --gco-accent: #f472b6;
+  --gco-ink: #f1f5ff;
+  --gco-ink-muted: rgba(241,245,255,0.62);
+  --gco-ink-faint: rgba(241,245,255,0.38);
+  --gco-button-text: #050510;
+  --gco-glass-bg: rgba(167,139,250,0.08);
+  --gco-glass-bg-hover: rgba(167,139,250,0.14);
+  --gco-glass-border: rgba(167,139,250,0.28);
+  --gco-glass-highlight: rgba(255,255,255,0.15);
+  --gco-glass-blur: 20px;
+  --gco-glass-saturate: 1.3;
+  --gco-input-bg: rgba(0,0,20,0.5);
+  --gco-shadow: 0 0 40px rgba(167,139,250,0.15);
+  --gco-shadow-lg: 0 0 60px rgba(56,189,248,0.2);
+  --gco-orb-1: rgba(167,139,250,0.18);
+  --gco-orb-2: rgba(56,189,248,0.12);
+  --gco-orb-3: rgba(244,114,182,0.1);
+  --gco-hairline: rgba(167,139,250,0.15);
+  --gco-separator: rgba(56,189,248,0.2);
+  --gco-overlay: rgba(2,2,10,0.7);
+  --gco-radius: 16px;
+  --gco-radius-sm: 10px;
+  --gco-radius-xs: 6px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Space Mono', 'Inter', monospace;
+  --font-display: 'Space Grotesk', sans-serif;
+}
+
+[data-theme='goblincore'] {
+  --gco-bg: #1a2418;
+  --gco-bg-elevated: #253320;
+  --gco-primary: #8fbc5a;
+  --gco-primary-dim: rgba(143,188,90,0.22);
+  --gco-secondary: #c4a35a;
+  --gco-secondary-dim: rgba(196,163,90,0.2);
+  --gco-accent: #6b8f71;
+  --gco-ink: #e8f0d8;
+  --gco-ink-muted: rgba(232,240,216,0.65);
+  --gco-ink-faint: rgba(232,240,216,0.4);
+  --gco-button-text: #1a2418;
+  --gco-glass-bg: rgba(143,188,90,0.1);
+  --gco-glass-bg-hover: rgba(143,188,90,0.16);
+  --gco-glass-border: rgba(143,188,90,0.3);
+  --gco-glass-highlight: rgba(200,230,150,0.15);
+  --gco-glass-blur: 14px;
+  --gco-glass-saturate: 1.25;
+  --gco-input-bg: rgba(0,0,0,0.3);
+  --gco-shadow: 0 10px 32px rgba(20,40,15,0.45);
+  --gco-shadow-lg: 0 20px 50px rgba(10,20,8,0.5);
+  --gco-orb-1: rgba(143,188,90,0.18);
+  --gco-orb-2: rgba(196,163,90,0.12);
+  --gco-orb-3: rgba(107,143,113,0.1);
+  --gco-hairline: rgba(143,188,90,0.18);
+  --gco-separator: rgba(143,188,90,0.22);
+  --gco-overlay: rgba(10,15,8,0.6);
+  --gco-radius: 12px;
+  --gco-radius-sm: 8px;
+  --gco-radius-xs: 6px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', sans-serif;
+  --font-display: 'Space Grotesk', sans-serif;
+}
+
+[data-theme='fairycore'] {
+  --gco-bg: #1e1530;
+  --gco-bg-elevated: #2a1f42;
+  --gco-primary: #e8a0bf;
+  --gco-primary-dim: rgba(232,160,191,0.22);
+  --gco-secondary: #b8e0d2;
+  --gco-secondary-dim: rgba(184,224,210,0.2);
+  --gco-accent: #d4b5ff;
+  --gco-ink: #fff5fb;
+  --gco-ink-muted: rgba(255,245,251,0.68);
+  --gco-ink-faint: rgba(255,245,251,0.42);
+  --gco-button-text: #1e1530;
+  --gco-glass-bg: rgba(232,160,191,0.1);
+  --gco-glass-bg-hover: rgba(232,160,191,0.16);
+  --gco-glass-border: rgba(212,181,255,0.3);
+  --gco-glass-highlight: rgba(255,220,240,0.25);
+  --gco-glass-blur: 24px;
+  --gco-glass-saturate: 1.5;
+  --gco-input-bg: rgba(30,20,50,0.45);
+  --gco-shadow: 0 12px 40px rgba(80,40,100,0.4);
+  --gco-shadow-lg: 0 24px 60px rgba(60,20,80,0.5);
+  --gco-orb-1: rgba(232,160,191,0.2);
+  --gco-orb-2: rgba(184,224,210,0.12);
+  --gco-orb-3: rgba(212,181,255,0.14);
+  --gco-hairline: rgba(232,160,191,0.18);
+  --gco-separator: rgba(212,181,255,0.22);
+  --gco-overlay: rgba(20,12,35,0.6);
+  --gco-radius: 26px;
+  --gco-radius-sm: 18px;
+  --gco-radius-xs: 12px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', sans-serif;
+  --font-display: 'Space Grotesk', sans-serif;
+}
+
+[data-theme='nightcore'] {
+  --gco-bg: #0d0221;
+  --gco-bg-elevated: #1a0a3e;
+  --gco-primary: #ff2e97;
+  --gco-primary-dim: rgba(255,46,151,0.22);
+  --gco-secondary: #00f0ff;
+  --gco-secondary-dim: rgba(0,240,255,0.18);
+  --gco-accent: #bf00ff;
+  --gco-ink: #f5e9ff;
+  --gco-ink-muted: rgba(245,233,255,0.65);
+  --gco-ink-faint: rgba(245,233,255,0.4);
+  --gco-button-text: #0d0221;
+  --gco-glass-bg: rgba(255,46,151,0.1);
+  --gco-glass-bg-hover: rgba(255,46,151,0.16);
+  --gco-glass-border: rgba(0,240,255,0.35);
+  --gco-glass-highlight: rgba(255,100,200,0.25);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.6;
+  --gco-input-bg: rgba(0,0,0,0.45);
+  --gco-shadow: 0 0 32px rgba(255,46,151,0.3);
+  --gco-shadow-lg: 0 0 48px rgba(0,240,255,0.25);
+  --gco-orb-1: rgba(255,46,151,0.22);
+  --gco-orb-2: rgba(0,240,255,0.15);
+  --gco-orb-3: rgba(191,0,255,0.12);
+  --gco-hairline: rgba(255,46,151,0.2);
+  --gco-separator: rgba(0,240,255,0.25);
+  --gco-overlay: rgba(8,2,20,0.7);
+  --gco-radius: 14px;
+  --gco-radius-sm: 10px;
+  --gco-radius-xs: 6px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', sans-serif;
+  --font-display: 'Space Grotesk', sans-serif;
+}
+
+[data-theme='retro-cgi'] {
+  --gco-bg: #1c1c28;
+  --gco-bg-elevated: #2a2a3c;
+  --gco-primary: #5ce1e6;
+  --gco-primary-dim: rgba(92,225,230,0.2);
+  --gco-secondary: #ff6bcb;
+  --gco-secondary-dim: rgba(255,107,203,0.18);
+  --gco-accent: #c9f658;
+  --gco-ink: #eef2ff;
+  --gco-ink-muted: rgba(238,242,255,0.65);
+  --gco-ink-faint: rgba(238,242,255,0.4);
+  --gco-button-text: #1c1c28;
+  --gco-glass-bg: rgba(92,225,230,0.1);
+  --gco-glass-bg-hover: rgba(92,225,230,0.16);
+  --gco-glass-border: rgba(201,246,88,0.3);
+  --gco-glass-highlight: rgba(255,255,255,0.15);
+  --gco-glass-blur: 8px;
+  --gco-glass-saturate: 1.2;
+  --gco-input-bg: rgba(0,0,0,0.4);
+  --gco-shadow: 4px 4px 0 rgba(92,225,230,0.35);
+  --gco-shadow-lg: 8px 8px 0 rgba(255,107,203,0.3);
+  --gco-orb-1: rgba(92,225,230,0.15);
+  --gco-orb-2: rgba(255,107,203,0.12);
+  --gco-orb-3: rgba(201,246,88,0.1);
+  --gco-hairline: rgba(92,225,230,0.2);
+  --gco-separator: rgba(201,246,88,0.25);
+  --gco-overlay: rgba(15,15,25,0.65);
+  --gco-radius: 2px;
+  --gco-radius-sm: 2px;
+  --gco-radius-xs: 0px;
+  --gco-radius-pill: 2px;
+  --font-body: 'Space Mono', monospace;
+  --font-display: 'Space Mono', monospace;
+}
+
+[data-theme='vectorheart'] {
+  --gco-bg: #1a0a14;
+  --gco-bg-elevated: #2d1222;
+  --gco-primary: #ff4d8d;
+  --gco-primary-dim: rgba(255,77,141,0.22);
+  --gco-secondary: #ff9ecd;
+  --gco-secondary-dim: rgba(255,158,205,0.2);
+  --gco-accent: #ffd1e8;
+  --gco-ink: #fff0f6;
+  --gco-ink-muted: rgba(255,240,246,0.68);
+  --gco-ink-faint: rgba(255,240,246,0.42);
+  --gco-button-text: #1a0a14;
+  --gco-glass-bg: rgba(255,77,141,0.12);
+  --gco-glass-bg-hover: rgba(255,77,141,0.18);
+  --gco-glass-border: rgba(255,158,205,0.4);
+  --gco-glass-highlight: rgba(255,209,232,0.3);
+  --gco-glass-blur: 16px;
+  --gco-glass-saturate: 1.4;
+  --gco-input-bg: rgba(40,10,25,0.5);
+  --gco-shadow: 0 8px 28px rgba(255,77,141,0.35);
+  --gco-shadow-lg: 0 16px 48px rgba(255,77,141,0.4);
+  --gco-orb-1: rgba(255,77,141,0.22);
+  --gco-orb-2: rgba(255,158,205,0.15);
+  --gco-orb-3: rgba(255,209,232,0.1);
+  --gco-hairline: rgba(255,158,205,0.25);
+  --gco-separator: rgba(255,77,141,0.3);
+  --gco-overlay: rgba(20,5,12,0.65);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', sans-serif;
+  --font-display: 'Space Grotesk', sans-serif;
+}
+
+[data-theme='windowscore'] {
+  --gco-bg: #3a6ea5;
+  --gco-bg-elevated: #ece9d8;
+  --gco-primary: #0054e3;
+  --gco-primary-dim: rgba(0,84,227,0.15);
+  --gco-secondary: #ece9d8;
+  --gco-secondary-dim: rgba(236,233,216,0.5);
+  --gco-accent: #ffcc00;
+  --gco-ink: #1a1a1a;
+  --gco-ink-muted: #4a4a4a;
+  --gco-ink-faint: #7a7a7a;
+  --gco-button-text: #ffffff;
+  --gco-glass-bg: rgba(255,255,255,0.92);
+  --gco-glass-bg-hover: #ffffff;
+  --gco-glass-border: #0a246a;
+  --gco-glass-highlight: rgba(255,255,255,0.9);
+  --gco-glass-blur: 0px;
+  --gco-glass-saturate: 1;
+  --gco-input-bg: #ffffff;
+  --gco-shadow: 2px 2px 0 #0a246a;
+  --gco-shadow-lg: 4px 4px 0 #0a246a;
+  --gco-orb-1: rgba(0,84,227,0.12);
+  --gco-orb-2: rgba(255,204,0,0.1);
+  --gco-orb-3: rgba(58,110,165,0.15);
+  --gco-hairline: #aca899;
+  --gco-separator: #aca899;
+  --gco-overlay: rgba(20,30,40,0.4);
+  --gco-radius: 3px;
+  --gco-radius-sm: 2px;
+  --gco-radius-xs: 2px;
+  --gco-radius-pill: 3px;
+  --font-body: Tahoma, 'Segoe UI', sans-serif;
+  --font-display: Tahoma, 'Segoe UI', sans-serif;
+}
+
+[data-theme='frutiger-aero'] {
+  --gco-bg: #d4eef7;
+  --gco-bg-elevated: #ffffff;
+  --gco-primary: #2b9fd9;
+  --gco-primary-dim: rgba(43,159,217,0.15);
+  --gco-secondary: #7fd99a;
+  --gco-secondary-dim: rgba(127,217,154,0.18);
+  --gco-accent: #a8d8ea;
+  --gco-ink: #1a3a4a;
+  --gco-ink-muted: #4a6a7a;
+  --gco-ink-faint: #7a9aaa;
+  --gco-button-text: #ffffff;
+  --gco-glass-bg: rgba(255,255,255,0.85);
+  --gco-glass-bg-hover: rgba(255,255,255,0.95);
+  --gco-glass-border: rgba(43,159,217,0.35);
+  --gco-glass-highlight: rgba(255,255,255,0.9);
+  --gco-glass-blur: 28px;
+  --gco-glass-saturate: 1.6;
+  --gco-input-bg: #ffffff;
+  --gco-shadow: 0 10px 40px rgba(43,159,217,0.2);
+  --gco-shadow-lg: 0 20px 60px rgba(43,159,217,0.28);
+  --gco-orb-1: rgba(43,159,217,0.2);
+  --gco-orb-2: rgba(127,217,154,0.15);
+  --gco-orb-3: rgba(168,216,234,0.2);
+  --gco-hairline: rgba(43,159,217,0.2);
+  --gco-separator: rgba(43,159,217,0.25);
+  --gco-overlay: rgba(20,30,40,0.4);
+  --gco-radius: 24px;
+  --gco-radius-sm: 16px;
+  --gco-radius-xs: 12px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Segoe UI', 'Inter', sans-serif;
+  --font-display: 'Segoe UI', sans-serif;
+}
+
+[data-theme='vaporwave'] {
+  --gco-bg: #1a0a2e;
+  --gco-bg-elevated: #2d1b4e;
+  --gco-primary: #ff71ce;
+  --gco-primary-dim: color-mix(in srgb, #ff71ce 22%, transparent);
+  --gco-secondary: #01cdfe;
+  --gco-secondary-dim: color-mix(in srgb, #01cdfe 18%, transparent);
+  --gco-accent: #b967ff;
+  --gco-ink: #fffbfe;
+  --gco-ink-muted: color-mix(in srgb, #fffbfe 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #fffbfe 40%, transparent);
+  --gco-button-text: #2d1b4e;
+  --gco-glass-bg: color-mix(in srgb, #ff71ce 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #ff71ce 16%, transparent);
+  --gco-glass-border: color-mix(in srgb, #ff71ce 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #fffbfe 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #ff71ce 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #ff71ce 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #ff71ce 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #01cdfe 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #b967ff 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #fffbfe 12%, transparent);
+  --gco-separator: color-mix(in srgb, #fffbfe 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='y2k'] {
+  --gco-bg: #0f0f1a;
+  --gco-bg-elevated: #1a1a2e;
+  --gco-primary: #00ffcc;
+  --gco-primary-dim: color-mix(in srgb, #00ffcc 22%, transparent);
+  --gco-secondary: #ff00aa;
+  --gco-secondary-dim: color-mix(in srgb, #ff00aa 18%, transparent);
+  --gco-accent: #c0c0c0;
+  --gco-ink: #f0f0ff;
+  --gco-ink-muted: color-mix(in srgb, #f0f0ff 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #f0f0ff 40%, transparent);
+  --gco-button-text: #1a1a2e;
+  --gco-glass-bg: color-mix(in srgb, #00ffcc 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #00ffcc 16%, transparent);
+  --gco-glass-border: color-mix(in srgb, #00ffcc 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #f0f0ff 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #00ffcc 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #00ffcc 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #00ffcc 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #ff00aa 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #c0c0c0 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #f0f0ff 12%, transparent);
+  --gco-separator: color-mix(in srgb, #f0f0ff 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='glassmorphism'] {
+  --gco-bg: #0e1628;
+  --gco-bg-elevated: #152238;
+  --gco-primary: #6eb6ff;
+  --gco-primary-dim: color-mix(in srgb, #6eb6ff 22%, transparent);
+  --gco-secondary: #a78bfa;
+  --gco-secondary-dim: color-mix(in srgb, #a78bfa 18%, transparent);
+  --gco-accent: #94a3b8;
+  --gco-ink: #f1f5f9;
+  --gco-ink-muted: color-mix(in srgb, #f1f5f9 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #f1f5f9 40%, transparent);
+  --gco-button-text: #152238;
+  --gco-glass-bg: color-mix(in srgb, #6eb6ff 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #6eb6ff 16%, transparent);
+  --gco-glass-border: color-mix(in srgb, #6eb6ff 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #f1f5f9 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #6eb6ff 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #6eb6ff 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #6eb6ff 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #a78bfa 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #94a3b8 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #f1f5f9 12%, transparent);
+  --gco-separator: color-mix(in srgb, #f1f5f9 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='cyberpunk'] {
+  --gco-bg: #0a0a0f;
+  --gco-bg-elevated: #12121a;
+  --gco-primary: #fcee0a;
+  --gco-primary-dim: color-mix(in srgb, #fcee0a 22%, transparent);
+  --gco-secondary: #ff003c;
+  --gco-secondary-dim: color-mix(in srgb, #ff003c 18%, transparent);
+  --gco-accent: #00f0ff;
+  --gco-ink: #f5f5f5;
+  --gco-ink-muted: color-mix(in srgb, #f5f5f5 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #f5f5f5 40%, transparent);
+  --gco-button-text: #12121a;
+  --gco-glass-bg: color-mix(in srgb, #fcee0a 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #fcee0a 16%, transparent);
+  --gco-glass-border: color-mix(in srgb, #fcee0a 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #f5f5f5 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #fcee0a 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #fcee0a 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #fcee0a 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #ff003c 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #00f0ff 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #f5f5f5 12%, transparent);
+  --gco-separator: color-mix(in srgb, #f5f5f5 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='solarpunk'] {
+  --gco-bg: #f0f7e8;
+  --gco-bg-elevated: #ffffff;
+  --gco-primary: #3d8b4f;
+  --gco-primary-dim: color-mix(in srgb, #3d8b4f 22%, transparent);
+  --gco-secondary: #e8a838;
+  --gco-secondary-dim: color-mix(in srgb, #e8a838 18%, transparent);
+  --gco-accent: #6bbf7a;
+  --gco-ink: #1a2e1c;
+  --gco-ink-muted: color-mix(in srgb, #1a2e1c 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #1a2e1c 40%, transparent);
+  --gco-button-text: #ffffff;
+  --gco-glass-bg: rgba(255,255,255,0.85);
+  --gco-glass-bg-hover: rgba(255,255,255,0.95);
+  --gco-glass-border: color-mix(in srgb, #3d8b4f 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #1a2e1c 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: #ffffff;
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #3d8b4f 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #3d8b4f 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #3d8b4f 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #e8a838 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #6bbf7a 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #1a2e1c 12%, transparent);
+  --gco-separator: color-mix(in srgb, #1a2e1c 16%, transparent);
+  --gco-overlay: rgba(20,30,40,0.4);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='steampunk'] {
+  --gco-bg: #1c1410;
+  --gco-bg-elevated: #2a1e16;
+  --gco-primary: #c4a35a;
+  --gco-primary-dim: color-mix(in srgb, #c4a35a 22%, transparent);
+  --gco-secondary: #8b4513;
+  --gco-secondary-dim: color-mix(in srgb, #8b4513 18%, transparent);
+  --gco-accent: #d4af37;
+  --gco-ink: #f5e6d3;
+  --gco-ink-muted: color-mix(in srgb, #f5e6d3 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #f5e6d3 40%, transparent);
+  --gco-button-text: #2a1e16;
+  --gco-glass-bg: color-mix(in srgb, #c4a35a 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #c4a35a 16%, transparent);
+  --gco-glass-border: color-mix(in srgb, #c4a35a 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #f5e6d3 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #c4a35a 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #c4a35a 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #c4a35a 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #8b4513 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #d4af37 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #f5e6d3 12%, transparent);
+  --gco-separator: color-mix(in srgb, #f5e6d3 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='dieselpunk'] {
+  --gco-bg: #1a1814;
+  --gco-bg-elevated: #2c2820;
+  --gco-primary: #c4a574;
+  --gco-primary-dim: color-mix(in srgb, #c4a574 22%, transparent);
+  --gco-secondary: #5c4033;
+  --gco-secondary-dim: color-mix(in srgb, #5c4033 18%, transparent);
+  --gco-accent: #8b7355;
+  --gco-ink: #e8dcc8;
+  --gco-ink-muted: color-mix(in srgb, #e8dcc8 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #e8dcc8 40%, transparent);
+  --gco-button-text: #2c2820;
+  --gco-glass-bg: color-mix(in srgb, #c4a574 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #c4a574 16%, transparent);
+  --gco-glass-border: color-mix(in srgb, #c4a574 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #e8dcc8 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #c4a574 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #c4a574 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #c4a574 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #5c4033 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #8b7355 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #e8dcc8 12%, transparent);
+  --gco-separator: color-mix(in srgb, #e8dcc8 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='cassette-futurism'] {
+  --gco-bg: #0c100c;
+  --gco-bg-elevated: #141a14;
+  --gco-primary: #33ff66;
+  --gco-primary-dim: color-mix(in srgb, #33ff66 22%, transparent);
+  --gco-secondary: #ff3333;
+  --gco-secondary-dim: color-mix(in srgb, #ff3333 18%, transparent);
+  --gco-accent: #88aa88;
+  --gco-ink: #ccffcc;
+  --gco-ink-muted: color-mix(in srgb, #ccffcc 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #ccffcc 40%, transparent);
+  --gco-button-text: #141a14;
+  --gco-glass-bg: color-mix(in srgb, #33ff66 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #33ff66 16%, transparent);
+  --gco-glass-border: color-mix(in srgb, #33ff66 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #ccffcc 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #33ff66 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #33ff66 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #33ff66 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #ff3333 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #88aa88 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #ccffcc 12%, transparent);
+  --gco-separator: color-mix(in srgb, #ccffcc 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 2px;
+  --gco-radius-sm: 2px;
+  --gco-radius-xs: 0px;
+  --gco-radius-pill: 2px;
+  --font-body: 'Space Mono', monospace;
+  --font-display: 'Space Mono', monospace;
+}
+
+[data-theme='synthwave'] {
+  --gco-bg: #12001e;
+  --gco-bg-elevated: #1e0033;
+  --gco-primary: #ff00aa;
+  --gco-primary-dim: color-mix(in srgb, #ff00aa 22%, transparent);
+  --gco-secondary: #00e5ff;
+  --gco-secondary-dim: color-mix(in srgb, #00e5ff 18%, transparent);
+  --gco-accent: #7b2cbf;
+  --gco-ink: #ffe6f7;
+  --gco-ink-muted: color-mix(in srgb, #ffe6f7 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #ffe6f7 40%, transparent);
+  --gco-button-text: #1e0033;
+  --gco-glass-bg: color-mix(in srgb, #ff00aa 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #ff00aa 16%, transparent);
+  --gco-glass-border: color-mix(in srgb, #ff00aa 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #ffe6f7 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #ff00aa 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #ff00aa 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #ff00aa 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #00e5ff 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #7b2cbf 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #ffe6f7 12%, transparent);
+  --gco-separator: color-mix(in srgb, #ffe6f7 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='brutalism'] {
+  --gco-bg: #ffffff;
+  --gco-bg-elevated: #f0f0f0;
+  --gco-primary: #000000;
+  --gco-primary-dim: color-mix(in srgb, #000000 22%, transparent);
+  --gco-secondary: #ff0000;
+  --gco-secondary-dim: color-mix(in srgb, #ff0000 18%, transparent);
+  --gco-accent: #0000ff;
+  --gco-ink: #000000;
+  --gco-ink-muted: color-mix(in srgb, #000000 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #000000 40%, transparent);
+  --gco-button-text: #f0f0f0;
+  --gco-glass-bg: color-mix(in srgb, #000000 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #000000 16%, transparent);
+  --gco-glass-border: #000000;
+  --gco-glass-highlight: color-mix(in srgb, #000000 20%, transparent);
+  --gco-glass-blur: 0px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 6px 6px 0 #000;
+  --gco-shadow-lg: 10px 10px 0 #000;
+  --gco-orb-1: color-mix(in srgb, #000000 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #ff0000 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #0000ff 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #000000 12%, transparent);
+  --gco-separator: color-mix(in srgb, #000000 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 0px;
+  --gco-radius-sm: 0px;
+  --gco-radius-xs: 0px;
+  --gco-radius-pill: 0px;
+  --font-body: 'Space Grotesk', Impact, sans-serif;
+  --font-display: Impact, 'Space Grotesk', sans-serif;
+}
+
+[data-theme='neumorphism'] {
+  --gco-bg: #e0e5ec;
+  --gco-bg-elevated: #e0e5ec;
+  --gco-primary: #4a6fa5;
+  --gco-primary-dim: color-mix(in srgb, #4a6fa5 22%, transparent);
+  --gco-secondary: #9b6b9e;
+  --gco-secondary-dim: color-mix(in srgb, #9b6b9e 18%, transparent);
+  --gco-accent: #8b9bb4;
+  --gco-ink: #2d3748;
+  --gco-ink-muted: color-mix(in srgb, #2d3748 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #2d3748 40%, transparent);
+  --gco-button-text: #e0e5ec;
+  --gco-glass-bg: rgba(255,255,255,0.85);
+  --gco-glass-bg-hover: rgba(255,255,255,0.95);
+  --gco-glass-border: transparent;
+  --gco-glass-highlight: color-mix(in srgb, #2d3748 20%, transparent);
+  --gco-glass-blur: 0px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: #ffffff;
+  --gco-shadow: 8px 8px 16px #b8b9be, -8px -8px 16px #ffffff;
+  --gco-shadow-lg: 12px 12px 24px #b8b9be, -12px -12px 24px #ffffff;
+  --gco-orb-1: color-mix(in srgb, #4a6fa5 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #9b6b9e 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #8b9bb4 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #2d3748 12%, transparent);
+  --gco-separator: color-mix(in srgb, #2d3748 16%, transparent);
+  --gco-overlay: rgba(20,30,40,0.4);
+  --gco-radius: 16px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='memphis'] {
+  --gco-bg: #fffbe6;
+  --gco-bg-elevated: #ffffff;
+  --gco-primary: #ff6b6b;
+  --gco-primary-dim: color-mix(in srgb, #ff6b6b 22%, transparent);
+  --gco-secondary: #4ecdc4;
+  --gco-secondary-dim: color-mix(in srgb, #4ecdc4 18%, transparent);
+  --gco-accent: #ffe66d;
+  --gco-ink: #2d3436;
+  --gco-ink-muted: color-mix(in srgb, #2d3436 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #2d3436 40%, transparent);
+  --gco-button-text: #ffffff;
+  --gco-glass-bg: rgba(255,255,255,0.85);
+  --gco-glass-bg-hover: rgba(255,255,255,0.95);
+  --gco-glass-border: color-mix(in srgb, #ff6b6b 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #2d3436 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: #ffffff;
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #ff6b6b 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #ff6b6b 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #ff6b6b 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #4ecdc4 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #ffe66d 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #2d3436 12%, transparent);
+  --gco-separator: color-mix(in srgb, #2d3436 16%, transparent);
+  --gco-overlay: rgba(20,30,40,0.4);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='bauhaus'] {
+  --gco-bg: #f5f0e6;
+  --gco-bg-elevated: #ffffff;
+  --gco-primary: #e6392b;
+  --gco-primary-dim: color-mix(in srgb, #e6392b 22%, transparent);
+  --gco-secondary: #1d3557;
+  --gco-secondary-dim: color-mix(in srgb, #1d3557 18%, transparent);
+  --gco-accent: #f4a261;
+  --gco-ink: #1a1a1a;
+  --gco-ink-muted: color-mix(in srgb, #1a1a1a 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #1a1a1a 40%, transparent);
+  --gco-button-text: #ffffff;
+  --gco-glass-bg: rgba(255,255,255,0.85);
+  --gco-glass-bg-hover: rgba(255,255,255,0.95);
+  --gco-glass-border: color-mix(in srgb, #e6392b 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #1a1a1a 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: #ffffff;
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #e6392b 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #e6392b 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #e6392b 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #1d3557 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #f4a261 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #1a1a1a 12%, transparent);
+  --gco-separator: color-mix(in srgb, #1a1a1a 16%, transparent);
+  --gco-overlay: rgba(20,30,40,0.4);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='art-deco'] {
+  --gco-bg: #0f0e0c;
+  --gco-bg-elevated: #1a1814;
+  --gco-primary: #d4af37;
+  --gco-primary-dim: color-mix(in srgb, #d4af37 22%, transparent);
+  --gco-secondary: #c9a227;
+  --gco-secondary-dim: color-mix(in srgb, #c9a227 18%, transparent);
+  --gco-accent: #8b7355;
+  --gco-ink: #f5ecd7;
+  --gco-ink-muted: color-mix(in srgb, #f5ecd7 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #f5ecd7 40%, transparent);
+  --gco-button-text: #1a1814;
+  --gco-glass-bg: color-mix(in srgb, #d4af37 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #d4af37 16%, transparent);
+  --gco-glass-border: color-mix(in srgb, #d4af37 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #f5ecd7 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #d4af37 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #d4af37 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #d4af37 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #c9a227 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #8b7355 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #f5ecd7 12%, transparent);
+  --gco-separator: color-mix(in srgb, #f5ecd7 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='retrofuturism'] {
+  --gco-bg: #0a1628;
+  --gco-bg-elevated: #122440;
+  --gco-primary: #ff6b35;
+  --gco-primary-dim: color-mix(in srgb, #ff6b35 22%, transparent);
+  --gco-secondary: #00a8e8;
+  --gco-secondary-dim: color-mix(in srgb, #00a8e8 18%, transparent);
+  --gco-accent: #f7c59f;
+  --gco-ink: #eef6ff;
+  --gco-ink-muted: color-mix(in srgb, #eef6ff 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #eef6ff 40%, transparent);
+  --gco-button-text: #122440;
+  --gco-glass-bg: color-mix(in srgb, #ff6b35 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #ff6b35 16%, transparent);
+  --gco-glass-border: color-mix(in srgb, #ff6b35 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #eef6ff 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #ff6b35 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #ff6b35 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #ff6b35 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #00a8e8 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #f7c59f 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #eef6ff 12%, transparent);
+  --gco-separator: color-mix(in srgb, #eef6ff 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='dark-academia'] {
+  --gco-bg: #1a1612;
+  --gco-bg-elevated: #2a241c;
+  --gco-primary: #c4a574;
+  --gco-primary-dim: color-mix(in srgb, #c4a574 22%, transparent);
+  --gco-secondary: #8b6914;
+  --gco-secondary-dim: color-mix(in srgb, #8b6914 18%, transparent);
+  --gco-accent: #5c4a32;
+  --gco-ink: #e8dcc8;
+  --gco-ink-muted: color-mix(in srgb, #e8dcc8 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #e8dcc8 40%, transparent);
+  --gco-button-text: #2a241c;
+  --gco-glass-bg: color-mix(in srgb, #c4a574 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #c4a574 16%, transparent);
+  --gco-glass-border: color-mix(in srgb, #c4a574 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #e8dcc8 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #c4a574 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #c4a574 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #c4a574 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #8b6914 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #5c4a32 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #e8dcc8 12%, transparent);
+  --gco-separator: color-mix(in srgb, #e8dcc8 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='light-academia'] {
+  --gco-bg: #f5f0e6;
+  --gco-bg-elevated: #fffcf5;
+  --gco-primary: #8b7355;
+  --gco-primary-dim: color-mix(in srgb, #8b7355 22%, transparent);
+  --gco-secondary: #a67c52;
+  --gco-secondary-dim: color-mix(in srgb, #a67c52 18%, transparent);
+  --gco-accent: #c4b59a;
+  --gco-ink: #3d3428;
+  --gco-ink-muted: color-mix(in srgb, #3d3428 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #3d3428 40%, transparent);
+  --gco-button-text: #fffcf5;
+  --gco-glass-bg: rgba(255,255,255,0.85);
+  --gco-glass-bg-hover: rgba(255,255,255,0.95);
+  --gco-glass-border: color-mix(in srgb, #8b7355 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #3d3428 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: #ffffff;
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #8b7355 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #8b7355 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #8b7355 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #a67c52 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #c4b59a 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #3d3428 12%, transparent);
+  --gco-separator: color-mix(in srgb, #3d3428 16%, transparent);
+  --gco-overlay: rgba(20,30,40,0.4);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='cottagecore'] {
+  --gco-bg: #f5f0e0;
+  --gco-bg-elevated: #fffaf0;
+  --gco-primary: #7a9e7e;
+  --gco-primary-dim: color-mix(in srgb, #7a9e7e 22%, transparent);
+  --gco-secondary: #d4a574;
+  --gco-secondary-dim: color-mix(in srgb, #d4a574 18%, transparent);
+  --gco-accent: #c9b896;
+  --gco-ink: #3d3428;
+  --gco-ink-muted: color-mix(in srgb, #3d3428 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #3d3428 40%, transparent);
+  --gco-button-text: #fffaf0;
+  --gco-glass-bg: rgba(255,255,255,0.85);
+  --gco-glass-bg-hover: rgba(255,255,255,0.95);
+  --gco-glass-border: color-mix(in srgb, #7a9e7e 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #3d3428 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: #ffffff;
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #7a9e7e 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #7a9e7e 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #7a9e7e 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #d4a574 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #c9b896 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #3d3428 12%, transparent);
+  --gco-separator: color-mix(in srgb, #3d3428 16%, transparent);
+  --gco-overlay: rgba(20,30,40,0.4);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='dreamcore'] {
+  --gco-bg: #e8e4f0;
+  --gco-bg-elevated: #f5f2fa;
+  --gco-primary: #9b8ec4;
+  --gco-primary-dim: color-mix(in srgb, #9b8ec4 22%, transparent);
+  --gco-secondary: #b8a9d4;
+  --gco-secondary-dim: color-mix(in srgb, #b8a9d4 18%, transparent);
+  --gco-accent: #c4b8e0;
+  --gco-ink: #3a3550;
+  --gco-ink-muted: color-mix(in srgb, #3a3550 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #3a3550 40%, transparent);
+  --gco-button-text: #f5f2fa;
+  --gco-glass-bg: rgba(255,255,255,0.85);
+  --gco-glass-bg-hover: rgba(255,255,255,0.95);
+  --gco-glass-border: color-mix(in srgb, #9b8ec4 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #3a3550 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: #ffffff;
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #9b8ec4 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #9b8ec4 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #9b8ec4 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #b8a9d4 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #c4b8e0 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #3a3550 12%, transparent);
+  --gco-separator: color-mix(in srgb, #3a3550 16%, transparent);
+  --gco-overlay: rgba(20,30,40,0.4);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='weirdcore'] {
+  --gco-bg: #1a1a1a;
+  --gco-bg-elevated: #2a2a2a;
+  --gco-primary: #c0c0c0;
+  --gco-primary-dim: color-mix(in srgb, #c0c0c0 22%, transparent);
+  --gco-secondary: #ff0000;
+  --gco-secondary-dim: color-mix(in srgb, #ff0000 18%, transparent);
+  --gco-accent: #808080;
+  --gco-ink: #e0e0e0;
+  --gco-ink-muted: color-mix(in srgb, #e0e0e0 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #e0e0e0 40%, transparent);
+  --gco-button-text: #2a2a2a;
+  --gco-glass-bg: color-mix(in srgb, #c0c0c0 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #c0c0c0 16%, transparent);
+  --gco-glass-border: color-mix(in srgb, #c0c0c0 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #e0e0e0 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #c0c0c0 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #c0c0c0 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #c0c0c0 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #ff0000 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #808080 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #e0e0e0 12%, transparent);
+  --gco-separator: color-mix(in srgb, #e0e0e0 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='liminal'] {
+  --gco-bg: #e8e4dc;
+  --gco-bg-elevated: #f5f2ea;
+  --gco-primary: #9a958c;
+  --gco-primary-dim: color-mix(in srgb, #9a958c 22%, transparent);
+  --gco-secondary: #6b6560;
+  --gco-secondary-dim: color-mix(in srgb, #6b6560 18%, transparent);
+  --gco-accent: #b8b2a8;
+  --gco-ink: #3a3835;
+  --gco-ink-muted: color-mix(in srgb, #3a3835 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #3a3835 40%, transparent);
+  --gco-button-text: #f5f2ea;
+  --gco-glass-bg: rgba(255,255,255,0.85);
+  --gco-glass-bg-hover: rgba(255,255,255,0.95);
+  --gco-glass-border: color-mix(in srgb, #9a958c 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #3a3835 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: #ffffff;
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #9a958c 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #9a958c 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #9a958c 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #6b6560 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #b8b2a8 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #3a3835 12%, transparent);
+  --gco-separator: color-mix(in srgb, #3a3835 16%, transparent);
+  --gco-overlay: rgba(20,30,40,0.4);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='biopunk'] {
+  --gco-bg: #0a1a12;
+  --gco-bg-elevated: #0f281c;
+  --gco-primary: #39ff14;
+  --gco-primary-dim: color-mix(in srgb, #39ff14 22%, transparent);
+  --gco-secondary: #00cc66;
+  --gco-secondary-dim: color-mix(in srgb, #00cc66 18%, transparent);
+  --gco-accent: #66ff99;
+  --gco-ink: #e0ffe8;
+  --gco-ink-muted: color-mix(in srgb, #e0ffe8 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #e0ffe8 40%, transparent);
+  --gco-button-text: #0f281c;
+  --gco-glass-bg: color-mix(in srgb, #39ff14 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #39ff14 16%, transparent);
+  --gco-glass-border: color-mix(in srgb, #39ff14 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #e0ffe8 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #39ff14 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #39ff14 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #39ff14 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #00cc66 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #66ff99 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #e0ffe8 12%, transparent);
+  --gco-separator: color-mix(in srgb, #e0ffe8 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='techwear'] {
+  --gco-bg: #0d0d0d;
+  --gco-bg-elevated: #1a1a1a;
+  --gco-primary: #4a9eff;
+  --gco-primary-dim: color-mix(in srgb, #4a9eff 22%, transparent);
+  --gco-secondary: #888888;
+  --gco-secondary-dim: color-mix(in srgb, #888888 18%, transparent);
+  --gco-accent: #333333;
+  --gco-ink: #e8e8e8;
+  --gco-ink-muted: color-mix(in srgb, #e8e8e8 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #e8e8e8 40%, transparent);
+  --gco-button-text: #1a1a1a;
+  --gco-glass-bg: color-mix(in srgb, #4a9eff 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #4a9eff 16%, transparent);
+  --gco-glass-border: color-mix(in srgb, #4a9eff 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #e8e8e8 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #4a9eff 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #4a9eff 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #4a9eff 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #888888 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #333333 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #e8e8e8 12%, transparent);
+  --gco-separator: color-mix(in srgb, #e8e8e8 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='corporate-memphis'] {
+  --gco-bg: #f7f5f2;
+  --gco-bg-elevated: #ffffff;
+  --gco-primary: #5b6cff;
+  --gco-primary-dim: color-mix(in srgb, #5b6cff 22%, transparent);
+  --gco-secondary: #ff7a59;
+  --gco-secondary-dim: color-mix(in srgb, #ff7a59 18%, transparent);
+  --gco-accent: #7bdcb5;
+  --gco-ink: #2d2a26;
+  --gco-ink-muted: color-mix(in srgb, #2d2a26 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #2d2a26 40%, transparent);
+  --gco-button-text: #ffffff;
+  --gco-glass-bg: rgba(255,255,255,0.85);
+  --gco-glass-bg-hover: rgba(255,255,255,0.95);
+  --gco-glass-border: color-mix(in srgb, #5b6cff 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #2d2a26 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: #ffffff;
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #5b6cff 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #5b6cff 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #5b6cff 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #ff7a59 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #7bdcb5 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #2d2a26 12%, transparent);
+  --gco-separator: color-mix(in srgb, #2d2a26 16%, transparent);
+  --gco-overlay: rgba(20,30,40,0.4);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='skeuomorphism'] {
+  --gco-bg: #2c2416;
+  --gco-bg-elevated: #3d3220;
+  --gco-primary: #d4a574;
+  --gco-primary-dim: color-mix(in srgb, #d4a574 22%, transparent);
+  --gco-secondary: #8b6914;
+  --gco-secondary-dim: color-mix(in srgb, #8b6914 18%, transparent);
+  --gco-accent: #c4a35a;
+  --gco-ink: #f5e6d3;
+  --gco-ink-muted: color-mix(in srgb, #f5e6d3 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #f5e6d3 40%, transparent);
+  --gco-button-text: #3d3220;
+  --gco-glass-bg: color-mix(in srgb, #d4a574 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #d4a574 16%, transparent);
+  --gco-glass-border: color-mix(in srgb, #d4a574 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #f5e6d3 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #d4a574 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #d4a574 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #d4a574 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #8b6914 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #c4a35a 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #f5e6d3 12%, transparent);
+  --gco-separator: color-mix(in srgb, #f5e6d3 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='scandinavian'] {
+  --gco-bg: #f7f5f2;
+  --gco-bg-elevated: #ffffff;
+  --gco-primary: #2c3e50;
+  --gco-primary-dim: color-mix(in srgb, #2c3e50 22%, transparent);
+  --gco-secondary: #95a5a6;
+  --gco-secondary-dim: color-mix(in srgb, #95a5a6 18%, transparent);
+  --gco-accent: #ecf0f1;
+  --gco-ink: #1a1a1a;
+  --gco-ink-muted: color-mix(in srgb, #1a1a1a 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #1a1a1a 40%, transparent);
+  --gco-button-text: #ffffff;
+  --gco-glass-bg: rgba(255,255,255,0.85);
+  --gco-glass-bg-hover: rgba(255,255,255,0.95);
+  --gco-glass-border: color-mix(in srgb, #2c3e50 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #1a1a1a 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: #ffffff;
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #2c3e50 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #2c3e50 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #2c3e50 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #95a5a6 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #ecf0f1 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #1a1a1a 12%, transparent);
+  --gco-separator: color-mix(in srgb, #1a1a1a 16%, transparent);
+  --gco-overlay: rgba(20,30,40,0.4);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='maximalism'] {
+  --gco-bg: #1a0a1f;
+  --gco-bg-elevated: #2d1535;
+  --gco-primary: #ff3366;
+  --gco-primary-dim: color-mix(in srgb, #ff3366 22%, transparent);
+  --gco-secondary: #ffcc00;
+  --gco-secondary-dim: color-mix(in srgb, #ffcc00 18%, transparent);
+  --gco-accent: #00ccff;
+  --gco-ink: #fff5fa;
+  --gco-ink-muted: color-mix(in srgb, #fff5fa 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #fff5fa 40%, transparent);
+  --gco-button-text: #2d1535;
+  --gco-glass-bg: color-mix(in srgb, #ff3366 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #ff3366 16%, transparent);
+  --gco-glass-border: color-mix(in srgb, #ff3366 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #fff5fa 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #ff3366 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #ff3366 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #ff3366 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #ffcc00 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #00ccff 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #fff5fa 12%, transparent);
+  --gco-separator: color-mix(in srgb, #fff5fa 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='ukiyo-e'] {
+  --gco-bg: #1a1510;
+  --gco-bg-elevated: #2a2218;
+  --gco-primary: #c45c26;
+  --gco-primary-dim: color-mix(in srgb, #c45c26 22%, transparent);
+  --gco-secondary: #1e4d6b;
+  --gco-secondary-dim: color-mix(in srgb, #1e4d6b 18%, transparent);
+  --gco-accent: #e8d4a8;
+  --gco-ink: #f5ecd7;
+  --gco-ink-muted: color-mix(in srgb, #f5ecd7 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #f5ecd7 40%, transparent);
+  --gco-button-text: #2a2218;
+  --gco-glass-bg: color-mix(in srgb, #c45c26 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #c45c26 16%, transparent);
+  --gco-glass-border: color-mix(in srgb, #c45c26 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #f5ecd7 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #c45c26 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #c45c26 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #c45c26 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #1e4d6b 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #e8d4a8 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #f5ecd7 12%, transparent);
+  --gco-separator: color-mix(in srgb, #f5ecd7 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+[data-theme='cyber-y2k'] {
+  --gco-bg: #0a0a12;
+  --gco-bg-elevated: #12121f;
+  --gco-primary: #00ffd5;
+  --gco-primary-dim: color-mix(in srgb, #00ffd5 22%, transparent);
+  --gco-secondary: #ff00cc;
+  --gco-secondary-dim: color-mix(in srgb, #ff00cc 18%, transparent);
+  --gco-accent: #c0c0ff;
+  --gco-ink: #f0f0ff;
+  --gco-ink-muted: color-mix(in srgb, #f0f0ff 65%, transparent);
+  --gco-ink-faint: color-mix(in srgb, #f0f0ff 40%, transparent);
+  --gco-button-text: #12121f;
+  --gco-glass-bg: color-mix(in srgb, #00ffd5 10%, transparent);
+  --gco-glass-bg-hover: color-mix(in srgb, #00ffd5 16%, transparent);
+  --gco-glass-border: color-mix(in srgb, #00ffd5 30%, transparent);
+  --gco-glass-highlight: color-mix(in srgb, #f0f0ff 20%, transparent);
+  --gco-glass-blur: 18px;
+  --gco-glass-saturate: 1.35;
+  --gco-input-bg: rgba(0,0,0,0.28);
+  --gco-shadow: 0 10px 36px color-mix(in srgb, #00ffd5 20%, transparent);
+  --gco-shadow-lg: 0 20px 56px color-mix(in srgb, #00ffd5 28%, transparent);
+  --gco-orb-1: color-mix(in srgb, #00ffd5 16%, transparent);
+  --gco-orb-2: color-mix(in srgb, #ff00cc 12%, transparent);
+  --gco-orb-3: color-mix(in srgb, #c0c0ff 10%, transparent);
+  --gco-hairline: color-mix(in srgb, #f0f0ff 12%, transparent);
+  --gco-separator: color-mix(in srgb, #f0f0ff 16%, transparent);
+  --gco-overlay: rgba(0,0,0,0.55);
+  --gco-radius: 20px;
+  --gco-radius-sm: 14px;
+  --gco-radius-xs: 10px;
+  --gco-radius-pill: 999px;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+}
+
+
+/* ========== Base tipografía y body ========== */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  font-family: var(--font-body);
+  background:
+    radial-gradient(circle at 12% 10%, var(--gco-orb-1), transparent 32%),
+    radial-gradient(circle at 88% 18%, var(--gco-orb-2), transparent 30%),
+    radial-gradient(circle at 50% 100%, var(--gco-orb-3), transparent 38%),
+    var(--gco-bg);
+  color: var(--gco-ink);
+  line-height: 1.5;
+  transition: background 0.35s ease, color 0.25s ease;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  color: var(--gco-ink);
+  letter-spacing: -0.02em;
+}
+
+/* ========== Glass / botones / inputs ========== */
+.glass-card {
+  background: var(--gco-glass-bg);
+  border: 1px solid var(--gco-glass-border);
+  border-radius: var(--gco-radius);
+  box-shadow: var(--gco-shadow);
+  backdrop-filter: blur(var(--gco-glass-blur)) saturate(var(--gco-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--gco-glass-blur)) saturate(var(--gco-glass-saturate));
+  color: var(--gco-ink);
+}
+
+.glass-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: var(--touch-min);
+  padding: 0.55rem 1rem;
+  border-radius: var(--gco-radius-pill);
+  border: 1px solid var(--gco-glass-border);
+  background: var(--gco-glass-bg);
+  color: var(--gco-ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--duration-fast) ease, transform var(--duration-fast) var(--ease-spring);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.glass-button:hover { background: var(--gco-glass-bg-hover); }
+.glass-button:active { transform: scale(0.97); }
+.glass-button.primary {
+  background: var(--gco-primary);
+  color: var(--gco-button-text);
+  border-color: var(--gco-primary);
+}
+.glass-button.secondary {
+  background: transparent;
+}
+
+.glass-input,
+input.glass-input,
+textarea.glass-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--gco-radius-sm);
+  border: 1px solid var(--gco-glass-border);
+  background: var(--gco-input-bg);
+  color: var(--gco-ink);
+  font: inherit;
+  outline: none;
+}
+.glass-input:focus {
+  border-color: var(--gco-primary);
+  box-shadow: 0 0 0 3px var(--gco-primary-dim);
+}
+
+/* ========== Theme toggle UI ========== */
+.theme-cycle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 36px;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--gco-radius-pill);
+  border: 1px solid var(--gco-glass-border);
+  background: var(--gco-glass-bg);
+  color: var(--gco-ink);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: background 0.15s ease, transform 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.theme-cycle-btn:hover { background: var(--gco-glass-bg-hover); }
+.theme-cycle-btn:active { transform: scale(0.96); }
+.gco-theme-more { padding: 0.35rem 0.55rem; min-width: 36px; justify-content: center; }
+
+.gco-theme-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 80;
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(70vh, 520px);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  animation: gco-theme-pop 0.22s var(--ease-spring);
+}
+@keyframes gco-theme-pop {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.gco-theme-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid var(--gco-hairline);
+}
+.gco-theme-panel-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  font-family: var(--font-display);
+}
+.gco-theme-panel-sub {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+  color: var(--gco-ink-muted);
+}
+.gco-theme-panel-scroll {
+  overflow-y: auto;
+  padding: 8px 12px 14px;
+  -webkit-overflow-scrolling: touch;
+}
+.gco-theme-group { margin-bottom: 12px; }
+.gco-theme-group-title {
+  margin: 0 0 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--gco-ink-muted);
+}
+.gco-theme-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.gco-theme-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  padding: 0.55rem 0.6rem;
+  border-radius: var(--gco-radius-sm);
+  border: 1px solid var(--gco-glass-border);
+  background: var(--gco-glass-bg);
+  color: var(--gco-ink);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.gco-theme-swatch:hover {
+  background: var(--gco-glass-bg-hover);
+  border-color: var(--gco-primary);
+}
+.gco-theme-swatch.is-active {
+  border-color: var(--gco-primary);
+  background: var(--gco-primary-dim);
+  box-shadow: 0 0 0 1px var(--gco-primary);
+}
+.gco-theme-swatch-icon { font-size: 1.05rem; line-height: 1; }
+.gco-theme-swatch-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.gco-theme-swatch-blurb {
+  font-size: 0.62rem;
+  color: var(--gco-ink-muted);
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (max-width: 480px) {
+  .gco-theme-panel {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    top: auto;
+    bottom: calc(12px + var(--safe-bottom));
+    width: auto;
+    max-height: min(68vh, 560px);
+    border-radius: var(--gco-radius);
+  }
+  .gco-theme-label { max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+/* ========== Legibilidad forzada en temas claros ========== */
+[data-theme='light'] body,
+[data-theme='solarpunk'] body,
+[data-theme='light-academia'] body,
+[data-theme='cottagecore'] body,
+[data-theme='dreamcore'] body,
+[data-theme='liminal'] body,
+[data-theme='memphis'] body,
+[data-theme='bauhaus'] body,
+[data-theme='neumorphism'] body,
+[data-theme='scandinavian'] body,
+[data-theme='corporate-memphis'] body,
+[data-theme='frutiger-aero'] body,
+[data-theme='windowscore'] body {
+  color-scheme: light;
+}
+
+/* Preferencias de accesibilidad */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-card, .theme-cycle-btn, .gco-theme-panel {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
 /* ========== Tokens compartidos ========== */
 :root {
   --gco-radius: 22px;
