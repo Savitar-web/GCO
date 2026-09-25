@@ -88,6 +88,10 @@ export interface Question {
   /** Explicación real de cada opción, alineada por posición con `options`,
    * sin indicar cuál es correcta. Se usa en la clase previa al nivel. */
   optionNotes?: string[]
+  /** Título propio de la clase de este nivel. */
+  lessonTitle?: string
+  /** Párrafos extensos y específicos de este nivel para la clase previa. */
+  lessonIntro?: string[]
 }
 
 /** Entrada del diccionario personal: niveles superados con contexto de aprendizaje. */
@@ -1550,6 +1554,12 @@ interface GrammarItem {
    * decir cuál es correcta: qué forma/estructura es y por qué alguien la
    * consideraría, para que la clase enseñe el paradigma completo. */
   optionNotes?: string[]
+  /** Título propio de la clase de este nivel (sustituye al título genérico
+   * del modo cuando existe). */
+  lessonTitle?: string
+  /** Varios párrafos extensos y específicos de este nivel: enseñan el punto
+   * de gramática o vocabulario a fondo, antes de mostrar la pregunta. */
+  lessonIntro?: string[]
 }
 
 const EN_GRAMMAR: GrammarItem[] = [
@@ -1557,6 +1567,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Elige la forma correcta: “She ____ to school every day.”',
     ruleHint: 'Presente simple, 3.ª persona singular: verbo + -s.',
     ruleExplain: 'En presente simple, he/she/it añade -s/-es al verbo. Es una marca de concordancia, no de plural.',
+    lessonTitle: 'Presente simple y la -s de la 3.ª persona: el detalle que casi nadie explica bien',
+    lessonIntro: [
+      'El presente simple en inglés parece, a primera vista, el tiempo verbal más fácil: no hay conjugaciones complicadas como en español, y la mayoría de las personas gramaticales usan exactamente la misma forma del verbo. "I go, you go, we go, they go" — cuatro personas, una sola forma. Pero hay una excepción sistemática que aparece en textos de todos los niveles: la 3.ª persona del singular (he, she, it) exige una -s (o -es, o un cambio ortográfico) al final del verbo.',
+      'Esta -s no es un plural ni un capricho ortográfico: es lo que en lingüística se llama una marca de concordancia (agreement), un rastro histórico de un sistema de conjugación mucho más rico que tenía el inglés antiguo, del cual hoy sobrevive apenas esta única terminación. La regla exacta depende de cómo termina el verbo: la mayoría añade solo "-s" (plays, reads, walks), los verbos terminados en -ch, -sh, -ss, -x u -o añaden "-es" (watches, wishes, misses, fixes, goes), y los terminados en consonante + y cambian la "y" por "i" y añaden "-es" (study → studies).',
+      'El error más común de un hispanohablante aprendiendo inglés en serio no es olvidar la -s en frases simples y aisladas, sino olvidarla en frases largas donde el sujeto y el verbo quedan separados por otras palabras: "The teacher, who arrives early every day, always bring coffee" debería ser "brings", pero la distancia entre "teacher" y el verbo hace que el cerebro pierda el hilo de la concordancia. Practicar con frases más largas, no solo con el ejemplo mínimo, es la única forma real de automatizar esta regla.',
+    ],
       failAdvice: 'Revisa la regla y descarta opciones incompatibles antes de elegir.',
     options: ['go', 'goes', 'going', 'gone', 'went', 'goed', 'goe', 'to go'],
     correctIndex: 1,
@@ -1576,6 +1592,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: '¿Cuál es el plural de “child”?',
     ruleHint: 'Plurales irregulares germánicos.',
     ruleExplain: 'Algunos sustantivos antiguos forman el plural con cambio vocálico (umlaut histórico) o formas supletivas, no con -s.',
+    lessonTitle: 'Plurales irregulares: cuando el inglés no añade una -s',
+    lessonIntro: [
+      'La mayoría de los plurales del inglés se forman con una simple -s (cats, books, ideas) o con -es tras ciertos sonidos (boxes, buses). Es una regla productiva: funciona automáticamente incluso con palabras inventadas o prestadas ("the two Zooms", "several apps"). Pero un pequeño grupo de sustantivos de altísima frecuencia conserva plurales irregulares heredados directamente del inglés antiguo, de siglos antes de que la regla en -s se generalizara.',
+      '"Child" → "children" es uno de los casos más citados: el plural no se forma con -s sino con el sufijo germánico -er (que en inglés antiguo pluralizaba un grupo distinto de sustantivos) más un cambio en la vocal de la raíz. Por eso "children" no es "childs" ni "childes": es una reliquia de un sistema de plurales mucho más variado que el inglés fue simplificando durante más de mil años, hasta quedarse casi solo con la -s. Otros supervivientes de esa época son "man→men", "foot→feet", "tooth→teeth" y "mouse→mice", cada uno con su propio patrón de cambio vocálico.',
+      'La estrategia realista para estos plurales no es buscar una regla que los explique todos (no la hay, precisamente porque son excepciones históricas), sino memorizarlos como un grupo cerrado de palabras de uso diario: son pocas, muy frecuentes, y aparecen una y otra vez en cualquier texto. Confundir "children" con una forma regular inventada es uno de los errores que más rápido delata a un hablante no nativo, así que vale la pena fijarlos bien desde el principio.',
+    ],
       failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['childs', 'childes', 'children', 'childrens', 'child', 'childer', 'kids', 'childen'],
     correctIndex: 2,
@@ -1595,6 +1617,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Completa: “I have ____ this book.”',
     ruleHint: 'Present perfect: have + participio pasado.',
     ruleExplain: 'El present perfect (have/has + past participle) enlaza pasado y presente: experiencia, resultado o acción no terminada en un periodo que incluye ahora.',
+    lessonTitle: 'Present perfect: el tiempo que no existe igual en español',
+    lessonIntro: [
+      'El present perfect (have/has + participio pasado) es probablemente el tiempo verbal inglés que más cuesta a los hispanohablantes, precisamente porque no tiene un equivalente uno a uno en español. Formalmente se parece a nuestro pretérito perfecto compuesto ("he comido"), pero sus reglas de uso son bastante más estrictas: en inglés, el present perfect exige que la acción tenga alguna conexión relevante con el momento presente, no solo que haya ocurrido "hace poco".',
+      'Hay tres usos principales que conviene distinguir con claridad. Primero, experiencia vital sin momento concreto: "I have visited Japan" (en algún punto de mi vida, no importa cuándo exactamente). Segundo, resultado presente de una acción pasada: "I have lost my keys" (las perdí y AHORA no las tengo; el efecto persiste). Tercero, una acción que empezó en el pasado y continúa hasta ahora, normalmente con "for" o "since": "I have lived here for ten years". En los tres casos, el momento exacto de la acción es secundario; lo que importa es la relación con el presente.',
+      'La señal más clara de cuándo NO usar present perfect es la presencia de un marcador de tiempo terminado y específico: "yesterday", "last year", "in 2020", "when I was a child". Con esos marcadores, el inglés exige pasado simple obligatoriamente ("I visited Japan in 2019", nunca "I have visited Japan in 2019"), mientras que en español el pretérito perfecto compuesto sí puede convivir con fechas pasadas en algunos dialectos. Esta diferencia es, con diferencia, el error más frecuente de transferencia del español al inglés en este punto.',
+    ],
       failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['readed', 'read', 'reading', 'reads', 'rode', 'written', 'red', 'reed'],
     correctIndex: 1,
@@ -1614,6 +1642,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Orden natural de adjetivos: “a ____ box”',
     ruleHint: 'Opinión → tamaño → edad → color → origen → material → propósito.',
     ruleExplain: 'El inglés ordena adjetivos prenominales en una secuencia preferida. “Nice small wooden” suena natural; otras permutaciones suenan raras.',
+    lessonTitle: 'El orden de los adjetivos en inglés: la regla que todo nativo sigue sin saber que existe',
+    lessonIntro: [
+      'Cuando varios adjetivos describen al mismo sustantivo en inglés, no se colocan en un orden libre como en español ("una caja pequeña, bonita y de madera" admite varios órdenes). El inglés sigue una jerarquía bastante fija, conocida entre lingüistas como el "orden de adjetivos acumulativos" (cumulative adjective order): opinión → tamaño → edad → forma → color → origen → material → propósito, y luego el sustantivo. "A nice small old round black French wooden sewing box" es gramaticalmente correcto (aunque exagerado) precisamente porque respeta ese orden.',
+      'Ningún hablante nativo memoriza esta lista conscientemente: la absorbe de niño por exposición, y por eso "small nice wooden box" le suena mal aunque no sepa explicar por qué. Para un aprendiente adulto, en cambio, sí conviene memorizar al menos el bloque más frecuente en el habla cotidiana: opinión (nice, beautiful, terrible) antes que tamaño (small, big, tiny) antes que material (wooden, metal, plastic). La mayoría de los errores de orden en textos de nivel intermedio involucran justo esos tres.',
+      'La razón detrás de esta jerarquía tiene que ver con cuán "subjetivo" o "permanente" es cada rasgo: las opiniones son las más subjetivas y variables (van primero, más lejos del sustantivo), mientras que el material y el propósito son rasgos casi definitorios del objeto (van justo antes del sustantivo, pegados a él). Esta misma lógica aparece, con variaciones, en muchos otros idiomas germánicos, aunque el español, con sus adjetivos pospuestos, la organiza de forma completamente distinta.',
+    ],
       failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'wooden small nice',
@@ -1642,6 +1676,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'False friend: en inglés, “actually” significa…',
     ruleHint: 'False friends con el español.',
     ruleExplain: 'Actually ≠ actualmente. Actualmente = currently / nowadays. Actually = en realidad / de hecho.',
+    lessonTitle: '"Actually": el false friend que más confunde a hispanohablantes',
+    lessonIntro: [
+      'Un false friend (falso amigo) es una palabra que se parece mucho a una de tu idioma nativo pero significa otra cosa. "Actually" es probablemente el ejemplo más citado en cualquier curso serio de inglés para hispanohablantes, porque su parecido con "actualmente" es casi perfecto en la forma, pero su significado real no tiene nada que ver.',
+      '"Actually" significa "en realidad" o "de hecho", y se usa típicamente para corregir una idea previa, matizar algo que se acaba de decir, o introducir un dato que contradice una expectativa: "I thought she was French, but actually she\'s Belgian" (pero en realidad es belga). El sentido de "actualmente" (en el momento presente, hoy en día) se expresa en inglés con "currently" o "nowadays": "Currently, she lives in Brussels" (actualmente vive en Bruselas).',
+      'Este par de palabras es un ejemplo de lo que en lingüística histórica se llama "deriva semántica" (semantic drift): ambas provienen de la misma raíz latina "actualis" (relativo a la acción, real), pero con el tiempo el francés y el español conservaron el sentido temporal ("actual" = presente), mientras que el inglés desarrolló el sentido de "verdadero, real" a partir de la misma raíz. Por eso el parecido no es casualidad, pero el significado sí divergió por completo, y confiar en el parecido lleva directo al error.',
+    ],
       failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'actualmente',
@@ -1670,6 +1710,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Elige el phrasal verb: “buscar información en un diccionario”',
     ruleHint: 'Verb + particle cambia el significado.',
     ruleExplain: 'Los phrasal verbs no se traducen palabra a palabra. Look up = consultar; look for = buscar; look after = cuidar.',
+    lessonTitle: 'Phrasal verbs con "look": un verbo, ocho significados distintos',
+    lessonIntro: [
+      'Un phrasal verb es la combinación de un verbo simple con una o más partículas (preposiciones o adverbios como up, down, after, into) cuyo significado conjunto casi nunca se puede predecir sumando el significado de cada palabra por separado. Son, junto con los verbos irregulares, uno de los mayores retos léxicos del inglés, y también uno de los rasgos que más distingue a un hablante fluido de uno que solo domina la gramática de los libros.',
+      'El verbo "look" (mirar) es un ejemplo perfecto de cuántos significados distintos puede generar la misma raíz con partículas diferentes: "look up" (consultar en una fuente), "look for" (buscar algo), "look after" (cuidar a alguien), "look into" (investigar), "look down on" (despreciar), "look forward to" (esperar con ilusión). Ninguno de estos significados se deduce razonablemente de "mirar" más la partícula; hay que aprenderlos como si fueran palabras nuevas e independientes, aunque compartan la misma raíz visual.',
+      'La buena noticia es que los phrasal verbs con la misma partícula suelen compartir un matiz de sentido reconocible: "up" a menudo implica completar o intensificar una acción (look up, eat up, finish up), "down" a menudo implica reducir o menospreciar (look down, calm down, turn down), "into" casi siempre implica investigar o examinar (look into, get into). Aprenderlos agrupados por partícula, en vez de verbo por verbo, acelera bastante la memorización.',
+    ],
       failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['look after', 'look up', 'look for', 'look out', 'look into', 'look down', 'look over', 'look on'],
     correctIndex: 1,
@@ -1689,6 +1735,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Artículo correcto: “____ university is big.” (hablando de una concreta conocida)',
     ruleHint: 'The para referentes definidos; a/an indefinidos.',
     ruleExplain: 'The se usa cuando el oyente puede identificar el referente (ya mencionado, único en contexto, o conocido).',
+    lessonTitle: 'El artículo definido "the": cuándo el oyente ya sabe de qué hablas',
+    lessonIntro: [
+      'El inglés tiene un solo artículo definido ("the") frente a los cuatro del español (el, la, los, las), lo cual simplifica la forma pero no simplifica la lógica de uso: "the" no se elige por género ni número, sino por si el hablante cree que el oyente puede identificar exactamente a qué se refiere. Es una decisión sobre el conocimiento compartido entre los interlocutores, no una marca gramatical automática.',
+      'Se usa "the" quantities distintas de referente identificable: algo ya mencionado antes en la conversación ("I saw a dog. The dog was brown" — ya sabemos de qué perro hablamos), algo único en el contexto o en el mundo ("the sun", "the internet"), o algo que ambos interlocutores dan por sabido aunque no se haya mencionado explícitamente ("Can you close the door?", refiriéndose a la puerta de la habitación en la que están). En cambio, se usa el artículo indefinido ("a/an") o ningún artículo cuando el referente se introduce por primera vez o se habla en sentido genérico.',
+      'El error más común de un hispanohablante no es tanto olvidar "the" donde hace falta, sino ponerlo donde el inglés prefiere no usar ningún artículo: con sustantivos incontables o plurales en sentido genérico ("Life is hard" no "The life is hard"; "Dogs are loyal" no "The dogs are loyal", salvo que se hable de un grupo específico y conocido de perros). Esta ausencia de artículo genérico no existe de la misma forma en español, así que hay que entrenar el oído para detectarla.',
+    ],
       failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['A', 'An', 'The', '∅ (ninguno)', 'Some', 'Any', 'This only', 'Those'],
     correctIndex: 2,
@@ -1708,6 +1760,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Negación correcta en inglés estándar:',
     ruleHint: 'Un solo negativo de polaridad; do-support.',
     ruleExplain: 'El inglés estándar evita la doble negación de polaridad. Don’t + anything (no don’t + nothing).',
+    lessonTitle: 'La doble negación en inglés: por qué "I don\'t know nothing" no es estándar',
+    lessonIntro: [
+      'En español, la negación se puede acumular sin problema: "no sé nada", "no vi a nadie", "no compré ningún libro" combinan un "no" con otra palabra negativa (nada, nadie, ningún) para reforzar la negación, y esto es completamente estándar y obligatorio. El inglés estándar moderno funciona con una lógica distinta, llamada de "negación única": una sola marca negativa por cláusula es suficiente, y añadir una segunda no refuerza la negación, sino que técnicamente la cancela (aunque nadie lo interprete así en la práctica).',
+      'Por eso, la traducción de "no sé nada" no es "I don\'t know nothing" sino "I don\'t know anything": el auxiliar "don\'t" ya aporta la negación, y "anything" (una palabra de "polaridad neutra", que se activa bajo negación o en preguntas) completa la frase sin negar dos veces. La estructura general es: negación en el auxiliar (don\'t/doesn\'t/isn\'t/can\'t) + palabras en "any-" (anything, anyone, anywhere) en el resto de la frase.',
+      'Esto no significa que la doble negación no exista nunca en inglés: es habitual en el inglés afroamericano vernáculo (African American Vernacular English) y en otros dialectos no estándar, donde tiene su propia lógica gramatical interna, coherente y sistemática, no es "un error". Pero para el inglés estándar que se enseña, se examina y se espera en contextos formales, la regla de negación única es la que hay que dominar.',
+    ],
       failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'I don’t know nothing',
@@ -1736,6 +1794,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'El sufijo “-tion” en “nation”, “information”, “decision” suele indicar…',
     ruleHint: 'Morfología derivativa latina.',
     ruleExplain: 'El sufijo -tion/-sion forma sustantivos abstractos (a menudo deverbales) de origen latino. Es cognado del español -ción/-sión.',
+    lessonTitle: 'El sufijo -tion/-sion: cognados directos entre inglés y español',
+    lessonIntro: [
+      'El inglés tiene un vocabulario doble: una capa nativa germánica de palabras cortas y muy antiguas (house, love, go, water) y una capa culta latina y francesa, incorporada sobre todo tras la conquista normanda de 1066 y durante el Renacimiento, de palabras más largas y "académicas" (residence, affection, navigate, aquatic). El sufijo "-tion/-sion" pertenece por completo a esa segunda capa, y es una de las mejores noticias léxicas para un hispanohablante que aprende inglés.',
+      'Este sufijo viene del latín "-tio/-tionis", y forma sustantivos abstractos que casi siempre derivan de un verbo, nombrando el proceso o el resultado de esa acción: "to inform" → "information", "to decide" → "decision", "to educate" → "education". El español heredó exactamente la misma raíz latina con la terminación "-ción/-sión", así que miles de estas palabras son prácticamente idénticas entre los dos idiomas y se pueden reconocer al instante sin necesidad de memorizarlas por separado.',
+      'La trampa está en la pronunciación, no en el significado: en inglés, "-tion" se pronuncia siempre /ʃən/ (como "shon"), nunca como se leería en español letra por letra. "Nation" no suena "na-sion" a la española, sino más cerca de "néi-shon". Reconocer visualmente el cognado es fácil; el trabajo real de un aprendiz serio es reentrenar el oído y la boca para la pronunciación correcta del sufijo, que es sorprendentemente uniforme en cientos de palabras.',
+    ],
       failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: [
       'adverbio de modo',
@@ -1764,6 +1828,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: '“If it rains, we will stay home.” Es un condicional de tipo…',
     ruleHint: 'Condicionales: 0 (hechos), 1 (real futuro), 2 (irreal presente), 3 (irreal pasado).',
     ruleExplain: '1.ª condicional: if + present, will + verb. Situaciones reales o posibles en el futuro.',
+    lessonTitle: 'Las oraciones condicionales en inglés: mapa completo de los cuatro tipos',
+    lessonIntro: [
+      'El sistema de condicionales del inglés organiza las frases hipotéticas con "if" en cuatro tipos numerados, cada uno con una combinación fija de tiempos verbales y un significado propio. No es una convención arbitraria de los libros de texto: cada tipo corresponde a un grado distinto de realidad o probabilidad, desde hechos universales hasta pasados que ya no se pueden cambiar. Dominar este mapa completo es una de las inversiones más rentables para hablar inglés con precisión.',
+      'La condicional tipo 0 (if + presente, presente) describe verdades generales o científicas, válidas siempre: "If you heat ice, it melts" (si calientas hielo, se derrite: pasa siempre, sin excepción). La condicional tipo 1, la que aparece en este nivel, describe situaciones reales o razonablemente probables en el futuro: "if + presente simple, will + verbo base". "If it rains, we will stay home" no es una fantasía: es un plan concreto ante una posibilidad real del futuro cercano.',
+      'Un detalle que confunde a muchos hispanohablantes: en la cláusula con "if" de la condicional tipo 1, aunque el significado sea futuro, el verbo va en presente simple, NUNCA en "will". Decir "If it will rain" es un calco directo de la lógica española y es uno de los errores más comunes y más rápidos de corregir una vez que se entiende la regla: "will" solo aparece en la cláusula de consecuencia, nunca en la cláusula con "if".',
+    ],
       failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
     options: ['0 (verdades generales)', '1 (posible en el futuro)', '2 (hipótesis presente)', '3 (hipótesis pasada)', 'mixto solo', 'imperativo', 'subjuntivo latino', 'ninguno'],
     correctIndex: 1,
@@ -1783,6 +1853,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: '“If I had more time, I would learn Japanese.” ¿Qué tipo de condicional es y qué expresa?',
     ruleHint: '2.ª condicional: if + pasado simple, would + verbo base.',
     ruleExplain: 'La 2.ª condicional describe una situación hipotética o irreal en el presente/futuro. El pasado simple aquí NO indica tiempo pasado real, sino irrealidad (un uso llamado "pasado no factual" o "irrealis"). "Would" marca la consecuencia hipotética.',
+    lessonTitle: 'La 2.ª condicional: cuando el pasado gramatical no habla del pasado',
+    lessonIntro: [
+      'La condicional tipo 2 es, para muchos aprendices, la más contraintuitiva de las cuatro, porque usa el pasado simple ("if I had more time") sin que la frase hable en absoluto del pasado: describe una situación hipotética, poco probable o directamente irreal en el presente o el futuro cercano. "If I had more time, I would learn Japanese" no dice que tuviera tiempo antes; dice que, ahora mismo, no lo tengo, y por eso no aprendo japonés.',
+      'A este uso del pasado sin valor temporal la lingüística lo llama "irrealis" o "pasado no factual": el pasado gramatical se recicla como marcador de distancia con la realidad, no de tiempo. Es la misma lógica, por cierto, que el español usa con el imperfecto de subjuntivo en "si tuviera más tiempo": ninguno de los dos idiomas habla realmente del pasado, ambos usan una forma verbal "desplazada" para señalar que la condición es hipotética.',
+      'La estructura fija es: if + pasado simple, would + verbo base. Un matiz de registro formal que vale la pena conocer: con el verbo "be", el inglés culto prefiere "if I were" en vez de "if I was" para todas las personas ("If I were you, I would apologize"), aunque "was" también se escucha en el habla informal. Esta preferencia por "were" es un resto fosilizado del antiguo modo subjuntivo inglés, casi desaparecido en el resto de la gramática moderna.',
+    ],
     failAdvice: 'Fíjate en si la situación es real y futura (1.ª) o hipotética y presente (2.ª).',
     options: ['1.ª: probable en el futuro', '2.ª: hipótesis irreal en el presente', '3.ª: hipótesis irreal en el pasado', '0: verdad general', 'imperativo condicional', 'futuro simple', 'presente perfecto', 'ninguno de los anteriores'],
     correctIndex: 1,
@@ -1802,6 +1878,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: '“If she had studied, she would have passed the exam.” ¿Qué tipo de condicional es?',
     ruleHint: '3.ª condicional: if + past perfect, would have + participio.',
     ruleExplain: 'La 3.ª condicional habla de un pasado que ya no se puede cambiar: describe cómo habría sido el resultado si una condición pasada (que NO se cumplió) hubiera sido distinta. Es el equivalente inglés del "si hubiera... habría..." español.',
+    lessonTitle: 'La 3.ª condicional: lamentar o imaginar un pasado distinto',
+    lessonIntro: [
+      'La condicional tipo 3 es la más "profunda" del sistema: retrocede un paso más que la tipo 2, porque no habla de una hipótesis presente sino de un hecho pasado que ya está completamente cerrado y que no se puede modificar. Se usa típicamente para expresar arrepentimiento, especulación sobre "lo que pudo haber sido", o crítica indirecta: "If she had studied, she would have passed the exam" reconoce, implícitamente, que ella NO estudió y por lo tanto NO aprobó.',
+      'La estructura añade una capa más de complejidad verbal que la tipo 2: if + past perfect (had + participio) en la condición, would have + participio en la consecuencia. El past perfect aquí sí conserva parte de su valor temporal normal (una acción anterior a otra en el pasado), combinado con el mismo mecanismo de irrealidad que ya vimos en la tipo 2. Es, en cierto sentido, la versión "doblemente desplazada" del sistema condicional.',
+      'Un uso avanzado que aparece con frecuencia en el habla natural es la condicional "mixta", que combina una condición pasada (tipo 3) con una consecuencia presente (tipo 2): "If I had studied medicine, I would be a doctor now" (si hubiera estudiado medicina —en el pasado—, ahora sería médico —en el presente—). Reconocer estas mezclas es una señal clara de que ya se domina el sistema completo, no solo las fórmulas memorizadas de cada tipo por separado.',
+    ],
     failAdvice: 'Busca la combinación past perfect (had + participio) + would have + participio: esa es la marca inconfundible de la 3.ª condicional.',
     options: ['1.ª condicional', '2.ª condicional', '3.ª condicional: pasado irreal', 'condicional cero', 'futuro perfecto', 'presente perfecto continuo', 'pasado simple narrativo', 'imperativo negado'],
     correctIndex: 2,
@@ -1821,6 +1903,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: '“She was cooking dinner when the phone rang.” ¿Qué combinación de tiempos es y qué función cumple?',
     ruleHint: 'Past continuous (acción en curso) + past simple (interrupción puntual).',
     ruleExplain: 'El past continuous (was/were + gerundio) describe una acción en desarrollo en un momento del pasado, como un telón de fondo. El past simple marca un evento puntual que interrumpe esa acción. Es el patrón clásico "estaba haciendo X cuando pasó Y".',
+    lessonTitle: 'Narrar en pasado: el telón de fondo y la interrupción',
+    lessonIntro: [
+      'Cuando se cuenta una historia en pasado, el inglés distingue con mucha claridad entre dos capas narrativas: las acciones que forman el "telón de fondo" (algo que ya estaba ocurriendo, en proceso) y los eventos puntuales que ocurren dentro de ese fondo. Esta distinción se marca gramaticalmente con dos tiempos distintos: past continuous (was/were + gerundio) para el fondo, y past simple para el evento puntual que lo interrumpe.',
+      '"She was cooking dinner when the phone rang" pone en escena, primero, una acción ya en marcha y sin un final definido en ese instante ("was cooking"), y luego un evento breve, completo y puntual que corta esa escena ("rang"). Si se usaran dos pasados simples ("She cooked dinner when the phone rang"), la frase perdería ese matiz de interrupción y sonaría como dos acciones consecutivas, casi como si cocinar hubiera terminado justo antes de que sonara el teléfono, en vez de estar ocurriendo en ese momento.',
+      'Este mismo patrón de "fondo + interrupción" se extiende más allá de las anécdotas cotidianas: es la estructura estándar para describir el contexto histórico de un evento ("People were celebrating the new year when the earthquake struck") y aparece constantemente en textos narrativos, noticias y biografías. Reconocerlo ayuda no solo a producir frases correctas, sino a leer con más fluidez, anticipando qué tipo de información viene marcada como fondo y cuál como suceso central.',
+    ],
     failAdvice: 'Identifica cuál acción es el "fondo" continuo y cuál es el evento puntual que lo corta.',
     options: ['dos pasados simples paralelos', 'past continuous + past simple: fondo + interrupción', 'presente perfecto + pasado', 'futuro en el pasado', 'pasado perfecto + presente', 'dos presentes continuos', 'condicional mixto', 'subjuntivo pasado'],
     correctIndex: 1,
@@ -1840,6 +1928,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: '“I used to play the guitar, but I don’t anymore.” ¿Qué expresa “used to”?',
     ruleHint: '“Used to” + infinitivo: hábito o estado pasado que ya no ocurre.',
     ruleExplain: '“Used to” es una estructura especial (no un verbo modal ni un tiempo verbal estándar) que expresa hábitos o estados que existieron en el pasado pero ya terminaron. Se diferencia de "would" (que solo sirve para hábitos repetidos, no estados) y del pasado simple (que no enfatiza el contraste "antes sí, ahora no").',
+    lessonTitle: '"Used to": el pasado que ya no es cierto',
+    lessonIntro: [
+      '"Used to" + infinitivo ocupa un lugar curioso en la gramática inglesa: no es exactamente un tiempo verbal, ni un verbo modal como "can" o "must", sino una construcción semi-auxiliar dedicada exclusivamente a un significado muy concreto: un hábito o un estado que existió durante un tiempo en el pasado y que ya no es cierto ahora. "I used to play the guitar" implica, con fuerza, "y ahora ya no toco".',
+      'Conviene distinguirlo de dos alternativas cercanas. El pasado simple ("I played the guitar") solo cuenta un hecho pasado, sin ese contraste explícito con el presente. "Would" (en su uso de hábito pasado, no de condicional) sirve para hábitos repetidos ("When I was a kid, I would visit my grandmother every summer"), pero rara vez para estados: no se puede decir "I would be tall" para "yo era alto de niño"; ahí "used to" es obligatorio, lo que ilustra que "would" es aún más restringido.',
+      'Un detalle fonético que conviene fijar: "used to" se pronuncia con la "d" y la "t" casi fundidas en un solo sonido /juːstə/, y no debe confundirse con la estructura "to be used to" (estar acostumbrado a), que lleva el verbo "be" antes y significa algo completamente distinto: "I am used to waking up early" (estoy acostumbrado a levantarme temprano, en el presente), no un hábito pasado terminado.',
+    ],
     failAdvice: 'Busca la idea de contraste explícito entre un pasado habitual y un presente distinto.',
     options: ['acción en curso ahora', 'hábito o estado pasado que ya no es cierto', 'obligación presente', 'posibilidad futura', 'orden o consejo', 'acción repetida que continúa hoy', 'pasado perfecto', 'condicional'],
     correctIndex: 1,
@@ -1859,6 +1953,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Voz pasiva: “The letter ____ by Maria yesterday.”',
     ruleHint: 'Pasiva: be (en el tiempo correcto) + participio pasado + by + agente.',
     ruleExplain: 'La voz pasiva se forma con el verbo "to be" conjugado en el tiempo que corresponda, más el participio pasado del verbo principal. El agente (quien hace la acción) es opcional y, si aparece, va introducido por "by". Aquí "yesterday" exige pasado simple de "be": was.',
+    lessonTitle: 'La voz pasiva: cómo se forma y cuándo cambia el foco de la frase',
+    lessonIntro: [
+      'En la voz activa, el sujeto de la frase realiza la acción ("Maria wrote the letter"). En la voz pasiva, el sujeto gramatical pasa a ser quien RECIBE la acción, y quien la realiza (el agente) se vuelve opcional ("The letter was written [by Maria]"). Esta transformación no cambia el significado del hecho, pero sí cambia radicalmente qué elemento queda en el centro de atención de la frase.',
+      'La fórmula es mecánica y se aplica igual en cualquier tiempo verbal: el verbo "to be" conjugado en el tiempo que corresponda (is, was, has been, will be...) más el participio pasado del verbo principal. Esto significa que, en la práctica, hay tantas pasivas como tiempos verbales tiene el inglés: pasiva de presente (is written), de pasado (was written), de futuro (will be written), de presente perfecto (has been written), y así sucesivamente. El tiempo lo marca siempre el verbo "be", nunca el participio, que permanece invariable.',
+      'El agente introducido por "by" es completamente opcional, y de hecho la mayoría de las frases pasivas en textos reales lo omiten: se usa la pasiva precisamente cuando no importa, no se sabe, o resulta obvio quién hizo la acción. "My car was stolen" no necesita decir "by someone"; añadirlo sería redundante. Esta es la razón por la que la pasiva es tan frecuente en noticias, informes científicos y textos legales, donde el foco está en el hecho o el resultado, no en el agente.',
+    ],
     failAdvice: 'Conjuga "be" en el tiempo que pide el marcador temporal, y usa el participio pasado del verbo principal.',
     options: ['is written', 'was written', 'writes', 'wrote', 'has written', 'was write', 'is wrote', 'will write'],
     correctIndex: 1,
@@ -1878,6 +1978,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Voz activa vs. pasiva: ¿por qué un hablante elige “The bridge was built in 1889” en vez de “Someone built the bridge in 1889”?',
     ruleHint: 'La pasiva se prefiere cuando el agente es desconocido, irrelevante u obvio por contexto.',
     ruleExplain: 'La elección entre voz activa y pasiva no es solo gramatical: es pragmática. Se prefiere la pasiva cuando el foco de la frase es el paciente (lo que recibe la acción) y el agente es desconocido, poco importante o se sobreentiende. En textos históricos y científicos, la pasiva es extremadamente frecuente por esta razón.',
+    lessonTitle: 'Activa o pasiva: una decisión de foco, no solo de gramática',
+    lessonIntro: [
+      'Saber CONJUGAR la voz pasiva es solo la mitad del dominio real de esta estructura; la otra mitad, más avanzada, es saber CUÁNDO conviene usarla en vez de la activa. Esta elección pertenece al terreno de la pragmática, la rama de la lingüística que estudia cómo el contexto y la intención del hablante moldean la forma de las frases, más allá de lo que la gramática permite.',
+      'La pasiva se prefiere quando el foco informativo de la frase es el resultado o el objeto afectado, no quien actuó: en un texto histórico sobre un puente, lo relevante suele ser el puente mismo, no la cuadrilla anónima que lo construyó hace un siglo. "The bridge was built in 1889" pone el peso informativo donde debe estar; "Someone built the bridge in 1889" suena forzado precisamente porque introduce un agente vago que a nadie le interesa.',
+      'Por esta razón, la voz pasiva domina los géneros donde el proceso o el resultado importa más que el actor: manuales científicos ("the solution was heated to 80°C"), noticias cuando el responsable aún se investiga ("the building was damaged in the fire"), y textos burocráticos o legales que buscan deliberadamente cierta neutralidad o distancia respecto a quién hizo qué. Aprender a leer estos géneros exige acostumbrarse a que el sujeto gramatical casi nunca es "quien actúa".',
+    ],
     failAdvice: 'Piensa en qué elemento de la frase es el foco de interés real: si es el objeto/resultado, la pasiva suele ser más natural.',
     options: ['porque el inglés no tiene voz activa', 'porque el agente (quién lo construyó) es desconocido o irrelevante aquí', 'porque el verbo "build" es siempre pasivo', 'por pura preferencia sin razón', 'porque "bridge" es un sustantivo incontable', 'porque falta un artículo', 'porque 1889 exige pasiva', 'no hay ninguna razón funcional'],
     correctIndex: 1,
@@ -2857,6 +2963,84 @@ function buildOptions(
 }
 
 /**
+ * Construye la clase específica de un nivel léxico (traducción, cognados)
+ * a partir de los datos reales de la palabra: funciona igual para los ocho
+ * idiomas porque solo usa los campos que ya trae cada LexItem. No inventa
+ * nada que la palabra no tenga: donde falta un dato (por ejemplo, la
+ * pronunciación aproximada), ese párrafo simplemente no se añade.
+ */
+function buildLexLesson(
+  item: LexItem,
+  mode: GameMode,
+  lang: LangId
+): { title: string; intro: string[] } {
+  const langName = LANG_PROFILES[lang].name
+  const era = originEraLabel(item.etymology)
+  const p: string[] = []
+
+  const title =
+    mode === 'translate_to_es'
+      ? `「${item.target}」: qué significa, de dónde viene y cómo se usa`
+      : mode === 'translate_from_es'
+        ? `Cómo decir "${item.es}" en ${langName}`
+        : mode === 'cognate_logic'
+          ? `Cognados y raíz compartida: 「${item.target}」`
+          : `Morfología de 「${item.target}」`
+
+  // Párrafo 1: presentación clara del significado y su categoría/tema.
+  p.push(
+    mode === 'translate_from_es'
+      ? `La palabra española "${item.es}" se dice 「${item.target}」 en ${langName}.${
+          item.topic ? ` Pertenece al bloque temático de "${item.topic}", así que memorizarla junto con las demás palabras de ese grupo (en vez de aislada) ayuda a que la memoria la asocie con un contexto de uso real, no con una lista arbitraria.` : ''
+        }`
+      : `La palabra 「${item.target}」 significa "${item.es}" en español.${
+          item.topic ? ` Forma parte del bloque temático de "${item.topic}", uno de los grupos de vocabulario en los que esta app organiza las palabras para que se refuercen entre sí.` : ''
+        }`
+  )
+
+  // Párrafo 2: nota de uso / regla, siempre presente (dato real de la palabra).
+  if (item.note) {
+    p.push(`Nota de uso: ${item.note}`)
+  }
+  if (item.rule) {
+    p.push(`Regla asociada: ${item.rule}`)
+  }
+
+  // Párrafo 3: etimología + franja histórica, cuando existen.
+  if (item.etymology) {
+    p.push(
+      `Origen de la palabra: ${item.etymology}${era ? ` ${era}` : ''} Conocer la familia etimológica de una palabra no es un dato decorativo: permite reconocer la misma raíz en docenas de palabras nuevas sin memorizarlas una por una, algo especialmente útil en ${langName}, donde muchas palabras cultas comparten origen latino o griego con el español.`
+    )
+  }
+
+  // Párrafo 4: descomposición morfológica, cuando existe.
+  if (item.root || (item.lexemes && item.lexemes.length)) {
+    const blocks = item.lexemes && item.lexemes.length ? item.lexemes.join(' + ') : item.root
+    p.push(
+      `Estructura interna: esta palabra se puede descomponer en los bloques 「${blocks}」. Identificar estos bloques es la estrategia central del modo de morfología: una vez que reconoces un prefijo o un sufijo en una palabra, puedes deducir el significado aproximado de otras palabras que compartan ese mismo bloque, aunque nunca las hayas visto antes.`
+    )
+  }
+
+  // Párrafo 5: pronunciación desde el español, cuando existe.
+  if (item.phoneticEs) {
+    p.push(
+      `Cómo leerla desde el español: ${item.phoneticEs} Usa el botón de audio de cada tarjeta para escuchar la pronunciación real y comparar sonido por sonido con esta aproximación; ninguna transcripción "a la española" es perfecta, pero sí es un punto de partida mucho mejor que leer la palabra como si fueran letras españolas.`
+    )
+  }
+
+  // Párrafo de cierre: qué se le pedirá exactamente en la pregunta.
+  p.push(
+    mode === 'translate_to_es'
+      ? `En la pregunta que sigue verás 「${item.target}」 y ocho posibles significados en español. Ya conoces el significado real; tu trabajo es reconocerlo entre los distractores, que pueden parecerse por sonido, por categoría gramatical o por ser un false friend.`
+      : mode === 'translate_from_es'
+        ? `En la pregunta que sigue verás "${item.es}" en español y ocho posibles formas en ${langName}. Ya sabes cuál es la correcta; el reto es distinguirla de formas que aplican mal una regla, o que pertenecen a un registro o categoría gramatical distinta.`
+        : `En la pregunta que sigue tendrás que reconocer 「${item.target}」 entre ocho opciones en español, usando exactamente la lógica de raíz y cognado explicada arriba, no solo el parecido de letras.`
+  )
+
+  return { title, intro: p }
+}
+
+/**
  * Genera pregunta determinista por nivel + idioma + modo preferido.
  */
 
@@ -3145,6 +3329,7 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
 
   if (mode === 'morphology' || mode === 'cognate_logic') {
     const built = buildOptions(item.es, esPool, 8)
+    const les = buildLexLesson(item, mode, lang)
     return {
       id: `${lang}-morph-${L}`,
       lang,
@@ -3170,11 +3355,14 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
       difficulty,
       rootFocus: item.root,
       etymology: ety,
+      lessonTitle: les.title,
+      lessonIntro: les.intro,
     }
   }
 
   if (mode === 'translate_to_es') {
     const built = buildOptions(item.es, esPool, 8)
+    const les = buildLexLesson(item, mode, lang)
     return {
       id: `${lang}-toes-${L}`,
       lang,
@@ -3194,10 +3382,13 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
       difficulty,
       rootFocus: item.root,
       etymology: ety,
+      lessonTitle: les.title,
+      lessonIntro: les.intro,
     }
   }
 
   const built = buildOptions(item.target, targetPool, 8)
+  const les = buildLexLesson(item, 'translate_from_es', lang)
   return {
     id: `${lang}-fromes-${L}`,
     lang,
@@ -3217,6 +3408,8 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
     difficulty,
     rootFocus: item.root,
     etymology: ety,
+    lessonTitle: les.title,
+    lessonIntro: les.intro,
   }
 }
 
@@ -5169,13 +5362,23 @@ export function IdiomasGame() {
         return next
       })
     }
-    const lessonParagraphs = [
-      ...lesson.body,
-      `Regla específica de este nivel: ${q.ruleHint}`,
-      q.ruleExplain,
-      q.etymology ? `Etimología relevante: ${q.etymology}` : '',
-      era ?? '',
-    ].filter(Boolean)
+    // Título y cuerpo de la clase: si el nivel trae su propia clase completa
+    // (lessonTitle/lessonIntro, ya sea de una regla de gramática concreta o
+    // generada a partir de la palabra real de este nivel), se usa esa,
+    // completa y específica. Solo si no existe se recurre al marco general
+    // del modo, y aun así se añaden siempre la regla y la etimología reales
+    // de este nivel, nunca un texto vacío.
+    const lessonTitle = q.lessonTitle ?? lesson.title
+    const lessonParagraphs =
+      q.lessonIntro && q.lessonIntro.length > 0
+        ? q.lessonIntro
+        : [
+            ...lesson.body,
+            `Regla específica de este nivel: ${q.ruleHint}`,
+            q.ruleExplain,
+            q.etymology ? `Etimología relevante: ${q.etymology}` : '',
+            era ?? '',
+          ].filter(Boolean)
     const toggleLessonAudio = () => {
       if (lessonAudioOn) {
         window.speechSynthesis?.cancel()
@@ -5185,7 +5388,7 @@ export function IdiomasGame() {
       playSfx('toggle')
       setLessonAudioOn(true)
       speakLesson(
-        [lesson.title, ...lessonParagraphs, 'Ahora, las opciones que verás en la pregunta:',
+        [lessonTitle, ...lessonParagraphs, 'Ahora, las opciones que verás en la pregunta:',
           ...q.options],
         lang,
         () => setLessonAudioOn(false)
@@ -5230,7 +5433,7 @@ export function IdiomasGame() {
           transition={{ delay: 0.05, duration: 0.3 }}
         >
           <div className="id-lesson-head">
-            <h2>{lesson.title}</h2>
+            <h2>{lessonTitle}</h2>
             <button
               type="button"
               className={`id-audio-toggle ${lessonAudioOn ? 'playing' : ''}`}
@@ -5252,22 +5455,39 @@ export function IdiomasGame() {
           )}
         </motion.article>
 
-        <div className="id-lesson-gate">
-          <p className="id-meta">
-            Antes de leer la pregunta, interpreta cada una de las {q.options.length} opciones:
-            toca cada tarjeta, piensa qué crees que significa o qué función cumple, y luego revela
-            la explicación. Aquí no se dice cuál es la respuesta correcta — eso lo decides tú al
-            leer la pregunta. Reveladas: {revealed.size}/{q.options.length}
-            {allRevealed ? ' · ¡Listo!' : ''}
-          </p>
-          <div className="id-progress-track small">
-            <motion.div
-              className="id-progress-fill"
-              animate={{ width: `${(revealed.size / q.options.length) * 100}%` }}
-              transition={{ duration: 0.3 }}
-            />
+        <motion.div
+          className={`id-gate-card id-glass-panel ${allRevealed ? 'complete' : ''}`}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1, duration: 0.3 }}
+        >
+          <div className="id-gate-top">
+            <span className="id-gate-icon" aria-hidden="true">
+              {allRevealed ? '✓' : '🔍'}
+            </span>
+            <div className="id-gate-copy">
+              <h3>{allRevealed ? 'Interpretación completa' : 'Interpreta antes de leer la pregunta'}</h3>
+              <p>
+                Toca cada una de las {q.options.length} tarjetas, piensa primero qué crees que
+                significa o qué función cumple, y luego revela la explicación real. Ninguna
+                tarjeta te dice si es la respuesta correcta — eso lo decides tú, con lo aprendido,
+                cuando leas la pregunta.
+              </p>
+            </div>
           </div>
-        </div>
+          <div className="id-gate-counter">
+            <div className="id-progress-track">
+              <motion.div
+                className="id-progress-fill"
+                animate={{ width: `${(revealed.size / q.options.length) * 100}%` }}
+                transition={{ duration: 0.3 }}
+              />
+            </div>
+            <span className="id-gate-count">
+              {revealed.size} / {q.options.length} interpretadas
+            </span>
+          </div>
+        </motion.div>
 
         <div className="id-vocab-list">
           {q.options.map((opt, idx) => {
@@ -6381,6 +6601,56 @@ const CSS = `
 }
 .id-lesson-gate {
   margin: 4px 0 10px;
+}
+.id-gate-card {
+  padding: 16px;
+  margin-bottom: 14px;
+  border-color: color-mix(in srgb, #FF8A3D 35%, transparent);
+}
+.id-gate-card.complete {
+  border-color: color-mix(in srgb, #4ADE80 55%, transparent);
+}
+.id-gate-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.id-gate-icon {
+  flex-shrink: 0;
+  width: 2.2rem;
+  height: 2.2rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  font-size: 1.1rem;
+  background: color-mix(in srgb, #FF8A3D 18%, transparent);
+  border: 1px solid color-mix(in srgb, #FF8A3D 40%, transparent);
+}
+.id-gate-card.complete .id-gate-icon {
+  background: color-mix(in srgb, #4ADE80 18%, transparent);
+  border-color: color-mix(in srgb, #4ADE80 45%, transparent);
+}
+.id-gate-copy h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+  font-family: var(--font-display, "Space Grotesk", Inter, sans-serif);
+}
+.id-gate-copy p {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  opacity: 0.85;
+}
+.id-gate-counter {
+  margin-top: 12px;
+}
+.id-gate-count {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  opacity: 0.75;
+  text-align: right;
 }
 .id-progress-track {
   height: 8px;

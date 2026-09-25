@@ -6,63 +6,42 @@
 
   appId: com.savitarxeno.gco
 
-  minSdkVersion = 24, deducido de los propios avisos de Android Studio
-  ("current min is 24"). Si tu android/variables.gradle define otro
-  valor, revisa de nuevo los tools:targetApi de este archivo: cualquier
-  atributo que pida un nivel de API menor o igual a minSdkVersion no
-  necesita tools:targetApi (por eso se han quitado varios abajo).
+  minSdkVersion = 24
 
-  Cambios de esta revisión:
-   1. Se eliminan los tools:targetApi="1/5/21/24" que sobraban: con
-      minSdkVersion=24 esos niveles ya están garantizados siempre, así
-      que la anotación no hacía nada salvo disparar "Unnecessary;
-      SDK_INT is always >= X".
-   2. Se quitan showWhenLocked="false" y turnScreenOn="false" de la
-      Activity: los dos ya son el valor por defecto en cualquier API,
-      así que no cambiaban nada salvo disparar el aviso "only used in
-      API level 27 and higher".
-   3. REQUEST_IGNORE_BATTERY_OPTIMIZATIONS lleva tools:ignore="BatteryLife".
-      Google Play prohíbe pedir este permiso salvo que una función
-      central de la app se vea afectada por Doze/App Standby; un
-      reproductor en 2º plano golpeado por gestores de batería OEM
-      (Samsung/Xiaomi) entra en ese supuesto, y en el código solo se
-      pide bajo demanda del usuario (requestUnrestrictedBatteryIfNeeded
-      en useMediaPlayer.ts), nunca en silencio. Aun así, si vas a
-      publicar en Play Store, conviene revisar la política vigente
-      antes de enviar la app a revisión.
-   4. El <service> de @capgo/capacitor-media-session lleva
-      tools:ignore="ExportedService". exported="true" sin permiso es
-      el patrón oficial de Android para servicios de sesión de medios
-      (ver MediaSessionService en developer.android.com): así el
-      sistema, los auriculares Bluetooth o Android Auto pueden enlazar
-      con el servicio. Ponerle un permiso o exported="false" rompería
-      esa integración, así que aquí se silencia el lint a propósito en
-      vez de "arreglarlo".
+  Objetivo principal:
+  - Reproducción de audio en segundo plano fiable (MediaSession + FGS mediaPlayback)
+  - Picture-in-Picture para vídeo
+  - Soporte agresivo de OEM (Samsung / Xiaomi)
+  - Cumplir requisitos de Android 14+ para Foreground Service Types
 
-  Aviso que Android Studio seguirá mostrando y que NO se arregla en
-  este XML: "Android 14+ requires Foreground Service types declaration
-  and justification". El manifest ya cumple lo único que Android exige
-  a nivel de código (permiso FOREGROUND_SERVICE_MEDIA_PLAYBACK +
-  foregroundServiceType="mediaPlayback" en el <service>); lo que falta
-  es rellenar, solo si publicas en Play Store, la declaración en Play
-  Console → Política → Contenido de la app → Permisos de servicio en
-  primer plano. No es un problema de manifest ni de código.
+  Cambios de esta revisión (2026-09):
+  1. Se mantiene tools:ignore="BatteryLife" en REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+     (solo se pide bajo demanda del usuario desde useMediaPlayer.ts).
+  2. Servicio de @capgo/capacitor-media-session correctamente tipado como
+     foregroundServiceType="mediaPlayback" + exported="true" + stopWithTask="false".
+  3. Se eliminan atributos innecesarios que disparaban lint.
+  4. Se mantienen todos los queries necesarios para ajustes de batería y medios.
+  5. Activity con supportsPictureInPicture="true" para vídeo en ventana flotante.
+  6. Comentarios actualizados y limpios.
 
-  Tras pegar:
-    npm run build
-    npx cap sync android
+  Aviso que Android Studio seguirá mostrando y que NO se arregla en este XML:
+  "Android 14+ requires Foreground Service types declaration and justification".
+  El manifest ya cumple lo que el sistema exige. Solo falta rellenar la
+  declaración en Play Console si publicas en Play Store.
+
+  Tras pegar este archivo:
+    npm run build && npx cap sync android
   Luego en Android Studio: File → Sync Project with Gradle Files
-  (Los "Unresolved class" suelen desaparecer al terminar el sync.)
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     tools:ignore="MissingLeanbackLauncher">
 
-    <!-- Red -->
+    <!-- ==================== PERMISOS DE RED ==================== -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Energía / FGS media / notificaciones -->
+    <!-- ==================== ENERGÍA / FOREGROUND SERVICE / NOTIFICACIONES ==================== -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission
@@ -71,20 +50,24 @@
     <uses-permission
         android:name="android.permission.POST_NOTIFICATIONS"
         tools:targetApi="33" />
+    <!-- Solo se pide bajo demanda del usuario (nunca en silencio) -->
     <uses-permission
         android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
         tools:ignore="BatteryLife" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!-- Bluetooth (compatibilidad auriculares y controles multimedia) -->
     <uses-permission
         android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30" />
     <uses-permission
         android:name="android.permission.BLUETOOTH_CONNECT"
         tools:targetApi="31" />
+
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- Hardware (no bloquean instalación en tablets, etc.) -->
+    <!-- ==================== HARDWARE (no bloquean instalación) ==================== -->
     <uses-feature
         android:name="android.hardware.audio.output"
         android:required="true" />
@@ -101,7 +84,7 @@
         android:name="android.software.leanback"
         android:required="false" />
 
-    <!-- Visibilidad de paquetes / ajustes OEM -->
+    <!-- ==================== QUERIES (visibilidad de paquetes / ajustes OEM) ==================== -->
     <queries>
         <intent>
             <action android:name="android.intent.action.VIEW" />
@@ -154,8 +137,9 @@
         tools:replace="android:allowBackup,android:usesCleartextTraffic">
 
         <!--
-          Nombre completo = applicationId (capacitor appId).
-          Evita "Unresolved class '.MainActivity'" en el analizador del IDE.
+          Activity principal.
+          supportsPictureInPicture = true → vídeo en ventana flotante.
+          launchMode = singleTask → evita múltiples instancias al volver desde notificación.
         -->
         <activity
             android:name="com.savitarxeno.gco.MainActivity"
@@ -174,11 +158,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Botones multimedia de auriculares / Bluetooth -->
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </activity>
 
+        <!-- FileProvider (necesario para compartir archivos) -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -191,13 +177,12 @@
         </provider>
 
         <!--
-          @capgo/capacitor-media-session (gadget + audio en 2º plano)
-          stopWithTask=false → no matar el FGS al quitar de recientes (One UI / HyperOS).
-          exported=true sin permiso es el patrón oficial de Android para
-          servicios de sesión de medios: lo necesita el sistema (botones
-          multimedia, Bluetooth, Android Auto) para poder enlazar con el
-          servicio, así que el lint "ExportedService" se silencia a
-          propósito en vez de romper esa integración.
+          @capgo/capacitor-media-session
+          - foregroundServiceType="mediaPlayback" → obligatorio en Android 14+
+          - exported="true" → patrón oficial para que el sistema / Bluetooth / Android Auto
+            puedan enlazar con el servicio
+          - stopWithTask="false" → el FGS no se mata al quitar la app de recientes
+            (muy importante en One UI y HyperOS)
         -->
         <service
             android:name="com.capgo.mediasession.MediaSessionService"
@@ -212,12 +197,6 @@
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </service>
-
-        <!--
-          Botones multimedia (auriculares / Bluetooth).
-          La clase viene de androidx.media (la arrastra Capgo al hacer sync).
-          Si el IDE marca Unresolved antes del sync, es normal; tras Gradle desaparece.
-        -->
 
     </application>
 </manifest>
