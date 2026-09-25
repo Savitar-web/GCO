@@ -1,30 +1,35 @@
 /**
  * ============================================================================
- * useMediaPlayer — motor de audio nativo-first
- * PWA (Chrome/Edge/Safari/Firefox/Brave…) · Capacitor APK/iOS · Electron
+ * useMediaPlayer — motor de audio nativo-first (v3 profesional 2026)
+ * PWA (Chrome/Edge/Safari/Firefox/Brave) · Capacitor APK/iOS · Electron
  * ============================================================================
  *
- * REGLAS
- * ──────
+ * REGLAS FUNDAMENTALES
+ * ────────────────────
  * 1. La salida de sonido es SIEMPRE un <audio> HTML5 (object URL desde IndexedDB).
- * 2. @capgo/capacitor-media-session SOLO en Capacitor nativo (Android/iOS).
- *    En web NUNCA se llama al plugin: en web lanza
- *    "MediaSession.then() is not implemented on web" y rompe el play.
- * 3. En web / PWA / Electron: navigator.mediaSession.
- * 4. Singleton fuera de React: desmontar vistas NO pausa el audio.
- * 5. Al pausar NO se destruye la Media Session (la notificación permanece
- *    con play/pause, seekbar y portada).
+ * 2. @capgo/capacitor-media-session SOLO se usa en Capacitor nativo (Android/iOS).
+ *    En web NUNCA se llama al plugin (rompe con "MediaSession.then is not implemented").
+ * 3. En web / PWA / Electron se usa exclusivamente navigator.mediaSession.
+ * 4. Es un singleton fuera de React: desmontar vistas NO pausa el audio.
+ * 5. Al pausar NO se destruye la Media Session (la notificación permanece con
+ *    play/pause, seekbar y portada).
  * 6. Android 13+ (API 33+): sin POST_NOTIFICATIONS concedido, la notificación
  *    MediaStyle no aparece y el FGS mediaPlayback puede morir. Se pide al
- *    entrar en la app (Activity activa) y otra vez justo antes del primer play.
+ *    entrar en la app y otra vez justo antes del primer play.
  * 7. Android 14-16 (Samsung One UI 6-8, S26 Ultra, Xiaomi/Redmi HyperOS):
- *    orden fijo: handlers → metadata (portada base64) → positionState
- *    → audio.play() → playbackState:'playing' → positionState otra vez.
+ *    ORDEN CRÍTICO → audio.play() LO PRIMERO (dentro del user gesture),
+ *    después handlers → metadata → positionState → playbackState:'playing'.
  * 8. El plugin nativo NO acepta blob: en artwork. Solo http(s) o
  *    data:image/…;base64,…  Las portadas se recodifican a JPEG 512px.
- * 9. La barra de progreso del gadget / lock screen exige duration>0 en
+ * 9. La barra de progreso del gadget / lock screen exige duration > 0 en
  *    setPositionState y el handler 'seekto' registrado ANTES de 'playing'.
- * ============================================================================
+ *
+ * FIX PRINCIPAL (septiembre 2026)
+ * ───────────────────────────────
+ * El fallo “al darle play en APK te ignora” se debía a que había varios
+ * await (handlers, metadata, position) ANTES de audio.play(). El user
+ * gesture caduca y el WebView bloquea el play por política de autoplay.
+ * Ahora play() es la primera operación real.
  */
 import { useEffect, useSyncExternalStore } from 'react'
 import { getTrackBlob, type TrackItem } from '@/core/storage/mediaLibrary'
@@ -92,9 +97,11 @@ type BatteryOptimizationPlugin = {
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n))
 }
+
 function isBrowser(): boolean {
   return typeof window !== 'undefined' && typeof document !== 'undefined'
 }
+
 function getCapacitor(): CapacitorBridge | null {
   if (!isBrowser()) return null
   try {
@@ -103,6 +110,7 @@ function getCapacitor(): CapacitorBridge | null {
     return null
   }
 }
+
 function isCapacitorNative(): boolean {
   try {
     return !!getCapacitor()?.isNativePlatform?.()
@@ -110,6 +118,7 @@ function isCapacitorNative(): boolean {
     return false
   }
 }
+
 function isCapacitorAndroid(): boolean {
   try {
     return isCapacitorNative() && getCapacitor()?.getPlatform?.() === 'android'
@@ -117,6 +126,7 @@ function isCapacitorAndroid(): boolean {
     return false
   }
 }
+
 function isCapacitorIOS(): boolean {
   try {
     return isCapacitorNative() && getCapacitor()?.getPlatform?.() === 'ios'
@@ -124,6 +134,7 @@ function isCapacitorIOS(): boolean {
     return false
   }
 }
+
 function isAppleWebKit(): boolean {
   if (!isBrowser()) return false
   const ua = navigator.userAgent || ''
@@ -134,6 +145,7 @@ function isAppleWebKit(): boolean {
     /Safari/.test(ua) && !/Chrome|Chromium|CriOS|Edg|OPR|Firefox|FxiOS/.test(ua)
   return isIOS || isSafariDesktop
 }
+
 function isIOSAny(): boolean {
   if (!isBrowser()) return false
   const ua = navigator.userAgent || ''
@@ -143,27 +155,33 @@ function isIOSAny(): boolean {
     /CriOS|FxiOS|EdgiOS/.test(ua)
   )
 }
+
 function isAndroidUa(): boolean {
   if (!isBrowser()) return false
   return /Android/i.test(navigator.userAgent || '')
 }
+
 function androidMajorVersion(): number | null {
   if (!isBrowser()) return null
   const m = /Android\s+(\d+)/i.exec(navigator.userAgent || '')
   return m ? parseInt(m[1], 10) : null
 }
+
 function isSamsungDevice(): boolean {
   if (!isBrowser()) return false
   return /SM-|Samsung|SAMSUNG/i.test(navigator.userAgent || '')
 }
+
 function isXiaomiFamily(): boolean {
   if (!isBrowser()) return false
   return /Xiaomi|Redmi|POCO|MIUI|HyperOS/i.test(navigator.userAgent || '')
 }
+
 function isElectron(): boolean {
   if (!isBrowser()) return false
   return /Electron/i.test(navigator.userAgent || '')
 }
+
 function isPWAStandalone(): boolean {
   if (!isBrowser()) return false
   try {
@@ -176,6 +194,7 @@ function isPWAStandalone(): boolean {
     return false
   }
 }
+
 function setAudioSessionPlayback() {
   try {
     const nav = navigator as Navigator & { audioSession?: { type?: string } }
@@ -184,6 +203,22 @@ function setAudioSessionPlayback() {
     }
   } catch {
     /* Safari antiguo */
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Sistema de logging ligero (útil para depurar APK con chrome://inspect)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+const LOG_PREFIX = '[gco-media]'
+
+function warn(...args: unknown[]) {
+  if (typeof console !== 'undefined') {
+    console.warn(LOG_PREFIX, ...args)
+  }
+}
+function error(...args: unknown[]) {
+  if (typeof console !== 'undefined') {
+    console.error(LOG_PREFIX, ...args)
   }
 }
 
@@ -221,7 +256,7 @@ async function ensureAndroidNotificationPermission(): Promise<boolean> {
       return notifPermGranted
     }
   } catch (e) {
-    console.warn('[gco] ensureAndroidNotificationPermission:', e)
+    warn('ensureAndroidNotificationPermission:', e)
   }
   notifPermGranted = null
   return true
@@ -255,18 +290,6 @@ async function requestUnrestrictedBatteryIfNeeded() {
     }
   } catch {
     /* plugin ausente */
-  }
-  // Intent implícito REQUEST_IGNORE_BATTERY_OPTIMIZATIONS (si el WebView lo permite)
-  try {
-    if (isCapacitorAndroid()) {
-      const Cap = getCapacitor() as CapacitorBridge & {
-        Plugins?: { App?: { openUrl?: (o: { url: string }) => Promise<void> } }
-      }
-      // No forzamos el intent de package (algunos OEM lo bloquean); el plugin de arriba basta.
-      void Cap
-    }
-  } catch {
-    /* */
   }
 }
 
@@ -397,7 +420,7 @@ async function loadCapMediaSession(): Promise<CapMediaSessionPlugin | null> {
       return capMs
     }
   } catch (e) {
-    console.warn('[gco] Capgo MediaSession no disponible (ok en web):', e)
+    warn('Capgo MediaSession no disponible (ok en web):', e)
     capMsFailCount += 1
   }
   capMsFailCount += 1
@@ -519,7 +542,7 @@ async function updateMediaSessionMetadata(t: TrackItem | null) {
           await push()
           break
         } catch (e) {
-          console.warn('[gco] cap setMetadata attempt', attempt, e)
+          warn('cap setMetadata attempt', attempt, e)
           await new Promise((r) => setTimeout(r, 90 + attempt * 110))
         }
       }
@@ -559,7 +582,7 @@ async function setMediaSessionPlaybackState(state: 'playing' | 'paused' | 'none'
           await plugin.setPlaybackState({ playbackState: state })
           break
         } catch (e) {
-          console.warn('[gco] setPlaybackState attempt', attempt, e)
+          warn('setPlaybackState attempt', attempt, e)
           await new Promise((r) => setTimeout(r, 80 + attempt * 60))
         }
       }
@@ -961,7 +984,7 @@ function rebuildGraphConnections(wantFx: boolean) {
     lastMbOnRef.current = useMb
     lastGlueOnRef.current = useGlue
   } catch (e) {
-    console.warn('[gco] rebuildGraphConnections', e)
+    warn('rebuildGraphConnections', e)
   }
 }
 
@@ -1039,7 +1062,7 @@ function applyAudioFxNodes() {
       rampParam(gainNodeRef.current.gain, clamp(gainRefState.current * makeup, 0, 3.5), 0.1)
     }
   } catch (e) {
-    console.warn('[gco] applyAudioFxNodes', e)
+    warn('applyAudioFxNodes', e)
   }
 
   if (spatial8dTimer != null) {
@@ -1060,7 +1083,6 @@ function applyAudioFxNodes() {
     }, 40)
   }
 }
-
 
 const mediaSessionReady = { current: false }
 const appleWebKit = { current: false }
@@ -1101,6 +1123,7 @@ function cleanupUrl() {
     urlRef.current = null
   }
 }
+
 function applyElementVolume(audio: HTMLAudioElement) {
   const v = volumeRef.current
   const g = gainRefState.current
@@ -1148,6 +1171,7 @@ function ensureAudioContext(): AudioContext | null {
     return null
   }
 }
+
 function ensureGraph(audio: HTMLAudioElement) {
   void (audio as CaptureAudioElement)
   try {
@@ -1415,12 +1439,14 @@ function startPositionTick() {
   positionTickTimer = window.setInterval(tick, 700)
   tick()
 }
+
 function stopPositionTick() {
   if (positionTickTimer != null) {
     window.clearInterval(positionTickTimer)
     positionTickTimer = null
   }
 }
+
 function restorePlaybackClock() {
   const audio = audioRef.current
   if (!audio) return
@@ -1488,6 +1514,7 @@ function bindPageLifecycle() {
     })
   }
 }
+
 function bindCapacitorListeners() {
   if (capacitorListenersBound || !isBrowser() || !isCapacitorNative()) return
   capacitorListenersBound = true
@@ -1545,6 +1572,7 @@ function wireWebAction(
     /* acción no soportada */
   }
 }
+
 function wireCapAction(
   action: string,
   handler: (details?: { seekOffset?: number; seekTime?: number }) => void,
@@ -1643,10 +1671,11 @@ export function registerFloatingBarMounter(fn: FloatingMounter) {
     try {
       fn()
     } catch (e) {
-      console.warn('[gco] floating mounter failed:', e)
+      warn('floating mounter failed:', e)
     }
   }
 }
+
 function requestFloatingBar() {
   if (!isBrowser()) return
   if (floatingMounter) {
@@ -1808,10 +1837,11 @@ async function resolveBlob(blobKey: string): Promise<Blob | null> {
     }
     return null
   } catch (e) {
-    console.warn('[gco] getTrackBlob failed:', blobKey, e)
+    warn('getTrackBlob failed:', blobKey, e)
     return null
   }
 }
+
 async function loadTrack(t: TrackItem) {
   const gen = ++loadGenRef.current
   snapshot.error = null
@@ -1857,8 +1887,7 @@ async function loadTrack(t: TrackItem) {
   snapshot.durationMs = t.durationMs || 0
   notify()
   requestFloatingBar()
-  await updateMediaSessionMetadata(t)
-  await ensureMediaSessionHandlers()
+  // Metadata se empuja DESPUÉS del play (para no perder el gesto)
   await new Promise<void>((resolve) => {
     if (gen !== loadGenRef.current) {
       resolve()
@@ -1882,6 +1911,7 @@ async function loadTrack(t: TrackItem) {
     }
   })
 }
+
 async function playIndex(i: number) {
   const q = queueRef.current
   if (!q.length) return
@@ -1889,6 +1919,7 @@ async function playIndex(i: number) {
   indexRef.current = idx
   await api.playTrack(q[idx])
 }
+
 async function onEnded() {
   if (repeatRef.current === 'one') {
     const audio = ensureAudio()
@@ -1924,73 +1955,81 @@ async function onEnded() {
 
 async function prepareAndroidBackgroundPlayback() {
   if (!isCapacitorAndroid()) return
+  // Solo lo mínimo que no bloquee el gesto del usuario
   try {
     await ensureAndroidNotificationPermission()
   } catch {
     /* */
   }
   void requestUnrestrictedBatteryIfNeeded()
-  await loadCapMediaSession()
-  await ensureMediaSessionHandlers()
-  // Empuje temprano de estado vacío → FGS a veces se arma mejor antes del play
-  try {
-    await setMediaSessionPlaybackState(playingRef.current ? 'playing' : 'paused')
-  } catch {
-    /* */
-  }
+  // No esperamos a loadCapMediaSession aquí para no perder el gesto
 }
 
+/**
+ * ORDEN CRÍTICO PARA ANDROID 12-16 (One UI / HyperOS / AOSP):
+ * 1. play() LO PRIMERO (dentro del user gesture)
+ * 2. Luego handlers + metadata + position + state
+ * Esto evita que el autoplay policy bloquee el play() por awaits previos.
+ */
 async function armNativeSessionThenPlay(t: TrackItem, audio: HTMLAudioElement) {
-  /* Orden fijo Android 13–16 (One UI / HyperOS / AOSP):
-     handlers → metadata → position → play() → playing → position → metadata */
-  await ensureMediaSessionHandlers()
-  await updateMediaSessionMetadata(t)
-  const durHint = (audio.duration || 0) * 1000 || t.durationMs || snapshot.durationMs
-  if (durHint > 0) {
-    await updatePositionState(durHint, (audio.currentTime || 0) * 1000, rateRef.current)
-  }
+  // ────────────────────────────────────────────────
+  // 1. PLAY INMEDIATO (gesto del usuario aún válido)
+  // ────────────────────────────────────────────────
   try {
     audio.playbackRate = clamp(rateRef.current || 1, 0.5, 2)
-    audio.preservesPitch = true
-  } catch {
-    /* */
+    try {
+      audio.preservesPitch = true
+    } catch {
+      /* */
+    }
+    setAudioSessionPlayback()
+    await audio.play()
+  } catch (e) {
+    error('audio.play() rejected:', e)
+    throw e
   }
-  setAudioSessionPlayback()
-  await audio.play()
+
   playingRef.current = true
   snapshot.playing = true
   snapshot.error = null
-  try {
-    audio.playbackRate = clamp(rateRef.current || 1, 0.5, 2)
-    audio.preservesPitch = true
-  } catch {
-    /* */
-  }
-  await setMediaSessionPlaybackState('playing')
-  const dur = (audio.duration || 0) * 1000 || snapshot.durationMs
-  await updatePositionState(dur, (audio.currentTime || 0) * 1000, rateRef.current)
-  // Segunda oleada: algunos OEM solo muestran la notificación tras el 2º push
-  window.setTimeout(() => {
-    void (async () => {
-      await updateMediaSessionMetadata(t)
-      await setMediaSessionPlaybackState('playing')
-      const a = audioRef.current
-      if (a) {
-        await updatePositionState(
-          (a.duration || 0) * 1000 || snapshot.durationMs,
-          (a.currentTime || 0) * 1000,
-          rateRef.current,
-        )
-      }
-    })()
-  }, 280)
-  window.setTimeout(() => {
-    void setMediaSessionPlaybackState('playing')
-    void updateMediaSessionMetadata(t)
-  }, 900)
   startPositionTick()
   notify()
   requestFloatingBar()
+
+  // ────────────────────────────────────────────────
+  // 2. Media Session (puede ser async sin problema)
+  // ────────────────────────────────────────────────
+  try {
+    await ensureMediaSessionHandlers()
+    await updateMediaSessionMetadata(t)
+    const dur = (audio.duration || 0) * 1000 || t.durationMs || snapshot.durationMs
+    if (dur > 0) {
+      await updatePositionState(dur, (audio.currentTime || 0) * 1000, rateRef.current)
+    }
+    await setMediaSessionPlaybackState('playing')
+
+    // Segunda oleada para OEM lentos (One UI / HyperOS)
+    window.setTimeout(() => {
+      void (async () => {
+        await updateMediaSessionMetadata(t)
+        await setMediaSessionPlaybackState('playing')
+        const a = audioRef.current
+        if (a) {
+          await updatePositionState(
+            (a.duration || 0) * 1000 || snapshot.durationMs,
+            (a.currentTime || 0) * 1000,
+            rateRef.current,
+          )
+        }
+      })()
+    }, 320)
+    window.setTimeout(() => {
+      void setMediaSessionPlaybackState('playing')
+      void updateMediaSessionMetadata(t)
+    }, 900)
+  } catch (e) {
+    warn('MediaSession post-play failed (audio already playing):', e)
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2182,7 +2221,10 @@ export const api = {
     } else {
       indexRef.current = queueRef.current.findIndex((x) => x.id === t.id)
     }
+
+    // Preparación mínima (no bloquear gesto)
     await prepareAndroidBackgroundPlayback()
+
     await loadTrack(t)
     const audio = ensureAudio()
     if (!audio.src) return
@@ -2204,13 +2246,13 @@ export const api = {
       const msg = e instanceof Error ? e.message : String(e)
       if (/NotAllowedError|interact|user gesture/i.test(msg)) {
         snapshot.error =
-          'Pulsa ▶ para iniciar la reproducción (política del navegador).'
+          'Pulsa ▶ para iniciar la reproducción (política del navegador / WebView).'
       } else {
         snapshot.error = `No se pudo iniciar la reproducción. ${msg}`
       }
       void setMediaSessionPlaybackState('paused')
       notify()
-      console.warn('[gco] audio.play() failed:', e)
+      error('audio.play() failed:', e)
     }
   },
   async toggle() {
@@ -2250,7 +2292,7 @@ export const api = {
         snapshot.playing = false
         void setMediaSessionPlaybackState('paused')
         notify()
-        console.warn('[gco] toggle play failed:', e)
+        warn('toggle play failed:', e)
       }
     } else {
       wantPlayingRef.current = false

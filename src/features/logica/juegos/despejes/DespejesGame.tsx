@@ -539,6 +539,16 @@ export const GEM_COLORS: CromaColorDef[] = [
   { id: 'fucsia', hue: 320, label: 'Fucsia' },
   { id: 'oliva', hue: 70, label: 'Oliva' },
   { id: 'turquesa', hue: 172, label: 'Turquesa' },
+  { id: 'rojo', hue: 0, label: 'Rojo' },
+  { id: 'amarillo', hue: 55, label: 'Amarillo' },
+  { id: 'esmeralda', hue: 150, label: 'Esmeralda' },
+  { id: 'celeste', hue: 205, label: 'Celeste' },
+  { id: 'indigo', hue: 250, label: 'Índigo' },
+  { id: 'magenta', hue: 300, label: 'Magenta' },
+  { id: 'naranja', hue: 25, label: 'Naranja' },
+  { id: 'menta', hue: 165, label: 'Menta' },
+  { id: 'ciruela', hue: 285, label: 'Ciruela' },
+  { id: 'mostaza', hue: 48, label: 'Mostaza' },
 ]
 
 export function gemHue(colorId: string): number {
@@ -745,6 +755,14 @@ export const PAINT_PALETTE: CromaColorDef[] = [
   { id: 'p14', hue: 285, label: 'Índigo' },
   { id: 'p15', hue: 20, label: 'Naranja' },
   { id: 'p16', hue: 300, label: 'Magenta' },
+  { id: 'p17', hue: 165, label: 'Menta' },
+  { id: 'p18', hue: 250, label: 'Añil' },
+  { id: 'p19', hue: 48, label: 'Mostaza' },
+  { id: 'p20', hue: 355, label: 'Carmesí' },
+  { id: 'p21', hue: 115, label: 'Musgo' },
+  { id: 'p22', hue: 235, label: 'Cobalto' },
+  { id: 'p23', hue: 10, label: 'Ladrillo' },
+  { id: 'p24', hue: 310, label: 'Orquídea' },
 ]
 
 export interface PaintCell {
@@ -1829,7 +1847,7 @@ export function generateLaserLevel(level: number, opts?: { seedSalt?: number }):
 
 export function isLaserLevelSolvable(level: LaserLevel): boolean {
   const rotatable = level.mirrors.filter((m) => !m.fixed)
-  const n = Math.min(rotatable.length, 10)
+  const n = Math.min(rotatable.length, 18)
   for (let mask = 0; mask < 1 << n; mask++) {
     const trial = level.mirrors.map((m) => {
       if (m.fixed) return m
@@ -3480,10 +3498,20 @@ function CromaGame({ dpad, onBack }: { dpad: DPadSettings; onBack: () => void })
     (dir: Direction) => {
       if (completed || !selected) return
       const next = cromaTryMove(level, gems, selected, dir)
-      if (!next) return
+      if (!next) {
+        Sound.blocked()
+        return
+      }
+      const gem = next.find((g) => g.id === selected)
+      const onGoal = gem && level.goals.some((goal) => goal.color === gem.color && goal.row === gem.row && goal.col === gem.col)
+      if (onGoal) Sound.pop()
+      else Sound.move()
       setGems(next)
       setMoves((m) => m + 1)
-      if (cromaIsComplete(level, next)) setCompleted(true)
+      if (cromaIsComplete(level, next)) {
+        setCompleted(true)
+        Sound.success()
+      }
     },
     [level, gems, selected, completed]
   )
@@ -3522,23 +3550,29 @@ function CromaGame({ dpad, onBack }: { dpad: DPadSettings; onBack: () => void })
               )
             })
           )}
-          {gems.map((g) => (
-            <button
-              key={g.id}
-              type="button"
-              className={`dg-gem ${selected === g.id ? 'dg-gem--selected' : ''}`}
-              style={{
-                gridColumn: g.col + 1,
-                gridRow: g.row + 1,
-                width: cell,
-                height: cell,
-                left: g.col * cell,
-                top: g.row * cell,
-                background: `radial-gradient(circle at 35% 30%, hsl(${gemHue(g.color)} 95% 78%), hsl(${gemHue(g.color)} 85% 45%))`,
-              }}
-              onClick={() => setSelected((cur) => (cur === g.id ? null : g.id))}
-            />
-          ))}
+          {gems.map((g) => {
+            const onGoal = level.goals.some((goal) => goal.color === g.color && goal.row === g.row && goal.col === g.col)
+            return (
+              <button
+                key={g.id}
+                type="button"
+                className={`dg-gem ${selected === g.id ? 'dg-gem--selected' : ''} ${onGoal ? 'dg-gem--on-goal' : ''}`}
+                style={{
+                  gridColumn: g.col + 1,
+                  gridRow: g.row + 1,
+                  width: cell,
+                  height: cell,
+                  left: g.col * cell,
+                  top: g.row * cell,
+                  background: `radial-gradient(circle at 35% 30%, hsl(${gemHue(g.color)} 95% 78%), hsl(${gemHue(g.color)} 85% 45%))`,
+                }}
+                onClick={() => {
+                  Sound.click()
+                  setSelected((cur) => (cur === g.id ? null : g.id))
+                }}
+              />
+            )
+          })}
         </div>
       </div>
       <div className="dg-controls">
@@ -4162,11 +4196,18 @@ function CaminoUnicoGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: str
     (dir: Direction) => {
       if (completed) return
       const res = pathUniqueStep(level, visited, player, dir)
-      if (!res.moved) return
+      if (!res.moved) {
+        Sound.blocked()
+        return
+      }
+      Sound.crack()
       setPlayer(res.player)
       setVisited(res.visited)
       setMoves((m) => m + 1)
-      if (pathUniqueIsComplete(level, res.player, res.visited)) setCompleted(true)
+      if (pathUniqueIsComplete(level, res.player, res.visited)) {
+        setCompleted(true)
+        Sound.success()
+      }
     },
     [level, visited, player, completed]
   )
@@ -4195,12 +4236,14 @@ function CaminoUnicoGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: str
               const key = r * level.cols + c
               const isVisited = visited.has(key)
               const isTarget = r === level.target.row && c === level.target.col
+              const targetReady = visited.size === level.totalWalkable - 1
               let cls = 'dg-cell dg-cell--ember'
               if (type === 'wall') cls += ' dg-cell--ember-wall'
               else if (isVisited) cls += ' dg-cell--ember-cracked'
+              if (isTarget) cls += targetReady ? ' dg-cell--target-ready' : ' dg-cell--target-pending'
               return (
                 <div key={key} className={cls} style={{ gridColumn: c + 1, gridRow: r + 1, width: cell, height: cell }}>
-                  {isTarget && <span className="dg-emoji-mark">🚩</span>}
+                  {isTarget && <span className={`dg-emoji-mark dg-target-blink ${targetReady ? 'dg-target-blink--ready' : ''}`}>🚩</span>}
                 </div>
               )
             })
@@ -4635,12 +4678,18 @@ const DESPEJES_CSS = `
   position: relative;
 }
 .dg-cell--ember-cracked::before {
-  content: ""; position: absolute; inset: 6%; opacity: 0.55;
+  content: ""; position: absolute; inset: 6%; opacity: 0.55; animation: dg-crack-appear 0.28s ease-out;
   background:
     linear-gradient(35deg, transparent 46%, #0a0705 48%, transparent 50%),
     linear-gradient(-35deg, transparent 40%, #0a0705 42%, transparent 44%),
     linear-gradient(80deg, transparent 60%, #0a0705 62%, transparent 64%);
 }
+@keyframes dg-crack-appear { 0% { opacity: 0; transform: scale(0.4); } 60% { opacity: 0.75; transform: scale(1.08); } 100% { opacity: 0.55; transform: scale(1); } }
+.dg-cell--target-pending, .dg-cell--target-ready { box-shadow: 0 0 0 2px rgba(255,255,255,0.18) inset; }
+.dg-target-blink { animation: dg-target-color 1.6s ease-in-out infinite; }
+.dg-target-blink--ready { animation: dg-target-color-ready 0.55s ease-in-out infinite; transform-origin: bottom center; }
+@keyframes dg-target-color { 0%,100% { filter: hue-rotate(0deg) drop-shadow(0 0 4px rgba(255,255,255,0.3)); } 50% { filter: hue-rotate(140deg) drop-shadow(0 0 10px rgba(160,255,180,0.7)); } }
+@keyframes dg-target-color-ready { 0%,100% { filter: hue-rotate(0deg) drop-shadow(0 0 10px rgba(120,255,140,0.9)); transform: scale(1); } 50% { filter: hue-rotate(200deg) drop-shadow(0 0 16px rgba(120,200,255,0.95)); transform: scale(1.22); } }
 
 /* ── Croma (gemas) ── */
 .dg-board--gem { background: linear-gradient(160deg, #221228, #170c1e); }
@@ -4653,6 +4702,8 @@ const DESPEJES_CSS = `
   transition: left 0.14s ease, top 0.14s ease, transform 0.12s ease;
 }
 .dg-gem--selected { transform: scale(1.08); box-shadow: 0 0 0 3px #fff, 0 4px 14px rgba(0,0,0,0.6); }
+.dg-gem--on-goal { animation: dg-gem-lock 0.32s ease-out; box-shadow: 0 0 0 2px rgba(255,255,255,0.7), 0 0 12px rgba(255,255,255,0.5); }
+@keyframes dg-gem-lock { 0% { transform: scale(0.7); } 55% { transform: scale(1.18); } 100% { transform: scale(1); } }
 
 /* ── Pintar ── */
 .dg-board--paint { background: linear-gradient(160deg, #17202f, #0f1620); }
@@ -4668,5 +4719,4 @@ const DESPEJES_CSS = `
   .dg-topbar__goal { display: none; }
 }
 `
-
 export { DespejesGame }

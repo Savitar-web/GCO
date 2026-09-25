@@ -32,15 +32,22 @@ const EMOJI_ENGINES: {
   badge: string
 }[] = [
   {
-    id: 'ios',
-    title: 'iOS',
-    subtitle: 'Estilo Apple reciente (Twemoji unificado). Mejor cobertura multiplataforma.',
+    id: 'system',
+    title: 'Emoji del dispositivo',
+    subtitle:
+      'Usa el motor de emoji real de tu equipo (Apple Color Emoji en iPhone/Mac, Samsung One UI o Noto en Android, Segoe UI Emoji en Windows). Es la opción por defecto: nada más fiel a como tú los ves.',
     badge: 'Recomendado',
+  },
+  {
+    id: 'ios',
+    title: 'iOS (unificado)',
+    subtitle: 'Aproximación visual estilo Apple vía Twemoji, igual en cualquier dispositivo.',
+    badge: 'Twemoji',
   },
   {
     id: 'samsung',
     title: 'Samsung',
-    subtitle: 'Prioriza nativas del sistema (One UI / Galaxy). En otros equipos usa las del SO.',
+    subtitle: 'Prioriza el motor nativo One UI / Galaxy; si no existe, usa el del sistema.',
     badge: 'Sistema',
   },
   {
@@ -60,12 +67,6 @@ const EMOJI_ENGINES: {
     title: 'Twitter / X',
     subtitle: 'Twemoji oficial (look X / Twitter).',
     badge: 'Twemoji',
-  },
-  {
-    id: 'system',
-    title: 'Sistema',
-    subtitle: 'Solo las del SO/navegador. En Edge Win10 o Android viejo faltan muchas.',
-    badge: 'Nativo',
   },
   {
     id: 'off',
@@ -91,7 +92,7 @@ function readEmojiStyle(): EmojiStylePref {
   } catch {
     /* */
   }
-  return 'ios'
+  return 'system'
 }
 
 function writeEmojiStyle(style: EmojiStylePref) {
@@ -157,52 +158,80 @@ type PreviewGroup = { label: string; items: PreviewItem[] }
 
 const EMOJI_PREVIEW_GROUPS: PreviewGroup[] = [
   {
-    label: 'Modernos (Unicode 13–15)',
-    items: [
-      { char: '🪨', hex: '1faa8', name: 'Piedra' },
-      { char: '🪶', hex: '1fab6', name: 'Pluma' },
-      { char: '🐦‍⬛', hex: '1f426-200d-2b1b', name: 'Cuervo' },
-      { char: '🫠', hex: '1fae0', name: 'Derritiendo' },
-      { char: '🫡', hex: '1fae1', name: 'Saludo' },
-      { char: '🥹', hex: '1f979', name: 'Emocionado' },
-      { char: '🫵', hex: '1faf5', name: 'Señalar' },
-      { char: '🫶', hex: '1faf6', name: 'Manos corazón' },
-      { char: '🫧', hex: '1fae7', name: 'Burbujas' },
-      { char: '🪐', hex: '1fa90', name: 'Planeta' },
-      { char: '🫥', hex: '1fae5', name: 'Punteado' },
-      { char: '🫀', hex: '1fac0', name: 'Corazón' },
-    ],
-  },
-  {
-    label: 'Caras',
+    label: 'Caras y emociones',
     items: [
       { char: '😀', hex: '1f600', name: 'Sonrisa' },
+      { char: '😁', hex: '1f601', name: 'Sonrisa grande' },
       { char: '😂', hex: '1f602', name: 'Risa' },
+      { char: '🤣', hex: '1f923', name: 'Muerto de risa' },
+      { char: '😊', hex: '1f60a', name: 'Contento' },
+      { char: '🙂', hex: '1f642', name: 'Leve sonrisa' },
+      { char: '😉', hex: '1f609', name: 'Guiño' },
+      { char: '😍', hex: '1f60d', name: 'Ojos corazón' },
       { char: '🥰', hex: '1f970', name: 'Enamorado' },
+      { char: '😘', hex: '1f618', name: 'Beso' },
       { char: '😎', hex: '1f60e', name: 'Cool' },
-      { char: '🤔', hex: '1f914', name: 'Pensando' },
-      { char: '😴', hex: '1f634', name: 'Dormido' },
-      { char: '🤯', hex: '1f92f', name: 'Explota' },
+      { char: '🤩', hex: '1f929', name: 'Fascinado' },
       { char: '🥳', hex: '1f973', name: 'Fiesta' },
+      { char: '🤔', hex: '1f914', name: 'Pensando' },
+      { char: '🤨', hex: '1f928', name: 'Ceja alzada' },
+      { char: '😏', hex: '1f60f', name: 'Pícaro' },
+      { char: '😴', hex: '1f634', name: 'Dormido' },
+      { char: '🥱', hex: '1f971', name: 'Bostezo' },
+      { char: '🤯', hex: '1f92f', name: 'Explota' },
+      { char: '😵‍💫', hex: '1f635-200d-1f4ab', name: 'Mareado' },
+      { char: '😢', hex: '1f622', name: 'Triste' },
+      { char: '😭', hex: '1f62d', name: 'Llorando' },
+      { char: '😡', hex: '1f621', name: 'Enojado' },
       { char: '😈', hex: '1f608', name: 'Diablillo' },
+      { char: '🥹', hex: '1f979', name: 'Emocionado' },
+      { char: '🫠', hex: '1fae0', name: 'Derritiendo' },
+      { char: '🫡', hex: '1fae1', name: 'Saludo' },
       { char: '🤖', hex: '1f916', name: 'Robot' },
     ],
   },
   {
-    label: 'Gestos',
+    label: 'Gestos y manos',
     items: [
       { char: '👍', hex: '1f44d', name: 'OK' },
+      { char: '👎', hex: '1f44e', name: 'No' },
       { char: '👏', hex: '1f44f', name: 'Aplauso' },
+      { char: '🙌', hex: '1f64c', name: 'Celebrar' },
       { char: '🙏', hex: '1f64f', name: 'Rezo' },
       { char: '💪', hex: '1f4aa', name: 'Fuerza' },
       { char: '✌️', hex: '270c', name: 'Paz' },
+      { char: '🤞', hex: '1f91e', name: 'Suerte' },
       { char: '🤝', hex: '1f91d', name: 'Trato' },
       { char: '👋', hex: '1f44b', name: 'Hola' },
-      { char: '🤞', hex: '1f91e', name: 'Suerte' },
+      { char: '👌', hex: '1f44c', name: 'Perfecto' },
+      { char: '✊', hex: '270a', name: 'Puño' },
+      { char: '👉', hex: '1f449', name: 'Señalar' },
+      { char: '🫶', hex: '1faf6', name: 'Manos corazón' },
+      { char: '🫳', hex: '1faf3', name: 'Palma abajo' },
+      { char: '🫵', hex: '1faf5', name: 'Apuntar' },
+      { char: '✍️', hex: '270d', name: 'Escribir' },
+      { char: '💅', hex: '1f485', name: 'Manicura' },
     ],
   },
   {
-    label: 'Animales',
+    label: 'Personas y cuerpo',
+    items: [
+      { char: '🧑', hex: '1f9d1', name: 'Persona' },
+      { char: '🧑‍💻', hex: '1f9d1-200d-1f4bb', name: 'Programador/a' },
+      { char: '🏃', hex: '1f3c3', name: 'Corriendo' },
+      { char: '🏋️', hex: '1f3cb', name: 'Levantando pesas' },
+      { char: '🧘', hex: '1f9d8', name: 'Meditando' },
+      { char: '🤸', hex: '1f938', name: 'Volteando' },
+      { char: '🚴', hex: '1f6b4', name: 'Ciclismo' },
+      { char: '🏊', hex: '1f3ca', name: 'Nadando' },
+      { char: '🧠', hex: '1f9e0', name: 'Mente' },
+      { char: '🫀', hex: '1fac0', name: 'Corazón (órgano)' },
+      { char: '💤', hex: '1f4a4', name: 'Durmiendo' },
+      { char: '👀', hex: '1f440', name: 'Ojos' },
+    ],
+  },
+  {
+    label: 'Animales y naturaleza',
     items: [
       { char: '🐶', hex: '1f436', name: 'Perro' },
       { char: '🐱', hex: '1f431', name: 'Gato' },
@@ -212,10 +241,24 @@ const EMOJI_PREVIEW_GROUPS: PreviewGroup[] = [
       { char: '🦄', hex: '1f984', name: 'Unicornio' },
       { char: '🐸', hex: '1f438', name: 'Rana' },
       { char: '🐝', hex: '1f41d', name: 'Abeja' },
+      { char: '🦉', hex: '1f989', name: 'Búho' },
+      { char: '🐳', hex: '1f433', name: 'Ballena' },
+      { char: '🐦‍⬛', hex: '1f426-200d-2b1b', name: 'Cuervo' },
+      { char: '🌟', hex: '1f31f', name: 'Estrella' },
+      { char: '🔥', hex: '1f525', name: 'Fuego' },
+      { char: '🌈', hex: '1f308', name: 'Arcoíris' },
+      { char: '☀️', hex: '2600', name: 'Sol' },
+      { char: '🌙', hex: '1f319', name: 'Luna' },
+      { char: '🌲', hex: '1f332', name: 'Pino' },
+      { char: '🌸', hex: '1f338', name: 'Flor' },
+      { char: '🍃', hex: '1f343', name: 'Hojas' },
+      { char: '⚡', hex: '26a1', name: 'Rayo' },
+      { char: '🪨', hex: '1faa8', name: 'Piedra' },
+      { char: '🪐', hex: '1fa90', name: 'Planeta' },
     ],
   },
   {
-    label: 'Comida',
+    label: 'Comida y bebida',
     items: [
       { char: '🍎', hex: '1f34e', name: 'Manzana' },
       { char: '🍕', hex: '1f355', name: 'Pizza' },
@@ -223,12 +266,18 @@ const EMOJI_PREVIEW_GROUPS: PreviewGroup[] = [
       { char: '🍩', hex: '1f369', name: 'Dona' },
       { char: '☕', hex: '2615', name: 'Café' },
       { char: '🥑', hex: '1f951', name: 'Aguacate' },
+      { char: '🥗', hex: '1f957', name: 'Ensalada' },
       { char: '🍇', hex: '1f347', name: 'Uvas' },
       { char: '🍔', hex: '1f354', name: 'Burger' },
+      { char: '🍜', hex: '1f35c', name: 'Ramen' },
+      { char: '🍰', hex: '1f370', name: 'Pastel' },
+      { char: '🍫', hex: '1f36b', name: 'Chocolate' },
+      { char: '🥤', hex: '1f964', name: 'Bebida' },
+      { char: '🍉', hex: '1f349', name: 'Sandía' },
     ],
   },
   {
-    label: 'Objetos / tech',
+    label: 'Objetos y tecnología',
     items: [
       { char: '💻', hex: '1f4bb', name: 'Laptop' },
       { char: '📱', hex: '1f4f1', name: 'Móvil' },
@@ -238,32 +287,34 @@ const EMOJI_PREVIEW_GROUPS: PreviewGroup[] = [
       { char: '💡', hex: '1f4a1', name: 'Idea' },
       { char: '🔑', hex: '1f511', name: 'Llave' },
       { char: '🛰️', hex: '1f6f0', name: 'Satélite' },
-    ],
-  },
-  {
-    label: 'Naturaleza',
-    items: [
-      { char: '🌟', hex: '1f31f', name: 'Estrella' },
-      { char: '🔥', hex: '1f525', name: 'Fuego' },
-      { char: '🌈', hex: '1f308', name: 'Arcoíris' },
-      { char: '☀️', hex: '2600', name: 'Sol' },
-      { char: '🌙', hex: '1f319', name: 'Luna' },
-      { char: '🌲', hex: '1f332', name: 'Pino' },
-      { char: '🌸', hex: '1f338', name: 'Flor' },
-      { char: '⚡', hex: '26a1', name: 'Rayo' },
-    ],
-  },
-  {
-    label: 'App GymCog',
-    items: [
-      { char: '🍎', hex: '1f34e', name: 'Nutrición' },
-      { char: '🧠', hex: '1f9e0', name: 'Mente' },
-      { char: '🎵', hex: '1f3b5', name: 'Música' },
-      { char: '📖', hex: '1f4d6', name: 'Libro' },
-      { char: '🌍', hex: '1f30d', name: 'Mundo' },
-      { char: '🔢', hex: '1f522', name: 'Números' },
+      { char: '⌚', hex: '231a', name: 'Reloj' },
+      { char: '🔋', hex: '1f50b', name: 'Batería' },
+      { char: '🧭', hex: '1f9ed', name: 'Brújula' },
       { char: '🧩', hex: '1f9e9', name: 'Puzzle' },
       { char: '🔍', hex: '1f50d', name: 'Buscar' },
+      { char: '📖', hex: '1f4d6', name: 'Libro' },
+      { char: '🎵', hex: '1f3b5', name: 'Música' },
+      { char: '🔢', hex: '1f522', name: 'Números' },
+      { char: '🌍', hex: '1f30d', name: 'Mundo' },
+    ],
+  },
+  {
+    label: 'Símbolos y banderas',
+    items: [
+      { char: '❤️', hex: '2764', name: 'Corazón' },
+      { char: '💚', hex: '1f49a', name: 'Corazón verde' },
+      { char: '💙', hex: '1f499', name: 'Corazón azul' },
+      { char: '⭐', hex: '2b50', name: 'Estrella llena' },
+      { char: '✅', hex: '2705', name: 'Check' },
+      { char: '❌', hex: '274c', name: 'Cruz' },
+      { char: '⚠️', hex: '26a0', name: 'Advertencia' },
+      { char: '💯', hex: '1f4af', name: 'Cien' },
+      { char: '🎯', hex: '1f3af', name: 'Objetivo' },
+      { char: '🏆', hex: '1f3c6', name: 'Trofeo' },
+      { char: '🎉', hex: '1f389', name: 'Confeti' },
+      { char: '🇲🇽', hex: '1f1f2-1f1fd', name: 'Bandera México' },
+      { char: '🇺🇸', hex: '1f1fa-1f1f8', name: 'Bandera EE. UU.' },
+      { char: '🇪🇸', hex: '1f1ea-1f1f8', name: 'Bandera España' },
     ],
   },
 ]
@@ -440,6 +491,22 @@ type FrameId =
   | 'mono'
   | 'triad'
   | 'spectrum'
+  | 'aurora-borealis'
+  | 'liquid-gold'
+  | 'deep-sea'
+  | 'cherry-blossom'
+  | 'volt'
+  | 'obsidian-gold'
+  | 'peach'
+  | 'cosmic-purple'
+  | 'terra'
+  | 'mercury'
+  | 'blood-orange'
+  | 'moss'
+  | 'ultraviolet'
+  | 'champagne'
+  | 'graphite'
+  | 'lagoon'
 
 const FRAMES: { id: FrameId; label: string; emoji: string; anim?: string }[] = [
   { id: 'none', label: 'Ninguno', emoji: '○' },
@@ -527,6 +594,22 @@ const FRAMES: { id: FrameId; label: string; emoji: string; anim?: string }[] = [
   { id: 'mono', label: 'Mono', emoji: '⬛', anim: 'gco-frame-breathe' },
   { id: 'triad', label: 'Tríada', emoji: '🎨', anim: 'gco-frame-holo' },
   { id: 'spectrum', label: 'Espectro', emoji: '🌈', anim: 'gco-frame-plasma' },
+  { id: 'aurora-borealis', label: 'Aurora boreal', emoji: '🌌', anim: 'gco-frame-aurora' },
+  { id: 'liquid-gold', label: 'Oro líquido', emoji: '✨', anim: 'gco-frame-shine' },
+  { id: 'deep-sea', label: 'Mar profundo', emoji: '🌊', anim: 'gco-frame-ocean' },
+  { id: 'cherry-blossom', label: 'Sakura', emoji: '🌸', anim: 'gco-frame-soft' },
+  { id: 'volt', label: 'Voltio', emoji: '⚡', anim: 'gco-frame-neon' },
+  { id: 'obsidian-gold', label: 'Obsidiana dorada', emoji: '🖤', anim: 'gco-frame-shine' },
+  { id: 'peach', label: 'Durazno', emoji: '🍑', anim: 'gco-frame-soft' },
+  { id: 'cosmic-purple', label: 'Púrpura cósmico', emoji: '🔮', anim: 'gco-frame-plasma' },
+  { id: 'terra', label: 'Terracota', emoji: '🏺', anim: 'gco-frame-breathe' },
+  { id: 'mercury', label: 'Mercurio', emoji: '⚙️', anim: 'gco-frame-shine' },
+  { id: 'blood-orange', label: 'Naranja sangre', emoji: '🧡', anim: 'gco-frame-lava' },
+  { id: 'moss', label: 'Musgo', emoji: '🍀', anim: 'gco-frame-breathe' },
+  { id: 'ultraviolet', label: 'Ultravioleta', emoji: '🟣', anim: 'gco-frame-neon' },
+  { id: 'champagne', label: 'Champán', emoji: '🥂', anim: 'gco-frame-shine' },
+  { id: 'graphite', label: 'Grafito', emoji: '⬛', anim: 'gco-frame-breathe' },
+  { id: 'lagoon', label: 'Laguna', emoji: '🐠', anim: 'gco-frame-ocean' },
 ]
 
 const GAMES = [
@@ -903,6 +986,38 @@ function frameRingStyle(frame: FrameId): React.CSSProperties {
     return { ...base, padding: 3, background: 'conic-gradient(from 0deg,#22e6c5 0 120deg,#8b5cf6 120deg 240deg,#f472b6 240deg 360deg)', boxShadow: '0 0 14px rgba(139,92,246,0.35)' }
   if (frame === 'spectrum')
     return { ...base, padding: 3, background: 'conic-gradient(from 180deg,#ef4444,#f59e0b,#22c55e,#3b82f6,#a855f7,#ef4444)', boxShadow: '0 0 16px rgba(59,130,246,0.35)' }
+  if (frame === 'aurora-borealis')
+    return { ...base, padding: 3, background: 'linear-gradient(135deg,#0f2027,#2c5364 30%,#22e6c5 60%,#8b7cf6 100%)', boxShadow: '0 0 0 1px rgba(139,124,246,0.4), 0 0 22px rgba(34,230,197,0.4)' }
+  if (frame === 'liquid-gold')
+    return { ...base, padding: 4, background: 'linear-gradient(160deg,#fff7d6 0%,#f5cc4d 25%,#c98a12 50%,#fff2b8 75%,#b8860b 100%)', boxShadow: 'inset 0 1px 2px rgba(255,255,255,0.8), 0 8px 20px rgba(184,134,11,0.4)' }
+  if (frame === 'deep-sea')
+    return { ...base, padding: 3, background: 'linear-gradient(160deg,#001220,#003554,#0077b6,#00b4d8)', boxShadow: '0 0 0 1px rgba(0,180,216,0.5), 0 0 18px rgba(0,119,182,0.4)' }
+  if (frame === 'cherry-blossom')
+    return { ...base, padding: 3, background: 'linear-gradient(150deg,#ffe4ef,#ffb3d1,#ff8fc0)', boxShadow: '0 0 0 1px rgba(255,143,192,0.5), 0 6px 16px rgba(255,143,192,0.35)' }
+  if (frame === 'volt')
+    return { ...base, padding: 3, background: 'linear-gradient(120deg,#d4ff00,#a3e635)', boxShadow: '0 0 0 2px rgba(212,255,0,0.6), 0 0 20px rgba(212,255,0,0.5)' }
+  if (frame === 'obsidian-gold')
+    return { ...base, padding: 3, background: 'linear-gradient(155deg,#0a0a0a 0%,#1c1c1c 40%,#c9a227 70%,#0a0a0a 100%)', boxShadow: '0 0 0 1px rgba(201,162,39,0.55), 0 8px 20px rgba(0,0,0,0.5)' }
+  if (frame === 'peach')
+    return { ...base, padding: 3, background: 'linear-gradient(150deg,#ffe5d4,#ffb088,#ff8a5c)', boxShadow: '0 6px 16px rgba(255,138,92,0.35)' }
+  if (frame === 'cosmic-purple')
+    return { ...base, padding: 3, background: 'radial-gradient(circle at 30% 30%,#c084fc,#7c3aed 55%,#1e1b4b 100%)', boxShadow: '0 0 0 1px rgba(124,58,237,0.5), 0 0 20px rgba(124,58,237,0.4)' }
+  if (frame === 'terra')
+    return { ...base, padding: 3, background: 'linear-gradient(150deg,#e9c9a6,#c97b45,#8a4a2b)', boxShadow: '0 6px 16px rgba(138,74,43,0.35)' }
+  if (frame === 'mercury')
+    return { ...base, padding: 4, background: 'linear-gradient(135deg,#e6e9f0,#9aa4b5 30%,#4b5566 55%,#c9d0da 80%,#f2f4f7 100%)', boxShadow: 'inset 0 1px 2px rgba(255,255,255,0.7), 0 6px 16px rgba(0,0,0,0.3)' }
+  if (frame === 'blood-orange')
+    return { ...base, padding: 3, background: 'linear-gradient(150deg,#ff9a5c,#ff5c33,#8f1c1c)', boxShadow: '0 0 16px rgba(255,92,51,0.45)' }
+  if (frame === 'moss')
+    return { ...base, padding: 3, background: 'linear-gradient(150deg,#eaf5d0,#8bb34a,#3f5c1f)', boxShadow: '0 6px 16px rgba(63,92,31,0.35)' }
+  if (frame === 'ultraviolet')
+    return { ...base, padding: 3, background: 'linear-gradient(135deg,#7b2ff7,#f107a3)', boxShadow: '0 0 0 2px rgba(123,47,247,0.5), 0 0 22px rgba(241,7,163,0.45)' }
+  if (frame === 'champagne')
+    return { ...base, padding: 4, background: 'linear-gradient(160deg,#fdf3e3,#e8c9a0,#c9a670,#f5e2c0)', boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.7), 0 6px 16px rgba(201,166,112,0.35)' }
+  if (frame === 'graphite')
+    return { ...base, padding: 3, background: 'linear-gradient(150deg,#3a3a3a,#1a1a1a,#050505)', boxShadow: '0 0 0 1px rgba(255,255,255,0.12), 0 6px 16px rgba(0,0,0,0.5)' }
+  if (frame === 'lagoon')
+    return { ...base, padding: 3, background: 'linear-gradient(150deg,#a8f0e0,#22c1a8,#0d6e63)', boxShadow: '0 0 14px rgba(34,193,168,0.4)' }
   return {
     ...base,
     padding: 2,
@@ -1147,6 +1262,53 @@ function CircularAvatar({
   )
 }
 
+/**
+ * Vuelve a codificar un dataURL de imagen a un tamaño/calidad menor.
+ * Se usa cuando el guardado falla por espacio (localStorage lleno):
+ * en vez de perder el cambio en silencio, reintenta con un archivo más ligero.
+ */
+function reencodeDataUrl(
+  dataUrl: string,
+  size: number,
+  quality: number
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = size
+        canvas.height = size
+        const ctx = canvas.getContext('2d')
+        if (!ctx) throw new Error('sin contexto de canvas')
+        ctx.imageSmoothingEnabled = true
+        ctx.imageSmoothingQuality = 'high'
+        // recorte central cuadrado, por si la fuente no es 1:1
+        const side = Math.min(img.naturalWidth, img.naturalHeight)
+        const sx = (img.naturalWidth - side) / 2
+        const sy = (img.naturalHeight - side) / 2
+        ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size)
+        resolve(canvas.toDataURL('image/jpeg', quality))
+      } catch (err) {
+        reject(err)
+      }
+    }
+    img.onerror = () => reject(new Error('no se pudo leer la imagen'))
+    img.src = dataUrl
+  })
+}
+
+function isQuotaError(err: unknown): boolean {
+  if (!err) return false
+  const name = (err as { name?: string })?.name ?? ''
+  const message = String((err as { message?: string })?.message ?? err)
+  return (
+    name === 'QuotaExceededError' ||
+    name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    /quota/i.test(message)
+  )
+}
+
 export function PerfilSettings() {
   const profile = getProfile()
   const [name, setName] = useState(profile?.name ?? '')
@@ -1242,18 +1404,25 @@ export function PerfilSettings() {
   ])
 
   const persistPrefs = () => {
-    updateProfile({
-      favoriteGameId: favGame,
-      favoriteBookId: favBook || null,
-      favoriteTrackId: favTrack || null,
-      avatarFrame: frame as AvatarFrame,
-      ...(bio.trim()
-        ? ({ bio: bio.trim().slice(0, BIO_MAX) } as Record<string, unknown>)
-        : {}),
-    } as Parameters<typeof updateProfile>[0] & { bio?: string })
+    try {
+      updateProfile({
+        favoriteGameId: favGame,
+        favoriteBookId: favBook || null,
+        favoriteTrackId: favTrack || null,
+        avatarFrame: frame as AvatarFrame,
+        ...(bio.trim()
+          ? ({ bio: bio.trim().slice(0, BIO_MAX) } as Record<string, unknown>)
+          : {}),
+      } as Parameters<typeof updateProfile>[0] & { bio?: string })
+    } catch {
+      // No bloquea la vista previa/descarga de la credencial si esto falla;
+      // el guardado real del perfil pasa por save().
+    }
   }
 
-  const save = () => {
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
     const ageNum = parseInt(age, 10)
     if (name.trim().length < 2) {
       soundFail()
@@ -1265,23 +1434,87 @@ export function PerfilSettings() {
       setMsg('Edad entre 5 y 120')
       return
     }
-    updateProfile({
+
+    setSaving(true)
+    let avatarToSave = avatar
+    const payload = () => ({
       name: name.trim(),
       age: ageNum,
-      avatarDataUrl: avatar,
+      avatarDataUrl: avatarToSave,
       avatarFrame: frame as AvatarFrame,
       favoriteGameId: favGame,
       favoriteBookId: favBook || null,
       favoriteTrackId: favTrack || null,
       bio: bio.trim().slice(0, BIO_MAX) || null,
-    } as Parameters<typeof updateProfile>[0] & { bio?: string | null })
+    })
+
     try {
-      window.dispatchEvent(new CustomEvent('gco:profile'))
-    } catch {
-      /* */
+      // Intento 1: guardar tal cual.
+      try {
+        updateProfile(
+          payload() as Parameters<typeof updateProfile>[0] & {
+            bio?: string | null
+          }
+        )
+      } catch (err) {
+        // Si falló por espacio y hay avatar nuevo, comprímelo y reintenta
+        // en vez de perder el guardado en silencio.
+        if (isQuotaError(err) && avatarToSave) {
+          for (const [size, quality] of [
+            [384, 0.82],
+            [256, 0.75],
+            [192, 0.7],
+          ] as const) {
+            try {
+              avatarToSave = await reencodeDataUrl(avatarToSave, size, quality)
+              updateProfile(
+                payload() as Parameters<typeof updateProfile>[0] & {
+                  bio?: string | null
+                }
+              )
+              setAvatar(avatarToSave)
+              break
+            } catch (retryErr) {
+              if (!isQuotaError(retryErr)) throw retryErr
+              // sigue con el siguiente tamaño más pequeño
+            }
+          }
+        } else {
+          throw err
+        }
+      }
+
+      // Verificación: vuelve a leer el perfil guardado y confirma que
+      // el nombre y el avatar realmente se persistieron.
+      const stored = getProfile()
+      const nameOk = stored?.name === name.trim()
+      const avatarOk = (stored?.avatarDataUrl ?? null) === avatarToSave
+
+      if (!nameOk && !avatarOk) {
+        throw new Error('El perfil no se guardó (verificación falló)')
+      }
+
+      try {
+        window.dispatchEvent(new CustomEvent('gco:profile'))
+      } catch {
+        /* */
+      }
+      soundSuccess()
+      setMsg(
+        avatarToSave !== avatar
+          ? 'Perfil guardado (la foto se comprimió un poco por espacio)'
+          : 'Perfil guardado'
+      )
+    } catch (err) {
+      soundFail()
+      setMsg(
+        isQuotaError(err)
+          ? 'Sin espacio de almacenamiento: prueba con una foto más ligera'
+          : 'No se pudo guardar el perfil, inténtalo de nuevo'
+      )
+    } finally {
+      setSaving(false)
     }
-    soundSuccess()
-    setMsg('Perfil guardado')
   }
 
   const applyEmojiStyle = (style: EmojiStylePref) => {
@@ -1522,10 +1755,27 @@ export function PerfilSettings() {
           50% { filter: brightness(1.08); }
         }
         .gco-frame-soft { animation: gco-frame-soft 3s ease-in-out infinite; }
+
+        /* ── Responsive ── */
+        @media (max-width: 420px) {
+          .gco-perfil-header { gap: 0.8rem !important; }
+          .gco-frame-chip { min-width: 78px !important; padding: 0.7rem 0.4rem !important; }
+          .gco-frame-chip-emoji { font-size: 1.3rem !important; }
+          .gco-emoji-grid { grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)) !important; }
+        }
+        @media (max-width: 340px) {
+          .gco-perfil-header { flex-direction: column; align-items: flex-start; }
+          .gco-actions-row { flex-direction: column; align-items: stretch !important; }
+          .gco-actions-row > * { width: 100%; justify-content: center; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          [class*="gco-frame-"] { animation: none !important; }
+        }
       `}</style>
 
       {/* Cabecera de perfil */}
       <div
+        className="gco-perfil-header"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -1629,6 +1879,7 @@ export function PerfilSettings() {
               <button
                 key={f.id}
                 type="button"
+                className="gco-frame-chip"
                 onClick={() => {
                   soundClick()
                   setFrame(f.id)
@@ -1690,6 +1941,7 @@ export function PerfilSettings() {
                       fontSize: '0.9rem',
                       fontFamily: 'var(--font-emoji)',
                     }}
+                    className="gco-frame-chip-emoji"
                   >
                     {f.emoji}
                   </span>
@@ -1796,14 +2048,15 @@ export function PerfilSettings() {
 
       {/* Acciones principales */}
       <div
+        className="gco-actions-row"
         style={{
           display: 'flex',
           gap: '0.55rem',
           flexWrap: 'wrap',
         }}
       >
-        <GlassButton type="button" onClick={save}>
-          Guardar perfil
+        <GlassButton type="button" onClick={() => void save()} disabled={saving}>
+          {saving ? 'Guardando…' : 'Guardar perfil'}
         </GlassButton>
         <button
           type="button"
@@ -2034,6 +2287,7 @@ export function PerfilSettings() {
                       {group.label}
                     </p>
                     <div
+                      className="gco-emoji-grid"
                       style={{
                         display: 'grid',
                         gridTemplateColumns:
@@ -2657,7 +2911,7 @@ export function PerfilSettings() {
               type="button"
               onClick={() => void doDownload()}
               disabled={credBusy}
-            >
+            > 
               {credBusy ? 'Descargando…' : 'Descargar'}
             </GlassButton>
             <button

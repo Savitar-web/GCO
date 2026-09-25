@@ -1,10 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   AndroidManifest.xml — GCO (Capacitor 8)
-  Android 9 (API 28) → 16+ (API 36+)
+  Android 7.0 (API 24) → 16+ (API 36+)
   AOSP · Samsung One UI 5–8 · Xiaomi/Redmi HyperOS
 
   appId: com.savitarxeno.gco
+
+  minSdkVersion = 24, deducido de los propios avisos de Android Studio
+  ("current min is 24"). Si tu android/variables.gradle define otro
+  valor, revisa de nuevo los tools:targetApi de este archivo: cualquier
+  atributo que pida un nivel de API menor o igual a minSdkVersion no
+  necesita tools:targetApi (por eso se han quitado varios abajo).
+
+  Cambios de esta revisión:
+   1. Se eliminan los tools:targetApi="1/5/21/24" que sobraban: con
+      minSdkVersion=24 esos niveles ya están garantizados siempre, así
+      que la anotación no hacía nada salvo disparar "Unnecessary;
+      SDK_INT is always >= X".
+   2. Se quitan showWhenLocked="false" y turnScreenOn="false" de la
+      Activity: los dos ya son el valor por defecto en cualquier API,
+      así que no cambiaban nada salvo disparar el aviso "only used in
+      API level 27 and higher".
+   3. REQUEST_IGNORE_BATTERY_OPTIMIZATIONS lleva tools:ignore="BatteryLife".
+      Google Play prohíbe pedir este permiso salvo que una función
+      central de la app se vea afectada por Doze/App Standby; un
+      reproductor en 2º plano golpeado por gestores de batería OEM
+      (Samsung/Xiaomi) entra en ese supuesto, y en el código solo se
+      pide bajo demanda del usuario (requestUnrestrictedBatteryIfNeeded
+      en useMediaPlayer.ts), nunca en silencio. Aun así, si vas a
+      publicar en Play Store, conviene revisar la política vigente
+      antes de enviar la app a revisión.
+   4. El <service> de @capgo/capacitor-media-session lleva
+      tools:ignore="ExportedService". exported="true" sin permiso es
+      el patrón oficial de Android para servicios de sesión de medios
+      (ver MediaSessionService en developer.android.com): así el
+      sistema, los auriculares Bluetooth o Android Auto pueden enlazar
+      con el servicio. Ponerle un permiso o exported="false" rompería
+      esa integración, así que aquí se silencia el lint a propósito en
+      vez de "arreglarlo".
+
+  Aviso que Android Studio seguirá mostrando y que NO se arregla en
+  este XML: "Android 14+ requires Foreground Service types declaration
+  and justification". El manifest ya cumple lo único que Android exige
+  a nivel de código (permiso FOREGROUND_SERVICE_MEDIA_PLAYBACK +
+  foregroundServiceType="mediaPlayback" en el <service>); lo que falta
+  es rellenar, solo si publicas en Play Store, la declaración en Play
+  Console → Política → Contenido de la app → Permisos de servicio en
+  primer plano. No es un problema de manifest ni de código.
 
   Tras pegar:
     npm run build
@@ -29,12 +71,13 @@
     <uses-permission
         android:name="android.permission.POST_NOTIFICATIONS"
         tools:targetApi="33" />
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission
+        android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
+        tools:ignore="BatteryLife" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission
         android:name="android.permission.BLUETOOTH"
-        android:maxSdkVersion="30"
-        tools:targetApi="1" />
+        android:maxSdkVersion="30" />
     <uses-permission
         android:name="android.permission.BLUETOOTH_CONNECT"
         tools:targetApi="31" />
@@ -44,24 +87,19 @@
     <!-- Hardware (no bloquean instalación en tablets, etc.) -->
     <uses-feature
         android:name="android.hardware.audio.output"
-        android:required="true"
-        tools:targetApi="5" />
+        android:required="true" />
     <uses-feature
         android:name="android.hardware.touchscreen"
-        android:required="false"
-        tools:targetApi="5" />
+        android:required="false" />
     <uses-feature
         android:name="android.hardware.microphone"
-        android:required="false"
-        tools:targetApi="5" />
+        android:required="false" />
     <uses-feature
         android:name="android.hardware.bluetooth"
-        android:required="false"
-        tools:targetApi="5" />
+        android:required="false" />
     <uses-feature
         android:name="android.software.leanback"
-        android:required="false"
-        tools:targetApi="21" />
+        android:required="false" />
 
     <!-- Visibilidad de paquetes / ajustes OEM -->
     <queries>
@@ -128,11 +166,8 @@
             android:supportsPictureInPicture="true"
             android:resizeableActivity="true"
             android:excludeFromRecents="false"
-            android:showWhenLocked="false"
-            android:turnScreenOn="false"
             android:windowSoftInputMode="adjustResize"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density|fontScale|layoutDirection"
-            tools:targetApi="24">
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density|fontScale|layoutDirection">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -157,7 +192,12 @@
 
         <!--
           @capgo/capacitor-media-session (gadget + audio en 2º plano)
-          stopWithTask=false → no matar el FGS al quitar de recientes (One UI / HyperOS)
+          stopWithTask=false → no matar el FGS al quitar de recientes (One UI / HyperOS).
+          exported=true sin permiso es el patrón oficial de Android para
+          servicios de sesión de medios: lo necesita el sistema (botones
+          multimedia, Bluetooth, Android Auto) para poder enlazar con el
+          servicio, así que el lint "ExportedService" se silencia a
+          propósito en vez de romper esa integración.
         -->
         <service
             android:name="com.capgo.mediasession.MediaSessionService"
@@ -166,7 +206,8 @@
             android:foregroundServiceType="mediaPlayback"
             android:stopWithTask="false"
             tools:replace="android:exported,android:foregroundServiceType,android:stopWithTask"
-            tools:targetApi="34">
+            tools:targetApi="34"
+            tools:ignore="ExportedService">
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
