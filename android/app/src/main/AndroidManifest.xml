@@ -1,59 +1,69 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  AndroidManifest.xml — GCO (Capacitor)
-  Cobertura: Android 9 (API 28) → Android 16+ (API 36+)
-  Perfil: AOSP, Samsung One UI 5–8 (S26 Ultra / Android 16), Xiaomi/Redmi MIUI/HyperOS.
+  AndroidManifest.xml — GCO (Capacitor 8)
+  Android 9 (API 28) → 16+ (API 36+)
+  AOSP · Samsung One UI 5–8 · Xiaomi/Redmi HyperOS
 
-  OBLIGATORIO tras copiar este archivo:
-    npm i @capgo/capacitor-media-session @capacitor/local-notifications @capacitor/app
+  appId: com.savitarxeno.gco
+
+  Tras pegar:
+    npm run build
     npx cap sync android
-
-  El plugin @capgo/capacitor-media-session inyecta MediaSessionService.
-  Aquí se REDECLARA con tools:replace para que NUNCA se pierda
-  android:foregroundServiceType="mediaPlayback" (API 34+ lo exige o el
-  sistema mata el servicio y no hay gadget / Now bar / lock screen).
-
-  capacitor.config.ts (recomendado):
-    plugins: {
-      MediaSession: { foregroundService: "always" }
-    }
+  Luego en Android Studio: File → Sync Project with Gradle Files
+  (Los "Unresolved class" suelen desaparecer al terminar el sync.)
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     tools:ignore="MissingLeanbackLauncher">
 
-    <!-- PERMISOS — red -->
+    <!-- Red -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- PERMISOS — energía, FGS media y ciclo de vida en segundo plano -->
+    <!-- Energía / FGS media / notificaciones -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <!-- API 34+ : sin este permiso el FGS mediaPlayback es ilegal y la notificación no aparece -->
     <uses-permission
         android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
         tools:targetApi="34" />
-    <!-- API 33+ : sin este permiso concedido EN RUNTIME la MediaStyle notification es invisible -->
     <uses-permission
         android:name="android.permission.POST_NOTIFICATIONS"
         tools:targetApi="33" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30"
+        tools:targetApi="1" />
     <uses-permission
         android:name="android.permission.BLUETOOTH_CONNECT"
         tools:targetApi="31" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- HARDWARE -->
-    <uses-feature android:name="android.hardware.audio.output" android:required="true" />
-    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
-    <uses-feature android:name="android.hardware.microphone" android:required="false" />
-    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
-    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <!-- Hardware (no bloquean instalación en tablets, etc.) -->
+    <uses-feature
+        android:name="android.hardware.audio.output"
+        android:required="true"
+        tools:targetApi="5" />
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false"
+        tools:targetApi="5" />
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false"
+        tools:targetApi="5" />
+    <uses-feature
+        android:name="android.hardware.bluetooth"
+        android:required="false"
+        tools:targetApi="5" />
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="false"
+        tools:targetApi="21" />
 
-    <!-- VISIBILIDAD DE PAQUETES (Android 11+) -->
+    <!-- Visibilidad de paquetes / ajustes OEM -->
     <queries>
         <intent>
             <action android:name="android.intent.action.VIEW" />
@@ -66,6 +76,10 @@
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="audio/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="video/*" />
         </intent>
         <intent>
             <action android:name="android.settings.APPLICATION_DETAILS_SETTINGS" />
@@ -98,11 +112,15 @@
         android:enableOnBackInvokedCallback="true"
         android:extractNativeLibs="false"
         android:largeHeap="true"
-        tools:targetApi="36">
+        tools:targetApi="36"
+        tools:replace="android:allowBackup,android:usesCleartextTraffic">
 
-        <!-- Activity principal -->
+        <!--
+          Nombre completo = applicationId (capacitor appId).
+          Evita "Unresolved class '.MainActivity'" en el analizador del IDE.
+        -->
         <activity
-            android:name=".MainActivity"
+            android:name="com.savitarxeno.gco.MainActivity"
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
@@ -113,35 +131,33 @@
             android:showWhenLocked="false"
             android:turnScreenOn="false"
             android:windowSoftInputMode="adjustResize"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density|fontScale|layoutDirection">
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density|fontScale|layoutDirection"
+            tools:targetApi="24">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Botones multimedia físicos / Bluetooth (One UI, HyperOS, AOSP) -->
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </activity>
 
-        <!-- FileProvider -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
             android:exported="false"
-            android:grantUriPermissions="true">
+            android:grantUriPermissions="true"
+            tools:replace="android:authorities">
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
 
         <!--
-          MediaSessionService de @capgo/capacitor-media-session
-          Nombre completo = package del plugin + MediaSessionService.
-          stopWithTask=false: si el usuario quita la app de recientes, el FGS
-          de media puede seguir (One UI 6–8 / HyperOS matan si stopWithTask=true).
+          @capgo/capacitor-media-session (gadget + audio en 2º plano)
+          stopWithTask=false → no matar el FGS al quitar de recientes (One UI / HyperOS)
         -->
         <service
             android:name="com.capgo.mediasession.MediaSessionService"
@@ -149,27 +165,18 @@
             android:exported="true"
             android:foregroundServiceType="mediaPlayback"
             android:stopWithTask="false"
-            tools:replace="android:exported,android:foregroundServiceType,android:stopWithTask">
+            tools:replace="android:exported,android:foregroundServiceType,android:stopWithTask"
+            tools:targetApi="34">
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </service>
 
         <!--
-          Si usas @jofr/capacitor-media-session EN VEZ de Capgo, sustituye el
-          android:name del <service> anterior por:
-          io.github.jofr.capacitor.mediasessionplugin.MediaSessionService
-          No declares ambos a la vez: competirían por MEDIA_BUTTON.
+          Botones multimedia (auriculares / Bluetooth).
+          La clase viene de androidx.media (la arrastra Capgo al hacer sync).
+          Si el IDE marca Unresolved antes del sync, es normal; tras Gradle desaparece.
         -->
 
-        <receiver
-            android:name="androidx.media.session.MediaButtonReceiver"
-            android:exported="true"
-            android:enabled="true"
-            tools:replace="android:exported">
-            <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
-            </intent-filter>
-        </receiver>
     </application>
 </manifest>

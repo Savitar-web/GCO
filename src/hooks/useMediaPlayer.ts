@@ -501,19 +501,27 @@ async function updateMediaSessionMetadata(t: TrackItem | null) {
   if (isCapacitorNative()) {
     const plugin = await loadCapMediaSession()
     if (plugin) {
-      try {
+      const push = async () => {
         if (!t) {
           await plugin.setPlaybackState({ playbackState: 'none' })
-        } else {
-          await plugin.setMetadata({
-            title: t.title || 'Sin título',
-            artist: t.artist || 'Desconocido',
-            album: t.album || '',
-            artwork: artwork.length ? artwork : undefined,
-          })
+          return
         }
-      } catch (e) {
-        console.warn('[gco] cap setMetadata:', e)
+        await plugin.setMetadata({
+          title: (t.title || 'Sin título').slice(0, 200),
+          artist: (t.artist || 'Desconocido').slice(0, 200),
+          album: (t.album || '').slice(0, 200),
+          artwork: artwork.length ? artwork : undefined,
+        })
+      }
+      // One UI / HyperOS a veces descartan el 1.er setMetadata si el FGS aún no arrancó
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          await push()
+          break
+        } catch (e) {
+          console.warn('[gco] cap setMetadata attempt', attempt, e)
+          await new Promise((r) => setTimeout(r, 90 + attempt * 110))
+        }
       }
     }
   }
@@ -546,10 +554,14 @@ async function setMediaSessionPlaybackState(state: 'playing' | 'paused' | 'none'
   if (isCapacitorNative()) {
     const plugin = await loadCapMediaSession()
     if (plugin) {
-      try {
-        await plugin.setPlaybackState({ playbackState: state })
-      } catch {
-        /* */
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await plugin.setPlaybackState({ playbackState: state })
+          break
+        } catch (e) {
+          console.warn('[gco] setPlaybackState attempt', attempt, e)
+          await new Promise((r) => setTimeout(r, 80 + attempt * 60))
+        }
       }
     }
   }
@@ -571,18 +583,21 @@ async function updatePositionState(
   const duration = durationMs / 1000
   const position = clamp(positionMs, 0, durationMs) / 1000
   const rate = playbackRate > 0 ? playbackRate : 1
-  const safePos = Math.min(Math.max(0, position), duration)
+  const safePos = Math.min(Math.max(0, position), Math.max(0, duration - 0.05))
   if (isCapacitorNative()) {
     const plugin = await loadCapMediaSession()
     if (plugin?.setPositionState) {
-      try {
-        await plugin.setPositionState({
-          duration,
-          position: safePos,
-          playbackRate: rate,
-        })
-      } catch {
-        /* */
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await plugin.setPositionState({
+            duration,
+            position: safePos,
+            playbackRate: rate,
+          })
+          break
+        } catch {
+          await new Promise((r) => setTimeout(r, 50 + attempt * 40))
+        }
       }
     }
   }
@@ -1386,11 +1401,18 @@ function startPositionTick() {
     if (dur > 0) snapshot.durationMs = dur
     void updatePositionState(dur, pos, rateRef.current)
     positionMetaRefreshCounter += 1
-    if (isCapacitorAndroid() && trackRef.current && positionMetaRefreshCounter % 5 === 0) {
-      void updateMediaSessionMetadata(trackRef.current)
+    // Empuje periódico: seekbar + portada en Now Bar / panel de medios
+    if (isCapacitorNative() && trackRef.current) {
+      if (positionMetaRefreshCounter % 3 === 0) {
+        void setMediaSessionPlaybackState('playing')
+      }
+      if (positionMetaRefreshCounter % 4 === 0) {
+        void updateMediaSessionMetadata(trackRef.current)
+      }
     }
   }
-  positionTickTimer = window.setInterval(tick, 800)
+  // 700ms: equilibrio entre suavidad del seekbar y binder OEM
+  positionTickTimer = window.setInterval(tick, 700)
   tick()
 }
 function stopPositionTick() {
@@ -1919,19 +1941,21 @@ async function prepareAndroidBackgroundPlayback() {
 }
 
 async function armNativeSessionThenPlay(t: TrackItem, audio: HTMLAudioElement) {
+  /* Orden fijo Android 13–16 (One UI / HyperOS / AOSP):
+     handlers → metadata → position → play() → playing → position → metadata */
   await ensureMediaSessionHandlers()
   await updateMediaSessionMetadata(t)
   const durHint = (audio.duration || 0) * 1000 || t.durationMs || snapshot.durationMs
   if (durHint > 0) {
     await updatePositionState(durHint, (audio.currentTime || 0) * 1000, rateRef.current)
   }
-  // Restaurar rate ANTES del play (evita arranque a 1.0 y luego jump)
   try {
     audio.playbackRate = clamp(rateRef.current || 1, 0.5, 2)
     audio.preservesPitch = true
   } catch {
     /* */
   }
+  setAudioSessionPlayback()
   await audio.play()
   playingRef.current = true
   snapshot.playing = true
@@ -1945,6 +1969,25 @@ async function armNativeSessionThenPlay(t: TrackItem, audio: HTMLAudioElement) {
   await setMediaSessionPlaybackState('playing')
   const dur = (audio.duration || 0) * 1000 || snapshot.durationMs
   await updatePositionState(dur, (audio.currentTime || 0) * 1000, rateRef.current)
+  // Segunda oleada: algunos OEM solo muestran la notificación tras el 2º push
+  window.setTimeout(() => {
+    void (async () => {
+      await updateMediaSessionMetadata(t)
+      await setMediaSessionPlaybackState('playing')
+      const a = audioRef.current
+      if (a) {
+        await updatePositionState(
+          (a.duration || 0) * 1000 || snapshot.durationMs,
+          (a.currentTime || 0) * 1000,
+          rateRef.current,
+        )
+      }
+    })()
+  }, 280)
+  window.setTimeout(() => {
+    void setMediaSessionPlaybackState('playing')
+    void updateMediaSessionMetadata(t)
+  }, 900)
   startPositionTick()
   notify()
   requestFloatingBar()

@@ -1688,29 +1688,6 @@ export function CategoryMenu() {
                 </span>
               </span>
             </button>
-            <button
-              type="button"
-              className="theme-cycle-btn"
-              aria-label="Abrir ajustes"
-              onClick={() => {
-                soundClick()
-                navigate('../ajustes/PerfilSettings.tsx')
-              }}
-              style={{ width: 44, height: 44, padding: 0, borderRadius: 12 }}
-            >
-              <span
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 4,
-                  alignItems: 'center',
-                }}
-              >
-                <span style={{ width: 18, height: 2, background: 'currentColor', borderRadius: 2 }} />
-                <span style={{ width: 18, height: 2, background: 'currentColor', borderRadius: 2 }} />
-                <span style={{ width: 18, height: 2, background: 'currentColor', borderRadius: 2 }} />
-              </span>
-            </button>
           </div>
         </div>
 

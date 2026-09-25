@@ -859,7 +859,7 @@ const LAYOUT_CSS = `
 }
 .gco-play-fab {
   display: grid; place-items: center; border: none; cursor: pointer;
-  background: var(--gco-primary); color: var(--gco-on-primary, #0B1220);
+  background: var(--gco-primary); color: var(--gco-on-primary, #ffffff);
   box-shadow: 0 6px 18px color-mix(in srgb, var(--gco-primary) 45%, transparent);
   transition: transform 0.15s cubic-bezier(0.16,1,0.3,1), box-shadow 0.15s ease, filter 0.15s ease;
 }
@@ -869,11 +869,11 @@ const LAYOUT_CSS = `
 .gco-chip {
   border: none; cursor: pointer; font: inherit; font-size: 0.85rem; font-weight: 600;
   padding: 0.5rem 1rem; border-radius: 999px; display: flex; align-items: center; gap: 6px;
-  background: var(--gco-glass-bg, rgba(255,255,255,0.06)); color: var(--gco-ink-muted);
+  background: var(--gco-glass-bg, #f4f5f7); color: var(--gco-ink-muted);
   transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
 }
 .gco-chip:hover { transform: translateY(-1px); }
-.gco-chip.on { background: var(--gco-primary); color: var(--gco-on-primary, #0B1220); }
+.gco-chip.on { background: var(--gco-primary); color: var(--gco-on-primary, #f4f5f7); }
 
 .gco-stat-tile {
   flex: 1 1 100px; padding: 0.9rem; border-radius: 16px;

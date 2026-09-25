@@ -4466,7 +4466,6 @@ export function IdiomasGame() {
   const [pendingQuestion, setPendingQuestion] = useState<Question | null>(null)
   const [revealed, setRevealed] = useState<Set<number>>(new Set())
   const [lessonAudioOn, setLessonAudioOn] = useState(false)
-  const [skipVocabPreview, setSkipVocabPreview] = useState(() => readJSON(LS.skipVocab, false))
   const [winStreak, setWinStreak] = useState(() => readJSON(LS.streak, 0))
   const [bestStreak, setBestStreak] = useState(() => readJSON(LS.bestStreak, 0))
   const [storyFilterLang, setStoryFilterLang] = useState<LangId | 'all'>(() =>
@@ -4497,10 +4496,6 @@ export function IdiomasGame() {
   useEffect(() => {
     writeJSON(LS.mode, preferredMode)
   }, [preferredMode])
-
-  useEffect(() => {
-    writeJSON(LS.skipVocab, skipVocabPreview)
-  }, [skipVocabPreview])
 
   useEffect(() => {
     writeJSON(LS.storyFilter, storyFilterLang)
@@ -4554,18 +4549,14 @@ export function IdiomasGame() {
     [lang, preferredMode, currentMap, resolveTarget]
   )
 
-  /** Punto de entrada a un nivel: primero da la clase con el vocabulario y la
-   * regla que aparecerán en la pregunta, y solo entonces deja jugar (salvo
-   * que el usuario haya elegido saltar este paso). La pregunta se genera una
-   * sola vez aquí y se reutiliza al jugar, para que la clase describa
-   * exactamente las opciones reales, sin sorpresas de un nuevo sorteo. */
+  /** Punto de entrada a un nivel: siempre da primero la clase completa con el
+   * vocabulario y la regla que aparecerán en la pregunta; es obligatoria, no
+   * hay forma de saltarla. La pregunta se genera una sola vez aquí y se
+   * reutiliza al jugar, para que la clase describa exactamente las opciones
+   * reales, sin sorpresas de un nuevo sorteo. */
   const openVocab = useCallback(
     (n: number) => {
       const target = resolveTarget(n)
-      if (skipVocabPreview) {
-        startLevel(target)
-        return
-      }
       const q = generateQuestion(target, lang, preferredMode)
       setPendingLevel(target)
       setPendingQuestion(q)
@@ -4573,7 +4564,7 @@ export function IdiomasGame() {
       setLessonAudioOn(false)
       setScreen('vocab')
     },
-    [skipVocabPreview, startLevel, resolveTarget, lang, preferredMode]
+    [resolveTarget, lang, preferredMode]
   )
 
   const onSelectOption = (idx: number) => {
@@ -5371,15 +5362,6 @@ export function IdiomasGame() {
             )
           })}
         </div>
-
-        <label className="id-skip-row">
-          <input
-            type="checkbox"
-            checked={skipVocabPreview}
-            onChange={(e) => setSkipVocabPreview(e.target.checked)}
-          />
-          No mostrar la clase antes de cada nivel (puedes reactivarla cuando quieras)
-        </label>
 
         <div className="id-actions">
           <motion.button

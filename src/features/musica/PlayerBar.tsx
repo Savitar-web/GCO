@@ -64,42 +64,103 @@ type Props = {
  * Detección de tema
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-function detectThemeMode(): AppThemeMode {
+/**
+ * Lee el id de tema REAL (cyberpunk, vaporwave, cottagecore, …),
+ * no solo light/dark. Los colores salen 100 % de CSS vars de theme.css
+ * bajo [data-theme='…'] / [data-gco-theme='…'].
+ */
+function readThemeId(): string {
   if (typeof document === 'undefined') return 'dark'
   const root = document.documentElement
   const body = document.body
   const attr =
     root.getAttribute('data-theme') ||
     root.getAttribute('data-gco-theme') ||
-    body.getAttribute('data-theme') ||
+    body?.getAttribute('data-theme') ||
+    body?.getAttribute('data-gco-theme') ||
     ''
-  const cls = `${root.className} ${body.className}`.toLowerCase()
-  const stored =
-    (typeof localStorage !== 'undefined' &&
-      (localStorage.getItem('gco:theme') || localStorage.getItem('theme') || '')) ||
-    ''
-  const blob = `${attr} ${cls} ${stored}`.toLowerCase()
-  if (/rainbow|arco|iris|pride/.test(blob)) return 'rainbow'
-  // Temas claros / luminosos de theme.css
-  if (
-    /\blight\b|claro|day|sunrise|solarpunk|light-academia|cottagecore|dreamcore|liminal|memphis|bauhaus|neumorphism|scandinavian|corporate-memphis|frutiger-aero|windowscore/.test(
-      blob,
-    )
-  )
-    return 'light'
-  if (/dark|oscuro|night|midnight|cyberpunk|spacecore|nightcore/.test(blob)) return 'dark'
+  if (attr && attr.trim()) return attr.trim().toLowerCase()
   try {
-    if (window.matchMedia('(prefers-color-scheme: light)').matches) return 'light'
+    const stored =
+      localStorage.getItem('gco:theme') ||
+      localStorage.getItem('theme') ||
+      localStorage.getItem('gco:theme-mode') ||
+      ''
+    if (stored.trim()) return stored.trim().toLowerCase()
   } catch {
     /* */
   }
   return 'dark'
 }
 
-function useAppThemeMode(): AppThemeMode {
-  const [mode, setMode] = useState<AppThemeMode>(() => detectThemeMode())
+/** Solo para contraste de scrollbars (no define colores de marca). */
+function isLightThemeId(id: string): boolean {
+  const t = id.toLowerCase()
+  if (
+    t === 'light' ||
+    t === 'claro' ||
+    t === 'day' ||
+    t === 'sunrise' ||
+    t === 'solarpunk' ||
+    t === 'light-academia' ||
+    t === 'cottagecore' ||
+    t === 'dreamcore' ||
+    t === 'liminal' ||
+    t === 'liminal-space' ||
+    t === 'memphis' ||
+    t === 'memphis-design' ||
+    t === 'bauhaus' ||
+    t === 'neumorphism' ||
+    t === 'scandinavian' ||
+    t === 'minimalismo-escandinavo' ||
+    t === 'corporate-memphis' ||
+    t === 'frutiger-aero' ||
+    t === 'windowscore' ||
+    t === 'fairycore' ||
+    t === 'pastel' ||
+    t === 'ukiyo-e' ||
+    t === 'ukiyo-e-moderno'
+  ) {
+    return true
+  }
+  // Heurística: si --gco-bg es claro, tratar como light para scrollbars
+  try {
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--gco-bg').trim()
+    if (bg.startsWith('#')) {
+      const hex = bg.replace('#', '')
+      const full =
+        hex.length === 3
+          ? hex
+              .split('')
+              .map((c) => c + c)
+              .join('')
+          : hex
+      if (full.length >= 6) {
+        const r = parseInt(full.slice(0, 2), 16)
+        const g = parseInt(full.slice(2, 4), 16)
+        const b = parseInt(full.slice(4, 6), 16)
+        const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+        return lum > 0.62
+      }
+    }
+  } catch {
+    /* */
+  }
+  return false
+}
+
+function useAppThemeId(): string {
+  const [themeId, setThemeId] = useState(() => readThemeId())
   useEffect(() => {
-    const refresh = () => setMode(detectThemeMode())
+    const refresh = () => {
+      const id = readThemeId()
+      setThemeId(id)
+      try {
+        document.documentElement.style.setProperty('--gco-theme-tick', String(Date.now() % 1e9))
+      } catch {
+        /* */
+      }
+    }
     refresh()
     const obs = new MutationObserver(refresh)
     obs.observe(document.documentElement, {
@@ -113,23 +174,34 @@ function useAppThemeMode(): AppThemeMode {
       })
     }
     window.addEventListener('storage', refresh)
-    window.addEventListener('gco:theme-change', refresh)
-    const id = window.setInterval(refresh, 2000)
+    window.addEventListener('gco:theme-change', refresh as EventListener)
+    const id = window.setInterval(refresh, 1500)
     return () => {
       obs.disconnect()
       window.removeEventListener('storage', refresh)
-      window.removeEventListener('gco:theme-change', refresh)
+      window.removeEventListener('gco:theme-change', refresh as EventListener)
       window.clearInterval(id)
     }
   }, [])
-  return mode
+  return themeId
 }
 
-function useThemeTokens(_mode: AppThemeMode) {
-  /* 100 % CSS vars de theme.css — pastilla/fullscreen siguen cualquier data-theme */
+function useAppThemeMode(): AppThemeMode {
+  const themeId = useAppThemeId()
   return useMemo(() => {
+    if (/rainbow|arco|iris|pride/.test(themeId)) return 'rainbow'
+    if (isLightThemeId(themeId)) return 'light'
+    return 'dark'
+  }, [themeId])
+}
+
+function useThemeTokens(themeId: string) {
+  /* Colores = CSS vars del data-theme activo. themeId fuerza re-render al cambiar estilo. */
+  return useMemo(() => {
+    void themeId
     const accent = 'var(--gco-primary)'
-    const onAccent = 'var(--gco-button-text, var(--gco-on-primary, #0B1220))'
+    const onAccent =
+      'var(--gco-button-text, var(--gco-primary-contrast, var(--gco-on-primary, #0B1220)))'
     return {
       accent,
       onAccent,
@@ -163,7 +235,7 @@ function useThemeTokens(_mode: AppThemeMode) {
         'linear-gradient(transparent 28%, color-mix(in srgb, var(--gco-bg) 12%, #000 88%) 100%)',
       surfaceMuted: 'color-mix(in srgb, var(--gco-ink) 6%, transparent)',
     }
-  }, [])
+  }, [themeId])
 }
 
 function isMobileViewport() {
@@ -470,9 +542,33 @@ function buildGlobalCss(mode: AppThemeMode) {
 .gco-pb-icon:hover { filter: brightness(1.1); }
 .gco-play-main {
   background: var(--gco-primary) !important;
-  color: var(--gco-button-text, var(--gco-on-primary, #0B1220)) !important;
+  color: var(--gco-button-text, var(--gco-primary-contrast, var(--gco-on-primary, #0B1220))) !important;
   border: none !important;
   box-shadow: 0 8px 28px color-mix(in srgb, var(--gco-primary) 42%, transparent) !important;
+}
+/* Portales en body: heredan tokens del :root / data-theme activo */
+.gco-fs-root,
+.gco-float-bar,
+[data-gco="global-player"],
+[data-pip-bubble] {
+  color: var(--gco-ink);
+  --gco-local-primary: var(--gco-primary);
+}
+.gco-fs-root {
+  background: var(--gco-bg) !important;
+  color: var(--gco-ink) !important;
+}
+.gco-progress-fill,
+.gco-float-progress > i {
+  background: var(--gco-primary) !important;
+}
+.gco-fs-range {
+  accent-color: var(--gco-primary) !important;
+}
+.gco-pb-icon:not(.gco-play-main) {
+  background: var(--gco-glass-bg) !important;
+  color: var(--gco-ink) !important;
+  border: var(--gco-border-width, 1px) solid var(--gco-glass-border) !important;
 }
 .gco-play-main:hover { filter: brightness(1.08); }
 .gco-progress-fill {
@@ -638,8 +734,9 @@ ${
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 export function PlayerBar({ player, floating }: Props) {
+  const themeId = useAppThemeId()
   const themeMode = useAppThemeMode()
-  const tokens = useThemeTokens(themeMode)
+  const tokens = useThemeTokens(themeId)
 
   const t = player.track
   const [fullscreen, setFullscreen] = useState(false)
@@ -1177,27 +1274,28 @@ export function PlayerBar({ player, floating }: Props) {
       pictureInPictureEnabled?: boolean
     }
 
-    /* Salir si ya hay PiP */
     if (d.pictureInPictureElement || systemPipRef.current || pipFallback || pipActive) {
       await exitAllPip()
       return
     }
 
     pipRequestedRef.current = true
+
     const ensureVid = async (): Promise<HTMLVideoElement | null> => {
       let vid = videoRef.current
-      if (!vid) {
-        /* Espera al host persistente */
-        for (let i = 0; i < 20; i++) {
-          await new Promise((r) => setTimeout(r, 40))
-          vid = videoRef.current
-          if (vid) break
-        }
+      for (let i = 0; i < 25 && !vid; i++) {
+        await new Promise((r) => setTimeout(r, 40))
+        vid = videoRef.current
       }
       return vid
     }
 
-    const prepVideo = async (vid: HTMLVideoElement) => {
+    /**
+     * iOS/WebKit RECHAZA PiP si el <video> está opacity:0 / 1×1 fuera de pantalla.
+     * Lo mostramos brevemente (off-screen pero con tamaño real), play(), PiP, y
+     * el SO se queda con la sesión. El audio sigue en useMediaPlayer (vídeo muted).
+     */
+    const stageVideoForPip = (vid: HTMLVideoElement) => {
       forceVideoSilent(vid)
       vid.setAttribute('playsinline', 'true')
       vid.setAttribute('webkit-playsinline', 'true')
@@ -1208,9 +1306,21 @@ export function PlayerBar({ player, floating }: Props) {
       } catch {
         /* */
       }
-      const target = player.currentMs / 1000
+      const st = vid.style
+      st.position = 'fixed'
+      st.left = '0'
+      st.top = '0'
+      st.width = '320px'
+      st.height = '180px'
+      st.opacity = '0.02'
+      st.zIndex = '2147483000'
+      st.pointerEvents = 'none'
+      st.objectFit = 'cover'
       try {
-        if (Math.abs((vid.currentTime || 0) - target) > 0.5) vid.currentTime = target
+        const target = player.currentMs / 1000
+        if (Number.isFinite(target) && Math.abs((vid.currentTime || 0) - target) > 0.4) {
+          vid.currentTime = target
+        }
       } catch {
         /* */
       }
@@ -1221,14 +1331,16 @@ export function PlayerBar({ player, floating }: Props) {
         /* */
       }
       forceVideoSilent(vid)
-      if (vid.paused) {
-        try {
-          await vid.play()
-        } catch {
-          /* */
-        }
-      }
-      forceVideoSilent(vid)
+    }
+
+    const hideStagedVideo = (vid: HTMLVideoElement) => {
+      const st = vid.style
+      st.width = '1px'
+      st.height = '1px'
+      st.opacity = '0'
+      st.left = '-9999px'
+      st.top = '0'
+      st.zIndex = '0'
     }
 
     const tryWebkitPip = (vid: HTMLVideoElement): boolean => {
@@ -1238,82 +1350,92 @@ export function PlayerBar({ player, floating }: Props) {
         webkitPresentationMode?: string
       }
       try {
-        if (typeof wv.webkitSupportsPresentationMode === 'function') {
-          if (wv.webkitSupportsPresentationMode('picture-in-picture')) {
-            wv.webkitSetPresentationMode?.('picture-in-picture')
-            systemPipRef.current = true
-            setPipActive(true)
-            setPipFallback(false)
-            closeFullscreen()
-            return true
-          }
-        }
-        /* Algunos WebKit aceptan set sin supports */
-        if (typeof wv.webkitSetPresentationMode === 'function') {
-          wv.webkitSetPresentationMode('picture-in-picture')
-          systemPipRef.current = true
-          setPipActive(true)
-          setPipFallback(false)
-          closeFullscreen()
-          return true
-        }
+        const can =
+          typeof wv.webkitSupportsPresentationMode === 'function'
+            ? wv.webkitSupportsPresentationMode('picture-in-picture')
+            : typeof wv.webkitSetPresentationMode === 'function'
+        if (!can) return false
+        wv.webkitSetPresentationMode?.('picture-in-picture')
+        systemPipRef.current = true
+        setPipActive(true)
+        setPipFallback(false)
+        closeFullscreen()
+        return true
       } catch (err) {
         console.warn('[gco] webkit PiP:', err)
+        return false
       }
-      return false
     }
 
     const tryStandardPip = async (vid: HTMLVideoElement): Promise<boolean> => {
       try {
-        if (d.pictureInPictureEnabled !== false && typeof vid.requestPictureInPicture === 'function') {
-          await vid.requestPictureInPicture()
-          systemPipRef.current = true
-          setPipActive(true)
-          setPipFallback(false)
-          closeFullscreen()
-          return true
-        }
+        if (typeof vid.requestPictureInPicture !== 'function') return false
+        if (d.pictureInPictureEnabled === false) return false
+        await vid.requestPictureInPicture()
+        systemPipRef.current = true
+        setPipActive(true)
+        setPipFallback(false)
+        closeFullscreen()
+        return true
       } catch (err) {
         console.warn('[gco] standard PiP:', err)
+        return false
       }
-      return false
-    }
-
-    const activateFallback = () => {
-      setPipFallback(true)
-      setPipActive(true)
-      closeFullscreen()
     }
 
     try {
       const vid = await ensureVid()
       if (!vid) {
-        activateFallback()
+        setPipFallback(true)
+        setPipActive(true)
+        closeFullscreen()
         return
       }
-      await prepVideo(vid)
-
-      /* Orden: iOS/WebKit primero (Safari, PWA iOS, Capacitor iOS), luego estándar */
-      if (tryWebkitPip(vid)) return
-      if (await tryStandardPip(vid)) return
-
-      /* Reintento tras un frame (iOS a veces necesita play() asentado) */
-      await new Promise((r) => requestAnimationFrame(() => r(undefined)))
+      stageVideoForPip(vid)
       forceVideoSilent(vid)
-      if (vid.paused) {
-        try {
-          await vid.play()
-        } catch {
-          /* */
-        }
+      try {
+        if (vid.paused) await vid.play()
+      } catch {
+        /* */
       }
-      if (tryWebkitPip(vid)) return
-      if (await tryStandardPip(vid)) return
+      forceVideoSilent(vid)
+      // Dejar un frame para que WebKit registre el frame visible
+      await new Promise((r) => requestAnimationFrame(() => r(undefined)))
+      await new Promise((r) => setTimeout(r, 60))
 
-      activateFallback()
+      if (tryWebkitPip(vid)) {
+        // En PiP el SO controla la ventana; ocultamos el host
+        hideStagedVideo(vid)
+        forceVideoSilent(vid)
+        return
+      }
+      if (await tryStandardPip(vid)) {
+        hideStagedVideo(vid)
+        forceVideoSilent(vid)
+        return
+      }
+      // Segundo intento tras play reforzado
+      try {
+        await vid.play()
+      } catch {
+        /* */
+      }
+      forceVideoSilent(vid)
+      await new Promise((r) => setTimeout(r, 100))
+      if (tryWebkitPip(vid) || (await tryStandardPip(vid))) {
+        hideStagedVideo(vid)
+        forceVideoSilent(vid)
+        return
+      }
+      hideStagedVideo(vid)
+      setPipFallback(true)
+      setPipActive(true)
+      closeFullscreen()
     } catch (err) {
       console.warn('[gco] togglePip:', err)
-      activateFallback()
+      setPipFallback(true)
+      setPipActive(true)
+      closeFullscreen()
     }
   }, [hasVideo, t, pipFallback, pipActive, exitAllPip, closeFullscreen, player])
 
@@ -2018,7 +2140,7 @@ export function PlayerBar({ player, floating }: Props) {
     </button>
   ) : (
     <div
-      data-theme={themeMode}
+      data-theme={themeId} data-gco-theme={themeId}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -2217,7 +2339,7 @@ export function PlayerBar({ player, floating }: Props) {
     <div
       ref={fsRootRef}
       className="gco-fs-root glass-card"
-      data-theme={themeMode}
+      data-theme={themeId} data-gco-theme={themeId}
       style={{
         position: 'fixed',
         inset: 0,
