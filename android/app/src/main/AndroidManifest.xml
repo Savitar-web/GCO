@@ -1,62 +1,113 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  AndroidManifest.xml — GCO (Capacitor 8)
-  Android 7.0 (API 24) → 16+ (API 36+)
-  AOSP · Samsung One UI 5–8 · Xiaomi/Redmi HyperOS
+  ============================================================================
+  AndroidManifest.xml — GCO (Capacitor 8) — REVISIÓN EXPERTA 2026-09
+  ============================================================================
+  Android 7.0 (API 24) → 16+ / 17+ (API 36+)
+  AOSP · Samsung One UI 5–8 · Xiaomi/Redmi/POCO HyperOS · Oppo/ColorOS · Realme
 
   appId: com.savitarxeno.gco
-
   minSdkVersion = 24
 
-  Objetivo principal:
-  - Reproducción de audio en segundo plano fiable (MediaSession + FGS mediaPlayback)
-  - Picture-in-Picture para vídeo
-  - Soporte agresivo de OEM (Samsung / Xiaomi)
-  - Cumplir requisitos de Android 14+ para Foreground Service Types
+  OBJETIVOS PRINCIPALES
+  ─────────────────────
+  1. Audio en segundo plano fiable (MediaSession + FGS mediaPlayback)
+  2. Vídeo en Picture-in-Picture (PiP) nativo del sistema
+  3. Soporte de ventana flotante / “aparecer encima” (SYSTEM_ALERT_WINDOW)
+     para casos en los que el OEM o el reproductor de vídeo lo necesite
+  4. Compatibilidad máxima con gestores de batería agresivos (One UI / HyperOS)
+  5. Cumplir todos los requisitos de Foreground Service Types de Android 14+
 
-  Cambios de esta revisión (2026-09):
-  1. Se mantiene tools:ignore="BatteryLife" en REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
-     (solo se pide bajo demanda del usuario desde useMediaPlayer.ts).
-  2. Servicio de @capgo/capacitor-media-session correctamente tipado como
-     foregroundServiceType="mediaPlayback" + exported="true" + stopWithTask="false".
-  3. Se eliminan atributos innecesarios que disparaban lint.
-  4. Se mantienen todos los queries necesarios para ajustes de batería y medios.
-  5. Activity con supportsPictureInPicture="true" para vídeo en ventana flotante.
-  6. Comentarios actualizados y limpios.
+  HISTORIAL DE CAMBIOS IMPORTANTES
+  ────────────────────────────────
+  • 2026-09 (esta revisión):
+      - Se añade android.permission.SYSTEM_ALERT_WINDOW
+        (necesario para “Display over other apps” / “Aparecer encima”
+         en Samsung, Xiaomi, Oppo y algunos reproductores de vídeo).
+      - Se añaden queries para ACTION_MANAGE_OVERLAY_PERMISSION.
+      - Se refuerzan comentarios y se documentan todos los permisos.
+      - Se mantiene tools:ignore="BatteryLife" porque el permiso de
+        batería solo se solicita bajo demanda del usuario.
+      - El servicio MediaSessionService sigue con exported="true",
+        foregroundServiceType="mediaPlayback" y stopWithTask="false".
+  • Revisiones anteriores:
+      - Eliminación de tools:targetApi innecesarios (minSdk 24).
+      - Eliminación de showWhenLocked/turnScreenOn por defecto.
+      - Declaración correcta de FOREGROUND_SERVICE_MEDIA_PLAYBACK.
 
-  Aviso que Android Studio seguirá mostrando y que NO se arregla en este XML:
-  "Android 14+ requires Foreground Service types declaration and justification".
-  El manifest ya cumple lo que el sistema exige. Solo falta rellenar la
-  declaración en Play Console si publicas en Play Store.
+  AVISO IMPORTANTE (Android Studio)
+  ─────────────────────────────────
+  El aviso “Android 14+ requires Foreground Service types declaration
+  and justification” NO se elimina del IDE. El manifest ya cumple lo
+  que el sistema operativo exige. Solo falta rellenar la declaración
+  en Play Console → Política → Contenido de la app → Permisos de
+  servicio en primer plano SI publicas en Google Play.
 
-  Tras pegar este archivo:
-    npm run build && npx cap sync android
+  TRAS PEGAR ESTE ARCHIVO
+  ───────────────────────
+  npm run build && npx cap sync android
   Luego en Android Studio: File → Sync Project with Gradle Files
+  ============================================================================
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    tools:ignore="MissingLeanbackLauncher">
+    tools:ignore="MissingLeanbackLauncher,ProtectedPermissions">
 
-    <!-- ==================== PERMISOS DE RED ==================== -->
+    <!-- ================================================================== -->
+    <!--                         PERMISOS DE RED                            -->
+    <!-- ================================================================== -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- ==================== ENERGÍA / FOREGROUND SERVICE / NOTIFICACIONES ==================== -->
+    <!-- ================================================================== -->
+    <!--              ENERGÍA / FOREGROUND SERVICE / NOTIFICACIONES         -->
+    <!-- ================================================================== -->
+    <!-- WakeLock: mantiene la CPU activa mientras hay audio/vídeo -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Foreground Service base (Android 9+) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!-- Tipo mediaPlayback obligatorio desde Android 14 (API 34) -->
     <uses-permission
         android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
         tools:targetApi="34" />
+
+    <!-- Notificaciones (Android 13+ / API 33+) — sin esto el gadget de medios no aparece -->
     <uses-permission
         android:name="android.permission.POST_NOTIFICATIONS"
         tools:targetApi="33" />
-    <!-- Solo se pide bajo demanda del usuario (nunca en silencio) -->
+
+    <!--
+      REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+      Solo se pide bajo demanda del usuario desde useMediaPlayer.ts
+      (requestUnrestrictedBatteryIfNeeded). Nunca en silencio.
+      tools:ignore="BatteryLife" silencia el lint de Play Store.
+    -->
     <uses-permission
         android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
         tools:ignore="BatteryLife" />
+
+    <!-- Control de volumen y rutas de audio -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
-    <!-- Bluetooth (compatibilidad auriculares y controles multimedia) -->
+    <!-- ================================================================== -->
+    <!--                    APARECER ENCIMA / OVERLAY                       -->
+    <!-- ================================================================== -->
+    <!--
+      SYSTEM_ALERT_WINDOW = “Display over other apps” / “Aparecer encima”
+      Necesario para:
+        • Ventanas flotantes personalizadas de vídeo
+        • Algunos comportamientos de @capgo/capacitor-video-player en OEM
+        • Xiaomi / Samsung / Oppo que exigen el permiso para PiP o floating
+      En Android 6+ el usuario debe concederlo manualmente en Ajustes.
+      El código de useMediaPlayer.ts ofrece un helper para abrir la pantalla.
+    -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- ================================================================== -->
+    <!--                         BLUETOOTH                                  -->
+    <!-- ================================================================== -->
     <uses-permission
         android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30" />
@@ -64,10 +115,16 @@
         android:name="android.permission.BLUETOOTH_CONNECT"
         tools:targetApi="31" />
 
+    <!-- ================================================================== -->
+    <!--                    OTROS PERMISOS ÚTILES                           -->
+    <!-- ================================================================== -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- ==================== HARDWARE (no bloquean instalación) ==================== -->
+    <!-- ================================================================== -->
+    <!--                    HARDWARE FEATURES                               -->
+    <!-- ================================================================== -->
+    <!-- required="true" solo en audio.output para forzar dispositivos con altavoz -->
     <uses-feature
         android:name="android.hardware.audio.output"
         android:required="true" />
@@ -83,9 +140,16 @@
     <uses-feature
         android:name="android.software.leanback"
         android:required="false" />
+    <!-- PiP feature (informativo) -->
+    <uses-feature
+        android:name="android.software.picture_in_picture"
+        android:required="false" />
 
-    <!-- ==================== QUERIES (visibilidad de paquetes / ajustes OEM) ==================== -->
+    <!-- ================================================================== -->
+    <!--                         QUERIES                                    -->
+    <!-- ================================================================== -->
     <queries>
+        <!-- Navegación y compartir -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
@@ -94,6 +158,8 @@
             <action android:name="android.intent.action.SEND" />
             <data android:mimeType="*/*" />
         </intent>
+
+        <!-- Medios -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="audio/*" />
@@ -102,23 +168,40 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="video/*" />
         </intent>
+
+        <!-- Ajustes de la app y notificaciones -->
         <intent>
             <action android:name="android.settings.APPLICATION_DETAILS_SETTINGS" />
         </intent>
         <intent>
             <action android:name="android.settings.APP_NOTIFICATION_SETTINGS" />
         </intent>
+
+        <!-- Batería / Doze -->
         <intent>
             <action android:name="android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
         </intent>
         <intent>
             <action android:name="android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS" />
         </intent>
+
+        <!-- Overlay / Aparecer encima (SYSTEM_ALERT_WINDOW) -->
+        <intent>
+            <action android:name="android.settings.action.MANAGE_OVERLAY_PERMISSION" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.MANAGE_OVERLAY_PERMISSION" />
+        </intent>
+
+        <!-- Botones multimedia -->
         <intent>
             <action android:name="android.intent.action.MEDIA_BUTTON" />
         </intent>
     </queries>
 
+    <!-- ================================================================== -->
+    <!--                         APPLICATION                                -->
+    <!-- ================================================================== -->
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -137,9 +220,16 @@
         tools:replace="android:allowBackup,android:usesCleartextTraffic">
 
         <!--
-          Activity principal.
-          supportsPictureInPicture = true → vídeo en ventana flotante.
-          launchMode = singleTask → evita múltiples instancias al volver desde notificación.
+          ==================================================================
+          ACTIVITY PRINCIPAL
+          ==================================================================
+          • supportsPictureInPicture="true" → habilita PiP nativo del sistema
+            (Android 8.0+). Es el mecanismo correcto para “vídeo en segundo plano”.
+          • launchMode="singleTask" → evita múltiples instancias al volver
+            desde la notificación o desde PiP.
+          • configChanges muy completo → evita que la Activity se recree
+            al entrar/salir de PiP o al girar la pantalla.
+          • resizeableActivity="true" → multi-ventana y PiP más estables.
         -->
         <activity
             android:name="com.savitarxeno.gco.MainActivity"
@@ -153,18 +243,24 @@
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density|fontScale|layoutDirection">
 
+            <!-- Launcher -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Botones multimedia de auriculares / Bluetooth -->
+            <!-- Botones multimedia de auriculares / Bluetooth / Android Auto -->
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </activity>
 
-        <!-- FileProvider (necesario para compartir archivos) -->
+        <!--
+          ==================================================================
+          FILE PROVIDER
+          ==================================================================
+          Necesario para compartir archivos (audio, vídeo, documentos).
+        -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -177,12 +273,15 @@
         </provider>
 
         <!--
-          @capgo/capacitor-media-session
-          - foregroundServiceType="mediaPlayback" → obligatorio en Android 14+
-          - exported="true" → patrón oficial para que el sistema / Bluetooth / Android Auto
-            puedan enlazar con el servicio
-          - stopWithTask="false" → el FGS no se mata al quitar la app de recientes
-            (muy importante en One UI y HyperOS)
+          ==================================================================
+          @capgo/capacitor-media-session — SERVICIO DE MEDIOS
+          ==================================================================
+          • foregroundServiceType="mediaPlayback" → obligatorio Android 14+
+          • exported="true" → patrón oficial de Android para que el sistema,
+            Bluetooth, Android Auto y los botones multimedia puedan enlazar.
+          • stopWithTask="false" → el Foreground Service NO se mata cuando
+            el usuario quita la app de recientes (crítico en One UI y HyperOS).
+          • tools:ignore="ExportedService" → silencia el lint a propósito.
         -->
         <service
             android:name="com.capgo.mediasession.MediaSessionService"
@@ -197,6 +296,13 @@
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </service>
+
+        <!--
+          Nota: @capgo/capacitor-native-audio y @capgo/capacitor-video-player
+          no requieren declaraciones adicionales de <service> propias cuando
+          se usan junto al MediaSessionService de Capgo. El FGS de medios
+          cubre el caso de uso de reproducción en segundo plano.
+        -->
 
     </application>
 </manifest>

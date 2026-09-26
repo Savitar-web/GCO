@@ -1,9 +1,9 @@
 /**
- * BookReader.tsx — Lector de audiolibro + texto premium (corregido)
+ * BookReader.tsx — Lector de audiolibro + texto premium
  * Sticky topbar (móvil/PC) + sidebar desktop.
  * Respeta tema global (Oscuro / Claro / Arcoíris) + modos día/noche/sepia.
  * Render fiel de formato real (** * <u> ~~ color ::align:: imágenes).
- * Cero alucinaciones. Errores TS corregidos.
+ * TTS: instalador de voces + segundo plano (useSpeechReader).
  */
 import React, {
   useCallback,
@@ -21,12 +21,13 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { getBook, saveBook, type BookItem } from '@/core/storage/mediaLibrary'
 import { soundClick, soundSuccess } from '@/core/audio/uiSounds'
 import { useReaderPlayer } from '@/core/reader/ReaderPlayerContext.tsx'
-import { pickHumanVoice, scoreVoiceHumanness, type SkipSeconds } from '@/hooks/useSpeechReader'
-
-await window.gcoTts?.ready
-window.gcoTts?.speak('Hola', { lang: 'es-ES' })
-window.gcoTts?.pickVoice('es-ES')
-window.gcoTts?.getVoices()
+import {
+  pickHumanVoice,
+  scoreVoiceHumanness,
+  useSpeechReader,
+  type SkipSeconds,
+} from '@/hooks/useSpeechReader'
+import { TtsVoiceInstallerModal } from '@/hooks/TtsVoiceInstallerModal'
 
 /* ─── Mini-player global fuera; floating persistente en body ─── */
 const GCO_KILL_STYLE_ID = 'gco-kill-mini-player-style'
@@ -1536,6 +1537,16 @@ function buildPages(
 
 export function BookReader() {
   const { id } = useParams<{ id: string }>()
+
+  const {
+    showVoiceInstaller,
+    closeVoiceInstaller,
+    openVoiceInstaller,
+    noVoicesAvailable,
+  } = useSpeechReader()
+  // Disponibles para CTA de voces si el dispositivo no tiene TTS
+  void openVoiceInstaller
+  void noVoicesAvailable
   const navigate = useNavigate()
   const { reader, loadBook } = useReaderPlayer()
   const { isDesktop } = useIsDesktop()
@@ -2621,12 +2632,25 @@ export function BookReader() {
   const renderParagraph = (p: ReturnType<typeof splitParagraphs>[number], idx: number, isFirst: boolean) => {
     if (p.isImage && p.imageSrc) {
       const meta = parseImageMeta(p.text)
+      const resolvedWidth =
+        meta?.width
+          ? meta.width.includes('%')
+            ? meta.width
+            : meta.width.endsWith('px')
+              ? meta.width
+              : `${meta.width}px`
+          : undefined
       const imgStyle: CSSProperties = {
         maxWidth: '100%',
-        width: meta?.width && meta.width.includes('%') ? meta.width : undefined,
+        width: resolvedWidth ?? 'auto',
         height: 'auto',
         display: 'block',
-        margin: meta?.align === 'left' ? '0.5em 0' : meta?.align === 'right' ? '0.5em 0 0.5em auto' : '0.5em auto',
+        margin:
+          meta?.align === 'left'
+            ? '0.5em 0'
+            : meta?.align === 'right'
+              ? '0.5em 0 0.5em auto'
+              : '0.5em auto',
       }
       return (
         <div key={idx} className="reader-para reader-para-image" data-para={idx}>
@@ -4654,6 +4678,11 @@ export function BookReader() {
           .sheet { border-radius: 18px; }
         }
       `}</style>
+
+      <TtsVoiceInstallerModal
+        open={showVoiceInstaller}
+        onClose={closeVoiceInstaller}
+      />
     </div>
   )
 }

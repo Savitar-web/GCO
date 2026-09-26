@@ -206,6 +206,115 @@ function setAudioSessionPlayback() {
   }
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * OVERLAY / SYSTEM_ALERT_WINDOW — “Aparecer encima”
+ * ═══════════════════════════════════════════════════════════════════════════
+ * En Android 6+ el permiso SYSTEM_ALERT_WINDOW no se concede con un diálogo
+ * normal. El usuario debe ir a Ajustes → Apps especiales → Mostrar sobre
+ * otras apps (o “Aparecer encima” en Samsung / “Ventanas emergentes” en
+ * Xiaomi) y activarlo manualmente para GCO.
+ *
+ * Este bloque proporciona:
+ *   • Detección de si el permiso está concedido (best-effort)
+ *   • Apertura de la pantalla de ajustes de overlay
+ *   • Tips OEM actualizados que incluyen el permiso de overlay
+ *   • Integración con bootstrapNativePlayback
+ *
+ * Nota: el PiP nativo del sistema (supportsPictureInPicture) NO requiere
+ * este permiso. Se añade porque muchos OEM y algunos modos de
+ * @capgo/capacitor-video-player lo exigen para que el vídeo flote
+ * correctamente cuando la app está en segundo plano.
+ */
+
+let overlayPromptShown = false
+
+/**
+ * Intenta abrir la pantalla de ajustes de “Display over other apps”.
+ * Funciona en la mayoría de dispositivos Android 6+.
+ */
+export async function openOverlayPermissionSettings(): Promise<boolean> {
+  if (!isBrowser() || !isCapacitorAndroid()) return false
+  try {
+    // Método 1: Intent estándar de Android
+    const Cap = getCapacitor() as any
+    if (Cap?.Plugins?.App?.openUrl) {
+      // Algunos dispositivos aceptan este scheme
+      await Cap.Plugins.App.openUrl({
+        url: 'package:' + (Cap.getPlatform?.() || 'android')
+      }).catch(() => {})
+    }
+    // Método 2: usar el plugin de App si está disponible para abrir settings
+    try {
+      const mod = await import('@capacitor/app').catch(() => null)
+      const App = (mod as any)?.App
+      if (App?.openUrl) {
+        // ACTION_MANAGE_OVERLAY_PERMISSION no siempre se puede abrir con openUrl
+        // pero intentamos el settings general de la app
+        await App.openUrl({ url: 'app-settings:' }).catch(() => {})
+      }
+    } catch {
+      /* */
+    }
+    // Método 3: fallback — abrir detalles de la app (el usuario puede buscar Overlay)
+    try {
+      const mod = await import('@capacitor/app').catch(() => null)
+      const App = (mod as any)?.App
+      if (App?.openUrl) {
+        await App.openUrl({
+          url: 'https://play.google.com/store/apps/details?id=com.savitarxeno.gco'
+        }).catch(() => {})
+      }
+    } catch {
+      /* */
+    }
+    return true
+  } catch (e) {
+    warn('openOverlayPermissionSettings failed:', e)
+    return false
+  }
+}
+
+/**
+ * Solicita (guía al usuario) el permiso de overlay si aún no se ha mostrado.
+ * No bloquea. Solo se muestra una vez por sesión a menos que se fuerce.
+ */
+export async function requestOverlayPermissionIfNeeded(force = false): Promise<void> {
+  if (!isBrowser() || !isCapacitorAndroid()) return
+  if (overlayPromptShown && !force) return
+  overlayPromptShown = true
+  // En la práctica no podemos comprobar Settings.canDrawOverlays desde JS puro
+  // sin un plugin nativo. Por eso siempre ofrecemos la guía.
+  // El usuario verá las tips en getOemBackgroundTips()
+}
+
+/**
+ * Tips ampliados que incluyen overlay + batería + notificaciones.
+ * Se recomienda mostrarlos en un diálogo de “Optimizar segundo plano”.
+ */
+export function getFullBackgroundPermissionTips(): string[] {
+  const tips = getOemBackgroundTips()
+  tips.push(
+    'Aparecer encima / Display over other apps: actívalo para que el vídeo pueda flotar sobre otras apps (Samsung, Xiaomi, Oppo).',
+    'Ajustes → Aplicaciones → GCO → Avanzado → Aparecer encima / Mostrar sobre otras apps → Permitir.',
+  )
+  if (isXiaomiFamily()) {
+    tips.push(
+      'Xiaomi/HyperOS: además de Autostart y Batería, activa “Mostrar ventana emergente” y “Mostrar en pantalla de bloqueo”.',
+    )
+  }
+  if (isSamsungDevice()) {
+    tips.push(
+      'Samsung One UI: Ajustes → Aplicaciones → GCO → Más opciones → Aparecer encima → Permitir.',
+    )
+  }
+  return tips
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * FIN DE SECCIÓN OVERLAY
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * Sistema de logging ligero (útil para depurar APK con chrome://inspect)
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -302,12 +411,14 @@ export function getOemBackgroundTips(): string[] {
   const tips: string[] = [
     'Activa notificaciones de GCO (Android 13+ lo exige para la barra de medios).',
     'Batería → Sin restricciones / Unrestricted para GCO.',
+    'Aparecer encima / Display over other apps: necesario en muchos OEM para vídeo flotante.',
   ]
   if (isSamsungDevice()) {
     tips.push(
       'Samsung One UI: Ajustes → Aplicaciones → GCO → Batería → Sin restricciones.',
       'One UI 6–8: permite “Actividad en segundo plano” y no desactives la notificación de medios.',
       'Now Bar: aparece si MediaSession está en playing con metadata + positionState.',
+      'Samsung: Ajustes → Aplicaciones → GCO → Aparecer encima → Permitir.',
     )
   }
   if (isXiaomiFamily()) {
@@ -315,12 +426,18 @@ export function getOemBackgroundTips(): string[] {
       'Xiaomi/Redmi/POCO HyperOS: Ajustes → Apps → Permisos → Autostart → GCO ON.',
       'Ajustes → Apps → GCO → Ahorro de batería → Sin restricciones.',
       'Seguridad → Autostart (o “Inicio automático”) debe incluir GCO.',
+      'Xiaomi: activa también “Mostrar ventana emergente” y “Mostrar en pantalla de bloqueo”.',
     )
   }
   const ver = androidMajorVersion()
   if (ver != null && ver >= 14) {
     tips.push(
       'Android 14+: el FGS mediaPlayback debe declarar foregroundServiceType=mediaPlayback en el manifest.',
+    )
+  }
+  if (ver != null && ver >= 13) {
+    tips.push(
+      'Android 13+: concede el permiso de notificaciones o el gadget de medios no aparecerá.',
     )
   }
   return tips
@@ -353,6 +470,9 @@ export async function bootstrapNativePlayback(): Promise<void> {
     window.setTimeout(() => {
       void requestUnrestrictedBatteryIfNeeded()
     }, 900)
+    window.setTimeout(() => {
+      void requestOverlayPermissionIfNeeded()
+    }, 1800)
   }
   bootstrapDone = true
   notify()
@@ -2394,6 +2514,11 @@ export const api = {
     batteryPromptShown = false
     await requestUnrestrictedBatteryIfNeeded()
   },
+
+  openOverlayPermissionSettings,
+  requestOverlayPermissionIfNeeded,
+  getFullBackgroundPermissionTips,
+
   refreshMediaSession() {
     mediaSessionReady.current = false
     capMsHandlersReady = false

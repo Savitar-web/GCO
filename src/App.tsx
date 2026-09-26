@@ -40,6 +40,10 @@ import { Colocador } from './features/logica/juegos/numberpuzzle/colocador'
 import { RompecabezasGame } from '@/features/logica/juegos/rompecabezas/RompecabezasGame'
 import { BlockCleaner } from '@/features/logica/juegos/BlockCleaner/BlockCleaner'
 
+//games
+import { ChessMenu } from './features/games/chess/ChessMenu'
+import { ChessGame } from './features/games/chess/ChessGame'
+
 import { IdiomasGame } from './features/deduccion/juegos/idiomas/idiomas'
 
 function App() {
@@ -147,6 +151,11 @@ function App() {
             <Route path="/categoria/deduccion/mapas" element={<MapasGame />} />
             <Route path="/categoria/deduccion/codigo" element={<CodigoGame />} />
             <Route path="/categoria/deduccion/idiomas" element={<IdiomasGame />} />
+
+            {/* ── Games ── */}
+            <Route path="/games" element={<ChessMenu />} />
+            <Route path="/games/ajedrez" element={<ChessGame />} />
+
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
 

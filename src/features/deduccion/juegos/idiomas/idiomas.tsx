@@ -1831,7 +1831,7 @@ const EN_GRAMMAR: GrammarItem[] = [
     lessonTitle: 'Las oraciones condicionales en inglés: mapa completo de los cuatro tipos',
     lessonIntro: [
       'El sistema de condicionales del inglés organiza las frases hipotéticas con "if" en cuatro tipos numerados, cada uno con una combinación fija de tiempos verbales y un significado propio. No es una convención arbitraria de los libros de texto: cada tipo corresponde a un grado distinto de realidad o probabilidad, desde hechos universales hasta pasados que ya no se pueden cambiar. Dominar este mapa completo es una de las inversiones más rentables para hablar inglés con precisión.',
-      'La condicional tipo 0 (if + presente, presente) describe verdades generales o científicas, válidas siempre: "If you heat ice, it melts" (si calientas hielo, se derrite: pasa siempre, sin excepción). La condicional tipo 1, la que aparece en este nivel, describe situaciones reales o razonablemente probables en el futuro: "if + presente simple, will + verbo base". "If it rains, we will stay home" no es una fantasía: es un plan concreto ante una posibilidad real del futuro cercano.',
+      'La condicional tipo 0 (if + presente, presente) describe verdades generales o científicas, válidas siempre: "If you heat ice, it melts" (si calientas hielo, se derrite: pasa siempre, sin excepción). La condicional tipo 1 describe situaciones reales o razonablemente probables en el futuro, con la fórmula "if + presente simple, will + verbo base": "If she studies hard, she will pass the exam" no es una fantasía, es un plan concreto ante una posibilidad real y cercana.',
       'Un detalle que confunde a muchos hispanohablantes: en la cláusula con "if" de la condicional tipo 1, aunque el significado sea futuro, el verbo va en presente simple, NUNCA en "will". Decir "If it will rain" es un calco directo de la lógica española y es uno de los errores más comunes y más rápidos de corregir una vez que se entiende la regla: "will" solo aparece en la cláusula de consecuencia, nunca en la cláusula con "if".',
     ],
       failAdvice: 'Revisa la regla del enunciado y elimina opciones incompatibles antes de elegir.',
@@ -1855,7 +1855,7 @@ const EN_GRAMMAR: GrammarItem[] = [
     ruleExplain: 'La 2.ª condicional describe una situación hipotética o irreal en el presente/futuro. El pasado simple aquí NO indica tiempo pasado real, sino irrealidad (un uso llamado "pasado no factual" o "irrealis"). "Would" marca la consecuencia hipotética.',
     lessonTitle: 'La 2.ª condicional: cuando el pasado gramatical no habla del pasado',
     lessonIntro: [
-      'La condicional tipo 2 es, para muchos aprendices, la más contraintuitiva de las cuatro, porque usa el pasado simple ("if I had more time") sin que la frase hable en absoluto del pasado: describe una situación hipotética, poco probable o directamente irreal en el presente o el futuro cercano. "If I had more time, I would learn Japanese" no dice que tuviera tiempo antes; dice que, ahora mismo, no lo tengo, y por eso no aprendo japonés.',
+      'La condicional tipo 2 es, para muchos aprendices, la más contraintuitiva de las cuatro, porque usa el pasado simple ("if I knew the answer") sin que la frase hable en absoluto del pasado: describe una situación hipotética, poco probable o directamente irreal en el presente o el futuro cercano. "If I won the lottery, I would travel the world" no dice que ya haya ganado nada; dice que, ahora mismo, es solo una fantasía sin base real.',
       'A este uso del pasado sin valor temporal la lingüística lo llama "irrealis" o "pasado no factual": el pasado gramatical se recicla como marcador de distancia con la realidad, no de tiempo. Es la misma lógica, por cierto, que el español usa con el imperfecto de subjuntivo en "si tuviera más tiempo": ninguno de los dos idiomas habla realmente del pasado, ambos usan una forma verbal "desplazada" para señalar que la condición es hipotética.',
       'La estructura fija es: if + pasado simple, would + verbo base. Un matiz de registro formal que vale la pena conocer: con el verbo "be", el inglés culto prefiere "if I were" en vez de "if I was" para todas las personas ("If I were you, I would apologize"), aunque "was" también se escucha en el habla informal. Esta preferencia por "were" es un resto fosilizado del antiguo modo subjuntivo inglés, casi desaparecido en el resto de la gramática moderna.',
     ],
@@ -1880,7 +1880,7 @@ const EN_GRAMMAR: GrammarItem[] = [
     ruleExplain: 'La 3.ª condicional habla de un pasado que ya no se puede cambiar: describe cómo habría sido el resultado si una condición pasada (que NO se cumplió) hubiera sido distinta. Es el equivalente inglés del "si hubiera... habría..." español.',
     lessonTitle: 'La 3.ª condicional: lamentar o imaginar un pasado distinto',
     lessonIntro: [
-      'La condicional tipo 3 es la más "profunda" del sistema: retrocede un paso más que la tipo 2, porque no habla de una hipótesis presente sino de un hecho pasado que ya está completamente cerrado y que no se puede modificar. Se usa típicamente para expresar arrepentimiento, especulación sobre "lo que pudo haber sido", o crítica indirecta: "If she had studied, she would have passed the exam" reconoce, implícitamente, que ella NO estudió y por lo tanto NO aprobó.',
+      'La condicional tipo 3 es la más "profunda" del sistema: retrocede un paso más que la tipo 2, porque no habla de una hipótesis presente sino de un hecho pasado que ya está completamente cerrado y que no se puede modificar. Se usa típicamente para expresar arrepentimiento, especulación sobre "lo que pudo haber sido", o crítica indirecta: "If I had known about the traffic, I would have left earlier" reconoce, implícitamente, que esa persona NO lo supo a tiempo y por eso NO salió antes.',
       'La estructura añade una capa más de complejidad verbal que la tipo 2: if + past perfect (had + participio) en la condición, would have + participio en la consecuencia. El past perfect aquí sí conserva parte de su valor temporal normal (una acción anterior a otra en el pasado), combinado con el mismo mecanismo de irrealidad que ya vimos en la tipo 2. Es, en cierto sentido, la versión "doblemente desplazada" del sistema condicional.',
       'Un uso avanzado que aparece con frecuencia en el habla natural es la condicional "mixta", que combina una condición pasada (tipo 3) con una consecuencia presente (tipo 2): "If I had studied medicine, I would be a doctor now" (si hubiera estudiado medicina —en el pasado—, ahora sería médico —en el presente—). Reconocer estas mezclas es una señal clara de que ya se domina el sistema completo, no solo las fórmulas memorizadas de cada tipo por separado.',
     ],
@@ -1906,7 +1906,7 @@ const EN_GRAMMAR: GrammarItem[] = [
     lessonTitle: 'Narrar en pasado: el telón de fondo y la interrupción',
     lessonIntro: [
       'Cuando se cuenta una historia en pasado, el inglés distingue con mucha claridad entre dos capas narrativas: las acciones que forman el "telón de fondo" (algo que ya estaba ocurriendo, en proceso) y los eventos puntuales que ocurren dentro de ese fondo. Esta distinción se marca gramaticalmente con dos tiempos distintos: past continuous (was/were + gerundio) para el fondo, y past simple para el evento puntual que lo interrumpe.',
-      '"She was cooking dinner when the phone rang" pone en escena, primero, una acción ya en marcha y sin un final definido en ese instante ("was cooking"), y luego un evento breve, completo y puntual que corta esa escena ("rang"). Si se usaran dos pasados simples ("She cooked dinner when the phone rang"), la frase perdería ese matiz de interrupción y sonaría como dos acciones consecutivas, casi como si cocinar hubiera terminado justo antes de que sonara el teléfono, en vez de estar ocurriendo en ese momento.',
+      '"She was washing the dishes when the doorbell rang" pone en escena, primero, una acción ya en marcha y sin un final definido en ese instante ("was washing"), y luego un evento breve, completo y puntual que corta esa escena ("rang"). Si se usaran dos pasados simples ("She washed the dishes when the doorbell rang"), la frase perdería ese matiz de interrupción y sonaría como dos acciones consecutivas, casi como si lavar los platos hubiera terminado justo antes de que sonara el timbre, en vez de estar ocurriendo en ese momento. Fíjate en cuál de las dos lecturas encaja con la frase de tu pregunta.',
       'Este mismo patrón de "fondo + interrupción" se extiende más allá de las anécdotas cotidianas: es la estructura estándar para describir el contexto histórico de un evento ("People were celebrating the new year when the earthquake struck") y aparece constantemente en textos narrativos, noticias y biografías. Reconocerlo ayuda no solo a producir frases correctas, sino a leer con más fluidez, anticipando qué tipo de información viene marcada como fondo y cuál como suceso central.',
     ],
     failAdvice: 'Identifica cuál acción es el "fondo" continuo y cuál es el evento puntual que lo corta.',
@@ -1930,7 +1930,7 @@ const EN_GRAMMAR: GrammarItem[] = [
     ruleExplain: '“Used to” es una estructura especial (no un verbo modal ni un tiempo verbal estándar) que expresa hábitos o estados que existieron en el pasado pero ya terminaron. Se diferencia de "would" (que solo sirve para hábitos repetidos, no estados) y del pasado simple (que no enfatiza el contraste "antes sí, ahora no").',
     lessonTitle: '"Used to": el pasado que ya no es cierto',
     lessonIntro: [
-      '"Used to" + infinitivo ocupa un lugar curioso en la gramática inglesa: no es exactamente un tiempo verbal, ni un verbo modal como "can" o "must", sino una construcción semi-auxiliar dedicada exclusivamente a un significado muy concreto: un hábito o un estado que existió durante un tiempo en el pasado y que ya no es cierto ahora. "I used to play the guitar" implica, con fuerza, "y ahora ya no toco".',
+      '"Used to" + infinitivo ocupa un lugar curioso en la gramática inglesa: no es exactamente un tiempo verbal, ni un verbo modal como "can" o "must", sino una construcción semi-auxiliar dedicada exclusivamente a un significado muy concreto: un hábito o un estado que existió durante un tiempo en el pasado y que ya no es cierto ahora. "She used to live in Madrid" implica, con fuerza, "y ahora ya no vive allí".',
       'Conviene distinguirlo de dos alternativas cercanas. El pasado simple ("I played the guitar") solo cuenta un hecho pasado, sin ese contraste explícito con el presente. "Would" (en su uso de hábito pasado, no de condicional) sirve para hábitos repetidos ("When I was a kid, I would visit my grandmother every summer"), pero rara vez para estados: no se puede decir "I would be tall" para "yo era alto de niño"; ahí "used to" es obligatorio, lo que ilustra que "would" es aún más restringido.',
       'Un detalle fonético que conviene fijar: "used to" se pronuncia con la "d" y la "t" casi fundidas en un solo sonido /juːstə/, y no debe confundirse con la estructura "to be used to" (estar acostumbrado a), que lleva el verbo "be" antes y significa algo completamente distinto: "I am used to waking up early" (estoy acostumbrado a levantarme temprano, en el presente), no un hábito pasado terminado.',
     ],
@@ -1981,7 +1981,7 @@ const EN_GRAMMAR: GrammarItem[] = [
     lessonTitle: 'Activa o pasiva: una decisión de foco, no solo de gramática',
     lessonIntro: [
       'Saber CONJUGAR la voz pasiva es solo la mitad del dominio real de esta estructura; la otra mitad, más avanzada, es saber CUÁNDO conviene usarla en vez de la activa. Esta elección pertenece al terreno de la pragmática, la rama de la lingüística que estudia cómo el contexto y la intención del hablante moldean la forma de las frases, más allá de lo que la gramática permite.',
-      'La pasiva se prefiere quando el foco informativo de la frase es el resultado o el objeto afectado, no quien actuó: en un texto histórico sobre un puente, lo relevante suele ser el puente mismo, no la cuadrilla anónima que lo construyó hace un siglo. "The bridge was built in 1889" pone el peso informativo donde debe estar; "Someone built the bridge in 1889" suena forzado precisamente porque introduce un agente vago que a nadie le interesa.',
+      'La pasiva se prefiere cuando el foco informativo de la frase es el resultado o el objeto afectado, no quien actuó: en un texto sobre un descubrimiento científico, por ejemplo, suele importar más el hallazgo que el técnico de laboratorio concreto que hizo el experimento. "The cure was discovered in 1928" resulta natural en ese contexto; "Someone discovered the cure in 1928" suena forzado, porque introduce un agente vago que distrae del verdadero foco de la frase.',
       'Por esta razón, la voz pasiva domina los géneros donde el proceso o el resultado importa más que el actor: manuales científicos ("the solution was heated to 80°C"), noticias cuando el responsable aún se investiga ("the building was damaged in the fire"), y textos burocráticos o legales que buscan deliberadamente cierta neutralidad o distancia respecto a quién hizo qué. Aprender a leer estos géneros exige acostumbrarse a que el sujeto gramatical casi nunca es "quien actúa".',
     ],
     failAdvice: 'Piensa en qué elemento de la frase es el foco de interés real: si es el objeto/resultado, la pasiva suele ser más natural.',
@@ -2003,6 +2003,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Verbo modal de deducción: “She isn’t answering; she ____ be asleep.”',
     ruleHint: 'Modales epistémicos: must (deducción fuerte), might/could (posibilidad), can’t (deducción negativa fuerte).',
     ruleExplain: 'Los modales tienen usos "epistémicos": no expresan obligación sino el grado de certeza del hablante sobre algo. "Must" para una deducción muy probable a partir de evidencia; "might/could" para una posibilidad más débil; "can’t" para descartar algo con fuerza.',
+    lessonTitle: 'Modales epistémicos: cuando "must" no significa obligación',
+    lessonIntro: [
+      'Los verbos modales del inglés (can, must, might, could, should, shall...) tienen dos grandes familias de uso que conviene no confundir. El uso "deóntico" expresa obligación, permiso o prohibición ("You must wear a seatbelt" = es obligatorio). El uso "epistémico", mucho menos intuitivo para un hispanohablante, no habla de obligación en absoluto, sino del grado de certeza del hablante sobre si algo es cierto, a partir de la evidencia disponible.',
+      'En su uso epistémico, cada modal marca un nivel distinto de confianza: "must" indica una deducción muy probable, casi una certeza razonada a partir de pruebas ("The lights are off, they must be out" = deduzco con fuerza que no están); "might/could/may" indican una posibilidad más débil, sin gran seguridad ("She might be at work" = es posible, no lo sé con certeza); y "can\'t" se usa para DESCARTAR algo con la misma fuerza con la que "must" lo afirma ("He can\'t be serious" = estoy bastante seguro de que no lo dice en serio).',
+      'La clave para elegir el modal correcto en estos casos no es preguntarse "¿es obligatorio?" sino "¿cuánta evidencia tengo, y en qué dirección apunta?". Cuanta más evidencia clara y directa hay a favor de una conclusión, más fuerte es el modal apropiado (must / can\'t); cuanta más incertidumbre o falta de datos, más débil (might / could / may).',
+    ],
     failAdvice: 'Piensa en el nivel de certeza que transmite la evidencia: no contestar sugiere una deducción bastante segura.',
     options: ['can', 'must', 'may not', 'shall', 'need', 'ought', 'will', 'used to'],
     correctIndex: 1,
@@ -2022,6 +2028,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Discurso indirecto: Maria said, “I am tired.” → Maria said (that) she ____ tired.',
     ruleHint: 'Backshift: al reportar, el tiempo verbal suele retroceder una posición.',
     ruleExplain: 'En el estilo indirecto (reported speech), cuando el verbo introductorio está en pasado ("said"), el tiempo del verbo citado normalmente retrocede: presente → pasado, pasado → pasado perfecto, etc. Este fenómeno se llama "backshift" y también cambian los pronombres y algunos marcadores temporales (now→then, today→that day).',
+    lessonTitle: 'Reported speech y el "backshift": cómo cambia el tiempo verbal al reportar',
+    lessonIntro: [
+      'Cuando repetimos lo que alguien dijo sin citarlo textualmente (estilo indirecto o "reported speech"), el inglés aplica un mecanismo sistemático llamado "backshift" (retroceso): si el verbo que introduce la cita está en pasado ("she said", "he told me"), el tiempo verbal de lo citado retrocede un paso en la línea temporal. Presente simple → pasado simple; pasado simple → past perfect; presente perfecto → past perfect; "will" → "would".',
+      'Por ejemplo, si alguien dice "I am hungry" (presente), al reportarlo con un verbo introductorio en pasado se convierte en "She said (that) she was hungry" (pasado). Si alguien dice "I finished the project" (pasado simple), se reporta como "He said he had finished the project" (past perfect). El retroceso no es arbitrario: refleja que, desde el punto de vista de quien reporta, el momento de la cita original ya quedó más atrás en el tiempo.',
+      'Además del verbo, cambian otros elementos que dependían del momento y el lugar de la cita original: los pronombres ("I" pasa a "she/he" si se reporta en tercera persona), y los marcadores temporales y espaciales deícticos: "now" → "then", "today" → "that day", "here" → "there", "tomorrow" → "the next day". Dominar el backshift completo, no solo el cambio del verbo, es lo que distingue un reported speech natural de uno mecánico y a medias.',
+    ],
     failAdvice: 'Identifica el tiempo original ("am", presente) y aplica el retroceso correspondiente.',
     options: ['is', 'was', 'has been', 'be', 'were', 'is being', 'had been', 'will be'],
     correctIndex: 1,
@@ -2041,6 +2053,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: '¿Gerundio o infinitivo? “I enjoy ____ new languages.”',
     ruleHint: 'Ciertos verbos exigen gerundio (-ing) como complemento; otros exigen infinitivo (to + verbo).',
     ruleExplain: 'En inglés, el complemento verbal (gerundio vs. infinitivo) no es intercambiable libremente: depende del verbo principal. "Enjoy", "avoid", "finish", "suggest" exigen gerundio. "Want", "decide", "hope", "plan" exigen infinitivo con "to". Es una lista que se memoriza por verbo, no por regla lógica universal.',
+    lessonTitle: 'Gerundio o infinitivo: la lista que hay que memorizar verbo por verbo',
+    lessonIntro: [
+      'Cuando un verbo va seguido de otro verbo en inglés, el segundo verbo puede tomar forma de gerundio (-ing) o de infinitivo con "to", y la elección depende por completo del primer verbo, sin que exista una regla fonética o lógica universal que lo prediga con certeza. Es, junto con los verbos irregulares y los phrasal verbs, una de las listas de memorización obligatoria del inglés intermedio.',
+      'Un grupo de verbos muy frecuentes exige gerundio como complemento: "enjoy" (enjoy reading), "avoid" (avoid arguing), "finish" (finish eating), "suggest" (suggest going), "keep" (keep trying), "mind" (do you mind waiting?), "practice" (practice speaking). Otro grupo, igualmente frecuente, exige infinitivo con "to": "want" (want to go), "decide" (decide to stay), "hope" (hope to see you), "plan" (plan to travel), "promise" (promise to call), "agree" (agree to help), "refuse" (refuse to leave).',
+      'Existe además un tercer grupo, más pequeño pero importante, donde ambas formas son gramaticales pero cambian el significado: "stop smoking" (dejar de fumar) frente a "stop to smoke" (detenerse PARA fumar); "remember locking the door" (recordar que ya cerraste, un recuerdo del pasado) frente a "remember to lock the door" (acordarse de cerrar, una tarea pendiente). Estos pares son un indicador claro de nivel avanzado cuando se dominan correctamente.',
+    ],
     failAdvice: 'Memoriza "enjoy" como un verbo de la lista que exige gerundio (-ing), nunca infinitivo.',
     options: ['to learn', 'learning', 'learn', 'learned', 'to learning', 'learns', 'having learned', 'to have learned'],
     correctIndex: 1,
@@ -2060,6 +2078,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: '¿Gerundio o infinitivo? “She decided ____ a new career.”',
     ruleHint: '"Decide" pertenece al grupo de verbos que exigen infinitivo con "to".',
     ruleExplain: 'A diferencia de "enjoy", el verbo "decide" pertenece al segundo gran grupo: verbos que van seguidos de infinitivo con "to" (decide, want, plan, hope, promise, agree, refuse). No hay una regla fonética o semántica que prediga el grupo con certeza total; se aprende por exposición y memorización de patrones.',
+    lessonTitle: 'El grupo de los verbos que piden infinitivo con "to"',
+    lessonIntro: [
+      'Ya vimos que ciertos verbos exigen gerundio como complemento (enjoy, avoid, finish, suggest). El otro gran grupo, igual de frecuente, exige exactamente lo contrario: infinitivo con "to". A este grupo pertenecen verbos como "decide", "want", "hope", "plan", "promise", "agree", "refuse", "manage" y "afford", entre muchos otros de uso diario.',
+      'Semánticamente, muchos de estos verbos comparten un rasgo común: expresan una intención, una decisión o una actitud orientada hacia una acción futura todavía no realizada ("decide to travel", "hope to see you", "plan to move"), mientras que muchos verbos del grupo del gerundio describen una actividad ya en marcha, disfrutada, evitada o terminada. Esta tendencia semántica ayuda como intuición general, pero no es una regla infalible: existen excepciones en ambos grupos que solo se dominan con exposición repetida al idioma real.',
+      'Un consejo práctico y muy usado por profesores de inglés: en vez de memorizar reglas abstractas, conviene memorizar cada verbo nuevo junto con su patrón de complemento desde el primer día que se aprende, como si fuera parte de la ortografía de la palabra. "Decide" se aprende como "decide to + verbo", en bloque, no como dos piezas independientes que se combinan libremente.',
+    ],
     failAdvice: 'Recuerda "decide to + verbo" como un bloque fijo, igual que "want to" o "plan to".',
     options: ['starting', 'to start', 'start', 'started', 'to starting', 'starts', 'having started', 'to have started'],
     correctIndex: 1,
@@ -2079,6 +2103,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Cláusula relativa: “The woman ____ lives next door is a doctor.”',
     ruleHint: 'Pronombres relativos: who (personas, sujeto), which (cosas), that (ambos, informal), whose (posesión).',
     ruleExplain: 'Las cláusulas relativas añaden información sobre un sustantivo. Cuando el antecedente es una persona y funciona como sujeto de la cláusula, se usa "who" (o "that" en registro informal). "Which" se reserva para cosas y animales, nunca para personas en inglés estándar.',
+    lessonTitle: 'Pronombres relativos: who, which, whom y whose sin confundirlos',
+    lessonIntro: [
+      'Una cláusula relativa añade información sobre un sustantivo mencionado antes (el "antecedente"), evitando repetir ese sustantivo con un pronombre nuevo: en vez de "I have a friend. My friend lives in Canada", el inglés une ambas ideas con "I have a friend who lives in Canada". El pronombre relativo elegido depende de dos factores: si el antecedente es persona o cosa, y si ese pronombre funciona como sujeto u objeto dentro de la cláusula.',
+      'Para personas como sujeto de la cláusula se usa "who" ("the man who called you"); para personas como objeto se puede usar "who" o, en registro más formal, "whom" ("the man [whom] you called"). Para cosas y animales, en cualquier función, se usa "which" ("the book which I read") o el más versátil "that", que en el habla cotidiana sustituye tanto a "who" como a "which" en cláusulas restrictivas (las que identifican de qué se habla, no las que solo añaden un dato extra entre comas).',
+      '"Whose" es el único relativo posesivo, y funciona igual para personas y cosas: "the woman whose car was stolen" (la mujer cuyo coche fue robado). Un error común de transferencia del español es intentar usar "which" para personas por analogía con "que" (que en español sirve para todo); en inglés estándar, "which" referido a una persona suena claramente incorrecto y es uno de los errores que un lector nativo nota de inmediato.',
+    ],
     failAdvice: 'El antecedente ("the woman") es una persona que funciona como sujeto de "lives": eso exige "who".',
     options: ['which', 'who', 'whom', 'whose', 'what', 'where', 'when', 'why'],
     correctIndex: 1,
@@ -2098,6 +2128,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Comparativo irregular: “This problem is ____ than the last one.” (bad)',
     ruleHint: 'Comparativos irregulares no siguen el patrón -er ni more + adjetivo.',
     ruleExplain: 'Un pequeño grupo de adjetivos y adverbios muy frecuentes tiene comparativos y superlativos completamente irregulares, heredados de formas antiguas del inglés: good→better→best, bad→worse→worst, far→further/farther→furthest/farthest. No siguen ni el patrón regular corto (-er) ni el largo (more + adjetivo).',
+    lessonTitle: 'Comparativos irregulares: las excepciones más usadas del inglés',
+    lessonIntro: [
+      'El inglés forma la mayoría de sus comparativos de dos maneras regulares, según la longitud del adjetivo: los adjetivos cortos (una sílaba, o dos terminados en -y) añaden "-er" (tall→taller, happy→happier), mientras que los adjetivos largos anteponen "more" (beautiful→more beautiful, expensive→more expensive). Es un sistema bastante predecible, con reglas claras de cuándo usar cada patrón.',
+      'Sin embargo, un puñado de los adjetivos y adverbios más usados del idioma escapan por completo a ambos patrones, con formas irregulares heredadas de etapas mucho más antiguas del inglés: "good" → "better" → "best" (no "gooder" ni "more good"); "bad" → "worse" → "worst"; "far" → "further/farther" → "furthest/farthest" (con una distinción sutil: "further" se prefiere para sentido figurado, "farther" para distancia física); y "little" → "less" → "least" cuando se usa como cantidad.',
+      'Estas irregularidades no son caprichosas: reflejan un fenómeno llamado "supleción" (suppletion), en el que las tres formas de una palabra provienen históricamente de raíces distintas que terminaron fusionándose en un solo paradigma, el mismo fenómeno que explica por qué "go" y "went" no se parecen en nada. Precisamente por ser tan irregulares, y tan frecuentes, conviene memorizarlas como bloques fijos desde el principio, sin intentar aplicarles ninguna regla general.',
+    ],
     failAdvice: 'No apliques la regla general (-er o more); estos adjetivos cambian de raíz por completo.',
     options: ['badder', 'more bad', 'worse', 'baddest', 'worst', 'more worse', 'the bad', 'badly'],
     correctIndex: 2,
@@ -2117,6 +2153,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Countable/uncountable: “How ____ information do you need?”',
     ruleHint: '"Information" es un sustantivo incontable en inglés (aunque "información" tenga plural en español).',
     ruleExplain: 'Muchos sustantivos abstractos que en español pueden pluralizarse ("informaciones", "consejos", "muebles") son incontables en inglés y no admiten plural ni "many": information, advice, furniture, news. Con incontables se usa "much", no "many".',
+    lessonTitle: 'Sustantivos incontables: cuando el inglés no acepta plural',
+    lessonIntro: [
+      'El inglés distingue gramaticalmente entre sustantivos contables (los que se pueden contar uno por uno: a book, two books) y sustantivos incontables (los que se conciben como una masa o concepto indivisible: water, rice, money). Esta distinción determina qué cuantificadores se pueden usar: "many" y "a few" solo funcionan con contables plurales; "much" y "a little" solo funcionan con incontables.',
+      'El problema para un hispanohablante es que la lista de sustantivos incontables en inglés no coincide con la del español: palabras que en español tienen plural normal y corriente son incontables en inglés y jamás llevan -s. "Information" (nunca "informations"), "advice" (nunca "advices"), "furniture" (nunca "furnitures"), "news" (siempre singular en verbo, "the news is good"), "luggage/baggage" y "homework" son los ejemplos más frecuentes y los que más errores generan en textos de nivel intermedio.',
+      'Para dar la idea de una unidad concreta de algo incontable, el inglés recurre a un sustantivo contable "contenedor" delante: no se dice "an information" sino "a piece of information"; no "two advices" sino "two pieces of advice"; no "a furniture" sino "a piece/an item of furniture". Este patrón de "contable de apoyo + of + incontable" es una de las estructuras más útiles y menos enseñadas del inglés cotidiano.',
+    ],
     failAdvice: '"Information" no tiene plural en inglés estándar; descarta cualquier opción que trate la palabra como contable.',
     options: ['many', 'much', 'a lot', 'few', 'these', 'those informations', 'a', 'an'],
     correctIndex: 1,
@@ -2136,6 +2178,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Preposición de tiempo: “The meeting is ____ Monday ____ 9 a.m.”',
     ruleHint: 'On + días; at + horas precisas; in + meses/años/periodos largos.',
     ruleExplain: 'Las preposiciones de tiempo en inglés siguen una jerarquía bastante fija: "in" para periodos largos (meses, años, estaciones), "on" para días y fechas concretas, "at" para horas exactas y algunas expresiones fijas (at night, at the weekend en inglés británico). No hay una lógica única; se memoriza por categoría.',
+    lessonTitle: 'Las preposiciones de tiempo in / on / at: una jerarquía de tamaño',
+    lessonIntro: [
+      'Las tres preposiciones de tiempo más básicas del inglés (in, on, at) siguen una lógica que se puede visualizar como una jerarquía de "tamaño" temporal, de lo más amplio a lo más puntual: "in" cubre periodos largos (meses, años, estaciones, siglos, partes del día como "in the morning"); "on" cubre unidades intermedias, sobre todo días concretos y fechas (on Monday, on July 4th, on my birthday); "at" cubre puntos exactos en el tiempo (at 3 o\'clock, at noon, at midnight).',
+      'Esta jerarquía explica también algunas expresiones que a primera vista parecen excepciones: "at night" usa "at" no porque la noche sea un instante puntual, sino porque se trata como un bloque fijo y convencional del día, casi como una hora del reloj colectivo; "at the weekend" (inglés británico) sigue la misma lógica de bloque fijo, mientras que el inglés americano prefiere "on the weekend", tratándolo más como un conjunto de días concretos.',
+      'Memorizar esta jerarquía por categoría —año/mes/estación con "in", día/fecha con "on", hora exacta con "at"— es mucho más eficiente que intentar memorizar cada combinación por separado, porque permite predecir la preposición correcta incluso ante una expresión de tiempo nueva que nunca se ha visto antes, simplemente identificando a qué "tamaño" de unidad temporal pertenece.',
+    ],
     failAdvice: 'Separa la pregunta en dos huecos: uno pide preposición de día, el otro de hora exacta.',
     options: ['in / on', 'on / at', 'at / in', 'in / at', 'on / on', 'at / at', 'to / at', 'on / in'],
     correctIndex: 1,
@@ -2155,6 +2203,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Question tag: “You like coffee, ____?”',
     ruleHint: 'Las question tags invierten la polaridad: afirmativa → tag negativo, y viceversa.',
     ruleExplain: 'Una question tag repite el auxiliar de la frase principal (o "do/does/did" si no hay auxiliar) y el pronombre sujeto, invirtiendo la polaridad: si la frase es afirmativa, el tag es negativo, y viceversa. Se usa para confirmar algo que el hablante cree cierto, buscando acuerdo.',
+    lessonTitle: 'Question tags: la coletilla que confirma lo que ya crees',
+    lessonIntro: [
+      'Una question tag es esa pequeña pregunta que se añade al final de una frase afirmativa o negativa para pedir confirmación o acuerdo, algo que en español se logra de forma mucho más simple con "¿verdad?" o "¿no?" invariables: "Hace calor, ¿verdad?" sirve para cualquier frase. El inglés, en cambio, construye una mini-pregunta gramaticalmente completa y distinta para cada frase, lo cual la convierte en una de las estructuras más reveladoras del dominio real del idioma.',
+      'La regla tiene dos partes. Primero, se identifica el auxiliar de la frase principal (is, are, have, can, will...); si no hay ningún auxiliar visible porque el verbo es léxico en presente o pasado simple, se usa el auxiliar de apoyo "do/does/did" (do-support), el mismo mecanismo que aparece en preguntas y negaciones. Segundo, se invierte la polaridad: una frase afirmativa lleva un tag negativo, y una frase negativa lleva un tag afirmativo. "You are tired, aren\'t you?" / "You aren\'t tired, are you?".',
+      'El pronombre del tag siempre repite el sujeto de la frase principal en forma de pronombre, nunca el sustantivo completo: "Maria is coming, isn\'t she?" (no "isn\'t Maria"). Dominar los question tags con fluidez, sin pausas para calcularlos, es una señal clara de fluidez conversacional, porque exige procesar simultáneamente el tiempo verbal, el auxiliar correcto y la inversión de polaridad en tiempo real mientras se habla.',
+    ],
     failAdvice: 'La frase principal es afirmativa y usa "like" (sin auxiliar visible) → el tag necesita "do" en negativo.',
     options: ['do you', "don't you", 'aren\'t you', 'isn\'t it', 'do it', 'don\'t it', 'are you', 'will you'],
     correctIndex: 1,
@@ -2174,6 +2228,12 @@ const EN_GRAMMAR: GrammarItem[] = [
     prompt: 'Phrasal verb con partícula que cambia el significado por completo: “The plane will ____ at 6 p.m.”',
     ruleHint: '"Take off" (despegar) vs. "take" (tomar): la partícula "off" crea un significado nuevo, no aditivo.',
     ruleExplain: 'Un phrasal verb "opaco" (idiomático) tiene un significado que no se puede predecir sumando el significado del verbo más la partícula por separado: "take" (tomar) + "off" (fuera) no da "tomar fuera", sino "despegar" (un avión) o "quitarse" (ropa). Hay que memorizarlo como una unidad léxica completa.',
+    lessonTitle: 'Phrasal verbs con "take": otro verbo, otro abanico de significados',
+    lessonIntro: [
+      'Ya vimos con "look" cómo un solo verbo puede generar significados muy distintos al combinarse con diferentes partículas. "Take" es otro de los verbos más productivos en este sentido, y también uno de los más frecuentes en inglés cotidiano, así que dominar su familia de phrasal verbs rinde muchísimo en comprensión real.',
+      'Los phrasal verbs se clasifican, según cuánto se aleje su significado de la suma literal de sus partes, en "transparentes" (se entienden fácilmente, como "sit down") y "opacos" o idiomáticos (el significado hay que aprenderlo de memoria, sin poder deducirlo). La mayoría de los compuestos con "take" son opacos: "take up" (empezar una afición), "take in" (absorber información, o engañar a alguien), "take on" (asumir una responsabilidad o contratar), "take out" (sacar algo, o invitar a alguien a salir), "take over" (asumir el control), "take down" (anotar, o derribar algo).',
+      'Una estrategia útil para memorizar estos verbos no es traducir palabra por palabra, sino fijar cada phrasal verb junto con una imagen mental o una frase de ejemplo memorable: "the plane took off at six" para "despegar", "she took over the company" para "asumir el control". Cuantas más frases reales se escuchen o lean con cada phrasal verb, más natural resulta reconocerlo y usarlo sin tener que traducir mentalmente desde el español.',
+    ],
     failAdvice: 'Piensa en qué hace un avión a una hora programada: la respuesta es un phrasal verb idiomático completo, no una palabra suelta.',
     options: ['take', 'take off', 'take up', 'take in', 'take on', 'take out', 'take over', 'take down'],
     correctIndex: 1,
@@ -3101,7 +3161,7 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
 
   // Contextual usage: palabra → contexto
   if (mode === 'contextual_usage') {
-    const contexts: Record<string, { prompt: string; options: string[]; correctIndex: number; hint: string; explain: string; advice: string; optionNotes: string[] }> = {
+    const contexts: Record<string, { prompt: string; options: string[]; correctIndex: number; hint: string; explain: string; advice: string; optionNotes: string[]; lessonTitle: string; lessonIntro: string[] }> = {
       en: {
         prompt: 'Palabra: 「bank」. En “we sat on the bank of the river”, ¿qué significa?',
         options: ['banco financiero', 'orilla del río', 'banqueta', 'archivo', 'pendiente', 'empresa', 'moneda', 'puente'],
@@ -3109,6 +3169,11 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
         hint: 'Polisemia: institución vs orilla.',
         explain: 'bank of the river = orilla.',
         advice: 'Mira el complemento “of the river”; no asumas siempre el sentido financiero.',
+        lessonTitle: 'Polisemia en inglés: una palabra, varios significados según el contexto',
+        lessonIntro: [
+          'La polisemia es el fenómeno por el cual una misma palabra tiene varios significados relacionados (o, en el caso más extremo de la homonimia, significados sin relación alguna entre sí), y solo el contexto —las palabras que la rodean— permite decidir cuál aplica en cada caso. El inglés, con su vocabulario relativamente corto y muy reciclado, tiene un porcentaje de palabras polisémicas más alto que muchos otros idiomas, así que aprender a "leer el contexto" es una destreza tan importante como memorizar vocabulario nuevo.',
+          'La estrategia para resolver la ambigüedad nunca es memorizar todos los significados posibles de una palabra de forma aislada, sino fijarse en su "colocación" (collocation): las palabras que aparecen justo antes o después de ella en la frase suelen activar un sentido y descartar los demás casi automáticamente. Un complemento con "of the river", "of the lake" o "of the stream" empuja con fuerza hacia un sentido geográfico; un complemento con "account", "loan" o "manager" empuja hacia el sentido financiero. Antes de traducir, conviene preguntarse siempre: ¿qué palabras acompañan a esta, y hacia qué campo semántico apuntan?',
+        ],
         optionNotes: [
           'Es el sentido más frecuente de "bank" en inglés cotidiano y de negocios: la institución que guarda dinero. Se usa en frases como "go to the bank" o "bank account".',
           '"Bank" también nombra el terreno elevado a los lados de un río o lago: es un sustantivo de geografía física, muy común en textos de naturaleza y en la expresión "riverbank".',
@@ -3127,6 +3192,11 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
         hint: 'Polisemia según complemento.',
         explain: 'banco del parque = asiento.',
         advice: 'El complemento “del parque” orienta al asiento, no al banco financiero.',
+        lessonTitle: 'Polisemia en español vista desde fuera: útil para entender cómo funciona en otros idiomas',
+        lessonIntro: [
+          'El español, igual que el inglés, tiene palabras con varios significados que dependen del contexto. "Banco" es un ejemplo clásico: puede ser la institución financiera, el mueble para sentarse, un grupo de peces, o incluso un banco de datos. Ver este fenómeno primero en tu propio idioma ayuda a entender por qué en cualquier otro idioma que aprendas vas a encontrar el mismo reto: ninguna palabra "significa una sola cosa" de forma aislada.',
+          'La forma de resolver la ambigüedad es siempre la misma, en cualquier idioma: mirar las palabras que acompañan al término polisémico. "Del parque" activa el sentido de mueble; "de peces" activa el sentido zoológico; "de datos" activa el sentido informático. Entrenar este reflejo en español, antes de enfrentarlo en un idioma extranjero, hace mucho más fácil reconocer el mismo patrón cuando aparece en inglés, francés o japonés.',
+        ],
         optionNotes: [
           'Es el sentido financiero de "banco": la institución que gestiona dinero, cuentas y préstamos. Es el significado más frecuente fuera de contexto.',
           'Un mueble alargado para sentarse, típico de parques, plazas e iglesias. Este sentido viene del mismo origen germánico que "banca" (el mueble de madera).',
@@ -3145,6 +3215,11 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
         hint: 'Expresión fija con faire → clima.',
         explain: 'quel temps fait-il = qué tiempo hace.',
         advice: 'La construcción con “fait-il” apunta al clima, no al reloj.',
+        lessonTitle: 'Una palabra francesa, varios significados: "temps" y las expresiones fijas con "faire"',
+        lessonIntro: [
+          'En francés, "temps" es una palabra que cubre tanto el tiempo cronológico (duración, minutos, años) como el tiempo atmosférico (el clima), un doble sentido que el español separa en dos palabras distintas ("tiempo" para ambos, en realidad, así que aquí el reto no es la traducción sino saber cuál de los dos sentidos del francés corresponde a cada expresión). El francés, además, tiene un tercer uso técnico de "temps" en gramática, para referirse a los tiempos verbales.',
+          'La clave para desambiguar en francés está, como en cualquier idioma, en la construcción fija que acompaña a la palabra. La expresión impersonal "il fait + [adjetivo o sustantivo de clima]" (il fait beau, il fait froid, quel temps fait-il) es exclusiva del sentido meteorológico: el verbo "faire" (hacer) en esta construcción impersonal nunca se usa para hablar de duración o de tiempo verbal. Reconocer expresiones fijas como esta —en vez de traducir palabra por palabra— es una de las estrategias más eficaces para el francés.',
+        ],
         optionNotes: [
           'Es el sentido de "tiempo" como duración medible con reloj o calendario; en francés general "temps" cubre este sentido, pero no es el que activa la expresión "faire" + tiempo.',
           'El clima o estado atmosférico de un momento dado; en francés se pregunta con la construcción fija "quel temps fait-il", literalmente "qué tiempo hace", igual que en español.',
@@ -3163,6 +3238,11 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
         hint: 'Lectura especial de partícula.',
         explain: 'は tema = wa.',
         advice: 'No uses la lectura del kana independiente; la partícula tema se lee wa.',
+        lessonTitle: 'Partículas japonesas: pequeñas palabras que organizan toda la frase',
+        lessonIntro: [
+          'El japonés no marca las funciones gramaticales (sujeto, objeto, tema) con el orden de las palabras como el inglés, ni con desinencias como el español, sino con partículas: sílabas cortas que se colocan justo después de la palabra a la que afectan. は (marca de tema), が (marca de sujeto), を (marca de objeto directo), に y で (varios matices de lugar y tiempo) son las partículas más frecuentes, y dominarlas es más importante para leer japonés que memorizar vocabulario nuevo.',
+          'は es un caso especial dentro del propio sistema de escritura: como carácter kana aislado se lee "ha", pero cuando cumple la función gramatical de partícula de tema, su lectura cambia por convención histórica a "wa", un residuo de la pronunciación del japonés clásico que se congeló en este uso concreto mientras el resto del idioma evolucionaba. No es una regla que se pueda deducir por lógica: es una excepción fija que hay que memorizar la primera vez que se aprende esta partícula, y que después no falla nunca.',
+        ],
         optionNotes: [
           'Es la lectura normal del carácter は cuando aparece dentro de una palabra (como en 話す, "hanasu", hablar); esta es la lectura "por defecto" del kana, pero NO la que usa como partícula gramatical.',
           'Es la lectura histórica que se fijó por convención cuando は funciona como partícula de tema (wa), un caso especial heredado de la pronunciación del japonés antiguo, distinto de su lectura normal.',
@@ -3181,6 +3261,11 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
         hint: 'Aspecto, no tiempo europeo exacto.',
         explain: '了 aspectual de completado/cambio.',
         advice: 'No lo equinares automáticamente a un pretérito único; piensa en aspecto o cambio de estado.',
+        lessonTitle: 'Aspecto, no tiempo: cómo el chino organiza el pasado sin conjugaciones',
+        lessonIntro: [
+          'El chino mandarín no conjuga los verbos en absoluto: no hay formas distintas para "como", "comí" o "comeré". En lugar de tiempo verbal, el chino usa un sistema de "partículas de aspecto", que indican no CUÁNDO ocurre algo sino CÓMO se desarrolla la acción en relación con el momento del que se habla: si ya se completó, si está en curso, o si es una experiencia pasada entre varias posibles. 了 es la partícula aspectual más frecuente y también la más malinterpretada por hablantes de idiomas con conjugación como el español.',
+          'El error típico de un principiante es tratar 了 como un simple "marcador de pasado" equivalente a la terminación "-ó" del español. En realidad, 了 marca que una acción se completó o que una situación cambió de estado, lo cual a menudo coincide con el pasado, pero no siempre: también puede aparecer en frases sobre el futuro cercano cuando se describe un cambio que ya se considera decidido. Pensar en términos de "aspecto" (completado/cambio) en vez de "tiempo" (pasado/presente/futuro) es el ajuste mental más importante para entender la gramática china.',
+        ],
         optionNotes: [
           'El futuro en chino no se marca con 了 sino con adverbios como 会 (huì) o 将 (jiāng); 了 mira hacia atrás (algo ya sucedido o cambiado), no hacia adelante.',
           'Esta es la función real de 了 como partícula aspectual: marca que una acción se completó o que un estado cambió, un concepto llamado "aspecto" (distinto del tiempo verbal europeo, que marca cuándo, no si algo terminó).',
@@ -3199,6 +3284,11 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
         hint: 'Significa “nosotros” pero concuerda en 3.ª singular.',
         explain: 'A gente vai / fala.',
         advice: 'No conjugues en 1.ª plural con a gente en el patrón coloquial brasileño descrito.',
+        lessonTitle: 'Concordancia gramatical vs. significado: cuando no coinciden',
+        lessonIntro: [
+          'En la mayoría de las frases, la concordancia verbal sigue directamente el significado: si el sujeto es plural en sentido ("nosotros"), el verbo va en primera persona del plural. Pero el portugués brasileño coloquial tiene un caso muy productivo donde esto no ocurre: la expresión "a gente" (equivalente informal a "nós", nosotros) es, gramaticalmente, un sustantivo singular femenino, como "la gente" en español, aunque su significado sea claramente plural.',
+          'Esta discrepancia entre forma gramatical y significado es un fenómeno bien documentado en lingüística, y se resuelve siempre a favor de la FORMA: como "a gente" es sintácticamente singular, el verbo que la acompaña también debe ir en tercera persona del singular, la misma que usaríamos con "ela" (ella). Así, aunque el hablante esté pensando en un grupo de personas incluyéndose a sí mismo, la conjugación correcta trata a "a gente" exactamente igual que trataría a cualquier otro sustantivo singular.',
+        ],
         optionNotes: [
           'Es la concordancia "lógica" que uno esperaría porque "a gente" significa "nosotros"; sin embargo, gramaticalmente "a gente" es un sustantivo singular (como "la gente" en español), así que esta opción parece correcta por significado pero no lo es por forma gramatical.',
           'Es la concordancia real: como "a gente" es sintácticamente un sustantivo femenino singular, el verbo debe concordar en 3.ª persona del singular (como con "ela"), aunque el significado sea plural ("nosotros").',
@@ -3217,6 +3307,11 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
         hint: 'Nebensatz: verbo al final.',
         explain: 'weil ich müde bin.',
         advice: 'Dentro de la subordinada con weil no dejes el verbo en V2.',
+        lessonTitle: 'El orden verbal alemán: V2 en frases principales, verbo al final en subordinadas',
+        lessonIntro: [
+          'El alemán tiene una de las reglas de orden de palabras más citadas —y más difíciles de automatizar— de los idiomas europeos: en una oración PRINCIPAL, el verbo conjugado ocupa siempre la segunda posición sintáctica ("V2"), sin importar qué elemento vaya primero: "Ich gehe heute ins Kino" (verbo en 2.ª posición) y "Heute gehe ich ins Kino" (el verbo sigue en 2.ª posición aunque "heute" haya pasado al frente) son ambas correctas, porque lo que cuenta es la posición del verbo, no la del sujeto.',
+          'Esta regla V2, sin embargo, se rompe por completo dentro de una oración SUBORDINADA introducida por conjunciones como "weil" (porque), "dass" (que), "wenn" (cuando/si) u "obwohl" (aunque): en estos casos, el verbo conjugado se desplaza obligatoriamente al FINAL de la cláusula. "Ich bleibe zu Hause, weil ich müde bin" — nótese que "bin" (soy/estoy) queda al final, no en segunda posición como ocurriría en una oración principal ("Ich bin müde"). Este contraste entre "oración principal = V2" y "subordinada = verbo al final" es una de las claves estructurales más importantes de la sintaxis alemana.',
+        ],
         optionNotes: [
           'La "segunda posición" (V2) es la regla del verbo conjugado en oraciones PRINCIPALES alemanas (Ich bin müde); "weil" introduce una subordinada, donde esta regla V2 deja de aplicar.',
           'Esta es la regla real: las conjunciones subordinantes como "weil", "dass", "wenn" u "obwohl" envían el verbo conjugado al final de la cláusula (Nebensatz), un rasgo característico de la sintaxis alemana ausente en español.',
@@ -3235,6 +3330,11 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
         hint: 'False friend con “cámara”.',
         explain: 'camera = habitación.',
         advice: 'En contexto hotelero no elijas cámara fotográfica.',
+        lessonTitle: 'False friends entre español e italiano: parecidos que engañan',
+        lessonIntro: [
+          'El español y el italiano son idiomas hermanos, ambos descendientes directos del latín, y comparten un porcentaje de vocabulario tan alto que muchas veces se puede leer italiano sin haberlo estudiado nunca, solo por parecido. Pero precisamente ese enorme parecido general vuelve más peligrosos los false friends que sí existen: como el resto de la frase suena tan familiar, la mente hispanohablante tiende a confiar de más en la primera lectura intuitiva de cada palabra individual.',
+          '"Camera" es uno de los false friends italianos más citados en cualquier guía de viaje: comparte origen etimológico remoto con "cámara" (ambas vienen del latín "camera", que significaba "bóveda" o "recinto abovedado"), pero mientras el español conservó ese sentido de "espacio cerrado" y lo aplicó también al dispositivo fotográfico moderno, el italiano lo restringió a un significado mucho más concreto y cotidiano: la habitación de dormir. El dispositivo fotográfico en italiano se llama "macchina fotografica", una palabra completamente distinta.',
+        ],
         optionNotes: [
           'Es la trampa del false friend: en español "cámara" evoca de inmediato el dispositivo fotográfico, pero en italiano ese objeto se llama "macchina fotografica", una palabra totalmente distinta.',
           'Este es el significado real de "camera" en italiano: habitación (de dormir, de hotel). Comparte origen etimológico lejano con "cámara" (ambas del latín camera, "bóveda/recinto"), pero el significado moderno divergió por completo.',

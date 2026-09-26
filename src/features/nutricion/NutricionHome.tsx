@@ -774,6 +774,7 @@ export function NutricionHome() {
 
       {moreOpen && (
         <MoreSheet
+          books={books}
           sortOrder={sortOrder}
           setSortOrder={setSortOrder}
           gridDensity={gridDensity}
@@ -1076,6 +1077,12 @@ function ImportModal({
       setImportError('Formato no compatible. Usa TXT, MD, HTML, RTF, PDF, DOCX, EPUB o imagen.')
       return
     }
+
+    const baseTitle = file.name.replace(/\.[^.]+$/, '').trim() || 'Sin título'
+    const fileDate = file.lastModified
+      ? new Date(file.lastModified).toISOString().slice(0, 10)
+      : new Date().toISOString().slice(0, 10)
+
     if (isImageFile(file)) {
       setBusy(true)
       try {
@@ -1083,7 +1090,9 @@ function ImportModal({
         const dims = await readImageSize(dataUrl)
         const block = imageMarkdown(file.name, dataUrl, dims.w || 640, 'center')
         setText((prev) => (prev ? `${prev}\n\n${block}` : block))
-        if (!title) setTitle(file.name.replace(/\.[^.]+$/, ''))
+        if (!title) setTitle(baseTitle)
+        if (!cover) setCover(dataUrl)
+        if (!year) setYear(fileDate.slice(0, 4))
         soundSuccess()
         setStep(2)
       } catch {
@@ -1094,6 +1103,7 @@ function ImportModal({
       }
       return
     }
+
     setBusy(true)
     try {
       const content = await extractTextFromFile(file)
@@ -1103,13 +1113,25 @@ function ImportModal({
         return
       }
       setText(content)
-      setTitle(file.name.replace(/\.[^.]+$/, ''))
+      if (!title) setTitle(baseTitle)
+      if (!year) setYear(fileDate.slice(0, 4))
+
+      // Primera imagen embebida (markdown data URL) → portada automática
+      const imgMatch = content.match(
+        /!\[[^\]]*\]\((data:image\/[a-zA-Z0-9.+-]+;base64,[^)]+)\)/,
+      )
+      if (imgMatch && !cover) {
+        setCover(imgMatch[1])
+      }
+
       soundSuccess()
       setStep(2)
     } catch (e) {
       console.error(e)
       soundFail()
-      setImportError(e instanceof Error ? e.message : 'Ocurrió un error al importar el archivo. Inténtalo de nuevo.')
+      setImportError(
+        e instanceof Error ? e.message : 'Ocurrió un error al importar el archivo. Inténtalo de nuevo.',
+      )
     } finally {
       setBusy(false)
     }
@@ -1185,12 +1207,15 @@ function ImportModal({
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-panel glass-card" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2 style={{ fontSize: '1.1rem' }}>
-            {step === 1 ? 'Nuevo libro' : step === 2 ? 'Editor del libro' : 'Detalles'}
-          </h2>
+    <div className="import-page-overlay" role="dialog" aria-modal="true">
+      <div className="import-page glass-card">
+        <div className="import-page-header">
+          <div>
+            <p className="import-page-kicker">Biblioteca · Nutrición</p>
+            <h2>
+              {step === 1 ? 'Importar libro' : step === 2 ? 'Editor del libro' : 'Detalles y portada'}
+            </h2>
+          </div>
           <button type="button" className="icon-btn" aria-label="Cerrar" onClick={onClose}>
             <IconClose />
           </button>
@@ -1591,6 +1616,7 @@ function EditBookModal({
 }
 
 function MoreSheet({
+  books,
   sortOrder,
   setSortOrder,
   gridDensity,
@@ -1600,6 +1626,7 @@ function MoreSheet({
   onClose,
   onOpenSettings,
 }: {
+  books: BookItem[]
   sortOrder: SortOrder
   setSortOrder: (v: SortOrder) => void
   gridDensity: GridDensity
@@ -1612,19 +1639,119 @@ function MoreSheet({
   const GUIDE: { icon: ReactNode; title: string; text: string }[] = [
     { icon: <IconList />, title: 'Listas', text: 'Cambia entre estantería con portadas y una lista compacta con más detalle por libro.' },
     { icon: <IconPlayCircle />, title: 'Reproduciendo', text: 'Vuelve de un toque al audiolibro que tienes activo en este momento.' },
-    { icon: <IconDownload />, title: 'Importar', text: 'Sube un TXT o PDF, o pega texto. Las imágenes conservan tamaño y alineación.' },
-    { icon: <IconDots />, title: 'Más', text: 'Esta pantalla: orden de la biblioteca, densidad de portadas y volumen de lectura.' },
+    { icon: <IconDownload />, title: 'Importar', text: 'Sube TXT, PDF, DOCX o EPUB. La primera imagen se usa como portada y el título sale del nombre del archivo.' },
+    { icon: <IconDots />, title: 'Más', text: 'Estadísticas de lectura, autores, orden de la biblioteca y volumen.' },
   ]
+
+  // Estimación: ~13 caracteres por segundo a velocidad 1x (misma base que el lector)
+  const charsToMinutes = (chars: number) => Math.max(0, Math.round(chars / 13 / 60))
+
+  const authorStats = useMemo(() => {
+    const map = new Map<string, { books: number; readChars: number; totalChars: number }>()
+    for (const b of books) {
+      const a = (b.author || 'Sin autor').trim() || 'Sin autor'
+      const cur = map.get(a) || { books: 0, readChars: 0, totalChars: 0 }
+      cur.books += 1
+      cur.readChars += Math.max(0, Math.min(b.position || 0, b.text?.length || 0))
+      cur.totalChars += b.text?.length || 0
+      map.set(a, cur)
+    }
+    return [...map.entries()]
+      .map(([name, s]) => ({
+        name,
+        books: s.books,
+        minutes: charsToMinutes(s.readChars),
+        totalMinutes: charsToMinutes(s.totalChars),
+        progress: s.totalChars ? Math.round((s.readChars / s.totalChars) * 100) : 0,
+      }))
+      .sort((a, b) => b.minutes - a.minutes || b.books - a.books)
+  }, [books])
+
+  const mostRead = useMemo(() => {
+    return [...books]
+      .map((b) => ({
+        id: b.id,
+        title: b.title,
+        author: b.author || 'Sin autor',
+        minutes: charsToMinutes(Math.min(b.position || 0, b.text?.length || 0)),
+        pct: b.text?.length ? Math.round(((b.position || 0) / b.text.length) * 100) : 0,
+      }))
+      .filter((b) => b.minutes > 0 || b.pct > 0)
+      .sort((a, b) => b.minutes - a.minutes || b.pct - a.pct)
+      .slice(0, 8)
+  }, [books])
+
+  const totalReadMinutes = useMemo(
+    () => books.reduce((acc, b) => acc + charsToMinutes(Math.min(b.position || 0, b.text?.length || 0)), 0),
+    [books],
+  )
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-panel glass-card" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-panel glass-card more-sheet-panel" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2 style={{ fontSize: '1.1rem' }}>Más</h2>
           <button type="button" className="icon-btn" aria-label="Cerrar" onClick={onClose}>
             <IconClose />
           </button>
         </div>
+
+        <section style={{ marginBottom: '1.3rem' }}>
+          <h3 className="more-section-title">Tu lectura</h3>
+          <div className="stats-grid">
+            <div className="stat-card">
+              <p className="stat-value">{books.length}</p>
+              <p className="stat-label">Libros</p>
+            </div>
+            <div className="stat-card">
+              <p className="stat-value">{authorStats.length}</p>
+              <p className="stat-label">Autores</p>
+            </div>
+            <div className="stat-card">
+              <p className="stat-value">{totalReadMinutes}<span className="stat-unit">min</span></p>
+              <p className="stat-label">Tiempo leído</p>
+            </div>
+          </div>
+        </section>
+
+        {mostRead.length > 0 && (
+          <section style={{ marginBottom: '1.3rem' }}>
+            <h3 className="more-section-title">Más leídos</h3>
+            <ul className="more-rank-list">
+              {mostRead.map((b, i) => (
+                <li key={b.id}>
+                  <span className="rank-idx">{i + 1}</span>
+                  <span className="rank-main">
+                    <strong>{b.title}</strong>
+                    <em>{b.author}</em>
+                  </span>
+                  <span className="rank-meta">
+                    {b.minutes} min · {b.pct}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {authorStats.length > 0 && (
+          <section style={{ marginBottom: '1.3rem' }}>
+            <h3 className="more-section-title">Autores</h3>
+            <ul className="more-rank-list">
+              {authorStats.slice(0, 10).map((a) => (
+                <li key={a.name}>
+                  <span className="rank-main">
+                    <strong>{a.name}</strong>
+                    <em>
+                      {a.books} libro{a.books === 1 ? '' : 's'} · {a.progress}%
+                    </em>
+                  </span>
+                  <span className="rank-meta">{a.minutes} min</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <section style={{ marginBottom: '1.3rem' }}>
           <h3 className="more-section-title">Guía rápida</h3>
@@ -1703,4 +1830,91 @@ function MoreSheet({
       </div>
     </div>
   )
+}
+
+/* Estilos inyectados para import-page y estadísticas (Más) */
+const GCO_NUTRICION_EXTRA_CSS = `
+.import-page-overlay {
+  position: fixed; inset: 0; z-index: 120;
+  background: var(--gco-bg, #0b1220);
+  display: flex; flex-direction: column;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.import-page {
+  width: 100%; max-width: 720px; margin: 0 auto;
+  min-height: 100%; min-height: 100dvh;
+  border-radius: 0; border: none;
+  padding:
+    max(1rem, env(safe-area-inset-top, 0px))
+    max(1.15rem, env(safe-area-inset-right, 0px))
+    max(1.5rem, env(safe-area-inset-bottom, 0px))
+    max(1.15rem, env(safe-area-inset-left, 0px));
+  box-sizing: border-box;
+}
+.import-page-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 12px; margin-bottom: 1.25rem;
+}
+.import-page-kicker {
+  margin: 0 0 4px; font-size: 0.72rem; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--gco-ink-muted);
+}
+.import-page-header h2 {
+  margin: 0; font-size: clamp(1.25rem, 4vw, 1.55rem); font-weight: 750;
+}
+.stats-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+}
+.stat-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--gco-glass-border, rgba(255,255,255,0.1));
+  border-radius: 14px; padding: 12px 10px; text-align: center;
+}
+.stat-value { margin: 0; font-size: 1.35rem; font-weight: 750; color: var(--gco-primary, #22E6C5); }
+.stat-unit { font-size: 0.75rem; font-weight: 600; margin-left: 2px; opacity: 0.85; }
+.stat-label { margin: 4px 0 0; font-size: 0.72rem; color: var(--gco-ink-muted); }
+.more-rank-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.more-rank-list li {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.rank-idx {
+  width: 22px; height: 22px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.72rem; font-weight: 700;
+  background: rgba(34,230,197,0.15); color: var(--gco-primary, #22E6C5);
+  flex-shrink: 0;
+}
+.rank-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.rank-main strong {
+  font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rank-main em {
+  font-style: normal; font-size: 0.72rem; color: var(--gco-ink-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rank-meta { font-size: 0.72rem; color: var(--gco-ink-muted); white-space: nowrap; flex-shrink: 0; }
+.more-sheet-panel { max-height: 92vh; max-height: 92dvh; overflow-y: auto; }
+@media (min-width: 720px) {
+  .import-page {
+    margin: 1.5rem auto; min-height: auto; border-radius: 20px;
+    border: 1px solid var(--gco-glass-border, rgba(255,255,255,0.1));
+    max-height: calc(100vh - 3rem); max-height: calc(100dvh - 3rem);
+    overflow-y: auto;
+  }
+  .import-page-overlay {
+    background: rgba(8,10,18,0.72);
+    backdrop-filter: blur(8px);
+    align-items: flex-start; padding: 0 12px;
+  }
+}
+`
+if (typeof document !== 'undefined' && !document.getElementById('gco-nutricion-extra-css')) {
+  const s = document.createElement('style')
+  s.id = 'gco-nutricion-extra-css'
+  s.textContent = GCO_NUTRICION_EXTRA_CSS
+  document.head.appendChild(s)
 }
