@@ -886,10 +886,15 @@ function speak(text: string, lang: LangId) {
 }
 
 /**
- * Lee en voz alta un texto largo (la "clase" completa), partiéndolo en
- * fragmentos cortos para que el motor de síntesis del navegador no falle
- * con utterances demasiado largas. Devuelve una función para detener la
- * lectura a mitad de camino.
+ * Lee en voz alta la clase completa, alternando automáticamente entre la
+ * voz en español (para toda la narración pedagógica, que es la mayor parte
+ * del texto) y la voz en el idioma meta (solo para las palabras o frases
+ * citadas del idioma que se está enseñando, marcadas entre comillas rectas
+ * "…", comillas tipográficas "…" o corchetes japoneses 「…」). Usar la voz
+ * equivocada en cada fragmento es precisamente lo que produce lecturas
+ * artificiales o con errores de pronunciación; separar ambos modos evita
+ * que la voz española intente leer inglés, o viceversa. Devuelve una
+ * función para detener la lectura a mitad de camino.
  */
 function speakLesson(paragraphs: string[], lang: LangId, onDone?: () => void): () => void {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
@@ -897,19 +902,36 @@ function speakLesson(paragraphs: string[], lang: LangId, onDone?: () => void): (
     return () => {}
   }
   window.speechSynthesis.cancel()
-  const chunks = paragraphs
-    .join(' ')
-    .split(/(?<=[.!?])\s+/)
+  const fullText = paragraphs.join(' ')
+  // Separa el texto en tramos, capturando lo que va entre comillas (idioma
+  // meta) y dejando fuera de la captura la narración en español.
+  const rawParts = fullText
+    .split(/("[^"]*"|“[^”]*”|「[^」]*」)/g)
     .filter((s) => s.trim().length > 0)
+  const segments: { text: string; segLang: LangId }[] = []
+  for (const part of rawParts) {
+    const isForeign = /^["“「]/.test(part)
+    const stripped = part.replace(/^["“「]/, '').replace(/["”」]$/, '').trim()
+    if (!stripped) continue
+    if (isForeign) {
+      segments.push({ text: stripped, segLang: lang })
+    } else {
+      // Narración en español: se trocea por oraciones para que el motor de
+      // síntesis no falle con utterances demasiado largas.
+      const sentences = stripped.split(/(?<=[.!?])\s+/).filter((s) => s.trim())
+      for (const s of sentences) segments.push({ text: s, segLang: 'es' })
+    }
+  }
   let stopped = false
   const playFrom = (i: number) => {
-    if (stopped || i >= chunks.length) {
+    if (stopped || i >= segments.length) {
       if (!stopped) onDone?.()
       return
     }
-    const u = new SpeechSynthesisUtterance(chunks[i])
-    u.lang = TTS_LANG[lang] || 'en-US'
-    u.rate = 0.98
+    const seg = segments[i]
+    const u = new SpeechSynthesisUtterance(seg.text)
+    u.lang = TTS_LANG[seg.segLang] || 'es-ES'
+    u.rate = seg.segLang === 'es' ? 0.98 : 0.9
     u.onend = () => playFrom(i + 1)
     u.onerror = () => playFrom(i + 1)
     window.speechSynthesis.speak(u)
@@ -3364,6 +3386,8 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
       explanation: c.explain,
       difficulty,
       optionNotes: rotated.notes,
+      lessonTitle: c.lessonTitle,
+      lessonIntro: c.lessonIntro,
     }
   }
 
@@ -3393,6 +3417,8 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
       explanation: g.explanation,
       difficulty,
       optionNotes: rotated.notes,
+      lessonTitle: g.lessonTitle,
+      lessonIntro: g.lessonIntro,
     }
   }
 
@@ -5539,7 +5565,7 @@ export function IdiomasGame() {
               className={`id-audio-toggle ${lessonAudioOn ? 'playing' : ''}`}
               onClick={toggleLessonAudio}
             >
-              {lessonAudioOn ? '⏹ Detener lectura' : '🔊 Leer toda la clase en voz alta'}
+              {lessonAudioOn ? '⏹ Detener lectura' : '🔊 Leer la clase (español + pronunciación)'}
             </button>
           </div>
           {lessonParagraphs.map((p, i) => (
