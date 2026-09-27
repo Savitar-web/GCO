@@ -931,10 +931,16 @@ export function PalabrasGame() {
   const pathDragging = useRef(false)
   const pathRef = useRef<number[]>([])
 
-  const progress = useMemo(() => getGameProgress(GAME_CAT, GAME_ID), [phase, level])
-  const unlocked = useMemo(
-    () => getUnlockedLevels(GAME_CAT, GAME_ID, TOTAL_LEVELS_PER_MODE),
-    [phase],
+  const [progressTick, setProgressTick] = useState(0)
+  const progress = useMemo(() => getGameProgress(GAME_CAT, GAME_ID), [progressTick, phase, level])
+  const unlockedRows = useMemo(
+    () => getUnlockedLevels(GAME_CAT, GAME_ID),
+    [progress.highestLevel, progressTick],
+  )
+  const maxSelectable = Math.max(
+    1,
+    Math.min(TOTAL_LEVELS_PER_MODE, Math.max(1, progress.highestLevel || 1)),
+    ...unlockedRows.map((u) => u.level),
   )
 
   const clearTimer = useCallback(() => {
@@ -953,7 +959,14 @@ export function PalabrasGame() {
       const elapsed = Date.now() - startRef.current
       if (sub) {
         try {
-          recordLevelResult(GAME_CAT, GAME_ID, level, ok, elapsed)
+          recordLevelResult({
+            categoryId: GAME_CAT,
+            gameId: GAME_ID,
+            level,
+            success: ok,
+            timeMs: elapsed,
+          })
+          setProgressTick((t) => t + 1)
         } catch {
           /* */
         }
@@ -1091,7 +1104,7 @@ export function PalabrasGame() {
   )
 
   const placeFromPool = (token: string) => {
-    soundToggle()
+    soundToggle(true)
     setPool((p) => p.filter((t) => t !== token))
     setSlot((s) => {
       const next = [...s]
@@ -1105,7 +1118,7 @@ export function PalabrasGame() {
   const returnToPool = (i: number) => {
     const t = slot[i]
     if (!t) return
-    soundToggle()
+    soundToggle(false)
     setSlot((s) => {
       const next = [...s]
       next[i] = null
@@ -1386,7 +1399,7 @@ export function PalabrasGame() {
       return next
     })
     if (ch) {
-      soundToggle()
+      soundToggle(true)
       moveXFocus(r, c, xDir, 1)
     }
   }
@@ -1542,7 +1555,7 @@ export function PalabrasGame() {
             Nivel {level}
           </h2>
           <p style={styles.muted}>
-            Desbloqueados {unlocked} / {TOTAL_LEVELS_PER_MODE}
+            Desbloqueados hasta nivel {maxSelectable} / {TOTAL_LEVELS_PER_MODE}
             {best != null && best > 0 ? ` · Mejor ${formatDuration(best)}` : ''}
           </p>
         </div>
@@ -1564,8 +1577,11 @@ export function PalabrasGame() {
                 className={`glass-button ${useTimer ? 'primary' : 'secondary'}`}
                 style={{ padding: '0.4rem 0.9rem', fontSize: '0.82rem' }}
                 onClick={() => {
-                  soundToggle()
-                  setUseTimer((v) => !v)
+                  setUseTimer((v) => {
+                    const n = !v
+                    soundToggle(n)
+                    return n
+                  })
                 }}
               >
                 {useTimer ? 'ON' : 'OFF'}
@@ -1587,10 +1603,10 @@ export function PalabrasGame() {
               <button
                 type="button"
                 className="glass-button secondary"
-                disabled={level >= unlocked}
+                disabled={level >= maxSelectable}
                 onClick={() => {
                   soundClick()
-                  setLevel((l) => Math.min(unlocked, l + 1))
+                  setLevel((l) => Math.min(maxSelectable, l + 1))
                 }}
               >
                 + Nivel
