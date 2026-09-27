@@ -67,6 +67,9 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
   })
   const aiTimer = useRef<number | null>(null)
   const clockTicker = useRef<number | null>(null)
+  const startTimeRef = useRef<number>(Date.now())
+  const resignedRef = useRef(false)
+  const recordedRef = useRef(false)
 
   // Reinicia el reloj si cambia el preset elegido en el menú
   useEffect(() => {
@@ -180,6 +183,8 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
     }
   }, [setup.clock, state.turn, state.result])
 
+  // Guarda el resultado de la partida en el historial una sola vez, al terminar
+
   const newGame = useCallback(() => {
     setState(newGameState())
     setSelection(null)
@@ -189,6 +194,9 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
     setOrientation(setup.humanColor === 'b' ? 'b' : 'w')
     const secs = CLOCK_PRESET_SECONDS[setup.clock]
     setClock({ w: secs, b: secs })
+    startTimeRef.current = Date.now()
+    resignedRef.current = false
+    recordedRef.current = false
   }, [setup.humanColor, setup.clock])
 
   const undo = useCallback(() => {
@@ -220,6 +228,7 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
   }, [])
 
   const resign = useCallback((color: Color) => {
+    resignedRef.current = true
     setState((s) => {
       const next = cloneState(s)
       next.result = 'checkmate'

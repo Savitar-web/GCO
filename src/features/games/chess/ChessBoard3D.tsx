@@ -279,16 +279,26 @@ export function ChessBoard3D({
         geo.computeVertexNormals()
         return geo
       }
+      let accentInt = hexToInt(skinDef.accent)
       function pieceMaterial(color: 'w' | 'b') {
         const isWhite = color === 'w'
         return new THREE.MeshPhysicalMaterial({
           map: isWhite ? texWhitePiece : texBlackPiece,
-          roughness: isWhite ? 0.16 : 0.2,
-          metalness: 0.07,
-          clearcoat: 0.9,
-          clearcoatRoughness: 0.12,
-          emissive: isWhite ? 0x0d3d47 : 0x3a0510,
-          emissiveIntensity: isWhite ? 0.14 : 0.16,
+          roughness: isWhite ? 0.14 : 0.18,
+          metalness: 0.1,
+          clearcoat: 1.0,
+          clearcoatRoughness: 0.08,
+          emissive: accentInt,
+          emissiveIntensity: isWhite ? 0.1 : 0.16,
+        })
+      }
+      function accentRingMaterial() {
+        return new THREE.MeshStandardMaterial({
+          color: accentInt,
+          emissive: accentInt,
+          emissiveIntensity: 2.2,
+          roughness: 0.3,
+          metalness: 0.2,
         })
       }
       function addRing(group: InstanceType<typeof THREE.Group>, radius: number, y: number, mat: InstanceType<typeof THREE.Material>) {
@@ -377,7 +387,7 @@ export function ChessBoard3D({
           finial.position.y = 0.97
           group.add(finial)
         }
-        addRing(group, 0.33, 0.11, mat)
+        addRing(group, 0.34, 0.11, accentRingMaterial())
         group.traverse((o: InstanceType<typeof THREE.Object3D>) => {
           const mesh = o as InstanceType<typeof THREE.Mesh>
           if ((mesh as { isMesh?: boolean }).isMesh) {
@@ -385,14 +395,16 @@ export function ChessBoard3D({
             mesh.receiveShadow = !isSmallDevice
           }
         })
-        // Piezas altas y esbeltas
-        group.scale.set(0.6, 1.0, 0.6)
+        // Piezas altas, esbeltas e imponentes
+        group.scale.set(0.64, 1.12, 0.64)
         return group
       }
 
       const piecesGroup = new THREE.Group()
       scene.add(piecesGroup)
+      let currentState = state
       function rebuildPieces(gs: GameState) {
+        currentState = gs
         piecesGroup.clear()
         for (let r = 0; r < 8; r++) {
           for (let c = 0; c < 8; c++) {
@@ -488,7 +500,8 @@ export function ChessBoard3D({
         top: { pos: [0, 20, 0.01], target: [0, 0, 0] },
         front: { pos: [0, 4.2, 15.5], target: [0, 0.6, 0] },
       }
-      let camAnim: { t: number; from: THREE.Vector3; to: THREE.Vector3; fromT: THREE.Vector3; toT: THREE.Vector3 } | null = null
+      type Vec3 = InstanceType<typeof THREE.Vector3>
+      let camAnim: { t: number; from: Vec3; to: Vec3; fromT: Vec3; toT: Vec3 } | null = null
       function goToCamera(preset: CameraPreset, orient: Color) {
         const p = CAMERA_PRESETS[preset]
         const flip = orient === 'b' ? -1 : 1
@@ -546,6 +559,8 @@ export function ChessBoard3D({
           })
           ledMat.color.setHex(hexToInt(skinDef.accent))
           ledMat.emissive.setHex(hexToInt(skinDef.accent))
+          accentInt = hexToInt(skinDef.accent)
+          rebuildPieces(currentState)
         },
         setBoard(gs: GameState) {
           rebuildPieces(gs)

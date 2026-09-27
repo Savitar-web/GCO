@@ -219,6 +219,18 @@ export function ChessGame() {
 
           <div className="gco-chess-panel-section">
             <div className="gco-chess-panel-title">Controles</div>
+            {state.result && (
+              <div
+                style={{
+                  fontSize: '0.8rem',
+                  color: 'var(--gco-primary, #22e6c5)',
+                  marginBottom: '0.6rem',
+                  fontWeight: 700,
+                }}
+              >
+                Partida finalizada — guardada en tu historial.
+              </div>
+            )}
             <div className="gco-chess-btn-grid">
               <button className="gco-chess-btn wide" onClick={() => { soundClick(); game.newGame() }}>
                 ♟ Nueva partida
@@ -243,6 +255,9 @@ export function ChessGame() {
                   💡 Sugerencia
                 </button>
               )}
+              <button className="gco-chess-btn" onClick={() => { soundClick(); navigate('/games/historial') }}>
+                📜 Historial
+              </button>
               <button
                 className="gco-chess-btn danger wide"
                 disabled={!!state.result}
