@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  startTransition,
   type KeyboardEvent,
 } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
@@ -93,7 +94,7 @@ export function modeFromPath(pathname: string): AppMode | null {
 }
 
 /** Devuelve una ruta válida para el modo, aunque `pathForMode` falle. */
-function safePathFor(mode: AppMode): string {
+export function safePathFor(mode: AppMode): string {
   const def = MODES.find((m) => m.id === mode)
   const fallback = def?.fallbackPath ?? '/'
   try {
@@ -129,6 +130,38 @@ function persistMode(mode: AppMode) {
   }
 }
 
+/**
+ * Tiempos adaptativos según el peso del almacenamiento (lo calcula
+ * CategoryMenu y lo deja en sessionStorage). Con bibliotecas de >1 GB la
+ * carga de la pantalla destino tarda más: no se fuerza ninguna recarga
+ * prematura, que en iOS agravaba el bloqueo.
+ */
+function storageLevel(): 0 | 1 | 2 {
+  try {
+    const v = sessionStorage.getItem('gco:storage-heavy')
+    return v === '2' ? 2 : v === '1' ? 1 : 0
+  } catch {
+    return 0
+  }
+}
+
+function timings() {
+  const lvl = storageLevel()
+  return {
+    safetyMs: lvl === 2 ? 6000 : lvl === 1 ? 3000 : 450,
+    pendingMs: lvl === 2 ? 9000 : lvl === 1 ? 4500 : 1500,
+  }
+}
+
+/** Avisa a Música/Audiolibros para liberar blobs y object URLs antes de salir. */
+function announceLeaving(from: AppMode | null, to: AppMode) {
+  try {
+    window.dispatchEvent(new CustomEvent('gco:mode-leaving', { detail: { from, to } }))
+  } catch {
+    /* */
+  }
+}
+
 function haptic() {
   try {
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
@@ -149,6 +182,8 @@ function haptic() {
 export function useAppModeSwitch() {
   const navigate = useNavigate()
   const location = useLocation()
+  const pathRef = useRef(location.pathname)
+  pathRef.current = location.pathname
 
   const mode = useMemo<AppMode>(
     () => modeFromPath(location.pathname) ?? readStoredMode(),
@@ -156,11 +191,30 @@ export function useAppModeSwitch() {
   )
 
   const switchTo = useCallback(
-    (next: AppMode) => {
+    (next: AppMode, opts?: { replace?: boolean }) => {
       if (!isAppMode(next)) return
       const target = safePathFor(next)
-      navigate(target, { replace: true })
+      const { safetyMs } = timings()
+      announceLeaving(modeFromPath(pathRef.current), next)
+      try {
+        startTransition(() => {
+          navigate(target, { replace: opts?.replace ?? true })
+        })
+      } catch {
+        window.location.assign(target)
+        return
+      }
       persistMode(next)
+      // Red de seguridad: solo si el router no movió la ruta.
+      window.setTimeout(() => {
+        if (modeFromPath(pathRef.current) !== next) {
+          try {
+            window.location.assign(target)
+          } catch {
+            /* */
+          }
+        }
+      }, safetyMs)
     },
     [navigate]
   )
@@ -211,7 +265,8 @@ const CSS = `
 }
 .gco-ms[data-full="false"] { min-width: 168px; max-width: 240px; }
 .gco-ms[data-full="true"] { width: 100%; }
-.gco-ms[data-busy="true"] { opacity: 0.92; }
+.gco-ms[data-busy="true"] .gco-ms-pill { animation: gco-ms-pulse 0.9s ease-in-out infinite; }
+@keyframes gco-ms-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
 
 .gco-ms-pill {
   position: absolute;
@@ -281,7 +336,7 @@ const CSS = `
   .gco-ms-btn { font-size: 0.6rem; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .gco-ms-pill, .gco-ms-btn { transition: none !important; }
+  .gco-ms-pill, .gco-ms-btn { transition: none !important; animation: none !important; }
 }
 `
 
@@ -304,10 +359,8 @@ type Props = {
   onChange?: (mode: AppMode) => void
 }
 
-/** Tiempo tras el cual, si la ruta no cambió, se fuerza la navegación nativa. */
-const NAV_SAFETY_MS = 450
-/** Tiempo máximo del estado optimista. */
-const PENDING_MAX_MS = 1500
+/** Evita toques fantasma (doble evento touch+click en iOS). */
+const DEBOUNCE_MS = 220
 
 export function ModeSwitch({ fullWidth = false, compact = false, onChange }: Props) {
   const navigate = useNavigate()
@@ -329,6 +382,7 @@ export function ModeSwitch({ fullWidth = false, compact = false, onChange }: Pro
   const pathRef = useRef(pathname)
   const mounted = useRef(true)
   const btnRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const lastGo = useRef(0)
 
   pathRef.current = pathname
 
@@ -388,8 +442,15 @@ export function ModeSwitch({ fullWidth = false, compact = false, onChange }: Pro
       if (next === urlMode && !pending) return
       if (pending === next) return
 
+      const nowTs = Date.now()
+      if (nowTs - lastGo.current < DEBOUNCE_MS) return
+      lastGo.current = nowTs
+
+      const { safetyMs, pendingMs } = timings()
+
       soundClick()
       haptic()
+      announceLeaving(urlMode, next)
 
       const target = safePathFor(next)
 
@@ -399,10 +460,13 @@ export function ModeSwitch({ fullWidth = false, compact = false, onChange }: Pro
       // Si por cualquier motivo la ruta no cambia, se libera el estado.
       pendingTimer.current = window.setTimeout(() => {
         if (mounted.current) setPending(null)
-      }, PENDING_MAX_MS)
+      }, pendingMs)
 
       try {
-        navigate(target, { replace: true })
+        // startTransition mantiene la UI fluida mientras carga el chunk destino.
+        startTransition(() => {
+          navigate(target, { replace: true })
+        })
       } catch {
         // El router falló: navegación nativa directa.
         window.location.replace(target)
@@ -420,7 +484,7 @@ export function ModeSwitch({ fullWidth = false, compact = false, onChange }: Pro
             /* */
           }
         }
-      }, NAV_SAFETY_MS)
+      }, safetyMs)
 
       persistMode(next)
       try {

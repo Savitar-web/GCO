@@ -13,6 +13,7 @@ import {
 } from './downloadCredential'
 import { soundClick, soundSuccess, soundFail } from '@/core/audio/uiSounds'
 import { listBooks, listTracks } from '@/core/storage/mediaLibrary'
+import { useAppModeSwitch } from '@/components/ui/ModeSwitch'
 
 const EMOJI_STYLE_KEY = 'gco:emoji-style'
 export type EmojiStylePref =
@@ -1517,6 +1518,32 @@ const PF_CSS = `
 }
 .gco-pf-switch[data-on="true"] .gco-pf-switch-knob { transform: translateX(22px); }
 
+/* ── Accesos rápidos ── */
+.gco-pf-shortcuts { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.gco-pf-shortcut {
+  position: relative;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  min-height: 74px;
+  padding: 0.9rem 2.2rem 0.9rem 1rem;
+  border-radius: 16px;
+  border: 1px solid var(--gco-glass-border);
+  background: rgba(255,255,255,0.04);
+  color: inherit; font: inherit; text-align: left; cursor: pointer;
+  outline: none;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.gco-pf-shortcut:hover { background: rgba(255,255,255,0.08); border-color: var(--gco-primary); }
+.gco-pf-shortcut:active { transform: scale(0.98); }
+.gco-pf-shortcut:focus-visible { box-shadow: 0 0 0 2px var(--gco-primary); }
+.gco-pf-shortcut-title { font-size: 0.95rem; font-weight: 650; }
+.gco-pf-shortcut-detail { font-size: 0.74rem; color: var(--gco-ink-muted); line-height: 1.35; }
+.gco-pf-shortcut-go {
+  position: absolute; right: 0.9rem; top: 50%; transform: translateY(-50%);
+  font-size: 1.3rem; color: var(--gco-primary);
+}
+@media (max-width: 560px) { .gco-pf-shortcuts { grid-template-columns: 1fr; } }
+
 /* ── Barra de guardado ── */
 .gco-pf-savebar {
   position: sticky;
@@ -1961,6 +1988,16 @@ export function PerfilSettings() {
     frame !== ((storedProfile?.avatarFrame as FrameId) ?? 'none') ||
     (avatar ?? null) !== (storedProfile?.avatarDataUrl ?? null)
 
+  // Atajos a otros modos (misma lógica reforzada del ModeSwitch).
+  const { switchTo } = useAppModeSwitch()
+  const goToMode = (target: 'musica' | 'nutricion') => {
+    soundClick()
+    if (dirty && !window.confirm('Tienes cambios sin guardar. ¿Salir de todos modos?')) {
+      return
+    }
+    switchTo(target, { replace: false })
+  }
+
   const emojiMeta = EMOJI_ENGINES.find((e) => e.id === emojiStyle)
   const statusTone = /no se pudo|error|sin espacio|demasiado|edad entre|falló/i.test(msg)
     ? 'err'
@@ -2352,6 +2389,33 @@ export function PerfilSettings() {
             Abrir opciones
           </button>
         </PfRow>
+        </div>
+      </PfCard>
+
+      {/* ── Accesos rápidos ── */}
+      <PfCard
+        title="Accesos rápidos"
+        description="Ve directo a otra sección de la app sin pasar por el inicio."
+      >
+        <div className="gco-pf-shortcuts">
+          <button
+            type="button"
+            className="gco-pf-shortcut"
+            onClick={() => goToMode('musica')}
+          >
+            <span className="gco-pf-shortcut-title">Música</span>
+            <span className="gco-pf-shortcut-detail">Biblioteca, listas y reproductor</span>
+            <span className="gco-pf-shortcut-go" aria-hidden>›</span>
+          </button>
+          <button
+            type="button"
+            className="gco-pf-shortcut"
+            onClick={() => goToMode('nutricion')}
+          >
+            <span className="gco-pf-shortcut-title">Nutrición</span>
+            <span className="gco-pf-shortcut-detail">Planes, comidas y seguimiento</span>
+            <span className="gco-pf-shortcut-go" aria-hidden>›</span>
+          </button>
         </div>
       </PfCard>
 
@@ -3235,4 +3299,4 @@ export function PerfilSettings() {
       )}
     </div>
   )
-}
+}

@@ -1375,29 +1375,151 @@ function installGcoTts(voicesPromise: Promise<SpeechSynthesisVoice[]>) {
   window.dispatchEvent(new CustomEvent('gco:tts-api-ready'))
 }
 
-async function warmMediaLibraries() {
+/* ───────────────────── Salud del almacenamiento ─────────────────────
+ * Con bibliotecas grandes (audiolibros / música, >1 GB) iOS limita la memoria
+ * de la PWA y cargar todo al arrancar bloquea la navegación. Medimos el uso real
+ * y decidimos qué precargar. Resultado en sessionStorage para que el ModeSwitch
+ * lo lea de forma síncrona. */
+
+export type StorageHealth = {
+  usage: number
+  quota: number
+  ratio: number
+  /** Más de ~400 MB usados o más del 70 % de la cuota */
+  heavy: boolean
+  /** Más de ~1 GB usado */
+  huge: boolean
+  known: boolean
+}
+
+const HEAVY_BYTES = 400 * 1024 * 1024
+const HUGE_BYTES = 1024 * 1024 * 1024
+const STORAGE_HEAVY_FLAG = 'gco:storage-heavy'
+
+function isIOSDevice(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  const iPadOS = navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1
+  return /iPhone|iPad|iPod/i.test(ua) || iPadOS
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    const t = window.setTimeout(() => resolve(fallback), ms)
+    p.then(
+      (v) => {
+        window.clearTimeout(t)
+        resolve(v)
+      },
+      () => {
+        window.clearTimeout(t)
+        resolve(fallback)
+      }
+    )
+  })
+}
+
+/** Cede el hilo principal para no congelar la UI entre tareas pesadas. */
+function yieldToMain(): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, 0))
+}
+
+let healthCache: StorageHealth | null = null
+
+export async function getStorageHealth(force = false): Promise<StorageHealth> {
+  if (healthCache && !force) return healthCache
+  let usage = 0
+  let quota = 0
+  let known = false
   try {
-    const mod = await import('@/core/storage/mediaLibrary')
-
-    const tasks: Promise<unknown>[] = []
-
-    if (typeof mod.listBooks === 'function') {
-      tasks.push(mod.listBooks().catch(() => []))
+    const est = await withTimeout(
+      navigator.storage?.estimate?.() ?? Promise.resolve(null),
+      2500,
+      null
+    )
+    if (est) {
+      usage = Number(est.usage ?? 0)
+      quota = Number(est.quota ?? 0)
+      known = true
     }
+  } catch {
+    /* */
+  }
+  const ratio = quota > 0 ? usage / quota : 0
+  const health: StorageHealth = {
+    usage,
+    quota,
+    ratio,
+    heavy: usage > HEAVY_BYTES || ratio > 0.7,
+    huge: usage > HUGE_BYTES,
+    known,
+  }
+  healthCache = health
+  try {
+    sessionStorage.setItem(STORAGE_HEAVY_FLAG, health.huge ? '2' : health.heavy ? '1' : '0')
+  } catch {
+    /* */
+  }
+  try {
+    window.dispatchEvent(new CustomEvent('gco:storage-health', { detail: health }))
+  } catch {
+    /* */
+  }
+  return health
+}
 
-    if (typeof mod.listFolders === 'function') {
-      tasks.push(mod.listFolders().catch(() => []))
+/** Pide almacenamiento persistente: reduce el riesgo de que iOS purgue la caché. */
+async function requestPersistentStorage() {
+  try {
+    if (navigator.storage?.persist && navigator.storage.persisted) {
+      const already = await navigator.storage.persisted()
+      if (!already) await navigator.storage.persist()
     }
+  } catch {
+    /* */
+  }
+}
 
-    if (typeof mod.listTracks === 'function') {
-      tasks.push(mod.listTracks().catch(() => []))
+function shouldWarmMedia(h: StorageHealth): boolean {
+  // En iOS no se precarga la biblioteca: se carga bajo demanda al entrar.
+  if (isIOSDevice()) return false
+  if (h.heavy) return false
+  try {
+    const nav = navigator as Navigator & {
+      deviceMemory?: number
+      connection?: { saveData?: boolean }
     }
+    if (nav.connection?.saveData) return false
+    if (typeof nav.deviceMemory === 'number' && nav.deviceMemory <= 2) return false
+  } catch {
+    /* */
+  }
+  return true
+}
 
-    if (typeof mod.listPlaylists === 'function') {
-      tasks.push(mod.listPlaylists().catch(() => []))
+async function warmMediaLibraries() {
+  const health = await getStorageHealth()
+  if (!shouldWarmMedia(health)) {
+    // Biblioteca grande o dispositivo limitado: nada de precarga, solo lazy.
+    window.dispatchEvent(new CustomEvent('gco:media-warm-skipped', { detail: health }))
+    return
+  }
+
+  try {
+    const mod = await withTimeout(import('@/core/storage/mediaLibrary'), 4000, null)
+    if (!mod) return
+
+    // Secuencial y con tiempo máximo: nunca bloquea la navegación.
+    const jobs: Array<() => Promise<unknown>> = []
+    if (typeof mod.listBooks === 'function') jobs.push(() => mod.listBooks())
+    if (typeof mod.listFolders === 'function') jobs.push(() => mod.listFolders())
+    if (typeof mod.listTracks === 'function') jobs.push(() => mod.listTracks())
+    if (typeof mod.listPlaylists === 'function') jobs.push(() => mod.listPlaylists())
+
+    for (const job of jobs) {
+      await withTimeout(job(), 3000, null)
+      await yieldToMain()
     }
-
-    await Promise.all(tasks)
 
     window.dispatchEvent(new CustomEvent('gco:library'))
     window.dispatchEvent(new CustomEvent('gco:media-warmed'))
@@ -1405,13 +1527,9 @@ async function warmMediaLibraries() {
     /* La biblioteca no debe bloquear la aplicación */
   }
 
-  // Precarga explícita de módulos de página.
-  // Vite necesita rutas estáticas para incluir estos chunks correctamente.
-
-  await Promise.all([
-    import('../nutricion/NutricionHome').catch(() => null),
-    import('../musica/MusicaHome').catch(() => null),
-  ])
+  // Precarga de módulos de página (Vite necesita rutas estáticas).
+  await withTimeout(import('../nutricion/NutricionHome').catch(() => null), 4000, null)
+  await withTimeout(import('../musica/MusicaHome').catch(() => null), 4000, null)
 }
 
 /**
@@ -1445,8 +1563,15 @@ export function ensurePwaGlobalPreload() {
     applyEmojiStyleGlobally(getEmojiStyle())
   }).catch(() => applyEmojiStyleGlobally(getEmojiStyle()))
 
-  // Media YA (no solo idle) para evitar flash vacío al abrir Nutrición
-  void warmMediaLibraries()
+  // Biblioteca: diferida a tiempo ocioso y solo si el dispositivo lo aguanta.
+  // Antes se cargaba todo al arrancar, lo que con >1 GB bloqueaba la PWA en iOS.
+  void getStorageHealth()
+  void requestPersistentStorage()
+  window.setTimeout(() => {
+    runWhenIdle(() => {
+      void warmMediaLibraries()
+    }, 4000)
+  }, 2500)
   try {
     sessionStorage.setItem(PRELOAD_BOOT_KEY, '1')
   } catch {
