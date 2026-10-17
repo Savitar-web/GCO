@@ -378,7 +378,12 @@ export function ChessGame() {
           )}
         </div>
 
-        <div className={`gco-chess-panel ${isFullscreen ? 'is-fs-hidden' : ''}`}>
+        {/* PANEL LATERAL EN MÓVIL ABAJO + ANIMACIÓN ASCENDENTE */}
+        <div
+          className={`gco-chess-panel ${isFullscreen ? 'is-fs-hidden' : ''} ${
+            isFullscreen ? 'is-fullscreen' : ''
+          }`}
+        >
           {setup.mode === 'ai' && (
             <div className="gco-chess-panel-section">
               <div className="gco-chess-panel-title">Inteligencia artificial</div>
@@ -471,16 +476,16 @@ export function ChessGame() {
               </div>
             )}
             <div className="gco-chess-btn-grid">
-                        {/* Botón de pantalla completa (siempre visible) */}
-          <button
-            type="button"
-            className="gco-chess-btn wide"
-            onClick={toggleFullscreen}
-          >
-            {isFullscreen || document.fullscreenElement
-              ? 'Salir de pantalla completa'
-              : 'Pantalla completa'}
-          </button>
+              {/* Botón de pantalla completa (siempre visible) */}
+              <button
+                type="button"
+                className="gco-chess-btn wide"
+                onClick={toggleFullscreen}
+              >
+                {isFullscreen || document.fullscreenElement
+                  ? 'Salir de pantalla completa'
+                  : 'Pantalla completa'}
+              </button>
               <button
                 type="button"
                 className="gco-chess-btn wide"
