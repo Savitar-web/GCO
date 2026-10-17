@@ -323,7 +323,11 @@ export function ChessGame() {
               </div>
 
               <div className="gco-chess-drawer-fs">
-                <button type="button" className="gco-chess-btn wide" onClick={toggleFullscreen}>
+                <button
+                  type="button"
+                  className="gco-chess-btn wide"
+                  onClick={toggleFullscreen}
+                >
                   {isFullscreen || document.fullscreenElement
                     ? 'Salir de pantalla completa'
                     : 'Pantalla completa'}
