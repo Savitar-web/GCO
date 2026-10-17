@@ -220,8 +220,8 @@ export function ChessBoard3D({
       let skinDef = BOARD_SKINS.find((s) => s.id === skin) ?? BOARD_SKINS[0]
       let texLight = makeMarble(skinDef.light, adjustVein(skinDef.light), texSize, 3.8)
       let texDark = makeMarble(skinDef.dark, adjustVein(skinDef.dark), texSize, 4.2)
-      const texWhitePiece = makeMarble('#cdeef0', '#6fd0e0', isSmallDevice ? 128 : 256, 3.2)
-      const texBlackPiece = makeMarble('#310912', '#9c1c33', isSmallDevice ? 128 : 256, 3.5)
+      const texWhitePiece = makeMarble('#f4fcff', '#4ab8d0', isSmallDevice ? 128 : 256, 3.0)
+      const texBlackPiece = makeMarble('#0e0305', '#a01830', isSmallDevice ? 128 : 256, 3.4)
 
       /* ---------------- Tablero ---------------- */
       const boardGroup = new THREE.Group()
@@ -272,6 +272,47 @@ export function ChessBoard3D({
       ledMesh.position.y = -0.86
       boardGroup.add(ledMesh)
 
+      /* ---------------- Coordenadas en el marco ---------------- */
+      function makeCoordLabel(textStr: string, accentHex: string) {
+        const cnv = document.createElement('canvas')
+        cnv.width = 160
+        cnv.height = 80
+        const c = cnv.getContext('2d')!
+        c.clearRect(0, 0, 160, 80)
+        // glow
+        c.font = 'bold 56px system-ui, sans-serif'
+        c.textAlign = 'center'
+        c.textBaseline = 'middle'
+        c.shadowColor = accentHex
+        c.shadowBlur = 12
+        c.fillStyle = accentHex
+        c.globalAlpha = 0.95
+        c.fillText(textStr, 80, 42)
+        const tex = new THREE.CanvasTexture(cnv)
+        tex.colorSpace = THREE.SRGBColorSpace
+        const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.58, 0.29), mat)
+        mesh.rotation.x = -Math.PI / 2
+        return mesh
+      }
+      const FILES_L = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
+      for (let i = 0; i < 8; i++) {
+        const fileLbl = makeCoordLabel(FILES_L[i], skinDef.accent)
+        fileLbl.position.set(-BOARD_HALF + SQ * 0.5 + i * SQ, 0.1, BOARD_HALF + 0.48)
+        boardGroup.add(fileLbl)
+        const fileLblTop = makeCoordLabel(FILES_L[i], skinDef.accent)
+        fileLblTop.position.set(-BOARD_HALF + SQ * 0.5 + i * SQ, 0.1, -BOARD_HALF - 0.48)
+        fileLblTop.rotation.z = Math.PI
+        boardGroup.add(fileLblTop)
+        const rankLbl = makeCoordLabel(String(i + 1), skinDef.accent)
+        rankLbl.position.set(-BOARD_HALF - 0.48, 0.1, BOARD_HALF - SQ * 0.5 - i * SQ)
+        boardGroup.add(rankLbl)
+        const rankLblR = makeCoordLabel(String(i + 1), skinDef.accent)
+        rankLblR.position.set(BOARD_HALF + 0.48, 0.1, BOARD_HALF - SQ * 0.5 - i * SQ)
+        boardGroup.add(rankLblR)
+      }
+
+
       /* ---------------- Piezas (perfiles altos, torneadas) ---------------- */
       function buildLathe(points: [number, number][]) {
         const vec = points.map((p) => new THREE.Vector2(p[0], p[1]))
@@ -284,12 +325,13 @@ export function ChessBoard3D({
         const isWhite = color === 'w'
         return new THREE.MeshPhysicalMaterial({
           map: isWhite ? texWhitePiece : texBlackPiece,
-          roughness: isWhite ? 0.14 : 0.18,
-          metalness: 0.1,
+          color: isWhite ? 0xf2fbff : 0x140508,
+          roughness: isWhite ? 0.1 : 0.2,
+          metalness: isWhite ? 0.06 : 0.16,
           clearcoat: 1.0,
-          clearcoatRoughness: 0.08,
-          emissive: accentInt,
-          emissiveIntensity: isWhite ? 0.1 : 0.16,
+          clearcoatRoughness: isWhite ? 0.05 : 0.11,
+          emissive: isWhite ? 0x3ab0c8 : 0x5a1220,
+          emissiveIntensity: isWhite ? 0.18 : 0.28,
         })
       }
       function accentRingMaterial() {
@@ -397,6 +439,36 @@ export function ChessBoard3D({
         })
         // Piezas altas, esbeltas e imponentes
         group.scale.set(0.64, 1.12, 0.64)
+
+        // Aura de partículas de color (cian en blancas, carmesí en negras)
+        {
+          const count = isSmallDevice ? 10 : 18
+          const positions = new Float32Array(count * 3)
+          for (let i = 0; i < count; i++) {
+            const a = Math.random() * Math.PI * 2
+            const r = 0.12 + Math.random() * 0.28
+            positions[i * 3] = Math.cos(a) * r
+            positions[i * 3 + 1] = 0.15 + Math.random() * 1.15
+            positions[i * 3 + 2] = Math.sin(a) * r
+          }
+          const geo = new THREE.BufferGeometry()
+          geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+          const col = color === 'w' ? 0x5ee7ff : 0xff4a6a
+          const pmat = new THREE.PointsMaterial({
+            color: col,
+            size: isSmallDevice ? 0.045 : 0.055,
+            transparent: true,
+            opacity: color === 'w' ? 0.72 : 0.8,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+            sizeAttenuation: true,
+          })
+          const pts = new THREE.Points(geo, pmat)
+          pts.userData.isAura = true
+          pts.userData.phase = Math.random() * Math.PI * 2
+          group.add(pts)
+        }
+
         return group
       }
 
@@ -526,6 +598,23 @@ export function ChessBoard3D({
         }
         controls.update()
         ledMat.emissiveIntensity = 2.4 + Math.sin(pulseT * 1.5) * 0.5
+        // Animar auras de partículas de las piezas
+        piecesGroup.traverse((obj: InstanceType<typeof THREE.Object3D>) => {
+          if (obj.userData?.isAura && (obj as InstanceType<typeof THREE.Points>).isPoints) {
+            const pts = obj as InstanceType<typeof THREE.Points>
+            const phase = (pts.userData.phase as number) || 0
+            pts.rotation.y = pulseT * 0.35 + phase
+            const pos = pts.geometry.attributes.position as InstanceType<typeof THREE.BufferAttribute>
+            const arr = pos.array as Float32Array
+            for (let i = 0; i < arr.length; i += 3) {
+              arr[i + 1] += Math.sin(pulseT * 1.8 + phase + i) * 0.0012
+              if (arr[i + 1] > 1.35) arr[i + 1] = 0.12
+            }
+            pos.needsUpdate = true
+            const mat = pts.material as InstanceType<typeof THREE.PointsMaterial>
+            mat.opacity = 0.45 + Math.sin(pulseT * 2.2 + phase) * 0.28
+          }
+        })
         composer.render()
         raf = requestAnimationFrame(render)
       }

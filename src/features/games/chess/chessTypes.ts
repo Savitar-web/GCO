@@ -1,20 +1,21 @@
 import type { Color } from './chessEngine'
 
-export type GameMode = 'ai' | 'local2p'
+export type GameMode = 'ai' | 'local2p' | 'online'
 export type BoardView = '2d' | '3d'
 export type ClockPreset = 'none' | '3' | '5' | '10' | '15' | '30'
 export type BoardSkin = 'cyan' | 'wood' | 'gold' | 'stone' | 'dark' | 'light'
 
 export interface ChessSetup {
   mode: GameMode
-  humanColor: Color // color que juega la persona cuando mode === 'ai'
-  aiLevel: number // 1-10
+  humanColor: Color
+  aiLevel: number
   view: BoardView
   skin: BoardSkin
   clock: ClockPreset
   showLegalHints: boolean
   soundEnabled: boolean
-  autoFlip: boolean // gira el tablero según el turno (partidas locales a 2 jugadores)
+  /** Gira el tablero según el turno (partidas locales a 2 jugadores, celular compartido) */
+  autoFlip: boolean
 }
 
 export const DEFAULT_SETUP: ChessSetup = {

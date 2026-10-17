@@ -1,7 +1,6 @@
 /**
  * Perfiles 2D (radio, altura) que se giran 360° (LatheGeometry) para construir
- * cada pieza en 3D. Son ~20% más altos y ligeramente más esbeltos que un set
- * clásico de Staunton, para lograr una silueta más elegante y "premium".
+ * cada pieza en 3D. Siluetas altas y esbeltas estilo Staunton premium.
  */
 export const PIECE_PROFILES: Record<string, [number, number][]> = {
   p: [

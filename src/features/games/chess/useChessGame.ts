@@ -14,6 +14,7 @@ import {
   type MoveInfo,
   type Piece,
 } from './chessEngine'
+import { saveChessHistoryEntry, type HistoryResult } from './chessHistory'
 import { chessSfx } from './chessSound'
 import { CLOCK_PRESET_SECONDS, type ChessSetup } from './chessTypes'
 
@@ -38,7 +39,7 @@ export interface UseChessGameResult {
   clock: ClockState
   canUndo: boolean
   canRedo: boolean
-  boardOrientation: Color // 'w' = blancas abajo
+  boardOrientation: Color
   onSquareClick: (r: number, c: number) => void
   newGame: () => void
   undo: () => void
@@ -68,15 +69,14 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
   const aiTimer = useRef<number | null>(null)
   const clockTicker = useRef<number | null>(null)
   const startTimeRef = useRef<number>(Date.now())
-  const resignedRef = useRef(false)
   const recordedRef = useRef(false)
 
-  // Reinicia el reloj si cambia el preset elegido en el menú
   useEffect(() => {
     const secs = CLOCK_PRESET_SECONDS[setup.clock]
     setClock({ w: secs, b: secs })
   }, [setup.clock])
 
+  // Rotación opcional del tablero en 2 jugadores (celular compartido)
   useEffect(() => {
     if (setup.autoFlip && setup.mode === 'local2p') {
       setOrientation(state.turn)
@@ -97,6 +97,65 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
 
   const material = useMemo(() => materialScore(state.board), [state.board])
 
+  const recordIfNeeded = useCallback(
+    (s: GameState) => {
+      if (!s.result || recordedRef.current) return
+      recordedRef.current = true
+      const durationSec = Math.max(1, Math.round((Date.now() - startTimeRef.current) / 1000))
+      let result: HistoryResult = 'draw'
+      let winnerLabel = 'Tablas'
+
+      if (s.result === 'checkmate' && s.winner) {
+        if (setup.mode === 'ai') {
+          if (s.winner === setup.humanColor) {
+            result = 'win'
+            winnerLabel = 'Victoria'
+          } else {
+            result = 'loss'
+            winnerLabel = 'Derrota'
+          }
+        } else {
+          result = 'win'
+          winnerLabel = s.winner === 'w' ? 'Blancas ganan' : 'Negras ganan'
+        }
+      } else if (s.result === 'stalemate' || s.result === 'draw') {
+        result = 'draw'
+        winnerLabel = s.result === 'stalemate' ? 'Ahogado' : 'Tablas'
+      }
+
+      saveChessHistoryEntry({
+        mode: setup.mode === 'online' ? 'local2p' : setup.mode,
+        result,
+        winnerLabel,
+        moves: s.fullLog.length,
+        durationSec,
+        aiLevel: setup.mode === 'ai' ? setup.aiLevel : undefined,
+        humanColor: setup.mode === 'ai' ? setup.humanColor : undefined,
+        clock: setup.clock,
+        view: setup.view,
+      })
+    },
+    [setup]
+  )
+
+  useEffect(() => {
+    if (state.result) recordIfNeeded(state)
+  }, [state, recordIfNeeded])
+
+  // Flag por tiempo
+  useEffect(() => {
+    if (setup.clock === 'none' || state.result) return
+    if (clock.w === 0 || clock.b === 0) {
+      setState((s) => {
+        if (s.result) return s
+        const next = cloneState(s)
+        next.result = 'checkmate'
+        next.winner = clock.w === 0 ? 'b' : 'w'
+        return next
+      })
+    }
+  }, [clock.w, clock.b, setup.clock, state.result])
+
   const commitMove = useCallback(
     (r: number, c: number, move: Move) => {
       setPast((p) => [...p, cloneState(state)])
@@ -106,10 +165,19 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
       setState(next)
       setLastMove(info)
       setSelection(null)
-      if (info.status === 'checkmate') chessSfx.mate(setup.soundEnabled)
-      else if (info.status === 'check') chessSfx.check(setup.soundEnabled)
-      else if (info.captured) chessSfx.capture(setup.soundEnabled)
-      else chessSfx.move(setup.soundEnabled)
+      const on = setup.soundEnabled
+      if (info.status === 'checkmate') chessSfx.mate(on)
+      else if (info.status === 'stalemate' || next.result === 'draw') chessSfx.draw(on)
+      else if (info.status === 'check') {
+        if (info.captured) chessSfx.capture(on)
+        else if (info.castle) chessSfx.castle(on)
+        else if (info.promotion) chessSfx.promote(on)
+        else chessSfx.move(on)
+        setTimeout(() => chessSfx.check(on), 90)
+      } else if (info.castle) chessSfx.castle(on)
+      else if (info.promotion) chessSfx.promote(on)
+      else if (info.captured) chessSfx.capture(on)
+      else chessSfx.move(on)
     },
     [state, setup.soundEnabled]
   )
@@ -149,7 +217,6 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
     [state, selection, setup, commitMove]
   )
 
-  // Turno de la IA
   useEffect(() => {
     if (setup.mode !== 'ai') return
     if (state.result) return
@@ -159,14 +226,13 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
       const move = getAIMove(state, setup.aiLevel)
       setIsAiThinking(false)
       if (move) commitMove(move.r, move.c, move)
-    }, 260) // pequeña pausa perceptible antes de "pensar"
+    }, 260)
     return () => {
       if (aiTimer.current) window.clearTimeout(aiTimer.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, setup.mode, setup.humanColor, setup.aiLevel])
 
-  // Reloj de partida
   useEffect(() => {
     if (setup.clock === 'none' || state.result) return
     clockTicker.current = window.setInterval(() => {
@@ -175,6 +241,10 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
         const current = c[turn]
         if (current === null) return c
         const nextVal = Math.max(0, current - 1)
+        if (nextVal <= 10 && nextVal > 0 && nextVal !== current) {
+          if (nextVal <= 5) chessSfx.lowTime(setup.soundEnabled)
+          else chessSfx.tick(setup.soundEnabled)
+        }
         return { ...c, [turn]: nextVal }
       })
     }, 1000)
@@ -183,9 +253,8 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
     }
   }, [setup.clock, state.turn, state.result])
 
-  // Guarda el resultado de la partida en el historial una sola vez, al terminar
-
   const newGame = useCallback(() => {
+    chessSfx.start(setup.soundEnabled)
     setState(newGameState())
     setSelection(null)
     setLastMove(null)
@@ -195,11 +264,11 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
     const secs = CLOCK_PRESET_SECONDS[setup.clock]
     setClock({ w: secs, b: secs })
     startTimeRef.current = Date.now()
-    resignedRef.current = false
     recordedRef.current = false
   }, [setup.humanColor, setup.clock])
 
   const undo = useCallback(() => {
+    chessSfx.undo(setup.soundEnabled)
     setPast((p) => {
       if (p.length === 0) return p
       const prev = p[p.length - 1]
@@ -212,6 +281,7 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
   }, [state])
 
   const redo = useCallback(() => {
+    chessSfx.undo(setup.soundEnabled)
     setFuture((f) => {
       if (f.length === 0) return f
       const nxt = f[0]
@@ -224,11 +294,12 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
   }, [state])
 
   const flipBoard = useCallback(() => {
+    chessSfx.flip(setup.soundEnabled)
     setOrientation((o) => (o === 'w' ? 'b' : 'w'))
   }, [])
 
   const resign = useCallback((color: Color) => {
-    resignedRef.current = true
+    chessSfx.resign(setup.soundEnabled)
     setState((s) => {
       const next = cloneState(s)
       next.result = 'checkmate'
@@ -239,8 +310,13 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
 
   const hint = useCallback((): LegalMove | null => {
     if (state.result) return null
-    return getAIMove(state, Math.min(6, setup.aiLevel + 2))
-  }, [state, setup.aiLevel])
+    const m = getAIMove(state, Math.min(6, setup.aiLevel + 2))
+    if (m) {
+      chessSfx.hint(setup.soundEnabled)
+      setSelection({ r: m.r, c: m.c, moves: [m] })
+    }
+    return m
+  }, [state, setup.aiLevel, setup.soundEnabled])
 
   return {
     state,

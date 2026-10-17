@@ -1048,10 +1048,6 @@ export function generateIceSlideLevel(level: number, opts?: { seedSalt?: number 
     // semillas es mucho más barato que antes).
     if (achieved < Math.max(2, Math.floor(d.segments * 0.75))) continue
 
-    // Escombros decorativos: algunos muros y parches de suelo FUERA de la
-    // ruta principal, para que el tablero no se vea vacío y para dar más
-    // variedad — se verifica después que ninguno abra un atajo demasiado
-    // corto.
     const decorGrid = grid.map((row) => row.slice())
     let placedDecor = 0
     let guard = 0
@@ -1510,12 +1506,10 @@ export function generateTeleportLevel(level: number, opts?: { seedSalt?: number 
     // sueltos), separadas por una columna de muro SÓLIDA sin huecos: cruzar
     // a pie es imposible por diseño, y dentro de cada mitad hay que
     // recorrer el laberinto entero para llegar al portal.
-    const half = carveMaze(d.rooms, rng) as unknown as ('wall' | 'floor')[][]
-    braidMaze(half as unknown as MazeCellType[][], rng, d.braidRatio)
-    const leftGrid = half
-    const rightHalfRaw = carveMaze(d.rooms, rng) as unknown as ('wall' | 'floor')[][]
-    braidMaze(rightHalfRaw as unknown as MazeCellType[][], rng, d.braidRatio)
-    const rightGrid = rightHalfRaw
+    const leftGrid = carveMaze(d.rooms, rng) as unknown as ('wall' | 'floor')[][]
+    braidMaze(leftGrid as unknown as MazeCellType[][], rng, d.braidRatio)
+    const rightGrid = carveMaze(d.rooms, rng) as unknown as ('wall' | 'floor')[][]
+    braidMaze(rightGrid as unknown as MazeCellType[][], rng, d.braidRatio)
 
     const halfSize = d.rooms * 2 + 1
     const rows = halfSize
@@ -1544,8 +1538,8 @@ export function generateTeleportLevel(level: number, opts?: { seedSalt?: number 
 
     const pairs: TeleportPair[] = [{ a: { id: 'real0a', row: portalAPos.row, col: portalAPos.col }, b: { id: 'real0b', row: portalBPos.row, col: portalBPos.col } }]
 
-    // Pares reales adicionales: unen otro punto lejano de cada mitad, para
-    // niveles con más de un cruce necesario.
+    // Pares reales adicionales: unen otro punto de cada mitad, para
+    // niveles con más de un cruce.
     const leftFloorCells: MazeCoord[] = []
     const rightFloorCells: MazeCoord[] = []
     for (let r = 1; r < halfSize - 1; r++) {
@@ -1562,9 +1556,7 @@ export function generateTeleportLevel(level: number, opts?: { seedSalt?: number 
       if (li >= leftShuffled.length || ri >= rightShuffled.length) break
       const a = leftShuffled[li++]
       const b = rightShuffled[ri++]
-      usedLeft.add(a.row * halfSize + a.col)
-      usedRight.add(b.row * halfSize + b.col)
-      pairs.push({ a: { id: `real${i}a`, row: a.row, col: a.col }, b: { id: `real${i}b`, row: b.row, col: b.col } })
+      pairs.push({ a: { id: `real${i}a`, row: a.row, col: a.col }, b: { id: `real${i}b`, row: b.row, col: sepCol + 1 + b.col } })
     }
 
     // Señuelos: ambos extremos en la MISMA mitad — no ayudan a cruzar.
@@ -1576,7 +1568,8 @@ export function generateTeleportLevel(level: number, opts?: { seedSalt?: number 
       const b = pool[1]
       if (useLeftHalf) li += 2
       else ri += 2
-      pairs.push({ a: { id: `decoy${i}a`, row: a.row, col: a.col }, b: { id: `decoy${i}b`, row: b.row, col: b.col } })
+      const offset = useLeftHalf ? 0 : sepCol + 1
+      pairs.push({ a: { id: `decoy${i}a`, row: a.row, col: a.col + offset }, b: { id: `decoy${i}b`, row: b.row, col: b.col + offset } })
     }
 
     const candidate: TeleportLevel = {
@@ -1616,7 +1609,6 @@ export function generateTeleportLevel(level: number, opts?: { seedSalt?: number 
     seed: levelSeed(lv, 12999),
   }
 }
-
 
 export function calcTeleportStars(moves: number, timeMs: number, targetSeconds: number, moveLimit: number): 0 | 1 | 2 | 3 {
   if (moves <= 0) return 0
@@ -3246,11 +3238,7 @@ function SettingsPanel({
         <div className="dg-settings__preview">
           <DPad settings={dpad} onMove={() => {}} />
         </div>
-        <button
-          type="button"
-          className="dg-btn dg-btn--ghost dg-settings__reset"
-          onClick={() => onChangeDPad(defaultDPadSettings())}
-        >
+        <button type="button" className="dg-btn dg-btn--ghost dg-settings__reset" onClick={() => onChangeDPad(defaultDPadSettings())}>
           ↺ Restablecer cruceta
         </button>
       </div>
@@ -3289,9 +3277,8 @@ function MainMenu({
           <div className="dg-menu__title">Despejes</div>
           <div className="dg-menu__subtitle">9 minijuegos de lógica, cada uno con progresión infinita</div>
         </div>
-        <button type="button" className="dg-iconbtn dg-iconbtn--ghost dg-menu__settings" onClick={onOpenSettings} aria-label="Ajustes">
+        <button type="button" className="dg-iconbtn dg-iconbtn--ghost dg-menu__settings" onClick={onOpenSettings} aria-label="Ajustes y personaje">
           <span className="dg-menu__skin">{skin}</span>
-          <span>⚙</span>
         </button>
       </div>
       <div className="dg-menu__grid">
@@ -3302,7 +3289,6 @@ function MainMenu({
             <button key={g.id} type="button" className={`dg-card dg-card--${g.accent}`} onClick={() => onSelect(g.id)}>
               <div className="dg-card__icon">{g.icon}</div>
               <div className="dg-card__title">{g.title}</div>
-
               <div className="dg-card__tagline">{g.tagline}</div>
               <div className="dg-card__footer">
                 <span className="dg-chip dg-chip--dark">Nivel {progress.level}</span>
@@ -3702,12 +3688,19 @@ function HieloGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string; o
     (dir: Direction) => {
       if (completed) return
       const next = iceSlideTarget(level, player, dir)
-      if (next.row === player.row && next.col === player.col) return
+      if (next.row === player.row && next.col === player.col) {
+        Sound.blocked()
+        return
+      }
+      Sound.slide()
       setSliding(true)
       setPlayer(next)
       setMoves((m) => m + 1)
       window.setTimeout(() => setSliding(false), 220)
-      if (next.row === level.target.row && next.col === level.target.col) setCompleted(true)
+      if (next.row === level.target.row && next.col === level.target.col) {
+        setCompleted(true)
+        Sound.success()
+      }
     },
     [level, player, completed]
   )
@@ -3785,11 +3778,19 @@ function InterruptoresGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: s
     (dir: Direction) => {
       if (completed) return
       const res = switchStep(level, state, player, dir)
-      if (!res.moved) return
+      if (!res.moved) {
+        Sound.blocked()
+        return
+      }
+      if (res.state !== state) Sound.toggle()
+      else Sound.move()
       setPlayer(res.player)
       setState(res.state)
       setMoves((m) => m + 1)
-      if (switchIsComplete(level, res.player)) setCompleted(true)
+      if (switchIsComplete(level, res.player)) {
+        setCompleted(true)
+        Sound.success()
+      }
     },
     [level, state, player, completed]
   )
@@ -3887,14 +3888,23 @@ function TeleportGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string
     (dir: Direction) => {
       if (completed) return
       const res = teleportStep(level, player, dir)
-      if (!res.moved) return
+      if (!res.moved) {
+        Sound.blocked()
+        return
+      }
       setPlayer(res.player)
       setMoves((m) => m + 1)
       if (res.teleported) {
+        Sound.warp()
         setWarping(true)
         window.setTimeout(() => setWarping(false), 260)
+      } else {
+        Sound.move()
       }
-      if (teleportIsComplete(level, res.player)) setCompleted(true)
+      if (teleportIsComplete(level, res.player)) {
+        setCompleted(true)
+        Sound.success()
+      }
     },
     [level, player, completed]
   )
@@ -3972,9 +3982,13 @@ function LaserGame({ onBack }: { onBack: () => void }) {
   function handleRotate(id: string) {
     if (completed) return
     const next = toggleMirror(mirrors, id)
+    Sound.zap()
     setMirrors(next)
     setRotations((r) => r + 1)
-    if (laserHitsTarget(level, next)) setCompleted(true)
+    if (laserHitsTarget(level, next)) {
+      setCompleted(true)
+      Sound.success()
+    }
   }
 
   const cell = cellSizeFor(level.rows, level.cols, 380, 26, 54)
@@ -4010,6 +4024,9 @@ function LaserGame({ onBack }: { onBack: () => void }) {
       <div className="dg-board dg-board--laser">
         <div className="dg-stage dg-stage--laser" style={{ width: stageWidth, height: stageHeight }}>
           <div className="dg-grid-bg" style={{ '--dg-cols': level.cols, '--dg-rows': level.rows, '--dg-cell': `${cell}px` } as React.CSSProperties} />
+          {level.walls.map((w) => (
+            <div key={`w-${w.row}-${w.col}`} className="dg-laser-wall" style={{ left: w.col * cell, top: w.row * cell, width: cell, height: cell }} />
+          ))}
           <svg className="dg-laser-svg" width={stageWidth} height={stageHeight}>
             <path d={beamD} className={`dg-laser-beam ${hit ? 'dg-laser-beam--hit' : ''}`} />
             <path d={beamD} className={`dg-laser-beam-glow ${hit ? 'dg-laser-beam-glow--hit' : ''}`} />
@@ -4115,9 +4132,13 @@ function CircuitosGame({ onBack }: { onBack: () => void }) {
     if (completed) return
     const next = rotateCircuitPiece(level, r, c)
     if (next === level) return
+    Sound.toggle()
     setLevel(next)
     setRotations((n) => n + 1)
-    if (isCircuitComplete(next)) setCompleted(true)
+    if (isCircuitComplete(next)) {
+      setCompleted(true)
+      Sound.success()
+    }
   }
 
   const cell = cellSizeFor(level.rows, level.cols, 400, 22, 48)
@@ -4498,48 +4519,6 @@ const DESPEJES_CSS = `
 }
 .dg-dpad__btn:active { transform: scale(0.9); background: linear-gradient(160deg, rgba(124,155,255,0.5), rgba(124,155,255,0.18)); }
 
-/* Variantes de cruceta */
-.dg-dpad--minimal .dg-dpad__btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); box-shadow: none; border-radius: 10px; }
-.dg-dpad--minimal .dg-dpad__btn:active { background: rgba(124,155,255,0.3); }
-.dg-dpad--neon .dg-dpad__btn {
-  background: rgba(10,14,28,0.7); border: 1px solid var(--dg-primary);
-  box-shadow: 0 0 10px rgba(124,155,255,0.55), inset 0 0 8px rgba(124,155,255,0.35);
-  color: #cdd9ff;
-}
-.dg-dpad--neon .dg-dpad__btn:active { box-shadow: 0 0 22px rgba(124,155,255,0.9), inset 0 0 12px rgba(124,155,255,0.6); }
-.dg-dpad--glass .dg-dpad__btn {
-  background: rgba(255,255,255,0.10); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.25);
-  box-shadow: 0 8px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.4);
-}
-.dg-dpad--glass .dg-dpad__btn:active { background: rgba(255,255,255,0.22); }
-
-.dg-style-grid { display: flex; flex-wrap: wrap; gap: 8px; }
-.dg-style-btn { padding: 8px 12px; border-radius: 10px; background: var(--dg-surface); border: 1px solid var(--dg-border); font-size: 12.5px; font-weight: 600; }
-.dg-style-btn--active { border-color: var(--dg-primary); background: rgba(124,155,255,0.18); color: #cdd9ff; }
-.dg-settings__reset { width: 100%; margin-top: 14px; }
-
-/* ── Botón "Volver" (pill, con hover) ── */
-.dg-backbtn {
-  display: inline-flex; align-items: center; gap: 7px; padding: 9px 18px; border-radius: 999px;
-  background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.14); color: var(--dg-text);
-  font-weight: 700; font-size: 13.5px; transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
-  flex-shrink: 0;
-}
-.dg-backbtn:hover { background: rgba(255,255,255,0.14); border-color: rgba(255,255,255,0.26); }
-.dg-backbtn:active { transform: scale(0.96); }
-.dg-backbtn--top { margin-bottom: 14px; }
-
-/* ── Chip "Nivel" clicable + selector de nivel ── */
-.dg-chip--clickable { background: rgba(124,155,255,0.16); border-color: rgba(124,155,255,0.4); font-weight: 700; }
-.dg-chip--clickable:hover { background: rgba(124,155,255,0.28); }
-.dg-chip--danger { background: rgba(248,113,113,0.18); border-color: rgba(248,113,113,0.5); color: #ffd4d4; animation: dg-danger-pulse 1s ease-in-out infinite; }
-@keyframes dg-danger-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
-.dg-levelpicker { max-width: 360px; }
-.dg-levelpicker__grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; max-height: 260px; overflow-y: auto; padding-right: 2px; }
-.dg-levelpicker__btn { padding: 10px 0; border-radius: 10px; background: var(--dg-surface); border: 1px solid var(--dg-border); font-weight: 700; }
-.dg-levelpicker__btn:hover { background: rgba(255,255,255,0.14); }
-.dg-levelpicker__btn--active { border-color: var(--dg-primary); background: rgba(124,155,255,0.25); }
-
 /* ── Barra superior de cada juego ── */
 .dg-topbar {
   display: flex; align-items: center; gap: 10px; max-width: 620px; margin: 0 auto 14px;
@@ -4580,16 +4559,6 @@ const DESPEJES_CSS = `
 .dg-cell--maze.dg-cell--hole { background: radial-gradient(circle, #050505, #1a1a1a 70%); border-radius: 50%; box-shadow: inset 0 4px 8px rgba(0,0,0,0.8); }
 .dg-cell--maze.dg-cell--fog { background: #0a0a0a; }
 .dg-boulder { font-size: 0.72em; filter: drop-shadow(0 3px 3px rgba(0,0,0,0.6)); }
-.dg-glass { font-size: 0.66em; filter: drop-shadow(0 0 6px rgba(120,200,255,0.85)); animation: dg-glass-shimmer 2.2s ease-in-out infinite; }
-@keyframes dg-glass-shimmer { 0%,100% { opacity: 0.85; transform: scale(1); } 50% { opacity: 1; transform: scale(1.08); } }
-.dg-exit-flag { animation: dg-flag-wave 1.6s ease-in-out infinite; transform-origin: bottom center; }
-@keyframes dg-flag-wave { 0%,100% { transform: rotate(-4deg); } 50% { transform: rotate(6deg); } }
-
-/* Cámara estilo GBA: ventana fija que sigue al jugador en mapas grandes */
-.dg-camera { position: relative; overflow: hidden; border-radius: 14px; margin: 0 auto; box-shadow: inset 0 0 40px rgba(0,0,0,0.55), 0 0 0 3px rgba(0,0,0,0.4); }
-.dg-camera__inner { position: absolute; top: 0; left: 0; transition: transform 0.16s cubic-bezier(.3,.9,.4,1); }
-
-.dg-overlay__badge--fail { background: linear-gradient(135deg, var(--dg-danger), #dc2626); box-shadow: 0 0 26px rgba(248,113,113,0.55); }
 
 /* ── Hielo ── */
 .dg-board--ice { background: linear-gradient(160deg, #0d2436, #081824); }
@@ -4678,18 +4647,12 @@ const DESPEJES_CSS = `
   position: relative;
 }
 .dg-cell--ember-cracked::before {
-  content: ""; position: absolute; inset: 6%; opacity: 0.55; animation: dg-crack-appear 0.28s ease-out;
+  content: ""; position: absolute; inset: 6%; opacity: 0.55;
   background:
     linear-gradient(35deg, transparent 46%, #0a0705 48%, transparent 50%),
     linear-gradient(-35deg, transparent 40%, #0a0705 42%, transparent 44%),
     linear-gradient(80deg, transparent 60%, #0a0705 62%, transparent 64%);
 }
-@keyframes dg-crack-appear { 0% { opacity: 0; transform: scale(0.4); } 60% { opacity: 0.75; transform: scale(1.08); } 100% { opacity: 0.55; transform: scale(1); } }
-.dg-cell--target-pending, .dg-cell--target-ready { box-shadow: 0 0 0 2px rgba(255,255,255,0.18) inset; }
-.dg-target-blink { animation: dg-target-color 1.6s ease-in-out infinite; }
-.dg-target-blink--ready { animation: dg-target-color-ready 0.55s ease-in-out infinite; transform-origin: bottom center; }
-@keyframes dg-target-color { 0%,100% { filter: hue-rotate(0deg) drop-shadow(0 0 4px rgba(255,255,255,0.3)); } 50% { filter: hue-rotate(140deg) drop-shadow(0 0 10px rgba(160,255,180,0.7)); } }
-@keyframes dg-target-color-ready { 0%,100% { filter: hue-rotate(0deg) drop-shadow(0 0 10px rgba(120,255,140,0.9)); transform: scale(1); } 50% { filter: hue-rotate(200deg) drop-shadow(0 0 16px rgba(120,200,255,0.95)); transform: scale(1.22); } }
 
 /* ── Croma (gemas) ── */
 .dg-board--gem { background: linear-gradient(160deg, #221228, #170c1e); }
@@ -4702,8 +4665,6 @@ const DESPEJES_CSS = `
   transition: left 0.14s ease, top 0.14s ease, transform 0.12s ease;
 }
 .dg-gem--selected { transform: scale(1.08); box-shadow: 0 0 0 3px #fff, 0 4px 14px rgba(0,0,0,0.6); }
-.dg-gem--on-goal { animation: dg-gem-lock 0.32s ease-out; box-shadow: 0 0 0 2px rgba(255,255,255,0.7), 0 0 12px rgba(255,255,255,0.5); }
-@keyframes dg-gem-lock { 0% { transform: scale(0.7); } 55% { transform: scale(1.18); } 100% { transform: scale(1); } }
 
 /* ── Pintar ── */
 .dg-board--paint { background: linear-gradient(160deg, #17202f, #0f1620); }
@@ -4719,4 +4680,5 @@ const DESPEJES_CSS = `
   .dg-topbar__goal { display: none; }
 }
 `
+
 export { DespejesGame }
