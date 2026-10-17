@@ -11,11 +11,27 @@ import './chess.css'
 
 const ChessBoard3D = lazy(() => import('./ChessBoard3D').then((m) => ({ default: m.ChessBoard3D })))
 
+const MOBILE_QUERY = '(max-width: 768px)'
+
 function formatClock(seconds: number | null): string {
   if (seconds === null) return '∞'
   const m = Math.floor(seconds / 60)
   const s = seconds % 60
   return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(MOBILE_QUERY).matches
+  )
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_QUERY)
+    const onChange = () => setIsMobile(mq.matches)
+    onChange()
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  return isMobile
 }
 
 export function ChessGame() {
@@ -32,10 +48,14 @@ export function ChessGame() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const screenRef = useRef<HTMLDivElement>(null)
+  const isMobile = useIsMobile()
 
   const game = useChessGame(setup)
   const { state } = game
   const skinDef = BOARD_SKINS.find((s) => s.id === skin) ?? BOARD_SKINS[0]
+
+  // ☰: en móvil siempre; en PC solo en pantalla completa
+  const showHamburger = isMobile || isFullscreen
 
   const statusLabel = useMemo(() => {
     if (state.result === 'checkmate') {
@@ -65,18 +85,50 @@ export function ChessGame() {
     soundClick()
     const el = screenRef.current
     if (!el) return
-    if (!document.fullscreenElement) {
-      void el.requestFullscreen?.().then(() => setIsFullscreen(true))
-    } else {
-      void document.exitFullscreen?.().then(() => setIsFullscreen(false))
+
+    // Salir
+    if (document.fullscreenElement) {
+      void document.exitFullscreen?.().catch(() => undefined)
+      setIsFullscreen(false)
+      return
     }
-  }, [])
+    if (isFullscreen) {
+      // pantalla completa simulada (iOS)
+      setIsFullscreen(false)
+      return
+    }
+
+    // Entrar
+    if (el.requestFullscreen) {
+      el.requestFullscreen()
+        .then(() => setIsFullscreen(true))
+        .catch(() => setIsFullscreen(true)) // fallback CSS si el navegador lo rechaza
+    } else {
+      // iOS Safari no soporta Fullscreen API en elementos: usamos modo CSS
+      setIsFullscreen(true)
+    }
+  }, [isFullscreen])
 
   useEffect(() => {
     const onFs = () => setIsFullscreen(!!document.fullscreenElement)
     document.addEventListener('fullscreenchange', onFs)
     return () => document.removeEventListener('fullscreenchange', onFs)
   }, [])
+
+  // En PC, si se sale de pantalla completa el ☰ desaparece: cerramos el drawer
+  useEffect(() => {
+    if (!isFullscreen && !isMobile) setMenuOpen(false)
+  }, [isFullscreen, isMobile])
+
+  // Cerrar con Escape
+  useEffect(() => {
+    if (!menuOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [menuOpen])
 
   function goToCategoryMenu() {
     soundClick()
@@ -87,6 +139,8 @@ export function ChessGame() {
   function closeMenu() {
     setMenuOpen(false)
   }
+
+  const isActuallyFullscreen = isFullscreen || !!document.fullscreenElement
 
   return (
     <div
@@ -133,8 +187,8 @@ export function ChessGame() {
             </button>
           </div>
 
-          {/* 3 rayas SOLO en fullscreen */}
-          {isFullscreen && (
+          {/* ☰ en móvil siempre, en PC solo en pantalla completa */}
+          {showHamburger && (
             <button
               type="button"
               className={`gco-chess-icon-btn gco-chess-hamburger ${menuOpen ? 'is-open' : ''}`}
@@ -177,11 +231,12 @@ export function ChessGame() {
         )}
       </div>
 
-      {/* Drawer de opciones */}
+      {/* Drawer de opciones (PC: lateral · móvil: ventana emergente ascendente) */}
       {menuOpen && (
         <>
           <button type="button" className="gco-chess-menu-backdrop" aria-label="Cerrar menú" onClick={closeMenu} />
-          <aside className="gco-chess-drawer" role="dialog" aria-label="Opciones de partida">
+          <aside className="gco-chess-drawer" role="dialog" aria-modal="true" aria-label="Opciones de partida">
+            <div className="gco-chess-sheet-handle" aria-hidden="true" />
             <div className="gco-chess-drawer-header">
               <span>Opciones</span>
               <button type="button" className="gco-chess-icon-btn" onClick={closeMenu} aria-label="Cerrar">
@@ -190,6 +245,20 @@ export function ChessGame() {
             </div>
 
             <div className="gco-chess-drawer-body">
+              {setup.mode === 'ai' && (
+                <div className="gco-chess-drawer-ai">
+                  {game.isAiThinking ? (
+                    <span className="gco-chess-ai-thinking">
+                      <span className="gco-chess-ai-dot" /> Pensando su jugada…
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '0.78rem', color: 'var(--gco-ink-muted)' }}>
+                      IA nivel {setup.aiLevel}/10 · esperando tu jugada
+                    </span>
+                  )}
+                </div>
+              )}
+
               <div className="gco-chess-panel-title">Vista</div>
               <div className="gco-chess-view-switch gco-chess-view-switch-block" role="tablist">
                 <button
@@ -326,11 +395,12 @@ export function ChessGame() {
                 <button
                   type="button"
                   className="gco-chess-btn wide"
-                  onClick={toggleFullscreen}
+                  onClick={() => {
+                    closeMenu()
+                    toggleFullscreen()
+                  }}
                 >
-                  {isFullscreen || document.fullscreenElement
-                    ? 'Salir de pantalla completa'
-                    : 'Pantalla completa'}
+                  {isActuallyFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
                 </button>
                 <button
                   type="button"
@@ -382,7 +452,7 @@ export function ChessGame() {
           )}
         </div>
 
-        {/* PANEL LATERAL EN MÓVIL ABAJO + ANIMACIÓN ASCENDENTE */}
+        {/* PANEL LATERAL EN PC · EN MÓVIL ABAJO */}
         <div
           className={`gco-chess-panel ${isFullscreen ? 'is-fs-hidden' : ''} ${
             isFullscreen ? 'is-fullscreen' : ''
@@ -480,15 +550,8 @@ export function ChessGame() {
               </div>
             )}
             <div className="gco-chess-btn-grid">
-              {/* Botón de pantalla completa (siempre visible) */}
-              <button
-                type="button"
-                className="gco-chess-btn wide"
-                onClick={toggleFullscreen}
-              >
-                {isFullscreen || document.fullscreenElement
-                  ? 'Salir de pantalla completa'
-                  : 'Pantalla completa'}
+              <button type="button" className="gco-chess-btn wide" onClick={toggleFullscreen}>
+                {isActuallyFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
               </button>
               <button
                 type="button"

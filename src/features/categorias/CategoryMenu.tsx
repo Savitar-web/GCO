@@ -92,6 +92,15 @@ const PARTICLES: {
 const PRELOAD_BOOT_KEY = 'gco:pwa-preload-boot-v5'
 const GLOBAL_MARK = '__gcoPwaPreloadActive'
 const EMOJI_STYLE_KEY = 'gco:emoji-style'
+/**
+ * Migración única: antes el valor por defecto era 'ios' (Twemoji) y se guardaba
+ * solo en localStorage, lo que sustituía los emojis por imágenes en TODO el DOM
+ * y chocaba con React (el ModeSwitch dejaba de responder). Ahora el valor por
+ * defecto es 'system' (emojis nativos del dispositivo).
+ */
+const EMOJI_MIGRATION_KEY = 'gco:emoji-default-system-v1'
+/** Estilo por defecto de la app: los emojis del propio dispositivo. */
+export const DEFAULT_EMOJI_STYLE: EmojiStylePref = 'system'
 export type EmojiStylePref =
   | 'ios'
   | 'ios-modern'
@@ -130,7 +139,23 @@ function getEmojiStyle(): EmojiStylePref {
   } catch {
     /* */
   }
-  return 'ios'
+  return DEFAULT_EMOJI_STYLE
+}
+
+/** Aplica la migración una sola vez (devuelve true si cambió algo). */
+function migrateEmojiDefault(): boolean {
+  try {
+    if (localStorage.getItem(EMOJI_MIGRATION_KEY) === '1') return false
+    localStorage.setItem(EMOJI_MIGRATION_KEY, '1')
+    const cur = localStorage.getItem(EMOJI_STYLE_KEY)
+    if (cur !== DEFAULT_EMOJI_STYLE) {
+      localStorage.setItem(EMOJI_STYLE_KEY, DEFAULT_EMOJI_STYLE)
+      return true
+    }
+  } catch {
+    /* */
+  }
+  return false
 }
 
 /**
@@ -177,6 +202,12 @@ function applyEmojiStyleGlobally(style?: EmojiStylePref) {
 
   // 2) Si el estilo pide imágenes unificadas, re-parsear todo el DOM
   if (usesTwemoji(s)) {
+    // El script de Twemoji solo se descarga si el usuario lo necesita.
+    if (!window.twemoji) {
+      void loadTwemojiScript().then(() => {
+        if (usesTwemoji(getEmojiStyle())) parseTwemojiRoot(document.body)
+      })
+    }
     try {
       parseTwemojiRoot(document.body)
     } catch {
@@ -929,7 +960,7 @@ function injectGlobalEmojiCss() {
   style.id = 'gco-pwa-emoji-css'
   style.textContent = `
     @font-face {
-      font-family: 'Noto Color Emoji';
+      font-family: 'GcoNotoWeb';
       font-style: normal;
       font-weight: 400;
       font-display: swap;
@@ -959,11 +990,20 @@ function injectGlobalEmojiCss() {
       border: 0 !important;
       box-shadow: none !important;
     }
+    /* Emojis del sistema: primero los motores NATIVOS de cada plataforma */
     html, body, #root, .app-shell, .app-layout, .app-main {
       font-family:
         system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-        'Noto Sans', 'Noto Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
-        'Apple Color Emoji', 'Android Emoji', 'GcoEmojiStack', sans-serif;
+        'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+        'Noto Color Emoji', 'Android Emoji', 'GcoEmojiStack', sans-serif;
+    }
+    /* La fuente web Noto solo se usa si el usuario elige "Google / Noto" */
+    html[data-gco-emoji="google"], html[data-gco-emoji="google"] body,
+    html[data-gco-emoji="google"] #root {
+      font-family:
+        system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+        'Noto Sans', 'GcoNotoWeb', 'Segoe UI Emoji', 'Apple Color Emoji',
+        'Android Emoji', 'GcoEmojiStack', sans-serif;
     }
   `
   document.head.appendChild(style)
@@ -982,11 +1022,13 @@ function injectAllStylesheets() {
 
   FONT_STYLESHEETS.forEach((href) => injectLinkOnce('stylesheet', href, { media: 'all' }))
 
-  injectLinkOnce(
-    'preload',
-    'https://cdn.jsdelivr.net/npm/@infolektuell/noto-color-emoji@0.2.0/dist/NotoColorEmoji-Regular.woff2',
-    { as: 'font', type: 'font/woff2', crossorigin: 'anonymous' }
-  )
+  if (getEmojiStyle() === 'google') {
+    injectLinkOnce(
+      'preload',
+      'https://cdn.jsdelivr.net/npm/@infolektuell/noto-color-emoji@0.2.0/dist/NotoColorEmoji-Regular.woff2',
+      { as: 'font', type: 'font/woff2', crossorigin: 'anonymous' }
+    )
+  }
 }
 
 function loadScript(src: string): Promise<void> {
@@ -1108,16 +1150,20 @@ function ensureEmojiObserver() {
 async function setupGlobalEmoji() {
   injectGlobalEmojiCss()
   injectAllStylesheets()
-  const ok = await loadTwemojiScript()
-  parseTwemojiRoot(document.body)
-  ensureEmojiObserver()
-  if (ok) {
-    runWhenIdle(() => preloadTwemojiAssets(), 1500)
+  const wantsImages = usesTwemoji(getEmojiStyle())
+  // Con emojis del sistema NO se descarga Twemoji ni se observa el DOM.
+  const ok = wantsImages ? await loadTwemojiScript() : false
+  if (wantsImages) {
+    parseTwemojiRoot(document.body)
+    ensureEmojiObserver()
+    if (ok) {
+      runWhenIdle(() => preloadTwemojiAssets(), 1500)
+    }
+    // Pasadas extra (navegación SPA + fuentes tardías)
+    ;[400, 1200, 3000, 6000].forEach((ms) => {
+      window.setTimeout(() => parseTwemojiRoot(document.body), ms)
+    })
   }
-  // Pasadas extra (navegación SPA + fuentes tardías)
-  ;[400, 1200, 3000, 6000].forEach((ms) => {
-    window.setTimeout(() => parseTwemojiRoot(document.body), ms)
-  })
   window.dispatchEvent(new CustomEvent('gco:emoji-ready', { detail: { twemoji: ok } }))
 }
 
@@ -1384,8 +1430,9 @@ export function ensurePwaGlobalPreload() {
   try {
     localStorage.setItem('gco:tts-fallback-voices', JSON.stringify(FALLBACK_VOICES))
     sessionStorage.setItem('gco:tts-fallback-voices', JSON.stringify(FALLBACK_VOICES))
+    migrateEmojiDefault()
     if (!localStorage.getItem(EMOJI_STYLE_KEY)) {
-      localStorage.setItem(EMOJI_STYLE_KEY, 'ios')
+      localStorage.setItem(EMOJI_STYLE_KEY, DEFAULT_EMOJI_STYLE)
     }
     document.documentElement.setAttribute('data-gco-emoji', getEmojiStyle())
   } catch {
@@ -1827,4 +1874,4 @@ export function CategoryMenu() {
       </footer>
     </div>
   )
-}
+}

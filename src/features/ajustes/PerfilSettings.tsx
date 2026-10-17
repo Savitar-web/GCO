@@ -1026,6 +1026,53 @@ function frameRingStyle(frame: FrameId): React.CSSProperties {
   }
 }
 
+/** Tarjeta de sección (encabezado + contenido) del rediseño de perfil. */
+function PfCard({
+  title,
+  description,
+  action,
+  children,
+}: {
+  title: string
+  description?: string
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <section className="gco-pf-card">
+      <div className="gco-pf-card-head">
+        <div style={{ minWidth: 0 }}>
+          <h3 className="gco-pf-card-title">{title}</h3>
+          {description ? <p className="gco-pf-card-desc">{description}</p> : null}
+        </div>
+        {action ? <div className="gco-pf-card-action">{action}</div> : null}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+/** Fila de ajuste estilo lista: título + detalle a la izquierda, acción a la derecha. */
+function PfRow({
+  title,
+  detail,
+  children,
+}: {
+  title: string
+  detail?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="gco-pf-row">
+      <div style={{ minWidth: 0 }}>
+        <p className="gco-pf-row-title">{title}</p>
+        {detail ? <p className="gco-pf-row-detail">{detail}</p> : null}
+      </div>
+      <div className="gco-pf-row-action">{children}</div>
+    </div>
+  )
+}
+
 function SwitchRow({
   checked,
   onChange,
@@ -1043,19 +1090,19 @@ function SwitchRow({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        gap: 12,
-        padding: '0.35rem 0',
+        gap: 14,
+        padding: '0.55rem 0',
       }}
     >
       <div style={{ minWidth: 0 }}>
-        <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>{label}</span>
+        <span style={{ fontSize: '0.9rem', fontWeight: 550 }}>{label}</span>
         {hint ? (
           <p
             style={{
               margin: '2px 0 0',
-              fontSize: '0.72rem',
+              fontSize: '0.74rem',
               color: 'var(--gco-ink-muted)',
-              lineHeight: 1.35,
+              lineHeight: 1.4,
             }}
           >
             {hint}
@@ -1066,35 +1113,15 @@ function SwitchRow({
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={label}
+        className="gco-pf-switch"
+        data-on={checked ? 'true' : 'false'}
         onClick={() => {
           soundClick()
           onChange(!checked)
         }}
-        style={{
-          width: 48,
-          height: 28,
-          borderRadius: 999,
-          border: 'none',
-          cursor: 'pointer',
-          background: checked ? 'var(--gco-primary)' : 'rgba(128,128,128,0.35)',
-          position: 'relative',
-          flexShrink: 0,
-          transition: 'background 0.25s cubic-bezier(0.25, 0.1, 0.25, 1)',
-        }}
       >
-        <span
-          style={{
-            position: 'absolute',
-            top: 3,
-            left: checked ? 22 : 3,
-            width: 22,
-            height: 22,
-            borderRadius: '50%',
-            background: '#fff',
-            transition: 'left 0.25s cubic-bezier(0.25, 0.1, 0.25, 1)',
-            boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
-          }}
-        />
+        <span className="gco-pf-switch-knob" />
       </button>
     </div>
   )
@@ -1116,12 +1143,13 @@ function PadBtn({
         onClick()
       }}
       style={{
-        width: 44,
-        height: 44,
+        width: 46,
+        height: 46,
         padding: 0,
         fontSize: '1.1rem',
         display: 'grid',
         placeItems: 'center',
+        borderRadius: 12,
       }}
       aria-label={label}
     >
@@ -1138,7 +1166,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
         color: 'var(--gco-ink-muted)',
         margin: '0 0 0.65rem',
         fontWeight: 700,
-        letterSpacing: '0.06em',
+        letterSpacing: '0.08em',
         textTransform: 'uppercase',
       }}
     >
@@ -1147,14 +1175,22 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   )
 }
 
-function FieldLabel({ children }: { children: React.ReactNode }) {
+function FieldLabel({
+  children,
+  htmlFor,
+}: {
+  children: React.ReactNode
+  htmlFor?: string
+}) {
   return (
     <label
+      htmlFor={htmlFor}
       style={{
         display: 'block',
         marginBottom: '0.4rem',
-        fontWeight: 550,
-        fontSize: '0.88rem',
+        fontWeight: 600,
+        fontSize: '0.84rem',
+        letterSpacing: '0.005em',
       }}
     >
       {children}
@@ -1308,6 +1344,222 @@ function isQuotaError(err: unknown): boolean {
     /quota/i.test(message)
   )
 }
+
+const PF_CSS = `
+.gco-pf {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding-bottom: 0.5rem;
+  font-feature-settings: 'tnum' 1, 'cv11' 1;
+}
+.gco-pf *, .gco-pf *::before, .gco-pf *::after { box-sizing: border-box; }
+
+/* ── Hero ── */
+.gco-pf-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 1.3rem;
+  padding: 1.35rem 1.4rem;
+  border-radius: 22px;
+  border: 1px solid var(--gco-glass-border);
+  background: var(--gco-glass-bg);
+}
+.gco-pf-hero-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(110% 90% at 0% 0%, var(--gco-primary-dim), transparent 62%),
+    linear-gradient(180deg, rgba(255,255,255,0.03), transparent 55%);
+  pointer-events: none;
+}
+.gco-pf-hero > *:not(.gco-pf-hero-bg) { position: relative; z-index: 1; }
+.gco-pf-eyebrow {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gco-primary);
+}
+.gco-pf-name {
+  margin: 0.15rem 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.15rem, 4vw, 1.5rem);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gco-pf-meta {
+  margin: 0.3rem 0 0;
+  font-size: 0.8rem;
+  color: var(--gco-ink-muted);
+  line-height: 1.45;
+}
+.gco-pf-hero-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.85rem; }
+
+/* ── Tarjetas ── */
+.gco-pf-card {
+  border-radius: 20px;
+  border: 1px solid var(--gco-glass-border);
+  background: var(--gco-glass-bg);
+  padding: 1.2rem 1.25rem;
+}
+.gco-pf-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1.05rem;
+}
+.gco-pf-card-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.gco-pf-card-desc {
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+  color: var(--gco-ink-muted);
+  line-height: 1.5;
+}
+.gco-pf-card-action { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* ── Formulario ── */
+.gco-pf-grid { display: grid; grid-template-columns: 1fr 150px; gap: 1rem; }
+.gco-pf .glass-input { border-radius: 12px; min-height: 46px; }
+.gco-pf .glass-input[aria-invalid="true"] { border-color: #ff6b6b !important; }
+.gco-pf-error { margin: 6px 0 0; font-size: 0.74rem; color: #ff8a8a; line-height: 1.4; }
+.gco-pf-help { margin: 6px 0 0; font-size: 0.74rem; color: var(--gco-ink-muted); line-height: 1.45; }
+.gco-pf-counter { font-size: 0.72rem; color: var(--gco-ink-faint); }
+
+/* ── Filas de ajustes ── */
+.gco-pf-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 0;
+  border-top: 1px solid var(--gco-glass-border);
+}
+.gco-pf-row:first-child { border-top: none; padding-top: 0; }
+.gco-pf-row:last-child { padding-bottom: 0; }
+.gco-pf-row-title { margin: 0; font-size: 0.92rem; font-weight: 600; }
+.gco-pf-row-detail { margin: 3px 0 0; font-size: 0.76rem; color: var(--gco-ink-muted); line-height: 1.45; }
+.gco-pf-row-action { flex-shrink: 0; }
+
+/* ── Botones ── */
+.gco-pf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--gco-glass-border);
+  background: rgba(255,255,255,0.05);
+  color: inherit;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.gco-pf-btn:hover { background: rgba(255,255,255,0.09); }
+.gco-pf-btn:active { transform: scale(0.98); }
+.gco-pf-btn[disabled] { opacity: 0.55; cursor: not-allowed; }
+.gco-pf-btn.sm { min-height: 34px; padding: 0 0.8rem; font-size: 0.78rem; border-radius: 10px; }
+.gco-pf-btn.danger { color: #ff8a8a; }
+.gco-pf-icon-btn {
+  width: 34px; height: 34px; border-radius: 10px; padding: 0;
+  display: grid; place-items: center; font-size: 1rem; line-height: 1;
+}
+.gco-pf .glass-button, .gco-pf-btn, .gco-pf-switch, .gco-pf .gco-frame-chip { outline: none; }
+.gco-pf .glass-button:focus-visible, .gco-pf-btn:focus-visible,
+.gco-pf-switch:focus-visible, .gco-pf .gco-frame-chip:focus-visible,
+.gco-pf .glass-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--gco-primary);
+}
+
+/* ── Interruptor ── */
+.gco-pf-switch {
+  position: relative;
+  width: 52px;
+  height: 30px;
+  border-radius: 999px;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  background: rgba(128,128,128,0.35);
+  transition: background 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+.gco-pf-switch[data-on="true"] { background: var(--gco-primary); }
+.gco-pf-switch-knob {
+  position: absolute; top: 3px; left: 3px;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.28);
+  transition: transform 0.25s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.gco-pf-switch[data-on="true"] .gco-pf-switch-knob { transform: translateX(22px); }
+
+/* ── Barra de guardado ── */
+.gco-pf-savebar {
+  position: sticky;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem 0.7rem 1rem;
+  border-radius: 18px;
+  border: 1px solid var(--gco-glass-border);
+  background: var(--gco-bg-elevated);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.28);
+}
+.gco-pf-status {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0; min-width: 0;
+  font-size: 0.82rem; font-weight: 500; line-height: 1.35;
+  color: var(--gco-ink-muted);
+}
+.gco-pf-status[data-tone="ok"] { color: var(--gco-primary); }
+.gco-pf-status[data-tone="err"] { color: #ff8a8a; }
+.gco-pf-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  background: #f5b64a; box-shadow: 0 0 0 3px rgba(245,182,74,0.18);
+}
+
+@media (max-width: 560px) {
+  .gco-pf-hero { flex-direction: column; align-items: flex-start; padding: 1.15rem; }
+  .gco-pf-grid { grid-template-columns: 1fr; }
+  .gco-pf-card { padding: 1.05rem 1rem; border-radius: 18px; }
+  .gco-pf-row { align-items: flex-start; flex-direction: column; gap: 0.6rem; }
+  .gco-pf-row:first-child { padding-top: 0; }
+  .gco-pf-savebar { flex-wrap: wrap; }
+  .gco-pf-savebar .gco-pf-save { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gco-pf-btn, .gco-pf-switch, .gco-pf-switch-knob { transition: none !important; }
+}
+`
 
 export function PerfilSettings() {
   const profile = getProfile()
@@ -1687,19 +1939,38 @@ export function PerfilSettings() {
     setCredViewOpen(false)
   }
 
+  // Mensaje de estado: se desvanece solo tras unos segundos.
+  useEffect(() => {
+    if (!msg) return
+    const t = window.setTimeout(() => setMsg(''), 5200)
+    return () => window.clearTimeout(t)
+  }, [msg])
+
+  // Validación en vivo (solo se muestra tras escribir).
+  const nameTrim = name.trim()
+  const ageNumLive = parseInt(age, 10)
+  const nameInvalid = nameTrim.length > 0 && nameTrim.length < 2
+  const ageInvalid = age !== '' && (isNaN(ageNumLive) || ageNumLive < 5 || ageNumLive > 120)
+
+  // ¿Hay cambios sin guardar respecto al perfil almacenado?
+  const storedProfile = getProfile()
+  const dirty =
+    nameTrim !== (storedProfile?.name ?? '') ||
+    String(age) !== String(storedProfile?.age ?? '') ||
+    bio.trim() !== (((storedProfile as { bio?: string } | null)?.bio ?? '').trim()) ||
+    frame !== ((storedProfile?.avatarFrame as FrameId) ?? 'none') ||
+    (avatar ?? null) !== (storedProfile?.avatarDataUrl ?? null)
+
+  const emojiMeta = EMOJI_ENGINES.find((e) => e.id === emojiStyle)
+  const statusTone = /no se pudo|error|sin espacio|demasiado|edad entre|falló/i.test(msg)
+    ? 'err'
+    : 'ok'
+
   const selectedFrameMeta = FRAMES.find((f) => f.id === frame)
 
   return (
-    <div
-      className="glass-card"
-      style={{
-        padding: 'clamp(1.1rem, 3vw, 1.5rem)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '1.35rem',
-      }}
-    >
-
+    <div className="gco-pf">
+      <style>{PF_CSS}</style>
       <style>{`
         @keyframes gco-frame-neon { 0%,100%{ filter:brightness(1)} 50%{ filter:brightness(1.18)} }
         @keyframes gco-frame-shine { 0%{ filter:brightness(1)} 50%{ filter:brightness(1.22)} 100%{ filter:brightness(1)} }
@@ -1773,16 +2044,10 @@ export function PerfilSettings() {
         }
       `}</style>
 
-      {/* Cabecera de perfil */}
-      <div
-        className="gco-perfil-header"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '1.15rem',
-          flexWrap: 'wrap',
-        }}
-      >
+
+      {/* ── Hero de perfil ── */}
+      <header className="gco-pf-hero gco-perfil-header">
+        <div className="gco-pf-hero-bg" aria-hidden />
         <CircularAvatar
           src={avatar}
           frame={frame}
@@ -1794,25 +2059,40 @@ export function PerfilSettings() {
           }}
         />
         <div style={{ minWidth: 0, flex: 1 }}>
-          <p
-            style={{
-              fontWeight: 700,
-              margin: 0,
-              fontFamily: 'var(--font-display)',
-              fontSize: '1.05rem',
-            }}
-          >
-            {name.trim() || 'Tu perfil'}
+          <span className="gco-pf-eyebrow">Mi perfil</span>
+          <h2 className="gco-pf-name">{nameTrim || 'Tu perfil'}</h2>
+          <p className="gco-pf-meta">
+            {age && !ageInvalid ? `${ageNumLive} años` : 'Edad sin definir'}
+            {' · '}
+            Marco: {selectedFrameMeta?.label ?? 'Sin marco'}
           </p>
-          <p
-            style={{
-              fontSize: '0.8rem',
-              color: 'var(--gco-ink-muted)',
-              marginTop: 4,
-              lineHeight: 1.45,
-            }}
-          >
-            Toca la foto para cambiarla. Recomendado{' '}
+          <div className="gco-pf-hero-actions">
+            <button
+              type="button"
+              className="gco-pf-btn sm"
+              onClick={() => {
+                soundClick()
+                fileRef.current?.click()
+              }}
+            >
+              {avatar ? 'Cambiar foto' : 'Subir foto'}
+            </button>
+            {avatar ? (
+              <button
+                type="button"
+                className="gco-pf-btn sm danger"
+                onClick={() => {
+                  soundClick()
+                  setAvatar(null)
+                  setMsg('Foto quitada: pulsa Guardar para confirmar')
+                }}
+              >
+                Quitar
+              </button>
+            ) : null}
+          </div>
+          <p className="gco-pf-help" style={{ marginTop: 10 }}>
+            Tamaño recomendado{' '}
             <span className="mono">
               {TARGET_PX}×{TARGET_PX}
             </span>
@@ -1825,25 +2105,91 @@ export function PerfilSettings() {
           hidden
           onChange={onAvatar}
         />
-      </div>
+      </header>
 
-      {/* Marcos */}
-      <div>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: 10,
-            gap: 8,
-          }}
-        >
-          <SectionTitle>Marco del avatar</SectionTitle>
-          <div style={{ display: 'flex', gap: 6 }}>
+      {/* ── Identidad ── */}
+      <PfCard
+        title="Información personal"
+        description="Estos datos se muestran en tu perfil y en la credencial."
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div className="gco-pf-grid">
+            <div>
+              <FieldLabel htmlFor="gco-pf-name">Nombre</FieldLabel>
+              <input
+                id="gco-pf-name"
+                className="glass-input"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Cómo quieres aparecer"
+                maxLength={40}
+                autoComplete="name"
+                aria-invalid={nameInvalid}
+              />
+              {nameInvalid ? (
+                <p className="gco-pf-error">El nombre debe tener al menos 2 caracteres.</p>
+              ) : null}
+            </div>
+            <div>
+              <FieldLabel htmlFor="gco-pf-age">Edad</FieldLabel>
+              <input
+                id="gco-pf-age"
+                className="glass-input"
+                type="number"
+                inputMode="numeric"
+                value={age}
+                onChange={(e) => setAge(e.target.value)}
+                placeholder="—"
+                min={5}
+                max={120}
+                aria-invalid={ageInvalid}
+              />
+              {ageInvalid ? (
+                <p className="gco-pf-error">Introduce una edad entre 5 y 120.</p>
+              ) : null}
+            </div>
+          </div>
+
+          <div>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                gap: 8,
+              }}
+            >
+              <FieldLabel htmlFor="gco-pf-bio">Descripción</FieldLabel>
+              <span className="mono gco-pf-counter">
+                {bio.length}/{BIO_MAX}
+              </span>
+            </div>
+            <textarea
+              id="gco-pf-bio"
+              className="glass-input"
+              value={bio}
+              onChange={(e) => setBio(e.target.value.slice(0, BIO_MAX))}
+              placeholder="Una línea sobre ti: enfoque, meta o estilo de entrenamiento…"
+              rows={3}
+              style={{ minHeight: 96, resize: 'vertical', lineHeight: 1.5 }}
+            />
+            <p className="gco-pf-help">
+              Aparece en la credencial como nota personal.
+            </p>
+          </div>
+        </div>
+      </PfCard>
+
+      {/* ── Marco del avatar ── */}
+      <PfCard
+        title="Marco del avatar"
+        description="Elige el contorno que rodea tu foto en toda la app."
+        action={
+          <>
             <button
               type="button"
-              className="hscroll-nav-btn"
-              aria-label="Anterior"
+              className="gco-pf-btn gco-pf-icon-btn"
+              aria-label="Marcos anteriores"
               onClick={() => {
                 soundClick()
                 scrollFrames(-1)
@@ -1853,8 +2199,8 @@ export function PerfilSettings() {
             </button>
             <button
               type="button"
-              className="hscroll-nav-btn"
-              aria-label="Siguiente"
+              className="gco-pf-btn gco-pf-icon-btn"
+              aria-label="Marcos siguientes"
               onClick={() => {
                 soundClick()
                 scrollFrames(1)
@@ -1862,8 +2208,9 @@ export function PerfilSettings() {
             >
               ›
             </button>
-          </div>
-        </div>
+          </>
+        }
+      >
         <div
           ref={frameScrollRef}
           className="hscroll"
@@ -1959,133 +2306,83 @@ export function PerfilSettings() {
             )
           })}
         </div>
-      </div>
+      </PfCard>
 
-      {/* Datos personales */}
-      <div>
-        <SectionTitle>Identidad</SectionTitle>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
-          <div>
-            <FieldLabel>Nombre</FieldLabel>
-            <input
-              className="glass-input"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Cómo quieres aparecer"
-              maxLength={40}
-            />
-          </div>
-          <div>
-            <FieldLabel>Edad</FieldLabel>
-            <input
-              className="glass-input"
-              type="number"
-              inputMode="numeric"
-              value={age}
-              onChange={(e) => setAge(e.target.value)}
-              style={{ maxWidth: 128 }}
-              placeholder="—"
-            />
-          </div>
-          <div>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'baseline',
-                justifyContent: 'space-between',
-                gap: 8,
-              }}
-            >
-              <FieldLabel>Descripción</FieldLabel>
-              <span
-                className="mono"
-                style={{
-                  fontSize: '0.72rem',
-                  color: 'var(--gco-ink-faint)',
-                }}
-              >
-                {bio.length}/{BIO_MAX}
-              </span>
-            </div>
-            <textarea
-              className="glass-input"
-              value={bio}
-              onChange={(e) => setBio(e.target.value.slice(0, BIO_MAX))}
-              placeholder="Una línea sobre ti: enfoque, meta o estilo de entrenamiento…"
-              rows={3}
-              style={{
-                minHeight: 88,
-                resize: 'vertical',
-                lineHeight: 1.45,
-              }}
-            />
-            <p
-              style={{
-                margin: '6px 0 0',
-                fontSize: '0.72rem',
-                color: 'var(--gco-ink-muted)',
-                lineHeight: 1.4,
-              }}
-            >
-              Aparece en la credencial como nota personal, no como hashtag.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {msg && (
-        <p
-          style={{
-            fontSize: '0.88rem',
-            color: 'var(--gco-primary)',
-            margin: 0,
-            fontWeight: 500,
-          }}
-        >
-          {msg}
-        </p>
-      )}
-
-      {/* Acciones principales */}
-      <div
-        className="gco-actions-row"
-        style={{
-          display: 'flex',
-          gap: '0.55rem',
-          flexWrap: 'wrap',
-        }}
+      {/* ── Preferencias ── */}
+      <PfCard
+        title="Preferencias"
+        description="Apariencia de emojis y credencial descargable."
       >
-        <GlassButton type="button" onClick={() => void save()} disabled={saving}>
-          {saving ? 'Guardando…' : 'Guardar perfil'}
-        </GlassButton>
-        <button
-          type="button"
-          className="glass-button secondary"
-          onClick={() => {
-            soundClick()
-            setCredOpen(true)
-          }}
+        <div>
+        <PfRow
+          title="Estilo de emojis"
+          detail={emojiMeta ? emojiMeta.title : 'Emoji del dispositivo'}
         >
-          Credencial
-        </button>
-        <button
-          type="button"
-          className="glass-button secondary"
-          onClick={() => {
-            soundClick()
-            setEmojiOpen(true)
-            try {
-              const hexes = EMOJI_PREVIEW_GROUPS.flatMap((g) =>
-                g.items.map((i) => i.hex)
-              )
-              preloadTwemojiBatch(hexes)
-            } catch {
-              /* */
-            }
-          }}
+          <button
+            type="button"
+            className="gco-pf-btn"
+            onClick={() => {
+              soundClick()
+              setEmojiOpen(true)
+              try {
+                const hexes = EMOJI_PREVIEW_GROUPS.flatMap((g) =>
+                  g.items.map((i) => i.hex)
+                )
+                preloadTwemojiBatch(hexes)
+              } catch {
+                /* */
+              }
+            }}
+          >
+            Personalizar
+          </button>
+        </PfRow>
+        <PfRow
+          title="Credencial"
+          detail="Genera una tarjeta con tu foto, marco y datos favoritos."
         >
-          Emojis
-        </button>
+          <button
+            type="button"
+            className="gco-pf-btn"
+            onClick={() => {
+              soundClick()
+              setCredOpen(true)
+            }}
+          >
+            Abrir opciones
+          </button>
+        </PfRow>
+        </div>
+      </PfCard>
+
+      {/* ── Barra de guardado fija ── */}
+      <div className="gco-pf-savebar gco-actions-row">
+        <p
+          className="gco-pf-status"
+          role="status"
+          aria-live="polite"
+          data-tone={msg ? statusTone : dirty ? 'warn' : 'idle'}
+        >
+          {msg ? (
+            msg
+          ) : dirty ? (
+            <>
+              <span className="gco-pf-dot" aria-hidden />
+              Cambios sin guardar
+            </>
+          ) : (
+            'Todo guardado'
+          )}
+        </p>
+        <div className="gco-pf-save">
+          <GlassButton
+            type="button"
+            onClick={() => void save()}
+            disabled={saving || nameInvalid || ageInvalid}
+          >
+            {saving ? 'Guardando…' : 'Guardar perfil'}
+          </GlassButton>
+        </div>
       </div>
 
       {/* ── Panel Emojis ── */}
