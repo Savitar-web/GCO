@@ -60,6 +60,7 @@ const config: CapacitorConfig = {
   },
 
   plugins: {
+    SystemBars: { insetsHandling: 'css', initialViewportFit: 'cover' },
     /**
      * @capgo/capacitor-media-session
      * Mantiene el Foreground Service de tipo mediaPlayback en segundo plano.

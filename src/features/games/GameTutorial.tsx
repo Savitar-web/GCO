@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react'
-import {gameSound} from './GameEffects'
+import {gameSound} from './gameSound'
 type Lesson={title:string;explain:string;sample:string;question:string;answers:string[];correct:number}
 const lessons:Record<string,Lesson[]>={
  tres:[

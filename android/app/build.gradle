@@ -1,5 +1,8 @@
 apply plugin: 'com.android.application'
 
+def signingFile = new File(System.getProperty('user.home'), '.gco/signing/gco-release.json')
+def releaseCredentials = signingFile.exists() ? new groovy.json.JsonSlurper().parse(signingFile) : null
+
 android {
     namespace = "com.savitarxeno.gco"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +10,8 @@ android {
         applicationId "com.savitarxeno.gco"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 20261030
+        versionName "1.2.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +19,19 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (releaseCredentials != null) {
+                storeFile file(releaseCredentials.storeFile)
+                storePassword releaseCredentials.storePassword
+                keyAlias releaseCredentials.keyAlias
+                keyPassword releaseCredentials.keyPassword
+            }
+        }
+    }
     buildTypes {
         release {
+            if (releaseCredentials != null) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

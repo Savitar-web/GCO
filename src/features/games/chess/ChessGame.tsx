@@ -8,7 +8,8 @@ import { BOARD_SKINS, DEFAULT_SETUP, type BoardView, type ChessSetup } from './c
 import { useChessGame } from './useChessGame'
 import { chessSfx } from './chessSound'
 import './chess.css'
-import {PieceCustomizer,usePieceStyles} from './PieceCustomizer'
+import {PieceCustomizer} from './PieceCustomizer'
+import {usePieceStyles} from './pieceStyles'
 
 const ChessBoard3D = lazy(() => import('./ChessBoard3D').then((m) => ({ default: m.ChessBoard3D })))
 

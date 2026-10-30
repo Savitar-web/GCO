@@ -1,6 +1,6 @@
 import {useEffect,useRef} from 'react'
-import {gameSound} from '../GameEffects'
-export const TRES_COLORS=['Rojo','Azul','Verde','Amarillo']
+import {gameSound} from '../gameSound'
+import {TRES_COLORS} from './tresColors'
 export function ColorChoice({onChoose,onCancel}:{onChoose:(color:number)=>void;onCancel:()=>void}){
  const ref=useRef<HTMLDialogElement>(null)
  useEffect(()=>{ref.current?.showModal();gameSound('color')},[])

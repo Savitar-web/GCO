@@ -1,10 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { soundCard, soundColor, soundFail, soundSuccess, unlockAudio } from '@/core/audio/uiSounds'
-export function gameSound(kind:'card'|'color'|'win'|'loss'='card') {
-  if(localStorage.getItem('gco:game-sound')==='off')return
-  unlockAudio()
-  if(kind==='color')soundColor(3);else if(kind==='win')soundSuccess();else if(kind==='loss')soundFail();else soundCard()
-}
+import {gameSound} from './gameSound'
 export function SoundControl(){const [on,setOn]=useState(()=>localStorage.getItem('gco:game-sound')!=='off');return <button className="glass-button secondary" aria-pressed={on} onClick={()=>{localStorage.setItem('gco:game-sound',on?'off':'on');setOn(!on);if(!on)gameSound()}}>Sonido: {on?'activado':'silenciado'}</button>}
 export function GameEffects({event,finished,won}:{event?:{id:number;type:string;seat:number;to?:number;amount?:number};finished?:boolean;won?:boolean}){
  const last=useRef(event?.id);const ended=useRef(finished)

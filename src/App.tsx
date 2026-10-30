@@ -42,6 +42,7 @@ import { BlockCleaner } from '@/features/logica/juegos/BlockCleaner/BlockCleaner
 
 //games
 import { ChessMenu } from './features/games/chess/ChessMenu'
+import {Fichacore} from './features/games/fichacore/Fichacore'
 import { GamesHub, GameRoom } from './features/games/GamesHub'
 import { MatchCenter } from './features/games/chess/MatchCenter'
 import { Tournament } from './features/games/chess/Tournament'
@@ -160,6 +161,7 @@ function App() {
             {/* ── Games ── */}
             <Route path="/games" element={<GamesHub />} />
             <Route path="/games/cartas" element={<GamesHub />} />
+            <Route path="/games/fichacore" element={<Fichacore />} />
             <Route path="/games/tres" element={<TresGame />} />
             <Route path="/games/activas" element={<MatchCenter />} />
             <Route path="/games/torneo" element={<Tournament />} />

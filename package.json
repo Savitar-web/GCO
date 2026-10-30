@@ -1,7 +1,7 @@
 {
   "name": "gco",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "GymCogOrigins — gimnasio cognitivo (memoria, lógica, nutrición y música)",
   "author": {
     "name": "Savitar Xeno"
@@ -100,8 +100,7 @@
         }
       ],
       "icon": "public/icons/icon.ico",
-      "artifactName": "GymCogOrigins-Setup-${version}.${ext}",
-      "publisherName": "Savitar Xeno"
+      "artifactName": "GymCogOrigins-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,

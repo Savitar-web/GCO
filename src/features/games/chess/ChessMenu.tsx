@@ -13,7 +13,8 @@ import {
 import { BOARD_SKINS, DEFAULT_SETUP, type ChessSetup, type ClockPreset } from './chessTypes'
 import { chessSfx } from './chessSound'
 import './chess.css'
-import {PieceCustomizer,usePieceStyles} from './PieceCustomizer'
+import {PieceCustomizer} from './PieceCustomizer'
+import {usePieceStyles} from './pieceStyles'
 import {GameTutorial} from '../GameTutorial'
 
 const CLOCK_OPTIONS: { id: ClockPreset; label: string }[] = [
@@ -285,7 +286,7 @@ export function ChessMenu() {
         </div>
 
         <div className="gco-actions"><PieceCustomizer styles={pieceStyles} onSave={savePieceStyles}/><GameTutorial kind="ajedrez"/></div><p className="gco-chess-section-label">Competición y partidas</p>
-        <div className="gco-actions chess-extra-actions"><button className="glass-button secondary" onClick={() => navigate('/games/torneo')}>Torneo online · 4 u 8</button><button className="glass-button secondary" onClick={() => navigate('/games/activas')}>Partidas activas e historial</button></div>
+        <div className="gco-actions chess-extra-actions"><button className="glass-button secondary" onClick={() => navigate('/games/torneo')}>Torneo online · 2–32</button><button className="glass-button secondary" onClick={() => navigate('/games/activas')}>Partidas activas e historial</button></div>
         <p className="gco-chess-section-label">Opciones</p>
         <div className="gco-chess-panel-section">
           <div className="gco-chess-toggle-row">

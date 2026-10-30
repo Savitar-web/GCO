@@ -13,11 +13,14 @@ import { OnlineClock } from './chess/OnlineClock'
 
 import {GameCover} from './GameCover'
 import {GameTutorial} from './GameTutorial'
-import {GameEffects,SoundControl,gameSound} from './GameEffects'
-import {PieceCustomizer,usePieceStyles} from './chess/PieceCustomizer'
+import {GameEffects,SoundControl} from './GameEffects'
+import {gameSound} from './gameSound'
+import {PieceCustomizer} from './chess/PieceCustomizer'
+import {usePieceStyles} from './chess/pieceStyles'
 const Board3D=lazy(()=>import('./chess/ChessBoard3D').then(m=>({default:m.ChessBoard3D})))
 const games = [
   { id: 'ajedrez', name: 'Ajedrez', icon: Crown, description: 'Estrategia en cada casilla. IA, tablero 3D y salas privadas.', rule: 'Selecciona tu pieza y el destino. Para enrocar, mueve el rey dos casillas; para capturar al paso, toca la casilla diagonal vacía inmediatamente después del avance doble del peón rival.' },
+  { id: 'fichacore', name:'Fichacore', icon:Users, description:'Fútbol de seis fichas. Formaciones, pases, IA y equipos online.', rule:'Arrastra hacia atrás y suelta para tirar.' },
   { id: 'tres', name: 'Tres', icon: Layers, description: 'Colores, bloqueos y giros. De 2 a 8, individual o por equipos.', rule: 'Combina color o símbolo y vacía tu mano.' },
   { id: 'poker', name: 'Póker', icon: Club, description: 'Cinco cartas, un cambio y dos rondas de apuestas.', rule: 'Póker cerrado de 5 cartas. Ante de 2, cambio de hasta 3 cartas, dos rondas de apuestas con subidas de 4. Solo fichas de práctica, sin dinero. Gana la mejor mano.' },
   { id: 'solitario', name: 'Solitario', icon: Layers, description: 'Klondike de una carta, ayuda inteligente o mesa cooperativa.', rule: 'Alterna colores en orden descendente. Solo un Rey ocupa una columna vacía. Las bases suben de As a Rey por palo. Selecciona una carta y después la columna o base de destino. En línea ambos colaboran sobre la misma mesa.' },
@@ -27,14 +30,14 @@ const games = [
 
 export function GamesHub() { return <GamesHubContent /> }
 function GamesHubContent() {
-  return <main className="gco-hub"><Link className="gco-back" to="/"><ArrowLeft size={18} /> Inicio</Link><header className="gco-hub-hero"><span className="gco-eyebrow">GCO · Play room</span><h1>Una buena jugada<br /><em>empieza contigo.</em></h1><p>Entrena tu estrategia, prueba una mano y comparte la mesa.</p><span className="gco-pill"><Users size={16} /> Salas privadas · Sin apuestas reales</span></header><div className="gco-game-grid">{games.map((game, index) => <Link key={game.id} to={game.id === 'ajedrez' ? '/games/ajedrez/menu' : game.id === 'tres' ? '/games/tres' : `/games/mesa/${game.id}`} className="gco-game-tile"><span className="gco-game-index">0{index + 1}</span><GameCover kind={game.id}/><h2>{game.name}</h2><p>{game.description}</p><span>Entrar a la mesa ↗</span></Link>)}</div></main>
+  return <main className="gco-hub"><Link className="gco-back" to="/"><ArrowLeft size={18} /> Inicio</Link><header className="gco-hub-hero"><span className="gco-eyebrow">GCO · Play room</span><h1>Una buena jugada<br /><em>empieza contigo.</em></h1><p>Entrena tu estrategia, prueba una mano y comparte la mesa.</p><span className="gco-pill"><Users size={16} /> Salas privadas · Sin apuestas reales</span></header><div className="gco-game-grid">{games.map((game, index) => <Link key={game.id} to={game.id === 'ajedrez' ? '/games/ajedrez/menu' : game.id === 'tres' ? '/games/tres' : game.id==='fichacore'?'/games/fichacore': `/games/mesa/${game.id}`} className="gco-game-tile"><span className="gco-game-index">0{index + 1}</span><GameCover kind={game.id}/><h2>{game.name}</h2><p>{game.description}</p><span>Entrar a la mesa ↗</span></Link>)}</div></main>
 }
 
 export function GameRoom() {
   const { kind: routeKind } = useParams()
   const game = games.find(item => item.id === routeKind) || games[1]
   const kind = game.id
-  const [local, setLocal] = useState<CardState>(() => newCardGame(kind === 'ajedrez' || kind === 'tres' ? 'poker' : kind))
+  const [local, setLocal] = useState<CardState>(() => newCardGame(kind === 'ajedrez' || kind === 'tres' || kind==='fichacore' ? 'poker' : kind))
   const [mode, setMode] = useState<'ai' | 'online'>('ai')
   const [room, setRoom] = useState<Room | null>(null)
   const [code, setCode] = useState('')

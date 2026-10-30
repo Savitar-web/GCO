@@ -1,9 +1,6 @@
 import {useEffect,useRef,useState} from 'react'
 import type {Color,PieceStyle} from './chessEngine'
 import {ChessPieceIcon} from './Chesspieceicon'
-export const DEFAULT_PIECES:Record<Color,PieceStyle>={w:{color:'#e8f9fd',particleColor:'#49dcff',effect:'none'},b:{color:'#452a54',particleColor:'#ff648c',effect:'none'}}
-export function loadPieceStyles():Record<Color,PieceStyle>{try{return {...DEFAULT_PIECES,...JSON.parse(localStorage.getItem('gco:piece-styles')||'{}')}}catch{return DEFAULT_PIECES}}
-export function usePieceStyles(){const [styles,setStyles]=useState(loadPieceStyles);return [styles,(next:Record<Color,PieceStyle>)=>{setStyles(next);localStorage.setItem('gco:piece-styles',JSON.stringify(next))}] as const}
 function Editor({styles,side,onSave,onClose}:{styles:Record<Color,PieceStyle>;side?:Color;onSave:(styles:Record<Color,PieceStyle>)=>void;onClose:()=>void}){
  const ref=useRef<HTMLDialogElement>(null);const [draft,setDraft]=useState(styles);const [color,setColor]=useState<Color>(side||'w');const style=draft[color]
  useEffect(()=>{ref.current?.showModal()},[])
