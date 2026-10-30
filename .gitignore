@@ -101,3 +101,5 @@ Desktop.ini
 # Backend server
 # =========================
 server/
+.vercel
+.env*

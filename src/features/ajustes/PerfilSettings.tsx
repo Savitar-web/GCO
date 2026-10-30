@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { AccountPanel } from './AccountPanel'
 import {
   getProfile,
   updateProfile,
@@ -2007,6 +2008,7 @@ export function PerfilSettings() {
 
   return (
     <div className="gco-pf">
+      <AccountPanel />
       <style>{PF_CSS}</style>
       <style>{`
         @keyframes gco-frame-neon { 0%,100%{ filter:brightness(1)} 50%{ filter:brightness(1.18)} }
@@ -2413,7 +2415,7 @@ export function PerfilSettings() {
             onClick={() => goToMode('nutricion')}
           >
             <span className="gco-pf-shortcut-title">Nutrición</span>
-            <span className="gco-pf-shortcut-detail">Planes, comidas y seguimiento</span>
+            <span className="gco-pf-shortcut-detail">Libros, lectura y nutrición cognitiva</span>
             <span className="gco-pf-shortcut-go" aria-hidden>›</span>
           </button>
         </div>

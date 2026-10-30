@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { JourneyOverview } from './JourneyOverview'
 import {
   getTotalProgress,
   getProgressPrefs,
@@ -64,12 +65,13 @@ export function RecorridoSettings() {
         display: 'flex',
         flexDirection: 'column',
         gap: '1.1rem',
-        maxWidth: 560,
+        maxWidth: 960,
         margin: '0 auto',
         width: '100%',
       }}
     >
       {/* Hero skill */}
+      <JourneyOverview />
       <div
         className="glass-card"
         style={{

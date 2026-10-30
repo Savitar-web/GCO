@@ -5,6 +5,7 @@ interface Props {
   type: PieceType
   color: 'w' | 'b'
   accent: string
+  bodyColor?:string
 }
 
 function Pedestal({ fill, rimId }: { fill: string; rimId: string }) {
@@ -29,13 +30,13 @@ function pts(list: [number, number][]) {
  * SVG originales (no emojis).
  * Blancas = mármol hielo / cian. Negras = granate casi negro.
  */
-export function ChessPieceIcon({ type, color, accent }: Props) {
+export function ChessPieceIcon({ type, color, accent,bodyColor }: Props) {
   const uid = useId().replace(/[:]/g, '')
   const isWhite = color === 'w'
   const gradId = `${uid}-body`
   const rimId = `${uid}-rim`
 
-  const bodyStops = isWhite
+  const bodyStops = bodyColor ? [['0%','#ffffff'],['20%',bodyColor],['65%',bodyColor],['100%','#101522']] : isWhite
     ? [
         ['0%', '#ffffff'],
         ['22%', '#e8f9fd'],

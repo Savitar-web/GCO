@@ -32,6 +32,7 @@
  * Ahora play() es la primera operación real.
  */
 import { useEffect, useSyncExternalStore } from 'react'
+import { recordListening } from '@/core/audio/listeningStats'
 import { getTrackBlob, type TrackItem } from '@/core/storage/mediaLibrary'
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1862,6 +1863,7 @@ function ensureAudio(): HTMLAudioElement {
     }
     a.ontimeupdate = () => {
       const ms = (a.currentTime || 0) * 1000
+      recordListening(trackRef.current?.id, ms, !a.paused && !a.seeking)
       snapshot.currentMs = ms
       notify()
     }
@@ -1904,6 +1906,7 @@ function ensureAudio(): HTMLAudioElement {
       notify()
     }
     a.onpause = () => {
+      recordListening(trackRef.current?.id, a.currentTime * 1000, false)
       playingRef.current = false
       snapshot.playing = false
       void setMediaSessionPlaybackState('paused')

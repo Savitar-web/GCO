@@ -477,7 +477,16 @@ function measureDuration(file: File): Promise<number> {
       const url = URL.createObjectURL(file)
       const audio = new Audio()
       audio.preload = 'metadata'
+      let settled = false
+      let timer: ReturnType<typeof setTimeout>
       const done = (ms: number) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        audio.onloadedmetadata = null
+        audio.onerror = null
+        audio.removeAttribute('src')
+        audio.load()
         try {
           URL.revokeObjectURL(url)
         } catch {
@@ -491,7 +500,7 @@ function measureDuration(file: File): Promise<number> {
       }
       audio.onerror = () => done(0)
       // timeout de seguridad (Android/WebView lentos)
-      setTimeout(() => done(0), 8000)
+      timer = setTimeout(() => done(0), 8000)
       audio.src = url
     } catch {
       resolve(0)
@@ -499,7 +508,8 @@ function measureDuration(file: File): Promise<number> {
   })
 }
 
-export async function importTrackFile(file: File): Promise<TrackItem> {
+export async function importTrackFile(file: File, metadata: Partial<Pick<TrackItem, 'title' | 'artist' | 'album' | 'year' | 'coverDataUrl'>> = {}): Promise<TrackItem> {
+  if (!file.size) throw new Error('El archivo está vacío.')
   const blobKey = `trk-${uid()}`
   const durationMs = await measureDuration(file)
   const title = file.name.replace(/\.[^.]+$/, '') || 'Pista'
@@ -513,6 +523,7 @@ export async function importTrackFile(file: File): Promise<TrackItem> {
     coverDataUrl: null,
     createdAt: new Date().toISOString(),
     sizeBytes: file.size,
+    ...metadata,
   }
   const db = await openDb()
   const tx = db.transaction([STORE_TRACKS, STORE_BLOBS], 'readwrite')

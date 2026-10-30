@@ -8,6 +8,7 @@ import { BOARD_SKINS, DEFAULT_SETUP, type BoardView, type ChessSetup } from './c
 import { useChessGame } from './useChessGame'
 import { chessSfx } from './chessSound'
 import './chess.css'
+import {PieceCustomizer,usePieceStyles} from './PieceCustomizer'
 
 const ChessBoard3D = lazy(() => import('./ChessBoard3D').then((m) => ({ default: m.ChessBoard3D })))
 
@@ -35,6 +36,7 @@ function useIsMobile(): boolean {
 }
 
 export function ChessGame() {
+  const [pieceStyles,savePieceStyles]=usePieceStyles()
   const navigate = useNavigate()
   const location = useLocation()
   const setup = useMemo<ChessSetup>(
@@ -52,6 +54,7 @@ export function ChessGame() {
 
   const game = useChessGame(setup)
   const { state } = game
+  const displayState=useMemo(()=>({...state,cosmetics:pieceStyles}),[state,pieceStyles])
   const skinDef = BOARD_SKINS.find((s) => s.id === skin) ?? BOARD_SKINS[0]
 
   // ☰: en móvil siempre; en PC solo en pantalla completa
@@ -62,6 +65,8 @@ export function ChessGame() {
       const winnerLabel = state.winner === 'w' ? 'Blancas' : 'Negras'
       return { text: `Jaque mate · ${winnerLabel} ganan`, cls: 'is-mate' }
     }
+    if (state.result === 'timeout') return { text: `Tiempo agotado · ${state.winner==='w'?'Blancas':'Negras'} ganan`, cls: '' }
+    if (state.result === 'resignation') return { text: `Rendición · ${state.winner==='w'?'Blancas':'Negras'} ganan`, cls: '' }
     if (state.result === 'stalemate') return { text: 'Tablas por ahogado', cls: '' }
     if (state.result === 'draw') return { text: 'Tablas', cls: '' }
     const last = state.fullLog[state.fullLog.length - 1]
@@ -133,7 +138,7 @@ export function ChessGame() {
   function goToCategoryMenu() {
     soundClick()
     if (document.fullscreenElement) void document.exitFullscreen?.()
-    navigate('/')
+    navigate('/games')
   }
 
   function closeMenu() {
@@ -163,7 +168,7 @@ export function ChessGame() {
           </span>
         </div>
 
-        <div className="gco-chess-top-actions">
+        <div className="gco-chess-top-actions"><PieceCustomizer styles={pieceStyles} onSave={savePieceStyles}/>
           <div className="gco-chess-view-switch" role="tablist" aria-label="Vista del tablero">
             <button
               type="button"
@@ -429,7 +434,7 @@ export function ChessGame() {
               }
             >
               <ChessBoard3D
-                state={state}
+                state={displayState}
                 selection={game.selection}
                 lastMove={lastMoveSquares}
                 orientation={game.boardOrientation}
@@ -441,7 +446,7 @@ export function ChessGame() {
             </Suspense>
           ) : (
             <ChessBoard2D
-              state={state}
+              state={displayState}
               selection={game.selection}
               lastMove={lastMoveSquares}
               orientation={game.boardOrientation}
@@ -589,7 +594,7 @@ export function ChessGame() {
                 className="gco-chess-btn"
                 onClick={() => {
                   soundClick()
-                  navigate('/')
+                  navigate('/games')
                 }}
               >
                 📜 Menú juegos

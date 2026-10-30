@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type DragEvent as ReactDragEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { LibraryBig } from 'lucide-react'
+import { BatchBookImport } from './BatchBookImport'
 
 import { GlassButton } from '@/components/ui/GlassButton'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
@@ -382,6 +383,7 @@ export function NutricionHome() {
 
       <div className="app-main">
         <div className="app-shell app-shell-pro nutricion-shell">
+          <BatchBookImport />
           <header className="nutricion-header" style={{ marginBottom: '1.25rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.65rem' }}>
               <div style={{ minWidth: 0, flex: 1 }}>
@@ -996,6 +998,8 @@ function ImportModal({
   onCreated: (b: BookItem) => void
 }) {
   const [step, setStep] = useState(1)
+  const savingRef = useRef(false)
+  const [saving, setSaving] = useState(false)
   const [source, setSource] = useState<ImportSource>(null)
   const [text, setText] = useState('')
   const [title, setTitle] = useState('')
@@ -1072,6 +1076,7 @@ function ImportModal({
 
   const onFile = async (file: File) => {
     setImportError(null)
+    if (!file.size || file.size > 50 * 1024 * 1024) { setImportError('El archivo debe pesar entre 1 byte y 50 MB.'); return }
     if (!isAcceptedFile(file)) {
       soundFail()
       setImportError('Formato no compatible. Usa TXT, MD, HTML, RTF, PDF, DOCX, EPUB o imagen.')
@@ -1189,12 +1194,16 @@ function ImportModal({
   }
 
   const save = async () => {
+    if (savingRef.current) return
     if (!text.trim()) {
       soundFail()
       setImportError('Escribe o pega texto, o añade una imagen.')
       return
     }
-    soundSuccess()
+    savingRef.current = true
+    setSaving(true)
+    setImportError(null)
+    try {
     const b = await saveBook({
       title: title.trim() || `Texto ${new Date().toLocaleDateString()}`,
       text: text.trim(),
@@ -1204,6 +1213,9 @@ function ImportModal({
       folderId,
     })
     onCreated(b)
+    soundSuccess()
+    } catch (error) { setImportError(error instanceof Error ? error.message : 'No se pudo guardar el libro. Tu texto sigue en el editor.'); soundFail() }
+    finally { savingRef.current = false; setSaving(false) }
   }
 
   return (
@@ -1221,6 +1233,7 @@ function ImportModal({
           </button>
         </div>
 
+        {step === 3 && importError && <p role="alert" className="import-error">{importError}</p>}
         <div className="modal-steps">
           <div className={`modal-step-dot ${step >= 1 ? 'active' : ''}`} />
           <div className={`modal-step-dot ${step >= 2 ? 'active' : ''}`} />
@@ -1472,8 +1485,8 @@ function ImportModal({
               <button type="button" className="glass-button secondary" onClick={() => setStep(2)} style={{ flex: 1 }}>
                 Atrás
               </button>
-              <GlassButton onClick={() => void save()} style={{ flex: 2 }}>
-                Guardar y leer
+              <GlassButton onClick={() => void save()} disabled={saving} style={{ flex: 2 }}>
+                {saving ? 'Guardando…' : 'Guardar y leer'}
               </GlassButton>
             </div>
           </>

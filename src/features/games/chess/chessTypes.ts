@@ -2,10 +2,11 @@ import type { Color } from './chessEngine'
 
 export type GameMode = 'ai' | 'local2p' | 'online'
 export type BoardView = '2d' | '3d'
-export type ClockPreset = 'none' | '3' | '5' | '10' | '15' | '30'
+export type ClockPreset = 'none' | '1' | '3' | '5' | '10' | '15' | '30'
 export type BoardSkin = 'cyan' | 'wood' | 'gold' | 'stone' | 'dark' | 'light'
 
 export interface ChessSetup {
+  tournamentMatch?: number
   mode: GameMode
   humanColor: Color
   aiLevel: number
@@ -41,6 +42,7 @@ export const BOARD_SKINS: { id: BoardSkin; label: string; light: string; dark: s
 
 export const CLOCK_PRESET_SECONDS: Record<ClockPreset, number | null> = {
   none: null,
+  '1': 60,
   '3': 180,
   '5': 300,
   '10': 600,

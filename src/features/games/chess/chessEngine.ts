@@ -58,9 +58,11 @@ export interface MoveInfo {
   color: Color
 }
 
-export type GameResult = 'checkmate' | 'stalemate' | 'draw' | null
+export type GameResult = 'checkmate' | 'stalemate' | 'draw' | 'timeout' | 'resignation' | 'abandonment' | null
 
+export type PieceStyle={color:string;particleColor:string;effect:'none'|'sparks'|'orbit'}
 export interface GameState {
+  cosmetics?:Partial<Record<Color,PieceStyle>>
   board: Board
   turn: Color
   castling: CastlingRights
@@ -159,7 +161,7 @@ export function pseudoMoves(state: GameState, r: number, c: number): Move[] {
       const target = board[nr][nc]
       if (target && target.color === enemy) {
         moves.push({ toR: nr, toC: nc, capture: true, promotion: nr === promoRank })
-      } else if (state.enPassant && state.enPassant.r === nr && state.enPassant.c === nc) {
+      } else if (!target && state.enPassant && state.enPassant.r === nr && state.enPassant.c === nc && board[r][nc]?.type === 'p' && board[r][nc]?.color === enemy) {
         moves.push({ toR: nr, toC: nc, capture: true, enPassantCapture: true })
       }
     }
@@ -184,6 +186,7 @@ export function pseudoMoves(state: GameState, r: number, c: number): Move[] {
           !board[rank][6] &&
           board[rank][7] &&
           board[rank][7]!.type === 'r' &&
+          board[rank][7]!.color === piece.color &&
           !board[rank][7]!.moved &&
           !isAttacked(state, rank, 4, enemy) &&
           !isAttacked(state, rank, 5, enemy) &&
@@ -198,6 +201,7 @@ export function pseudoMoves(state: GameState, r: number, c: number): Move[] {
           !board[rank][3] &&
           board[rank][0] &&
           board[rank][0]!.type === 'r' &&
+          board[rank][0]!.color === piece.color &&
           !board[rank][0]!.moved &&
           !isAttacked(state, rank, 4, enemy) &&
           !isAttacked(state, rank, 3, enemy) &&

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router'
 import App from './App'
 import './styles/theme.css'
+import './styles/refinements.css'
 
 const saved = localStorage.getItem('gco:theme') || 'dark'
 document.documentElement.setAttribute('data-theme', saved)

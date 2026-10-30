@@ -230,7 +230,7 @@ export function ChessBoard3D({
       const squareMeshes: InstanceType<typeof THREE.Mesh>[] = []
       for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
-          const light = (r + c) % 2 === 0
+          const light = (r + c) % 2 !== 0
           const mat = new THREE.MeshPhysicalMaterial({
             map: light ? texLight : texDark,
             roughness: light ? 0.28 : 0.24,
@@ -323,14 +323,15 @@ export function ChessBoard3D({
       let accentInt = hexToInt(skinDef.accent)
       function pieceMaterial(color: 'w' | 'b') {
         const isWhite = color === 'w'
+        const custom=currentState.cosmetics?.[color]
         return new THREE.MeshPhysicalMaterial({
-          map: isWhite ? texWhitePiece : texBlackPiece,
-          color: isWhite ? 0xf2fbff : 0x140508,
+          map: custom?null:isWhite ? texWhitePiece : texBlackPiece,
+          color: custom?hexToInt(custom.color):isWhite ? 0xf2fbff : 0x140508,
           roughness: isWhite ? 0.1 : 0.2,
           metalness: isWhite ? 0.06 : 0.16,
           clearcoat: 1.0,
           clearcoatRoughness: isWhite ? 0.05 : 0.11,
-          emissive: isWhite ? 0x3ab0c8 : 0x5a1220,
+          emissive: custom?hexToInt(custom.color):isWhite ? 0x3ab0c8 : 0x5a1220,
           emissiveIntensity: isWhite ? 0.18 : 0.28,
         })
       }
@@ -440,8 +441,8 @@ export function ChessBoard3D({
         // Piezas altas, esbeltas e imponentes
         group.scale.set(0.64, 1.12, 0.64)
 
-        // Aura de partículas de color (cian en blancas, carmesí en negras)
-        {
+        // Shared, validated appearance; respect reduced-motion preference.
+        if(currentState.cosmetics?.[color]?.effect!=='none' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
           const count = isSmallDevice ? 10 : 18
           const positions = new Float32Array(count * 3)
           for (let i = 0; i < count; i++) {
@@ -453,7 +454,8 @@ export function ChessBoard3D({
           }
           const geo = new THREE.BufferGeometry()
           geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-          const col = color === 'w' ? 0x5ee7ff : 0xff4a6a
+          const custom=currentState.cosmetics?.[color]
+          const col = custom?hexToInt(custom.particleColor):color === 'w' ? 0x5ee7ff : 0xff4a6a
           const pmat = new THREE.PointsMaterial({
             color: col,
             size: isSmallDevice ? 0.045 : 0.055,
@@ -465,6 +467,7 @@ export function ChessBoard3D({
           })
           const pts = new THREE.Points(geo, pmat)
           pts.userData.isAura = true
+          pts.userData.orbit = currentState.cosmetics?.[color]?.effect==='orbit'
           pts.userData.phase = Math.random() * Math.PI * 2
           group.add(pts)
         }
@@ -477,6 +480,8 @@ export function ChessBoard3D({
       let currentState = state
       function rebuildPieces(gs: GameState) {
         currentState = gs
+        const disposed=new Set<unknown>()
+        piecesGroup.traverse(obj=>{const mesh=obj as InstanceType<typeof THREE.Mesh>;if(mesh.geometry&&!disposed.has(mesh.geometry)){disposed.add(mesh.geometry);mesh.geometry.dispose()}for(const material of [mesh.material].flat()){if(material&&!disposed.has(material)){disposed.add(material);material.dispose()}}})
         piecesGroup.clear()
         for (let r = 0; r < 8; r++) {
           for (let c = 0; c < 8; c++) {
@@ -603,7 +608,7 @@ export function ChessBoard3D({
           if (obj.userData?.isAura && (obj as InstanceType<typeof THREE.Points>).isPoints) {
             const pts = obj as InstanceType<typeof THREE.Points>
             const phase = (pts.userData.phase as number) || 0
-            pts.rotation.y = pulseT * 0.35 + phase
+            pts.rotation.y = pulseT * (pts.userData.orbit?1.2:0.35) + phase
             const pos = pts.geometry.attributes.position as InstanceType<typeof THREE.BufferAttribute>
             const arr = pos.array as Float32Array
             for (let i = 0; i < arr.length; i += 3) {
@@ -641,7 +646,7 @@ export function ChessBoard3D({
           texDark = makeMarble(skinDef.dark, adjustVein(skinDef.dark), texSize, 4.2)
           squareMeshes.forEach((m) => {
             const { r, c } = m.userData as { r: number; c: number }
-            const light = (r + c) % 2 === 0
+            const light = (r + c) % 2 !== 0
             const mat = m.material as InstanceType<typeof THREE.MeshPhysicalMaterial>
             mat.map = light ? texLight : texDark
             mat.needsUpdate = true

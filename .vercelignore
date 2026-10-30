@@ -1,0 +1,16 @@
+node_modules
+.git
+.env*
+android
+electron
+release-electron
+server
+dist
+dev-dist
+supabase
+tests
+*.tsbuildinfo
+*.apk
+*.aab
+*.exe
+*.zip

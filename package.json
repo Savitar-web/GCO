@@ -11,6 +11,7 @@
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
+    "test": "node --test tests/*.test.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
@@ -36,6 +37,7 @@
     "@capgo/capacitor-media-session": "^8.0.31",
     "@capgo/capacitor-native-audio": "^8.4.21",
     "@capgo/capacitor-video-player": "^8.2.7",
+    "@supabase/supabase-js": "^2.118.0",
     "framer-motion": "^12.43.0",
     "jszip": "^3.10.1",
     "lucide-react": "^1.31.0",
@@ -58,6 +60,7 @@
     "eslint": "^10.6.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.3",
+    "fake-indexeddb": "^6.2.6",
     "globals": "^17.7.0",
     "sharp": "^0.35.3",
     "svgo": "^4.0.2",

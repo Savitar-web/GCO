@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { getProfile } from './core/storage/userProfile'
@@ -20,9 +20,9 @@ import { RutinasSettings } from './features/ajustes/RutinasSettings'
 import { CartasGame } from './features/memoria/juegos/cartas/CartasGame'
 import { NexoGame } from './features/memoria/juegos/nexo/NexoGame'
 import { RoutineWidget } from '@/components/ui/RoutineWidget'
-import { NutricionHome } from './features/nutricion/NutricionHome'
-import { BookReader } from './features/nutricion/BookReader'
-import { MusicaHome } from './features/musica/MusicaHome'
+const NutricionHome = lazy(() => import('./features/nutricion/NutricionHome').then(module => ({ default: module.NutricionHome })))
+const BookReader = lazy(() => import('./features/nutricion/BookReader').then(module => ({ default: module.BookReader })))
+const MusicaHome = lazy(() => import('./features/musica/MusicaHome').then(module => ({ default: module.MusicaHome })))
 import { ReaderPlayerProvider, MiniPlayer } from '@/core/reader/ReaderPlayerContext'
 import { HabilidadesGame } from './features/memoria/juegos/habilidades/Habilidades'
 import { DespejesGame } from './features/logica/juegos/despejes/DespejesGame'
@@ -42,6 +42,10 @@ import { BlockCleaner } from '@/features/logica/juegos/BlockCleaner/BlockCleaner
 
 //games
 import { ChessMenu } from './features/games/chess/ChessMenu'
+import { GamesHub, GameRoom } from './features/games/GamesHub'
+import { MatchCenter } from './features/games/chess/MatchCenter'
+import { Tournament } from './features/games/chess/Tournament'
+import { TresGame } from './features/games/cards/TresGame'
 import { ChessGame } from './features/games/chess/ChessGame'
 
 import { IdiomasGame } from './features/deduccion/juegos/idiomas/idiomas'
@@ -85,6 +89,7 @@ function App() {
 
       {!showSplash && (
         <>
+          <Suspense fallback={<div className="gco-hub" role="status">Cargando tu espacio…</div>}>
           <Routes>
             <Route
               path="/"
@@ -153,11 +158,18 @@ function App() {
             <Route path="/categoria/deduccion/idiomas" element={<IdiomasGame />} />
 
             {/* ── Games ── */}
-            <Route path="/games" element={<ChessMenu />} />
+            <Route path="/games" element={<GamesHub />} />
+            <Route path="/games/cartas" element={<GamesHub />} />
+            <Route path="/games/tres" element={<TresGame />} />
+            <Route path="/games/activas" element={<MatchCenter />} />
+            <Route path="/games/torneo" element={<Tournament />} />
+            <Route path="/games/ajedrez/menu" element={<ChessMenu />} />
+            <Route path="/games/mesa/:kind" element={<GameRoom />} />
             <Route path="/games/ajedrez" element={<ChessGame />} />
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
 
           <RoutineWidget />
           <MiniPlayer />

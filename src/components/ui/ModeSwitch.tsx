@@ -58,7 +58,7 @@ export const MODES: readonly ModeDef[] = [
     short: 'Nutri',
     emoji: '🍎',
     fallbackPath: '/nutricion',
-    description: 'Planes, comidas y seguimiento nutricional',
+    description: 'Libros, lectura y nutrición cognitiva',
   },
   {
     id: 'gym',

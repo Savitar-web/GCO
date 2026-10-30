@@ -13,11 +13,14 @@ import {
 import { BOARD_SKINS, DEFAULT_SETUP, type ChessSetup, type ClockPreset } from './chessTypes'
 import { chessSfx } from './chessSound'
 import './chess.css'
+import {PieceCustomizer,usePieceStyles} from './PieceCustomizer'
+import {GameTutorial} from '../GameTutorial'
 
 const CLOCK_OPTIONS: { id: ClockPreset; label: string }[] = [
   { id: 'none', label: 'Sin reloj' },
-  { id: '3', label: '3 min' },
-  { id: '5', label: '5 min' },
+  { id: '1', label: 'Bala · 1 min' },
+  { id: '3', label: 'Blitz · 3 min' },
+  { id: '5', label: 'Blitz · 5 min' },
   { id: '10', label: '10 min' },
   { id: '15', label: '15 min' },
   { id: '30', label: '30 min' },
@@ -102,6 +105,7 @@ function ParticleCanvas() {
 }
 
 export function ChessMenu() {
+  const [pieceStyles,savePieceStyles]=usePieceStyles()
   const navigate = useNavigate()
   const [setup, setSetup] = useState<ChessSetup>(DEFAULT_SETUP)
   const [history, setHistory] = useState<ChessHistoryEntry[]>(() => loadChessHistory())
@@ -114,7 +118,7 @@ export function ChessMenu() {
   }
 
   function startGame() {
-    if (setup.mode === 'online') return
+    if (setup.mode === 'online') { navigate(`/games/mesa/ajedrez?pace=${setup.clock==='none'?'none':setup.clock==='1'?'bala':setup.clock==='3'?'blitz':setup.clock==='5'?'blitz5':'rapid'}`); return }
     soundClick()
     chessSfx.start(setup.soundEnabled)
     navigate('/games/ajedrez', { state: { setup } })
@@ -123,7 +127,7 @@ export function ChessMenu() {
   function goBack() {
     soundClick()
     // CategoryMenu (pantalla principal de categorías)
-    navigate('/')
+    navigate('/games')
   }
 
   function refreshHistory() {
@@ -172,8 +176,7 @@ export function ChessMenu() {
             <span className="gco-chess-option-title">2 jugadores</span>
             <span className="gco-chess-option-desc">Mismo dispositivo, turno a turno</span>
           </button>
-          <button type="button" className="gco-chess-option is-locked" disabled aria-disabled>
-            <span className="gco-chess-soon-badge">Próximamente</span>
+          <button type="button" className={`gco-chess-option ${setup.mode==='online'?'is-active':''}`} onClick={() => update('mode', 'online')}>
             <span className="gco-chess-option-icon">🌐</span>
             <span className="gco-chess-option-title">Multijugador</span>
             <span className="gco-chess-option-desc">En línea contra otros jugadores</span>
@@ -281,6 +284,8 @@ export function ChessMenu() {
           ))}
         </div>
 
+        <div className="gco-actions"><PieceCustomizer styles={pieceStyles} onSave={savePieceStyles}/><GameTutorial kind="ajedrez"/></div><p className="gco-chess-section-label">Competición y partidas</p>
+        <div className="gco-actions chess-extra-actions"><button className="glass-button secondary" onClick={() => navigate('/games/torneo')}>Torneo online · 4 u 8</button><button className="glass-button secondary" onClick={() => navigate('/games/activas')}>Partidas activas e historial</button></div>
         <p className="gco-chess-section-label">Opciones</p>
         <div className="gco-chess-panel-section">
           <div className="gco-chess-toggle-row">
@@ -325,7 +330,7 @@ export function ChessMenu() {
           )}
         </div>
 
-        <button type="button" className="gco-chess-cta" onClick={startGame} disabled={setup.mode === 'online'}>
+        <button type="button" className="gco-chess-cta" onClick={startGame}>
           Comenzar partida
         </button>
 

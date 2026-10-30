@@ -28,6 +28,7 @@ import {
   type SkipSeconds,
 } from '@/hooks/useSpeechReader'
 import { TtsVoiceInstallerModal } from '@/hooks/TtsVoiceInstallerModal'
+import { ReaderTools } from './ReaderTools'
 
 /* ─── Mini-player global fuera; floating persistente en body ─── */
 const GCO_KILL_STYLE_ID = 'gco-kill-mini-player-style'
@@ -1564,6 +1565,8 @@ export function BookReader() {
   const [sleepMin, setSleepMin] = useState(0)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const flushRef = useRef<(() => Promise<void>) | null>(null)
 
   const [showToc, setShowToc] = useState(false)
   const [showAppearance, setShowAppearance] = useState(false)
@@ -1861,10 +1864,8 @@ export function BookReader() {
     [appearance]
   )
 
-  const schedulePersist = useCallback(() => {
-    if (saveTimer.current) window.clearTimeout(saveTimer.current)
-    saveTimer.current = window.setTimeout(async () => {
-      if (!id || !text) return
+  const persistReading = useCallback(async () => {
+      if (!id || !text || loading) return
       try {
         const payload = {
           id,
@@ -1880,15 +1881,26 @@ export function BookReader() {
           appearance: appearancePayload(),
         }
         await saveBook(payload as unknown as Parameters<typeof saveBook>[0])
-      } catch {
-        /* ignore */
+        setSaveError(null)
+      } catch (error) {
+        setSaveError(error instanceof Error ? error.message : 'No se pudo guardar el avance. Revisa el espacio disponible.')
       }
-    }, 800)
-  }, [id, title, text, reader.charIndex, reader.rate, reader.voiceURI, chapters, bookmarks, comments, highlights, appearancePayload])
+  }, [id, title, text, loading, reader.charIndex, reader.rate, reader.voiceURI, chapters, bookmarks, comments, highlights, appearancePayload])
 
   useEffect(() => {
-    schedulePersist()
-  }, [reader.charIndex, chapters, bookmarks, comments, highlights, appearance]) // eslint-disable-line
+    flushRef.current = persistReading
+    if (saveTimer.current) window.clearTimeout(saveTimer.current)
+    saveTimer.current = window.setTimeout(() => void persistReading(), 800)
+    return () => { if (saveTimer.current) window.clearTimeout(saveTimer.current) }
+  }, [persistReading])
+
+  useEffect(() => {
+    const flush = () => { void flushRef.current?.() }
+    const onHidden = () => { if (document.hidden) flush() }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onHidden)
+    return () => { flush(); window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', onHidden) }
+  }, [])
 
   const paragraphs = useMemo(() => splitParagraphs(text), [text])
 
@@ -3193,6 +3205,8 @@ export function BookReader() {
         )}
 
         {/* Contenido */}
+        <ReaderTools text={text} position={reader.charIndex} onJump={goToChar} />
+        {saveError && <div className="gco-callout" role="alert">{saveError}<button className="gco-text-button" onClick={() => void persistReading()}>Reintentar guardado</button></div>}
         {appearance.layout === 'horizontal' ? (
           <div className={`h-page-area ${isDesktop ? '' : 'mobile'}`} ref={pageAreaRef}>
             <div className={`h-page-stage ${appearance.pageAnim ? (pageAnimDir === 1 ? 'slide-next' : pageAnimDir === -1 ? 'slide-prev' : '') : 'no-anim'}`}>

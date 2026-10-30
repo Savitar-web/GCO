@@ -17,6 +17,7 @@ import {
 import { saveChessHistoryEntry, type HistoryResult } from './chessHistory'
 import { chessSfx } from './chessSound'
 import { CLOCK_PRESET_SECONDS, type ChessSetup } from './chessTypes'
+import { activeMatches, archiveMatch, type SavedMatch } from './matchStorage'
 
 export interface Selection {
   r: number
@@ -55,7 +56,9 @@ function isHumanTurn(setup: ChessSetup, turn: Color): boolean {
 }
 
 export function useChessGame(setup: ChessSetup): UseChessGameResult {
-  const [state, setState] = useState<GameState>(() => newGameState())
+  const [saved] = useState<SavedMatch | undefined>(() => activeMatches().find(match => match.id === sessionStorage.getItem('gco:resume-chess')))
+  const [matchId, setMatchId] = useState(() => saved?.id || crypto.randomUUID())
+  const [state, setState] = useState<GameState>(() => saved?.state || newGameState())
   const [selection, setSelection] = useState<Selection | null>(null)
   const [lastMove, setLastMove] = useState<MoveInfo | null>(null)
   const [past, setPast] = useState<GameState[]>([])
@@ -63,6 +66,7 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
   const [isAiThinking, setIsAiThinking] = useState(false)
   const [orientation, setOrientation] = useState<Color>(setup.humanColor === 'b' ? 'b' : 'w')
   const [clock, setClock] = useState<ClockState>(() => {
+    if (saved) return saved.clock
     const secs = CLOCK_PRESET_SECONDS[setup.clock]
     return { w: secs, b: secs }
   })
@@ -72,9 +76,12 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
   const recordedRef = useRef(false)
 
   useEffect(() => {
-    const secs = CLOCK_PRESET_SECONDS[setup.clock]
-    setClock({ w: secs, b: secs })
-  }, [setup.clock])
+    sessionStorage.removeItem('gco:resume-chess')
+    const others = activeMatches().filter(match => match.id !== matchId)
+    if (state.result) archiveMatch(matchId, state)
+    else others.push({ id: matchId, setup, state, clock, at: Date.now() })
+    localStorage.setItem('gco:chess-active', JSON.stringify(others))
+  }, [state, clock, setup, matchId])
 
   // Rotación opcional del tablero en 2 jugadores (celular compartido)
   useEffect(() => {
@@ -101,11 +108,15 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
     (s: GameState) => {
       if (!s.result || recordedRef.current) return
       recordedRef.current = true
+      if(setup.tournamentMatch!==undefined && s.winner) {
+        const bracket=JSON.parse(localStorage.getItem('gco:chess-tournament')||'null')
+        if(bracket && bracket.winners.length===setup.tournamentMatch) { bracket.winners.push(bracket.players[setup.tournamentMatch*2+(s.winner==='w'?0:1)]);localStorage.setItem('gco:chess-tournament',JSON.stringify(bracket)) }
+      }
       const durationSec = Math.max(1, Math.round((Date.now() - startTimeRef.current) / 1000))
       let result: HistoryResult = 'draw'
       let winnerLabel = 'Tablas'
 
-      if (s.result === 'checkmate' && s.winner) {
+      if (s.winner) {
         if (setup.mode === 'ai') {
           if (s.winner === setup.humanColor) {
             result = 'win'
@@ -149,7 +160,7 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
       setState((s) => {
         if (s.result) return s
         const next = cloneState(s)
-        next.result = 'checkmate'
+        next.result = 'timeout'
         next.winner = clock.w === 0 ? 'b' : 'w'
         return next
       })
@@ -254,6 +265,8 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
   }, [setup.clock, state.turn, state.result])
 
   const newGame = useCallback(() => {
+    localStorage.setItem('gco:chess-active', JSON.stringify(activeMatches().filter(match => match.id !== matchId)))
+    setMatchId(crypto.randomUUID())
     chessSfx.start(setup.soundEnabled)
     setState(newGameState())
     setSelection(null)
@@ -265,7 +278,7 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
     setClock({ w: secs, b: secs })
     startTimeRef.current = Date.now()
     recordedRef.current = false
-  }, [setup.humanColor, setup.clock])
+  }, [setup.humanColor, setup.clock, setup.soundEnabled, matchId])
 
   const undo = useCallback(() => {
     chessSfx.undo(setup.soundEnabled)
@@ -302,7 +315,7 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
     chessSfx.resign(setup.soundEnabled)
     setState((s) => {
       const next = cloneState(s)
-      next.result = 'checkmate'
+      next.result = 'resignation'
       next.winner = color === 'w' ? 'b' : 'w'
       return next
     })

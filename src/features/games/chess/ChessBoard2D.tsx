@@ -81,7 +81,7 @@ export function ChessBoard2D({
             {rows.map((r) =>
               cols.map((c) => {
                 const piece = state.board[r][c]
-                const isLight = (r + c) % 2 === 0
+                const isLight = (r + c) % 2 !== 0
                 const isSelected = selection?.r === r && selection?.c === c
                 const moveHint = showLegalHints
                   ? selection?.moves.find((m: LegalMove) => m.toR === r && m.toC === c)
@@ -110,10 +110,11 @@ export function ChessBoard2D({
                     )}
                     {piece && (
                       <span
-                        className={`gco-chess-piece-wrap ${piece.color === 'w' ? 'is-white' : 'is-black'}`}
+                        className={`gco-chess-piece-wrap ${piece.color === 'w' ? 'is-white' : 'is-black'} particle-${state.cosmetics?.[piece.color]?.effect||'none'}`}
+                        style={{'--particle':state.cosmetics?.[piece.color]?.particleColor} as React.CSSProperties}
                         aria-hidden
                       >
-                        <ChessPieceIcon type={piece.type} color={piece.color} accent={skinDef.accent} />
+                        <ChessPieceIcon type={piece.type} color={piece.color} bodyColor={state.cosmetics?.[piece.color]?.color} accent={state.cosmetics?.[piece.color]?.particleColor||skinDef.accent} /><i/><i/><i/>
                       </span>
                     )}
                   </button>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { OnlineMusic } from './OnlineMusic'
 import { useNavigate } from 'react-router-dom'
 import { ModeSwitch } from '@/components/ui/ModeSwitch'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
@@ -78,14 +79,6 @@ function loadListenStats(): ListenStats {
     return raw ? (JSON.parse(raw) as ListenStats) : {}
   } catch {
     return {}
-  }
-}
-
-function saveListenStats(s: ListenStats) {
-  try {
-    localStorage.setItem(STATS_KEY, JSON.stringify(s))
-  } catch {
-    /* */
   }
 }
 
@@ -1157,9 +1150,11 @@ function SortDropdown({ value, onChange }: { value: SortMode; onChange: (v: Sort
 /* --- COMPONENTE IMPORT PANEL --- */
 function ImportPanelComponent({
   onImport,
+  onChoose,
   tracks,
 }: {
   onImport: (files: File[] | FileList) => void | Promise<void>
+  onChoose: (files: File[] | FileList) => void
   tracks: TrackItem[]
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -1199,7 +1194,7 @@ function ImportPanelComponent({
     (typeof localStorage !== 'undefined' &&
       localStorage.getItem('gco:yt-api')) ||
     (import.meta as { env?: { VITE_YT_API?: string } }).env?.VITE_YT_API ||
-    'http://localhost:3001'
+    ''
 
   const isYoutubeUrl = (q: string) =>
     /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//i.test(q.trim())
@@ -1207,6 +1202,7 @@ function ImportPanelComponent({
   const handleSearch = async () => {
     const q = searchQuery.trim()
     if (!q) return
+    if (!API_BASE) { setSearchError('Usa la preescucha de YouTube de arriba. Descargar archivos requiere configurar un servidor de importación.'); return }
 
     searchAbortRef.current?.abort()
     const controller = new AbortController()
@@ -1244,18 +1240,7 @@ function ImportPanelComponent({
       /* backend de búsqueda opcional; seguimos al fallback local */
     }
 
-    setSearchResults([
-      {
-        id: '1',
-        title: `${q} (pega la URL completa de YouTube para descargar)`,
-        url: q,
-      },
-      {
-        id: '2',
-        title: `Usar como URL directa: ${q}`,
-        url: q.startsWith('http') ? q : `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`,
-      },
-    ])
+    setSearchError('No se encontraron resultados o el servidor no está disponible. Busca en YouTube y pega el enlace en la preescucha.')
     setIsSearching(false)
   }
 
@@ -1270,6 +1255,7 @@ function ImportPanelComponent({
 
   const startDownload = async () => {
     if (!selectedYt) return
+    if (!API_BASE) { setDlError('No hay un servidor de descargas configurado. Puedes guardar el enlace arriba.'); return }
     if (!dlDevice && !dlCache) {
       soundFail()
       setDlError('Elige al menos: dispositivo o caché de la app.')
@@ -1318,20 +1304,36 @@ function ImportPanelComponent({
 
       setDlStatus('Recibiendo archivo…')
       const blob = await response.blob()
+      if (!blob.size || /json|text\/html/.test(blob.type)) throw new Error('El servidor no devolvió un archivo multimedia válido.')
       setProgress((p) => ({ ...p, download: 100 }))
 
       const mime = formato === 'mp3' ? 'audio/mpeg' : blob.type || 'video/mp4'
       const ext = formato === 'mp3' ? 'mp3' : 'mp4'
       const fileName = `${name}.${ext}`
 
-      let mediaBlob = blob
+      const mediaBlob = blob
       let mediaName = fileName
+      let importedFiles: File[] = []
       if (
         blob.type.includes('zip') ||
         (response.headers.get('content-disposition') || '').includes('.zip')
       ) {
         setDlStatus('Extrayendo del ZIP…')
         mediaName = `${name}.zip`
+        const { default: JSZip } = await import('jszip')
+        const archive = await JSZip.loadAsync(blob)
+        const entries = Object.values(archive.files).filter(entry => !entry.dir && /\.(mp3|m4a|mp4|ogg|wav|flac|aac|webm)$/i.test(entry.name))
+        if (!entries.length) throw new Error('El ZIP no contiene archivos de audio o video compatibles.')
+        if (entries.length > 100) throw new Error('El ZIP contiene más de 100 pistas. Divídelo en lotes más pequeños.')
+        let extractedSize = 0
+        for (const entry of entries) {
+          const content = await entry.async('blob')
+          extractedSize += content.size
+          if (extractedSize > 512 * 1024 * 1024) throw new Error('El ZIP supera 512 MB descomprimido. Importa un lote más pequeño.')
+          importedFiles.push(new File([content], entry.name.split('/').at(-1) || fileName, { type: /\.mp3$/i.test(entry.name) ? 'audio/mpeg' : '' }))
+        }
+      } else {
+        importedFiles = [new File([blob], fileName, { type: mime })]
       }
 
       if (dlDevice) {
@@ -1349,10 +1351,7 @@ function ImportPanelComponent({
       if (dlCache) {
         setDlStatus('Importando al reproductor…')
         setProgress((p) => ({ ...p, import: 40 }))
-        const file = new File([mediaBlob], mediaName.endsWith('.zip') ? fileName : mediaName, {
-          type: mime,
-        })
-        await onImport([file])
+        await onImport(importedFiles)
         setProgress((p) => ({ ...p, import: 100 }))
       }
 
@@ -1456,7 +1455,7 @@ function ImportPanelComponent({
         className="glass-card"
         style={{
           ...liquidGlassStyle,
-          display: 'flex',
+          display: API_BASE ? 'flex' : 'none',
           gap: 10,
           alignItems: 'center',
           flexWrap: 'wrap',
@@ -1600,7 +1599,7 @@ function ImportPanelComponent({
         onDrop={(e) => {
           e.preventDefault()
           setDropActive(false)
-          void onImport(e.dataTransfer.files)
+          onChoose(e.dataTransfer.files)
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'center', color: 'var(--gco-primary)', margin: '0 0 12px' }}>
@@ -1648,7 +1647,7 @@ function ImportPanelComponent({
           multiple
           hidden
           onChange={(e) => {
-            if (e.target.files) void onImport(e.target.files)
+            if (e.target.files) onChoose(e.target.files)
             e.target.value = ''
           }}
         />
@@ -1665,7 +1664,7 @@ function ImportPanelComponent({
           gap: 6,
         }}
       >
-        <Icon.info size={14} /> Descarga de YouTube mediante enlaces URL.
+        <Icon.info size={14} /> {API_BASE ? 'Servidor de importación configurado. Las descargas dependen de su disponibilidad.' : 'Tu audio importado funciona sin servidor y sin conexión.'}
       </p>
 
       {selectedYt && (
@@ -2050,6 +2049,11 @@ export function MusicaHome() {
   const [importNotice, setImportNotice] = useState<string | null>(null)
   const [artistFilter, setArtistFilter] = useState<string | null>(null)
   const [importQueue, setImportQueue] = useState<File[]>([])
+  const importLock = useRef(false)
+  const reviewLock = useRef(false)
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number; name: string } | null>(null)
+  const [reviewPreview, setReviewPreview] = useState<string | null>(null)
+  useEffect(() => () => { if (reviewPreview) URL.revokeObjectURL(reviewPreview) }, [reviewPreview])
   const [importQueueIndex, setImportQueueIndex] = useState(0)
   const [importReviewOpen, setImportReviewOpen] = useState(false)
   const [importChoiceOpen, setImportChoiceOpen] = useState(false)
@@ -2139,32 +2143,11 @@ export function MusicaHome() {
 
   /* Estadísticas de escucha (plays + tiempo) */
   const listenStatsRef = useRef<ListenStats>(loadListenStats())
-  const lastStatTickRef = useRef<number>(Date.now())
-  const lastPlayTrackRef = useRef<string | null>(null)
   useEffect(() => {
-    const id = window.setInterval(() => {
-      const t = player.track
-      if (!t || !player.playing) {
-        lastStatTickRef.current = Date.now()
-        return
-      }
-      const now = Date.now()
-      const delta = Math.min(5000, now - lastStatTickRef.current)
-      lastStatTickRef.current = now
-      const stats = listenStatsRef.current
-      const cur = stats[t.id] ?? { plays: 0, ms: 0, lastAt: 0 }
-      if (lastPlayTrackRef.current !== t.id) {
-        cur.plays += 1
-        lastPlayTrackRef.current = t.id
-      }
-      cur.ms += delta
-      cur.lastAt = now
-      stats[t.id] = cur
-      listenStatsRef.current = stats
-      saveListenStats(stats)
-    }, 2000)
-    return () => window.clearInterval(id)
-  }, [player])
+    const refreshStats = () => { listenStatsRef.current = loadListenStats(); setListenStatsVersion(version => version + 1) }
+    window.addEventListener('gco:listening', refreshStats)
+    return () => window.removeEventListener('gco:listening', refreshStats)
+  }, [])
 
   useEffect(() => {
     const api = player as typeof player & {
@@ -2183,7 +2166,7 @@ export function MusicaHome() {
 
   useEffect(() => {
     if (!importNotice) return
-    const id = window.setTimeout(() => setImportNotice(null), 3600)
+    const id = window.setTimeout(() => setImportNotice(null), 20000)
     return () => window.clearTimeout(id)
   }, [importNotice])
 
@@ -2324,8 +2307,9 @@ export function MusicaHome() {
 
   const onImport = async (
     files: FileList | File[] | null,
-    opts?: { mode?: 'quick' | 'review' },
+    opts?: { mode?: 'quick' | 'review'; strict?: boolean },
   ) => {
+    if (importLock.current) { setImportNotice('Espera a que termine la importación actual.'); return }
     const list = (files ? Array.from(files) : []).filter(isImportableMediaFile)
     if (!list.length) {
       soundFail()
@@ -2333,7 +2317,7 @@ export function MusicaHome() {
       return
     }
 
-    const mode = opts?.mode ?? (list.length > 1 ? 'review' : 'quick')
+    const mode = opts?.mode ?? 'quick'
 
     if (mode === 'review' && list.length >= 1) {
       setImportQueue(list)
@@ -2347,14 +2331,19 @@ export function MusicaHome() {
     let okCount = 0
     let enrichedCount = 0
     let failCount = 0
+    const failures: string[] = []
+    importLock.current = true
+    try {
     for (const file of list) {
+      setBatchProgress({ done: okCount + failCount, total: list.length, name: file.name })
       try {
         const t = await importTrackFile(file)
-        const { enriched } = await enrichTrackFromFile(file, t)
+        const { enriched } = await enrichTrackFromFile(file, t).catch(() => ({ enriched: false }))
         if (enriched) enrichedCount += 1
         okCount += 1
-      } catch {
+      } catch (error) {
         failCount += 1
+        failures.push(`${file.name}: ${error instanceof Error ? error.message : 'no se pudo guardar'}`)
       }
     }
     await refresh()
@@ -2364,11 +2353,14 @@ export function MusicaHome() {
     setImportNotice(
       failCount === 0
         ? `Importadas ${okCount} pista${okCount === 1 ? '' : 's'}${enrichedCount ? ` · metadatos en ${enrichedCount}` : ''}.`
-        : `Importadas ${okCount}, fallaron ${failCount}.`,
+        : `Importadas ${okCount}, fallaron ${failCount}. ${failures.join(' · ')}`,
     )
+    if (opts?.strict && failCount) throw new Error(failures.join(' · '))
+    } finally { importLock.current = false; setBatchProgress(null) }
   }
 
   const prepareImportReviewItem = async (file: File) => {
+    setReviewPreview(URL.createObjectURL(file))
     setReviewBusy(true)
     try {
       const base = file.name.replace(/\.[^.]+$/, '') || 'Sin título'
@@ -2391,26 +2383,31 @@ export function MusicaHome() {
   }
 
   const commitReviewImport = async (skip = false) => {
+    if (reviewLock.current || reviewBusy) return
+    reviewLock.current = true
+    try {
     const file = importQueue[importQueueIndex]
     if (!file) {
       setImportReviewOpen(false)
       setImportQueue([])
+      setReviewPreview(null)
       return
     }
     if (!skip) {
       setReviewBusy(true)
       try {
-        const t = await importTrackFile(file)
-        await updateTrack(t.id, {
-          title: reviewTitle.trim() || t.title,
-          artist: reviewArtist.trim() || t.artist,
+        await importTrackFile(file, {
+          title: reviewTitle.trim() || file.name.replace(/\.[^.]+$/, ''),
+          artist: reviewArtist.trim() || 'Desconocido',
           album: reviewAlbum.trim() || undefined,
           year: reviewYear.trim() || undefined,
-          coverDataUrl: reviewCover ?? t.coverDataUrl,
+          coverDataUrl: reviewCover ?? null,
         })
         soundSuccess()
-      } catch {
+      } catch (error) {
         soundFail()
+        setImportNotice(`No se pudo importar ${file.name}: ${error instanceof Error ? error.message : 'error de almacenamiento'}. Reintenta o salta el archivo.`)
+        return
       } finally {
         setReviewBusy(false)
       }
@@ -2427,9 +2424,11 @@ export function MusicaHome() {
     }
     setImportQueueIndex(next)
     await prepareImportReviewItem(importQueue[next])
+    } finally { reviewLock.current = false }
   }
 
   const startImportChoice = (files: FileList | File[] | null) => {
+    if (importLock.current || importReviewOpen) { setImportNotice('Termina la importación actual antes de añadir otro lote.'); return }
     const list = (files ? Array.from(files) : []).filter(isImportableMediaFile)
     if (!list.length) {
       soundFail()
@@ -3109,7 +3108,9 @@ export function MusicaHome() {
   /* ── Biblioteca ── */
   const libraryPanel = (
     <div>
+      {batchProgress && <div className="gco-import-progress" role="status"><strong>Importando {batchProgress.done + 1} de {batchProgress.total}</strong><p>{batchProgress.name}</p><progress value={batchProgress.done} max={batchProgress.total} style={{ width: '100%' }} /></div>}
       {importNotice && (
+        <>
         <div
           role="status"
           aria-live="polite"
@@ -3129,6 +3130,7 @@ export function MusicaHome() {
         >
           <Icon.checkCircle size={17} /> {importNotice}
         </div>
+        </>
       )}
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center' }}>
@@ -4309,10 +4311,14 @@ export function MusicaHome() {
   )
 
   const importPanel = (
+    <>
+    <OnlineMusic />
     <ImportPanelComponent
-      onImport={(files) => { startImportChoice(files) }}
+      onChoose={startImportChoice}
+      onImport={async (files) => { await onImport(files, { mode: 'quick', strict: true }) }}
       tracks={tracks}
     />
+    </>
   )
 
   const morePanel = (
@@ -5262,6 +5268,7 @@ export function MusicaHome() {
               {importQueue[importQueueIndex].name}
               {reviewBusy ? ' · leyendo metadatos…' : ''}
             </p>
+            {reviewPreview && <audio src={reviewPreview} controls preload="metadata" style={{ width: '100%', marginBottom: 16 }} aria-label="Preescucha antes de importar" />}
             <div
               style={{
                 width: 120,
@@ -5301,6 +5308,7 @@ export function MusicaHome() {
                 className="glass-button secondary"
                 onClick={() => {
                   setImportReviewOpen(false)
+                  setReviewPreview(null)
                   setImportQueue([])
                   setImportQueueIndex(0)
                 }}
@@ -5315,6 +5323,7 @@ export function MusicaHome() {
               onClick={() => {
                 soundClick()
                 setImportReviewOpen(false)
+                setReviewPreview(null)
                 const rest = importQueue.slice(importQueueIndex)
                 setImportQueue([])
                 void onImport(rest, { mode: 'quick' })
