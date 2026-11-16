@@ -741,6 +741,11 @@ function canPlaceXWord(
     if (rr < 0 || cc < 0 || rr >= size || cc >= size) return false
     const ch = grid[rr][cc]
     if (ch !== '#' && ch !== word[i]) return false
+    if(ch==='#'){
+      for(const side of [-1,1]){const sr=rr+(dir==='H'?side:0),sc=cc+(dir==='V'?side:0);if(grid[sr]?.[sc]&&grid[sr][sc]!=='#')return false}
+    }else{
+      if(grid[rr-dr]?.[cc-dc]&&grid[rr-dr][cc-dc]!=='#'||grid[rr+dr]?.[cc+dc]&&grid[rr+dr][cc+dc]!=='#')return false
+    }
   }
 
   const br = r - dr
@@ -774,12 +779,12 @@ function commitXWord(
   }
 }
 
-function buildCrossword(level: number, attempt: number): XWordPuzzle {
+function buildCrosswordCandidate(level: number, attempt: number): XWordPuzzle {
   const rng = mulberry32(level * 131 + attempt * 19 + 7)
-  const size = Math.min(13, 8 + Math.floor(level / 10))
+  const size = Math.min(15, 10 + Math.floor(level / 15))
   const grid: string[][] = Array.from({ length: size }, () => Array(size).fill('#'))
 
-  const bank = shuffleInPlace([...XWORD_BANK], rng)
+  const bank = shuffleInPlace(XWORD_BANK.filter(entry=>entry.answer.length<=size), rng)
   const targetCount = Math.min(bank.length, 5 + Math.floor(level / 8))
   const placed: Omit<XWordClue, 'num'>[] = []
 
@@ -849,7 +854,16 @@ function buildCrossword(level: number, attempt: number): XWordPuzzle {
   }
   clues.sort((a, b) => a.num - b.num || (a.dir === 'H' ? -1 : 1))
 
-  return { size, solution: grid, clues }
+  const cells=grid.flatMap((row,r)=>row.flatMap((ch,c)=>ch==='#'?[]:[{r,c}]))
+  if(!cells.length)return {size,solution:grid,clues}
+  const r0=Math.min(...cells.map(p=>p.r)),c0=Math.min(...cells.map(p=>p.c)),n=Math.max(Math.max(...cells.map(p=>p.r))-r0+1,Math.max(...cells.map(p=>p.c))-c0+1)
+  return {size:n,solution:Array.from({length:n},(_,r)=>Array.from({length:n},(_,c)=>grid[r+r0]?.[c+c0]??'#')),clues:clues.map(clue=>({...clue,row:clue.row-r0,col:clue.col-c0}))}
+}
+
+function buildCrossword(level:number,attempt:number):XWordPuzzle{
+ let best=buildCrosswordCandidate(level,attempt*23)
+ for(let i=1;i<16;i++){const candidate=buildCrosswordCandidate(level,attempt*23+i);if(candidate.clues.length>best.clues.length||candidate.clues.length===best.clues.length&&candidate.size<best.size)best=candidate}
+ return best
 }
 
 /* ─── Estilos ───────────────────────────────────────────────────────────── */
@@ -888,7 +902,7 @@ export function PalabrasGame() {
   const navigate = useNavigate()
   const [phase, setPhase] = useState<Phase>('hub')
   const [sub, setSub] = useState<SubMode | null>(null)
-  const [level, setLevel] = useState(1)
+  const [level, setLevel] = useState(()=>Math.max(1,Math.min(TOTAL_LEVELS_PER_MODE,(getGameProgress(GAME_CAT,GAME_ID).highestLevel||0)+1)))
   const [attempt, setAttempt] = useState(0)
   const [useTimer, setUseTimer] = useState(false)
   const [timeLeft, setTimeLeft] = useState(0)
@@ -931,6 +945,8 @@ export function PalabrasGame() {
   const pathDragging = useRef(false)
   const pathRef = useRef<number[]>([])
 
+  const roundEnded=useRef(false)
+  const tapStart=useRef<{r:number;c:number}|null>(null)
   const [progressTick, setProgressTick] = useState(0)
   const progress = useMemo(() => getGameProgress(GAME_CAT, GAME_ID), [progressTick, phase, level])
   const unlockedRows = useMemo(
@@ -939,7 +955,7 @@ export function PalabrasGame() {
   )
   const maxSelectable = Math.max(
     1,
-    Math.min(TOTAL_LEVELS_PER_MODE, Math.max(1, progress.highestLevel || 1)),
+    Math.min(TOTAL_LEVELS_PER_MODE, Math.max(1, (progress.highestLevel || 0)+1)),
     ...unlockedRows.map((u) => u.level),
   )
 
@@ -954,6 +970,7 @@ export function PalabrasGame() {
 
   const finishLevel = useCallback(
     (ok: boolean) => {
+      if(roundEnded.current)return;roundEnded.current=true
       clearTimer()
       setIsCorrect(ok)
       const elapsed = Date.now() - startRef.current
@@ -1010,6 +1027,7 @@ export function PalabrasGame() {
 
   const startLevel = useCallback(
     (lv: number, att: number, mode: SubMode) => {
+      roundEnded.current=false;tapStart.current=null
       soundStart()
       setLevel(lv)
       setAttempt(att)
@@ -1045,7 +1063,7 @@ export function PalabrasGame() {
           setConstelNodes(
             L.map((ch, i) => {
               const angle = (i / n) * Math.PI * 2 - Math.PI / 2
-              const radius = 30 + (i % 3) * 5
+              const radius = 36
               return {
                 id: i,
                 ch,
@@ -1071,10 +1089,10 @@ export function PalabrasGame() {
           words = DICT.filter((d) => d.length >= 3 && d.length <= 8).slice(0, 12)
         }
         const count = Math.min(words.length, Math.max(4, 4 + Math.floor(lv / 12)))
-        const candidates = words.slice(0, count)
+        const candidates = shuffleInPlace(DICT.filter(word=>word.length>=Math.min(4,3+Math.floor(lv/35))&&word.length<=Math.min(10,6+Math.floor(lv/16))),mulberry32(lv*631+att*19)).slice(0,Math.max(count,6+Math.floor(lv/10)))
         const size = Math.min(12, 7 + Math.floor(lv / 14))
         const { grid: g, placed } = buildSopa(candidates, size, lv * 97 + att * 13)
-        setTargetWords(placed.length ? placed : candidates.slice(0, 3))
+        setTargetWords(placed)
         setGrid(g)
         setGridMarks(g.map((row) => row.map(() => false)))
       }
@@ -1155,7 +1173,7 @@ export function PalabrasGame() {
         }
         return shuffled.map((n, i) => {
           const angle = (i / shuffled.length) * Math.PI * 2 - Math.PI / 2
-          const radius = 30 + (i % 3) * 5
+          const radius = 36
           return {
             ...n,
             x: 50 + radius * Math.cos(angle),
@@ -1177,8 +1195,8 @@ export function PalabrasGame() {
       return
     }
     const norm = strip(word)
-    const match = targetWords.find((t) => strip(t) === norm)
-    if (!match || foundWords.some((f) => strip(f) === norm)) {
+    const match = targetWords.find((t) => strip(t) === norm || strip(t)===norm.split('').reverse().join(''))
+    if (!match || foundWords.some((f) => strip(f) === strip(match))) {
       soundFail()
       return
     }
@@ -1236,9 +1254,10 @@ export function PalabrasGame() {
       /* */
     }
     selectingRef.current = true
-    selStartRef.current = { r, c }
-    selectionRef.current = [{ r, c }]
-    setSelection([{ r, c }])
+    const start=tapStart.current??{r,c};tapStart.current=null
+    selStartRef.current=start
+    const initial=linePath(start.r,start.c,r,c)
+    selectionRef.current=initial;setSelection(initial)
   }, [])
 
   const sopaUpdateFromPoint = useCallback((clientX: number, clientY: number) => {
@@ -1265,9 +1284,10 @@ export function PalabrasGame() {
     if (!selectingRef.current) return
     selectingRef.current = false
     const path = selectionRef.current
+    if(path.length<2){tapStart.current=path[0]??null;return}
+    tapStart.current=null
     selectionRef.current = []
     setSelection([])
-    if (path.length < 2) return
     const word = path.map((p) => grid[p.r]?.[p.c] || '').join('').toLowerCase()
     const norm = strip(word)
     const match = targetWords.find((t) => strip(t) === norm)
@@ -1291,6 +1311,10 @@ export function PalabrasGame() {
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
       if (selectingRef.current) sopaUpdateFromPoint(e.clientX, e.clientY)
+      if(pathDragging.current){
+        const element=document.elementFromPoint(e.clientX,e.clientY)?.closest<HTMLElement>('[data-star-id]')
+        if(element)onConstelPointer(Number(element.dataset.starId),false)
+      }
     }
     const onUp = () => {
       if (selectingRef.current) commitSopaSelection()
@@ -1298,23 +1322,29 @@ export function PalabrasGame() {
     }
     window.addEventListener('pointermove', onMove, { passive: true })
     window.addEventListener('pointerup', onUp)
-    window.addEventListener('pointercancel', onUp)
+    const cancel=()=>{selectingRef.current=false;pathDragging.current=false;selectionRef.current=[];pathRef.current=[];setPath([]);setSelection([])}
+    window.addEventListener('pointercancel', cancel)
+    window.addEventListener('blur',cancel)
     return () => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
-      window.removeEventListener('pointercancel', onUp)
+      window.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('blur',cancel)
     }
   })
 
   const onConstelPointer = (id: number, isDown: boolean) => {
     if (isDown) {
+      soundClick()
       pathDragging.current = true
       pathRef.current = [id]
       setPath([id])
       return
     }
     if (!pathDragging.current) return
+    if(pathRef.current.at(-2)===id){pathRef.current=pathRef.current.slice(0,-1);setPath(pathRef.current);soundToggle(false);return}
     if (pathRef.current.includes(id)) return
+    soundToggle(true)
     pathRef.current = [...pathRef.current, id]
     setPath(pathRef.current)
   }
@@ -1478,7 +1508,7 @@ export function PalabrasGame() {
         </h1>
         <p style={styles.muted}>
           Cinco modos de razonamiento verbal. Anagramas con todas las combinaciones,
-          crucigrama vacío real, sopa jugable en táctil y teclado.
+          crucigramas conectados, búsqueda visual y trazos con ratón o dedo.
         </p>
         {progress.highestLevel > 0 && (
           <p
@@ -1505,6 +1535,7 @@ export function PalabrasGame() {
             <GlassCard
               onClick={() => {
                 soundClick()
+                setLevel(Math.min(TOTAL_LEVELS_PER_MODE,Math.max(1,getGameProgress(GAME_CAT,GAME_ID).highestLevel||1)))
                 setSub(m.id)
                 setPhase('setup')
               }}
@@ -1588,30 +1619,7 @@ export function PalabrasGame() {
               </button>
             </div>
 
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-              <button
-                type="button"
-                className="glass-button secondary"
-                disabled={level <= 1}
-                onClick={() => {
-                  soundClick()
-                  setLevel((l) => Math.max(1, l - 1))
-                }}
-              >
-                − Nivel
-              </button>
-              <button
-                type="button"
-                className="glass-button secondary"
-                disabled={level >= maxSelectable}
-                onClick={() => {
-                  soundClick()
-                  setLevel((l) => Math.min(maxSelectable, l + 1))
-                }}
-              >
-                + Nivel
-              </button>
-            </div>
+            <label className="deduction-level-select">Nivel de la partida<select value={level} onChange={event=>setLevel(Number(event.target.value))}>{Array.from({length:maxSelectable},(_,i)=><option key={i} value={i+1}>Nivel {i+1}{i+1===progress.highestLevel?' · Actual':''}</option>)}</select></label>
 
             <GlassButton
               onClick={() => {
@@ -1849,7 +1857,7 @@ export function PalabrasGame() {
           <GlassCard>
             <div style={{ padding: '1rem' }}>
               <p style={{ ...styles.muted, marginBottom: 10 }}>
-                Arrastra en línea recta (horizontal, vertical o diagonal). Suelta para validar.
+                Arrastra en línea recta, o toca la primera y la última letra. Puedes trazar en ambos sentidos.
               </p>
               <div
                 style={{
@@ -1885,7 +1893,7 @@ export function PalabrasGame() {
                 ref={gridWrapRef}
                 style={{
                   ...styles.gridWrap,
-                  gridTemplateColumns: `repeat(${grid[0]?.length || 8}, minmax(28px, 1fr))`,
+                  gridTemplateColumns: `repeat(${grid[0]?.length || 8}, minmax(0, 1fr))`,
                 }}
               >
                 {grid.map((row, r) =>
@@ -1913,10 +1921,10 @@ export function PalabrasGame() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
             <GlassCard>
               <div style={{ padding: '0.9rem' }}>
-                <div
+                <div className="crossword-board"
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: `repeat(${xword.size}, minmax(26px, 1fr))`,
+                    gridTemplateColumns: `repeat(${xword.size}, minmax(0, 1fr))`,
                     gap: 2,
                     maxWidth: Math.min(440, xword.size * 36),
                     margin: '0 auto',
@@ -1926,7 +1934,7 @@ export function PalabrasGame() {
                     row.map((sol, c) => {
                       if (sol === '#') {
                         return (
-                          <div
+                          <div className="crossword-block"
                             key={`${r}-${c}`}
                             style={{
                               aspectRatio: '1',
@@ -1941,7 +1949,7 @@ export function PalabrasGame() {
                       const focused = xFocus?.r === r && xFocus?.c === c
                       const val = xUser[r]?.[c] || ''
                       return (
-                        <div
+                        <div className={'crossword-cell'+(focused?' is-focused':'')}
                           key={`${r}-${c}`}
                           style={{
                             position: 'relative',
@@ -2151,11 +2159,12 @@ export function PalabrasGame() {
               <p style={{ ...styles.muted, marginBottom: 10 }}>
                 Une estrellas sin soltar. Si la secuencia es una palabra válida, suma.
               </p>
+              <div className="constellation-word" aria-live="polite">{path.length?path.map(id=>constelNodes.find(node=>node.id===id)?.ch).join(''):'Traza una palabra'}</div>
               <div
                 style={{
                   position: 'relative',
                   width: '100%',
-                  maxWidth: 320,
+                  maxWidth: 400,
                   aspectRatio: '1',
                   margin: '0 auto 12px',
                   borderRadius: '50%',
@@ -2196,6 +2205,8 @@ export function PalabrasGame() {
                   return (
                     <button
                       key={n.id}
+                      data-star-id={n.id}
+                      aria-label={`Letra ${n.ch}`}
                       type="button"
                       onPointerDown={(e) => {
                         e.preventDefault()
@@ -2214,8 +2225,8 @@ export function PalabrasGame() {
                         left: `${n.x}%`,
                         top: `${n.y}%`,
                         transform: 'translate(-50%, -50%)',
-                        width: 36,
-                        height: 36,
+                        width: 'clamp(40px,12vw,54px)',
+                        height: 'clamp(40px,12vw,54px)',
                         borderRadius: '50%',
                         border: `1.5px solid ${on ? 'var(--gco-primary)' : 'var(--gco-glass-border)'}`,
                         background: on ? 'var(--gco-primary)' : 'var(--gco-glass-bg)',
@@ -2334,7 +2345,7 @@ export function PalabrasGame() {
   )
 
   return (
-    <div className="app-shell">
+    <div className="app-shell deduction-game word-lab">
       <header
         style={{
           marginBottom: '1.15rem',

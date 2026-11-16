@@ -1,3 +1,4 @@
+import {RoundGuard} from '@/core/roundGuard'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -427,7 +428,7 @@ const ACTION_COLOR_CHOICES = [
 /* ── raíz ────────────────────────────────────────────────────────────────── */
 export function HabilidadesGame() {
   const navigate = useNavigate()
-  const [view, setView] = useState<View>('menu')
+  const [view, setView] = useState<View>(()=>{const mode=new URLSearchParams(location.search).get('modo');return ['reaccion','punteria','simon','secuencia','numero-fugaz','memoria-posicion','multitono'].includes(mode||'')?mode as View:'menu'})
   const progress = getGameProgress(CAT, GAME_ID)
 
   return (
@@ -672,6 +673,7 @@ type ReactionMode = 'click' | 'release'
 type ReactionState = 'idle' | 'esperando' | 'listo' | 'muy-pronto' | 'resultado'
 
 function ReactionGame() {
+  const GAME_ID='habilidad-reaccion'
   const [mode, setMode] = useState<ReactionMode>(() =>
     loadJSON<ReactionMode>(KEYS.reactionMode, 'click')
   )
@@ -1017,6 +1019,7 @@ function ReactionGame() {
 
 /* ── Puntería (con niveles, contrarreloj, teclado Z/X y señuelos falsos) ─── */
 function AimGame() {
+  const GAME_ID='habilidad-punteria'
   const [level, setLevel] = useState(1)
   const config = useMemo(() => getAimSessionConfig(level), [level])
   const totalTargets = Math.min(8 + level * 2, 28)
@@ -1571,6 +1574,7 @@ type SimonPhase = 'lectura' | 'esperando' | 'acierto' | 'fallo' | 'tiempo'
 type SimonScreen = 'menu' | 'jugar' | 'creativo'
 
 function SimonGame() {
+  const GAME_ID='habilidad-simon'
   const [screen, setScreen] = useState<SimonScreen>('menu')
 
   const [unlockedLevel, setUnlockedLevel] = useState<number>(() =>
@@ -2993,6 +2997,8 @@ function sequenceDifficulty(level: number): { label: string; color: string } {
 }
 
 function SequenceGame() {
+  const GAME_ID='habilidad-secuencia'
+  const guard=useRef(new RoundGuard())
   const [level, setLevel] = useState<number>(() =>
     loadJSON(KEYS.sequenceLevel, 1)
   )
@@ -3033,6 +3039,7 @@ function SequenceGame() {
   const difficulty = sequenceDifficulty(level)
 
   const start = () => {
+    guard.current.reset()
     soundStart()
     const nums = shuffleArray(Array.from({ length: size }, (_, i) => i + 1))
     setBoard(nums)
@@ -3043,6 +3050,7 @@ function SequenceGame() {
     comboRef.current = 0
     setPhase('jugando')
     startedAtRef.current = performance.now()
+    if(tickRef.current)clearInterval(tickRef.current)
     tickRef.current = setInterval(() => {
       setElapsedMs(performance.now() - startedAtRef.current)
     }, 60)
@@ -3050,6 +3058,7 @@ function SequenceGame() {
 
   const finish = useCallback(
     (timeMs: number, finalMistakes: number) => {
+      if(!guard.current.finish())return
       if (tickRef.current) clearInterval(tickRef.current)
       const result: SequenceResult = {
         level,
@@ -3521,6 +3530,8 @@ function flashShowMs(level: number): number {
 }
 
 function FlashNumberGame() {
+  const GAME_ID='habilidad-numero-fugaz'
+  const guard=useRef(new RoundGuard())
   const [level, setLevel] = useState(() => loadJSON(KEYS.flashLevel, 1))
   const [phase, setPhase] = useState<FlashPhase>('listo')
   const [number, setNumber] = useState('')
@@ -3543,6 +3554,7 @@ function FlashNumberGame() {
   const displayTime = flashShowMs(level)
 
   const start = () => {
+    guard.current.reset()
     soundStart()
     const max = Math.pow(10, digits) - 1
     const min = Math.pow(10, digits - 1)
@@ -3558,7 +3570,7 @@ function FlashNumberGame() {
   }
 
   const submit = () => {
-    if (phase !== 'escribiendo') return
+    if (phase !== 'escribiendo' || !guard.current.finish()) return
     const ok = input.trim() === number
     setCorrect(ok)
     setPhase('resultado')
@@ -3857,6 +3869,8 @@ function positionShowMs(level: number): number {
 }
 
 function PositionMemoryGame() {
+  const GAME_ID='habilidad-memoria-posicion'
+  const guard=useRef(new RoundGuard())
   const [level, setLevel] = useState(() => loadJSON(KEYS.positionLevel, 1))
   const [phase, setPhase] = useState<PositionPhase>('listo')
   const [lit, setLit] = useState<number[]>([])
@@ -3880,6 +3894,7 @@ function PositionMemoryGame() {
   const totalCells = grid * grid
 
   const start = () => {
+    guard.current.reset()
     soundStart()
     const indices = shuffleArray(
       Array.from({ length: totalCells }, (_, i) => i)
@@ -3894,7 +3909,7 @@ function PositionMemoryGame() {
   }
 
   const toggleCell = (idx: number) => {
-    if (phase !== 'respondiendo') return
+    if (phase !== 'respondiendo' || !guard.current.finish()) return
     soundClick()
     setSelected((prev) =>
       prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
@@ -4843,11 +4858,13 @@ interface MultitonoResult {
 }
 
 function MultitonoGame() {
+  const GAME_ID='habilidad-multitono'
   const [level, setLevel] = useState<number>(() => loadJSON(KEYS.multitonoLevel, 1))
   const [panel, setPanel] = useState<MultitonoPanel>(() =>
     loadJSON<MultitonoPanel>(KEYS.multitonoPanel, 'rueda')
   )
-  const [target, setTarget] = useState<ColorParams>(() => generateTargetParams(1))
+  const [target, setTarget] = useState<ColorParams>(() => generateTargetParams(level))
+  const roundGuard = useRef(new RoundGuard())
   const [user, setUser] = useState<ColorParams>(DEFAULT_PARAMS)
   const [analyzing, setAnalyzing] = useState(false)
   const [result, setResult] = useState<SimilarityBreakdown | null>(null)
@@ -4877,7 +4894,11 @@ function MultitonoGame() {
   }
 
   const newRound = useCallback((lvl: number) => {
-    setTarget(generateTargetParams(lvl))
+    if(analyzeTimeoutRef.current)clearTimeout(analyzeTimeoutRef.current)
+    roundGuard.current.reset()
+    setAnalyzing(false)
+    setLevel(lvl)
+    setTarget(previous=>{const next=generateTargetParams(lvl);return next.h===previous.h&&next.s===previous.s&&next.l===previous.l?{...next,h:(next.h+73)%360}:next})
     setUser(DEFAULT_PARAMS)
     setResult(null)
     setPassed(null)
@@ -4885,7 +4906,7 @@ function MultitonoGame() {
   }, [])
 
   const check = () => {
-    if (analyzing) return
+    if (analyzing || result || !roundGuard.current.finish()) return
     soundScanSweep()
     setAnalyzing(true)
     setResult(null)
@@ -4903,7 +4924,6 @@ function MultitonoGame() {
       if (ok) {
         soundShapeUnlock()
         const nextLevel = level + 1
-        setLevel(nextLevel)
         saveJSON(KEYS.multitonoLevel, nextLevel)
       } else {
         soundFail()
@@ -4924,7 +4944,7 @@ function MultitonoGame() {
 
   const nextRound = () => {
     soundClick()
-    newRound(level)
+    newRound(passed ? level+1 : level)
   }
   const retrySame = () => {
     soundClick()
@@ -5097,7 +5117,7 @@ function MultitonoGame() {
             </button>
           </div>
 
-          <AnimatePresence mode="wait">
+          <fieldset disabled={analyzing||result!==null} style={{border:0,padding:0,margin:0,minWidth:0}}><AnimatePresence mode="wait">
             <motion.div
               key={panel}
               initial={{ opacity: 0, y: 6 }}
@@ -5110,7 +5130,7 @@ function MultitonoGame() {
               {panel === 'rueda' && <WheelPanel params={user} onChange={setUser} />}
               {panel === 'barras' && <SliderPanel params={user} onChange={setUser} />}
             </motion.div>
-          </AnimatePresence>
+          </AnimatePresence></fieldset>
         </div>
       </div>
 
@@ -5119,9 +5139,9 @@ function MultitonoGame() {
         className="glass-button"
         style={{ width: '100%', marginBottom: '1rem' }}
         onClick={check}
-        disabled={analyzing}
+        disabled={analyzing || result!==null}
       >
-        {analyzing ? 'Analizando…' : 'Comprobar'}
+        {analyzing ? 'Analizando…' : result ? 'Ronda terminada' : 'Comprobar'}
       </button>
 
       <AnimatePresence>

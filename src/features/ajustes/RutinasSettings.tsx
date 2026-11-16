@@ -1,3 +1,4 @@
+import {GAME_CATALOG, GAME_CATEGORIES, type GameCategory} from '@/core/gameCatalog'
 import { useState, useEffect, useRef } from 'react'
 import {
   getRoutinePrefs,
@@ -20,64 +21,8 @@ import { soundClick, soundToggle, soundSuccess } from '@/core/audio/uiSounds'
 /* ---------------------------------------------------------------------- */
 
 type StepKind = 'game' | 'reading' | 'rest'
-type GameCategory = 'memoria' | 'logica'
-
-type GameOption = {
-  path: string
-  label: string
-  category: GameCategory
-  icon: string
-}
-
-const GAME_OPTIONS: GameOption[] = [
-  {
-    path: '/categoria/memoria/secuencia-colores',
-    label: 'Secuencia de colores',
-    category: 'memoria',
-    icon: '🌈',
-  },
-  {
-    path: '/categoria/memoria/cartas',
-    label: 'Memoria de cartas',
-    category: 'memoria',
-    icon: '🃏',
-  },
-  {
-    path: '/categoria/memoria/numeros-asociados',
-    label: 'Números asociados · Palabras · Citas',
-    category: 'memoria',
-    icon: '🔢',
-  },
-  {
-    path: '/categoria/memoria/habilidades',
-    label: 'Habilidades',
-    category: 'memoria',
-    icon: '⚡',
-  },
-  {
-    path: '/categoria/logica/numberpuzzle',
-    label: 'Colocador',
-    category: 'logica',
-    icon: '🧩',
-  },
-  {
-    path: '/categoria/logica/rompecabezas',
-    label: 'Rompecabezas',
-    category: 'logica',
-    icon: '🧩',
-  },
-  {
-    path: '/categoria/logica/despejes',
-    label: 'Despejes',
-    category: 'logica',
-    icon: '🧹',
-  },
-]
-
-const CATEGORY_LABELS: Record<GameCategory, string> = {
-  memoria: 'Memoria',
-  logica: 'Lógica',
-}
+const GAME_OPTIONS = GAME_CATALOG
+const CATEGORY_LABELS = GAME_CATEGORIES
 
 const READING_HOME = '/nutricion'
 const REST_PATH = '/musica'
@@ -1093,7 +1038,7 @@ function GameSelect({
       open={open}
       setOpen={setOpen}
     >
-      {(['memoria', 'logica'] as GameCategory[]).map((cat) => {
+      {(Object.keys(GAME_CATEGORIES) as GameCategory[]).map((cat) => {
         const opts = GAME_OPTIONS.filter((o) => o.category === cat)
         if (!opts.length) return null
         return (

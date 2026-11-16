@@ -1,3 +1,4 @@
+import {RoundGuard,advanceSequence} from '@/core/roundGuard'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
@@ -396,6 +397,9 @@ export function ColorSequenceGame() {
   )
   const [paintIndex, setPaintIndex] = useState(0)
 
+  const roundGuard=useRef(new RoundGuard())
+  const inputRef=useRef<ColorId[]>([])
+  const feedbackTimer=useRef<number|undefined>(undefined)
   const startedAtRef = useRef<number | null>(null)
   const timerRef = useRef<number | null>(null)
   const levelRef = useRef(level)
@@ -434,7 +438,7 @@ export function ColorSequenceGame() {
     }
   }
 
-  useEffect(() => () => clearRunTimer(), [])
+  useEffect(() => () => {clearRunTimer();window.clearTimeout(feedbackTimer.current)}, [])
 
   const startRunTimer = () => {
     clearRunTimer()
@@ -458,6 +462,10 @@ export function ColorSequenceGame() {
   }
 
   const resetPlayState = () => {
+    clearRunTimer()
+    roundGuard.current.reset()
+    inputRef.current=[]
+    window.clearTimeout(feedbackTimer.current)
     setUserInput([])
     setActiveColor(null)
     setMistakeFlash(false)
@@ -620,9 +628,9 @@ export function ColorSequenceGame() {
   )
 
   const startLevel = useCallback(() => {
-    if (!mode) return
+    if (!mode || phase !== 'ready') return
     startLevelAt(level, mode, chainBase, creativeSeq)
-  }, [mode, level, chainBase, creativeSeq, startLevelAt])
+  }, [mode, phase, level, chainBase, creativeSeq, startLevelAt])
 
   /* ── Mostrar secuencia clásica ── */
   useEffect(() => {
@@ -698,6 +706,7 @@ export function ColorSequenceGame() {
   }, [phase, mode, creativeKind, chimpOrder, baseShowMs, speed])
 
   const finishSuccess = (timeMs: number) => {
+    if(!roundGuard.current.finish())return
     const prevBest = getLevelBestTime(GAME_CAT, GAME_ID, level)
     const isNewBest = timeMs > 0 && (prevBest == null || timeMs < prevBest)
 
@@ -719,6 +728,7 @@ export function ColorSequenceGame() {
   }
 
   const finishFail = (timeMs: number) => {
+    if(!roundGuard.current.finish())return
     if (mode === 'climb' || mode === 'progressive' || mode === 'iluminados' || mode === 'chimp') {
       recordLevelResult({
         categoryId: GAME_CAT,
@@ -744,17 +754,21 @@ export function ColorSequenceGame() {
       (mode === 'creative' && creativeKind === 'sequence')
     if (!isClassic) return
 
-    const nextInput = [...userInput, colorId]
+    const step=advanceSequence(sequence,inputRef.current,colorId)
+    if(step.result==='closed')return
+    const nextInput=step.input
+    inputRef.current=nextInput
     setUserInput(nextInput)
     setActiveColor(colorId)
     soundColor(nextInput.length - 1)
-    window.setTimeout(() => setActiveColor(null), 180)
+    window.clearTimeout(feedbackTimer.current)
+    feedbackTimer.current=window.setTimeout(() => setActiveColor(null), 180)
 
-    if (colorId !== sequence[nextInput.length - 1]) {
+    if (step.result === 'fail') {
       finishFail(stopRunTimer())
       return
     }
-    if (nextInput.length === sequence.length) finishSuccess(stopRunTimer())
+    if (step.result === 'success') finishSuccess(stopRunTimer())
     else soundMatch()
   }
 
@@ -2098,6 +2112,7 @@ export function ColorSequenceGame() {
                       key={c.id}
                       type="button"
                       aria-label={c.label}
+                      aria-pressed={isActive}
                       onClick={() => handleColorClick(c.id)}
                       disabled={phase !== 'input'}
                       whileTap={phase === 'input' ? { scale: 0.9 } : undefined}
@@ -2213,7 +2228,7 @@ export function ColorSequenceGame() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
               >
-                <GlassButton onClick={startLevel}>
+                <GlassButton onClick={startLevel} disabled={phase !== 'ready'}>
                   Comenzar nivel {level}
                 </GlassButton>
               </motion.div>

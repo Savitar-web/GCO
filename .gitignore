@@ -103,3 +103,7 @@ Desktop.ini
 server/
 .vercel
 .env*
+
+# Download cache used to build the curated reading corpus
+scripts/reading-sources/
+release-electron*/

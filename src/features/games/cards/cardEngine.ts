@@ -1,8 +1,10 @@
-export type Card = { suit: number; rank: number; up: boolean; public?:boolean; aceValue?:1|11 }
+import {clonePlain} from '../../../core/clonePlain.ts'
+export type CardOptions={packs?:number;banned?:number[];handSize?:number;duplicateMelds?:boolean}
+export type Card = {pack?:number; suit: number; rank: number; up: boolean; public?:boolean; aceValue?:1|11 }
 export type CardKind = 'poker' | 'solitario' | '21' | 'conquian'
 export type CardAction = { type: string; indices?: number[]; from?: number; to?: number; value?:1|11; faceUp?:boolean }
 export type CardState = {
-  kind: CardKind; deck: Card[]; hands: Card[][]; turn: number; phase: string
+  options?:CardOptions;goal?:number;kind: CardKind; deck: Card[]; hands: Card[][]; turn: number; phase: string
   discard: Card[]; melds: Card[][][]; columns: Card[][]; foundations: Card[][]
   winner: number | null; finished: boolean; message: string; stood: boolean[]
   chips: number[]; bets: number[]; pot: number; actions: number; round: number
@@ -12,8 +14,8 @@ export type CardState = {
 }
 export const SUITS = ['♠', '♥', '♣', '♦']
 export function cardName(card: Card) { return `${({ 1: 'A', 11: 'J', 12: 'Q', 13: 'K' } as Record<number, string>)[card.rank] || card.rank}${SUITS[card.suit]}` }
-export function shuffle(kind: CardKind): Card[] {
-  const deck = Array.from({ length: 52 }, (_, index) => ({ suit: Math.floor(index / 13), rank: index % 13 + 1, up: true })).filter(card => kind !== 'conquian' || ![8, 9, 10].includes(card.rank))
+export function shuffle(kind: CardKind, options:CardOptions={}): Card[] {
+  const packs=options.packs??1;if(!Number.isInteger(packs)||packs<1||packs>6||!Array.isArray(options.banned??[])||(options.banned??[]).some(n=>!Number.isInteger(n)||n<0||n>51))throw Error('Barajas o cartas excluidas inválidas.');const banned=new Set(options.banned||[]);const deck = Array.from({length:packs},(_,pack)=>Array.from({ length: 52 }, (_, index) => ({pack,suit: Math.floor(index / 13), rank: index % 13 + 1, up: true })).filter(card => (kind !== 'conquian' || ![8, 9, 10].includes(card.rank))&&!banned.has(card.suit*13+card.rank-1))).flat()
   for (let index = deck.length - 1; index > 0; index--) {
     const buffer = new Uint32Array(1)
     const ceiling = Math.floor(4294967296 / (index + 1)) * (index + 1)
@@ -23,15 +25,15 @@ export function shuffle(kind: CardKind): Card[] {
   }
   return deck
 }
-export function newCardGame(kind: CardKind, players = 2, options:{house?:boolean;visibility?:'first-hidden'|'first-visible'}={}): CardState {
+export function newCardGame(kind: CardKind, players = 2, options:CardOptions&{house?:boolean;visibility?:'first-hidden'|'first-visible'}={}): CardState {
   if (!Number.isInteger(players) || players < 1 || players > 10 || (!['21', 'conquian'].includes(kind) && players !== 2)) throw new Error('Elige entre 1 y 10 jugadores para esta mesa.')
-  const state: CardState = { kind, deck: shuffle(kind), hands: [[], []], turn: 0, phase: kind === 'poker' ? 'bet' : 'draw', discard: [], melds: [[], []], columns: [], foundations: [[], [], [], []], winner: null, finished: false, message: 'Tu turno', stood: [false, false], chips: [98, 98], bets: [0, 0], pot: 4, actions: 0, round: 0 }
+  const state: CardState = { options:{packs:options.packs??1,banned:options.banned||[],handSize:options.handSize??0,duplicateMelds:!!options.duplicateMelds},kind, deck: shuffle(kind,options), hands: [[], []], turn: 0, phase: kind === 'poker' ? 'bet' : 'draw', discard: [], melds: [[], []], columns: [], foundations: [[], [], [], []], winner: null, finished: false, message: 'Tu turno', stood: [false, false], chips: [98, 98], bets: [0, 0], pot: 4, actions: 0, round: 0 }
   if (kind === 'solitario') {
     state.columns = Array.from({ length: 7 }, (_, column) => Array.from({ length: column + 1 }, (_, index) => ({ ...state.deck.pop()!, up: index === column })))
   } else {
-    const count = kind === 'poker' ? 5 : kind === '21' ? 2 : 10
+    const capacity=Math.floor((state.deck.length-Math.max(6,players))/players);const requested=options.handSize??0;if(!Number.isInteger(requested)||requested<0||requested>12)throw Error('El reparto debe estar entre 3 y 12 cartas.');const count = kind === 'poker' ? 5 : kind === '21' ? 2 : requested||Math.max(3,Math.min(10,Math.floor(20/players),capacity));if(state.deck.length<players*count+1||kind==='conquian'&&count<3)throw Error('No quedan cartas suficientes: añade barajas, reduce el reparto o restablece las exclusiones.');if(kind==='conquian')state.goal=count+1
     // Large tables use independent shuffled packs; a standard 40-card deck cannot deal ten hands.
-    const packs = kind === 'conquian' ? Math.ceil(players / 2) : kind === '21' ? Math.ceil(players / 4) : 1
+    const packs = 1
     for (let pack = 1; pack < packs; pack++) state.deck.push(...shuffle(kind))
     for (let i = state.deck.length - 1; i > 0; i--) { const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1); [state.deck[i], state.deck[j]] = [state.deck[j], state.deck[i]] }
     state.hands = Array.from({length: players}, () => Array.from({ length: count }, () => state.deck.pop()!))
@@ -69,9 +71,9 @@ export function pokerRank(cards: Card[]): number[] {
   return [0, ...ranks]
 }
 export const POKER_NAMES = ['Carta alta', 'Pareja', 'Doble pareja', 'Trío', 'Escalera', 'Color', 'Full', 'Póker', 'Escalera de color']
-export function validMeld(cards: Card[]) {
+export function validMeld(cards: Card[],allowDuplicates=false) {
   if (cards.length < 3) return false
-  if (cards.length <= 4 && cards.every(card => card.rank === cards[0].rank) && new Set(cards.map(card => card.suit)).size === cards.length) return true
+  if (cards.length <= 4 && cards.every(card => card.rank === cards[0].rank) && (allowDuplicates||new Set(cards.map(card => card.suit)).size === cards.length)) return true
   const ranks = cards.map(card => card.rank > 10 ? card.rank - 3 : card.rank).sort((first, second) => first - second)
   return cards.every(card => card.suit === cards[0].suit) && ranks.every((rank, index) => index === 0 || rank === ranks[index - 1] + 1)
 }
@@ -106,7 +108,7 @@ export function settleTwentyOne(state: CardState) {
 }
 export function leaveCardGame(previous: CardState, seat: number): CardState {
   if(previous.finished || previous.abandoned?.includes(seat)) throw new Error('Ya no participas en esta partida.')
-  const state=structuredClone(previous)
+  const state=clonePlain(previous)
   state.abandoned=[...(state.abandoned||[]),seat]
   if(state.house===seat){finish(state,null,'La Casa se retiró: mesa cancelada.');return state}
   if(state.house!==undefined&&state.pendingSeat===seat){delete state.pendingSeat;state.phase='play';state.turn=seat}
@@ -127,7 +129,7 @@ export function applyCardAction(previous: CardState, seat: number, action: CardA
   if (previous.finished) throw new Error('La partida ya terminó.')
   if (previous.abandoned?.includes(seat)) throw new Error('Ya te retiraste de esta mesa.')
   if (previous.kind !== 'solitario' && seat !== previous.turn) throw new Error('Espera tu turno.')
-  const state: CardState = structuredClone(previous)
+  const state: CardState = clonePlain(previous)
   state.event={id:(state.event?.id||0)+1,type:action.type,seat,to:action.to,amount:1}
   if (!Number.isInteger(seat) || seat < 0 || seat >= state.hands.length) throw new Error('Asiento inválido.')
   let opponent = (seat + 1) % state.hands.length
@@ -194,12 +196,12 @@ export function applyCardAction(previous: CardState, seat: number, action: CardA
     } else if (action.type === 'meld' && state.phase === 'discard') {
       const chosen = indices.map(index => state.hands[seat][index])
       const existing = action.to === undefined ? [] : state.melds[seat][action.to]
-      if (!existing || !chosen.length || !validMeld([...existing, ...chosen])) throw new Error('Forma un trío o una escalera del mismo palo (7 sigue con J).')
-      if (chosen.length === state.hands[seat].length && state.melds[seat].flat().length + chosen.length < 11) throw new Error('Conserva una carta para descartar hasta completar once combinadas.')
+      if (!existing || !chosen.length || !validMeld([...existing, ...chosen],state.options?.duplicateMelds)) throw new Error('Forma un trío o una escalera del mismo palo (7 sigue con J).')
+      if (chosen.length === state.hands[seat].length && state.melds[seat].flat().length + chosen.length < (state.goal??11)) throw new Error('Conserva una carta para descartar hasta completar once combinadas.')
       if (action.to === undefined) state.melds[seat].push(chosen)
       else state.melds[seat][action.to] = [...existing, ...chosen]
       state.hands[seat] = state.hands[seat].filter((_, index) => !indices.includes(index))
-      if (state.melds[seat].flat().length >= 11) finish(state, seat, '¡Once cartas combinadas!')
+      if (state.melds[seat].flat().length >= (state.goal??11)) finish(state, seat, `¡${state.goal??11} cartas combinadas!`)
     } else if (action.type === 'discard' && state.phase === 'discard' && indices.length === 1) {
       state.discard.push(state.hands[seat].splice(indices[0], 1)[0]); state.turn = opponent; state.phase = 'draw'
     } else throw new Error('Roba, forma combinaciones y descarta una carta.')
@@ -234,7 +236,7 @@ export function applyCardAction(previous: CardState, seat: number, action: CardA
   return state
 }
 export function cardAI(state: CardState, seat: number): CardAction {
-  if (state.kind === '21') return { type: blackjackValue(state.hands[seat]) < 17 ? 'hit' : 'stand' }
+  if (state.kind === '21') return { type: state.deck.length>0 && blackjackValue(state.hands[seat]) < 17 ? 'hit' : 'stand' }
   if (state.kind === 'poker') {
     if (state.phase === 'exchange') {
       const indices = state.hands[seat].map((card, index) => state.hands[seat].filter(other => other.rank === card.rank).length === 1 ? index : -1).filter(index => index >= 0)
@@ -246,8 +248,8 @@ export function cardAI(state: CardState, seat: number): CardAction {
     if (state.phase === 'draw') return { type: 'draw' }
     const hand = state.hands[seat]
     for (let first = 0; first < hand.length; first++) {
-      for (let target = 0; target < state.melds[seat].length; target++) if ((hand.length>1||state.melds[seat].flat().length+1>=11)&&validMeld([...state.melds[seat][target], hand[first]])) return { type: 'meld', indices: [first], to: target }
-      for (let second = first + 1; second < hand.length; second++) for (let third = second + 1; third < hand.length; third++) if ((hand.length>3||state.melds[seat].flat().length+3>=11)&&validMeld([hand[first], hand[second], hand[third]])) return { type: 'meld', indices: [first, second, third] }
+      for (let target = 0; target < state.melds[seat].length; target++) if ((hand.length>1||state.melds[seat].flat().length+1>=(state.goal??11))&&validMeld([...state.melds[seat][target], hand[first]],state.options?.duplicateMelds)) return { type: 'meld', indices: [first], to: target }
+      for (let second = first + 1; second < hand.length; second++) for (let third = second + 1; third < hand.length; third++) if ((hand.length>3||state.melds[seat].flat().length+3>=(state.goal??11))&&validMeld([hand[first], hand[second], hand[third]],state.options?.duplicateMelds)) return { type: 'meld', indices: [first, second, third] }
     }
     const scores = hand.map(card => hand.filter(other => other !== card && (other.rank === card.rank || (other.suit === card.suit && Math.abs(other.rank - card.rank) <= 2))).length)
     return { type: 'discard', indices: [scores.indexOf(Math.min(...scores))] }

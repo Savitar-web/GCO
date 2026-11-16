@@ -1,3 +1,4 @@
+import {createPortal} from 'react-dom'
 /* ═══════════════════════════════════════════════════════════════════════════
    DESPEJES — Módulo de lógica autocontenido
    ═══════════════════════════════════════════════════════════════════════════
@@ -118,7 +119,17 @@ export interface MazeBoulder {
   cleared: boolean
 }
 
+export interface MazeAdventure {
+ lever:MazeCoord
+ door:MazeCoord
+ portals?:{a:MazeCoord;b:MazeCoord}
+ brittle:MazeCoord[]
+ terminals:{id:string;at:MazeCoord;game:GameId}[]
+ solution:Direction[]
+}
+export interface MazeAdventureState {player:MazeCoord;boulders:MazeBoulder[];opened:string[];collapsed:number[]}
 export interface LaberintoLevel {
+ adventure?:MazeAdventure
   level: number
   rows: number
   cols: number
@@ -248,7 +259,8 @@ function simulateMazeClear(grid: MazeCellType[][], boulders: MazeBoulder[], star
     // MOMENTO: si otro obstáculo todavía activo (procesado después en el
     // orden) ocupa justo esa celda, el empujón fallaría en el juego real
     // aunque el camino hasta el punto de aproximación sí exista.
-    if (work[b.holeRow][b.holeCol] === 'wall') return false
+    if (b.kind === 'glass' && work[b.holeRow][b.holeCol] === 'wall') return false
+    if (boulders.some(other => other !== b && work[other.row][other.col] === 'wall' && other.row === b.holeRow && other.col === b.holeCol)) return false
     work[b.row][b.col] = 'floor'
     if (b.kind === 'boulder') work[b.holeRow][b.holeCol] = 'floor'
     cur = { row: b.row, col: b.col }
@@ -386,7 +398,7 @@ function placeMazeBoulders(grid: MazeCellType[][], path: MazeCoord[], count: num
 
 export function getLaberintoDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const rooms = Math.min(5 + Math.floor(lv / 1.8), 26)
+  const rooms = Math.min(4 + Math.floor((lv - 1) / 12), 8)
   const braidRatio = Math.min(0.03 + lv * 0.011, 0.4)
   const boulderCount = Math.min(1 + Math.floor(lv / 2.2), 16)
   const glassRatio = lv < 4 ? 0 : Math.min(0.12 + lv * 0.01, 0.42)
@@ -397,7 +409,7 @@ export function getLaberintoDifficulty(level: number) {
   return { rooms, braidRatio, boulderCount, glassRatio, fogRadius, moveLimit, targetSeconds, timeLimitSeconds }
 }
 
-export function generateLaberintoLevel(level: number, opts?: { seedSalt?: number }): LaberintoLevel {
+function generateLaberintoCandidate(level: number, opts?: { seedSalt?: number }): LaberintoLevel {
   const lv = Math.max(1, Math.floor(level))
   const seed = levelSeed(lv, 8100 + (opts?.seedSalt ?? 0))
   const rng = mulberry32(seed)
@@ -584,10 +596,10 @@ export interface CromaLevel {
 
 export function getCromaDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const size = Math.min(5 + Math.floor(lv / 4), 11)
-  const gemCount = Math.min(2 + Math.floor(lv / 2.4), GEM_COLORS.length)
+  const size = Math.min(5 + Math.floor(lv / 12), 9)
+  const gemCount = Math.min(4 + Math.floor(lv / 8), GEM_COLORS.length)
   const obstacleCount = Math.min(Math.floor(lv / 1.6), Math.floor(size * size * 0.3))
-  const shuffleMoves = Math.min(10 + lv * 4, 320)
+  const shuffleMoves = Math.min(80 + lv * 8, 480)
   const moveLimit = Math.round(shuffleMoves * 1.9 + gemCount * 4)
   const targetSeconds = Math.max(18, Math.round(shuffleMoves * 0.9 + gemCount * 3))
   return { size, gemCount, obstacleCount, shuffleMoves, moveLimit, targetSeconds }
@@ -597,7 +609,7 @@ function isBorderCell(row: number, col: number, size: number) {
   return row === 0 || col === 0 || row === size - 1 || col === size - 1
 }
 
-export function generateCromaLevel(level: number, opts?: { seedSalt?: number }): CromaLevel {
+function generateCromaCandidate(level: number, opts?: { seedSalt?: number }): CromaLevel {
   const lv = Math.max(1, Math.floor(level))
   const seed = levelSeed(lv, 9100 + (opts?.seedSalt ?? 0))
   const rng = mulberry32(seed)
@@ -801,7 +813,7 @@ export function getPintarDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
   const pool = lv <= 6 ? SMALL_SHAPE_ORDER : lv <= 14 ? PAINT_SHAPE_ORDER : BIG_SHAPE_ORDER
   const shape = pool[(lv - 1) % pool.length]
-  const colorCount = Math.min(2 + Math.floor(lv / 2.2), PAINT_PALETTE.length)
+  const colorCount = Math.min(3 + Math.floor(lv / 10), 8)
   const obstructedRatio = Math.min(0.08 + lv * 0.016, 0.5)
   const clearsNeeded = lv < 8 ? 1 : lv < 18 ? 2 : lv < 30 ? 3 : 4
   const targetSeconds = Math.max(20, Math.round(shapeActiveCells(PAINT_SHAPES[shape]).length * 2.4))
@@ -813,7 +825,10 @@ export function generatePintarLevel(level: number, opts?: { seedSalt?: number })
   const seed = levelSeed(lv, 9700 + (opts?.seedSalt ?? 0))
   const rng = mulberry32(seed)
   const d = getPintarDifficulty(lv)
-  const mask = PAINT_SHAPES[d.shape]
+  let mask = PAINT_SHAPES[d.shape].slice()
+  const turns=Math.floor(rng()*4)
+  for(let t=0;t<turns;t++)mask=Array.from({length:mask[0].length},(_,r)=>mask.map(row=>row[r]).reverse().join(''))
+  if(rng()<.5)mask=mask.map(row=>row.split('').reverse().join(''))
   const activeCells = shapeActiveCells(mask)
   const palette = PAINT_PALETTE.slice(0, d.colorCount)
 
@@ -990,116 +1005,19 @@ export function getIceSlideDifficulty(level: number) {
  * como pedía el nivel, y el generador terminaba cayendo casi siempre a un
  * respaldo trivial sin obstáculos).
  */
-function buildIceSlidePath(rows: number, cols: number, segments: number, rng: () => number): { grid: IceCellType[][]; start: MazeCoord; target: MazeCoord; achieved: number } {
-  const grid: IceCellType[][] = Array.from({ length: rows }, () => Array<IceCellType>(cols).fill('ice'))
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) if (r === 0 || c === 0 || r === rows - 1 || c === cols - 1) grid[r][c] = 'wall'
-
-  let cur: MazeCoord = { row: 1 + Math.floor(rng() * (rows - 2)), col: 1 + Math.floor(rng() * (cols - 2)) }
-  grid[cur.row][cur.col] = 'floor'
-  const start = { ...cur }
-  const dirs: Direction[] = ['up', 'down', 'left', 'right']
-  let achieved = 0
-
-  for (let i = 0; i < segments; i++) {
-    // Cualquier dirección es válida: como cada parada intermedia se marca
-    // como celda "suelo" (no-hielo), un deslizamiento SIEMPRE se detiene ahí
-    // sin importar qué haya más allá — así que ni retroceder ni seguir
-    // recto puede "saltarse" una parada y crear un atajo no intencional.
-    const avail = shuffledArray(dirs, rng)
-    let moved = false
-    for (const dir of avail) {
-      const { dr, dc } = DIRECTION_DELTA[dir]
-      const dist = 2 + Math.floor(rng() * 2)
-      const nr = cur.row + dr * dist
-      const nc = cur.col + dc * dist
-      if (nr <= 0 || nr >= rows - 1 || nc <= 0 || nc >= cols - 1) continue
-      let clearPath = true
-      for (let s = 1; s <= dist; s++) {
-        const rr = cur.row + dr * s
-        const cc = cur.col + dc * s
-        if (grid[rr][cc] !== 'ice') {
-          clearPath = false
-          break
-        }
-      }
-      if (!clearPath) continue
-      cur = { row: nr, col: nc }
-      grid[cur.row][cur.col] = 'floor'
-      moved = true
-      achieved++
-      break
-    }
-    if (!moved) break
-  }
-  return { grid, start, target: { ...cur }, achieved }
+export function generateIceSlideLevel(level:number,opts?:{seedSalt?:number}):IceSlideLevel {
+ const lv=Math.max(1,Math.floor(level)),size=Math.min(8+Math.floor(lv/12),13),seed=levelSeed(lv,10100+(opts?.seedSalt??0)),rng=mulberry32(seed)
+ let best:IceSlideLevel|null=null,bestDepth=-1
+ for(let attempt=0;attempt<100;attempt++){
+  const grid:IceCellType[][]=Array.from({length:size},(_,r)=>Array.from({length:size},(_,c)=>r===0||c===0||r===size-1||c===size-1?'wall':rng()<.22?'wall':'ice'))
+  const start={row:1+Math.floor(rng()*(size-2)),col:1+Math.floor(rng()*(size-2))};grid[start.row][start.col]='floor'
+  const candidate:IceSlideLevel={level:lv,rows:size,cols:size,grid,start,target:start,moveLimit:0,targetSeconds:60,goal:'Planea tus paradas: desliza hasta la meta.',seed}
+  const queue=[{pos:start,depth:0}],seen=new Set([start.row*size+start.col]);let far=queue[0]
+  for(let i=0;i<queue.length;i++){const cur=queue[i];if(cur.depth>far.depth)far=cur;for(const dir of Object.keys(DIRECTION_DELTA) as Direction[]){const pos=iceSlideTarget(candidate,cur.pos,dir),key=pos.row*size+pos.col;if(!seen.has(key)){seen.add(key);queue.push({pos,depth:cur.depth+1})}}}
+  candidate.target=far.pos;candidate.grid[far.pos.row][far.pos.col]='goal';const depth=(iceSlideBfs(candidate)?.length??1)-1;if(depth>bestDepth){candidate.moveLimit=Math.ceil(depth*1.6);candidate.targetSeconds=30+depth*5;best=candidate;bestDepth=depth}
+ }
+ return best!
 }
-
-export function generateIceSlideLevel(level: number, opts?: { seedSalt?: number }): IceSlideLevel {
-  const lv = Math.max(1, Math.floor(level))
-  const d = getIceSlideDifficulty(lv)
-  const maxAttempts = 150
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const seed = levelSeed(lv, 10100 + (opts?.seedSalt ?? 0) + attempt * 733)
-    const rng = mulberry32(seed)
-    const { grid, start, target, achieved } = buildIceSlidePath(d.size, d.size, d.segments, rng)
-    // Filtro rápido: si el recorrido se atascó muy por debajo del objetivo,
-    // ni siquiera vale la pena decorar y validar con BFS — se prueba
-    // directamente con otra semilla (esto es barato, así que probar muchas
-    // semillas es mucho más barato que antes).
-    if (achieved < Math.max(2, Math.floor(d.segments * 0.75))) continue
-
-    const decorGrid = grid.map((row) => row.slice())
-    let placedDecor = 0
-    let guard = 0
-    while (placedDecor < d.decorCount && guard < d.decorCount * 15) {
-      guard++
-      const r = 1 + Math.floor(rng() * (d.size - 2))
-      const c = 1 + Math.floor(rng() * (d.size - 2))
-      if (decorGrid[r][c] !== 'ice') continue
-      if ((r === start.row && c === start.col) || (r === target.row && c === target.col)) continue
-      decorGrid[r][c] = rng() < 0.5 ? 'wall' : 'floor'
-      placedDecor++
-    }
-
-    const finalGrid = decorGrid.map((row) => row.slice())
-    finalGrid[target.row][target.col] = 'goal'
-
-    const candidate: IceSlideLevel = {
-      level: lv,
-      rows: d.size,
-      cols: d.size,
-      grid: finalGrid,
-      start,
-      target,
-      moveLimit: d.moveLimit,
-      targetSeconds: d.targetSeconds,
-      goal: 'Deslízate sobre el hielo hasta llegar a la meta.',
-      seed,
-    }
-    const path = iceSlideBfs(candidate)
-    if (path && path.length - 1 >= d.minPathLength) return candidate
-  }
-
-  // Respaldo garantizado: construcción simple sin decoración, siempre resoluble.
-  const fallbackSeed = levelSeed(lv, 10999 + (opts?.seedSalt ?? 0))
-  const fallbackRng = mulberry32(fallbackSeed)
-  const size = Math.min(d.size, 13)
-  const { grid, start, target } = buildIceSlidePath(size, size, Math.max(3, Math.floor(d.segments * 0.6)), fallbackRng)
-  grid[target.row][target.col] = 'goal'
-  return {
-    level: lv,
-    rows: size,
-    cols: size,
-    grid,
-    start,
-    target,
-    moveLimit: 0,
-    targetSeconds: Math.max(20, d.targetSeconds),
-    goal: 'Deslízate sobre el hielo hasta llegar a la meta.',
-    seed: fallbackSeed,
-  }
-}
-
 
 export function calcIceSlideStars(moves: number, timeMs: number, targetSeconds: number, moveLimit: number): 0 | 1 | 2 | 3 {
   if (moves <= 0) return 0
@@ -1206,9 +1124,9 @@ export function isSwitchLevelSolvable(level: SwitchLevel): boolean {
 
 export function getSwitchDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const rooms = Math.min(4 + Math.floor(lv / 2), 16)
+  const rooms = Math.min(4 + Math.floor(lv / 12), 8)
   const braidRatio = Math.min(0.05 + lv * 0.01, 0.3)
-  const switchCount = Math.min(1 + Math.floor(lv / 2.5), 8)
+  const switchCount = Math.min(2 + Math.floor(lv / 8), 6)
   const decoySwitches = lv >= 6 ? Math.min(Math.floor((lv - 6) / 4) + 1, 5) : 0
   const size = rooms * 2 + 1
   const moveLimit = Math.round(size * size * 0.9 + switchCount * 16 + decoySwitches * 10)
@@ -1251,7 +1169,7 @@ function switchReachable(grid: ('wall' | 'floor')[][], doorCells: MazeCoord[], o
   return dist
 }
 
-export function generateSwitchLevel(level: number, opts?: { seedSalt?: number }): SwitchLevel {
+function generateSwitchCandidate(level: number, opts?: { seedSalt?: number }): SwitchLevel {
   const lv = Math.max(1, Math.floor(level))
   const d = getSwitchDifficulty(lv)
   const maxAttempts = 30
@@ -1483,7 +1401,7 @@ export function isTeleportLevelSolvable(level: TeleportLevel): boolean {
 
 export function getTeleportDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const rooms = Math.min(3 + Math.floor(lv / 2.5), 12)
+  const rooms = Math.min(3 + Math.floor(lv / 15), 6)
   const braidRatio = Math.min(0.04 + lv * 0.009, 0.26)
   const pairCount = Math.min(1 + Math.floor(lv / 5), 4)
   const decoyPairs = lv >= 8 ? Math.min(Math.floor((lv - 8) / 5) + 1, 4) : 0
@@ -1493,7 +1411,7 @@ export function getTeleportDifficulty(level: number) {
   return { rooms, braidRatio, pairCount, decoyPairs, moveLimit, targetSeconds }
 }
 
-export function generateTeleportLevel(level: number, opts?: { seedSalt?: number }): TeleportLevel {
+function generateTeleportCandidate(level: number, opts?: { seedSalt?: number }): TeleportLevel {
   const lv = Math.max(1, Math.floor(level))
   const d = getTeleportDifficulty(lv)
   const maxAttempts = 30
@@ -1702,15 +1620,15 @@ function laserOrientationForBend(from: Direction, to: Direction): MirrorOrientat
 
 export function getLaserDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const size = Math.min(9 + Math.floor(lv / 2), 21)
-  const bendCount = Math.min(2 + Math.floor(lv / 2.2), 11)
+  const size = Math.min(8 + Math.floor(lv / 12), 13)
+  const bendCount = Math.min(4 + Math.floor(lv / 8), 10)
   const wallCount = Math.min(Math.floor(lv / 1.6), 18)
   const moveLimit = 0
   const targetSeconds = Math.max(24, Math.round(24 + lv * 3.4))
   return { size, bendCount, wallCount, moveLimit, targetSeconds }
 }
 
-export function generateLaserLevel(level: number, opts?: { seedSalt?: number }): LaserLevel {
+function generateLaserCandidate(level: number, opts?: { seedSalt?: number }): LaserLevel {
   const lv = Math.max(1, Math.floor(level))
   const d = getLaserDifficulty(lv)
   const maxAttempts = 40
@@ -1984,14 +1902,14 @@ function rotationForSingleDir(base: Direction, want: Direction): 0 | 90 | 180 | 
 
 export function getCircuitDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const size = Math.min(5 + Math.floor(lv / 3), 13)
-  const bends = Math.min(1 + Math.floor(lv / 3), 8)
+  const size = Math.min(6 + Math.floor(lv / 12), 11)
+  const bends = Math.min(4 + Math.floor(lv / 6), 10)
   const moveLimit = 0
   const targetSeconds = Math.max(20, Math.round(15 + lv * 2.4))
   return { size, bends, moveLimit, targetSeconds }
 }
 
-export function generateCircuitLevel(level: number, opts?: { seedSalt?: number }): CircuitLevel {
+function generateCircuitCandidate(level: number, opts?: { seedSalt?: number }): CircuitLevel {
   const lv = Math.max(1, Math.floor(level))
   const d = getCircuitDifficulty(lv)
   const maxAttempts = 30
@@ -2239,6 +2157,7 @@ const PLAYER_CUSTOM_SKIN_KEY = 'gco:despejes-player-custom-skin'
 export function loadPlayerSkin(): string {
   try {
     const raw = localStorage.getItem(PLAYER_SKIN_KEY)
+    if(raw?.startsWith('data:image/png;base64,'))return raw
     if (raw === CUSTOM_SKIN_SLOT) {
       const custom = localStorage.getItem(PLAYER_CUSTOM_SKIN_KEY)
       if (custom && isSingleGrapheme(custom)) return custom
@@ -2303,6 +2222,9 @@ export interface DPadSettings {
   gap: number
   /** Estilo visual de la cruceta. */
   style: DPadStyle
+  mode?: "dpad" | "joystick"
+  positionX?:number
+  positionY?:number
 }
 
 export type DPadStyle = 'classic' | 'minimal' | 'neon' | 'glass'
@@ -2330,6 +2252,8 @@ export function clampDPadSettings(s: Partial<DPadSettings>): DPadSettings {
     buttonSize: clampNum(Math.round(s.buttonSize ?? base.buttonSize), DPAD_BUTTON_MIN, DPAD_BUTTON_MAX),
     gap: clampNum(Math.round(s.gap ?? base.gap), DPAD_GAP_MIN, DPAD_GAP_MAX),
     style,
+    mode: s.mode === "joystick" ? "joystick" : "dpad",
+    positionX:clampNum(s.positionX??.5,0,1),positionY:clampNum(s.positionY??.5,0,1),
   }
 }
 
@@ -2393,7 +2317,7 @@ export interface PathUniqueLevel {
 
 export function getPathUniqueDifficulty(level: number) {
   const lv = Math.max(1, Math.floor(level))
-  const base = lv <= 2 ? 3 : lv <= 5 ? 4 : lv <= 9 ? 5 : lv <= 14 ? 6 : lv <= 20 ? 7 : lv <= 27 ? 8 : lv <= 35 ? 9 : 10
+  const base = lv <= 2 ? 4 : lv <= 5 ? 5 : lv <= 9 ? 5 : lv <= 14 ? 6 : lv <= 20 ? 7 : lv <= 27 ? 8 : lv <= 35 ? 9 : 10
   const rows = Math.min(base, 11)
   const cols = Math.min(base + (lv % 2 === 0 ? 1 : 0), 12)
   // Número FIJO de obstáculos (no un porcentaje del área): probado
@@ -2694,6 +2618,100 @@ export function calcPathUniqueStars(moves: number, timeMs: number, targetSeconds
   return stars
 }
 
+
+/** A perfect-maze backbone gives a known route; mechanics are inserted in route order. */
+export function generateAdventureMaze(level:number,opts?:{seedSalt?:number}):LaberintoLevel {
+ const seed=levelSeed(level,55000+(opts?.seedSalt??0)),rng=mulberry32(seed),rooms=Math.min(5+Math.floor(level/12),8)
+ let grid=carveMaze(rooms,rng),start={row:1,col:1},exit=farthestFloorCell(grid,start),path=mazeBfsPath(grid,start,exit)!
+ const branchScore=(candidate:MazeCellType[][],route:MazeCoord[])=>{
+  const index=(fraction:number)=>Math.floor((route.length-1)*fraction)
+  const blocked=candidate.map(row=>row.slice())
+  for(const fraction of [level>=12?.32:.22,.50]){const point=route[index(fraction)];blocked[point.row][point.col]='wall'}
+  const distances=mazeBfsDistances(blocked,route[index(.40)])
+  const main=new Set(route.map(point=>point.row*candidate[0].length+point.col))
+  let branch=0
+  for(let row=1;row<candidate.length-1;row++)for(let col=1;col<candidate[0].length-1;col++){
+    const key=row*candidate[0].length+col
+    if(!main.has(key))branch=Math.max(branch,distances[key])
+  }
+  return (branch>0?10000:0)+branch*20+route.length
+ }
+ let bestScore=branchScore(grid,path)
+ for(let i=0;i<40;i++){const g=carveMaze(rooms,rng),end=farthestFloorCell(g,start),route=mazeBfsPath(g,start,end)!,score=branchScore(g,route);if(score>bestScore){grid=g;exit=end;path=route;bestScore=score}}
+ const at=(fraction:number)=>Math.floor((path.length-1)*fraction)
+ const boulders:MazeBoulder[]=[]
+ for(let i=2;i<at(.18)-1;i++){const a=path[i-1],b=path[i],c=path[i+1];if(c.row-a.row===2*(b.row-a.row)&&c.col-a.col===2*(b.col-a.col)){boulders.push({id:'route-rock',kind:'boulder',...b,holeRow:c.row,holeCol:c.col,cleared:false});grid[c.row][c.col]='hole';break}}
+ const portalA=at(.22),portalB=at(.32),portals=level>=12?{a:path[portalA],b:path[portalB]}:undefined
+ if(portals)grid[path[portalA+1].row][path[portalA+1].col]='wall'
+ const available:GameId[]=['laser'];if(level>=28)available.push('circuitos');if(level>=36)available.push('hielo');if(level>=44)available.push('croma');if(level>=52)available.push('pintar');if(level>=60)available.push('camino');if(level>=68)available.push('teleport');if(level>=76)available.push('interruptores')
+ const count=level<20?0:Math.min(3,1+Math.floor((level-20)/24))
+ const terminals=Array.from({length:count},(_,i)=>({id:`terminal-${i}`,at:path[at(.65+i*.11)],game:available[(level-20+i)%available.length]}))
+ // The lever belongs to a side branch before the locked door.
+ const approach=path[at(.40)]
+ const branchGrid=grid.map(row=>row.slice())
+ branchGrid[path[at(.50)].row][path[at(.50)].col]='wall'
+ if(portals){branchGrid[portals.a.row][portals.a.col]='wall';branchGrid[portals.b.row][portals.b.col]='wall'}
+ for(const rock of boulders)branchGrid[rock.row][rock.col]='wall'
+ const mainCells=new Set(path.map(point=>point.row*grid[0].length+point.col))
+ let lever=approach,detour:MazeCoord[]=[approach]
+ const distances=mazeBfsDistances(branchGrid,approach)
+ for(let row=1;row<grid.length-1;row++)for(let col=1;col<grid[0].length-1;col++){
+  const key=row*grid[0].length+col
+  if(mainCells.has(key)||distances[key]<detour.length+2)continue
+  const route=mazeBfsPath(branchGrid,approach,{row,col})
+  if(route&&route.length>detour.length){detour=route;lever={row,col}}
+ }
+ const direction=(a:MazeCoord,b:MazeCoord):Direction=>b.row>a.row?'down':b.row<a.row?'up':b.col>a.col?'right':'left'
+ const branchMoves:Direction[]=[]
+ for(let index=1;index<detour.length;index++)branchMoves.push(direction(detour[index-1],detour[index]))
+ const reverseMoves:Direction[]=[]
+ for(let index=detour.length-1;index>0;index--)reverseMoves.push(direction(detour[index],detour[index-1]))
+ const solution:Direction[]=[]
+ for(let i=1;i<path.length;i++){const a=path[i-1],b=path[i];solution.push(direction(a,b));if(i===at(.40))solution.push(...branchMoves,...reverseMoves);if(portals&&i===portalA)i=portalB}
+ return {level,rows:grid.length,cols:grid[0].length,grid,start,exit,boulders,fogRadius:0,moveLimit:solution.length*2,targetSeconds:solution.length*2+count*100,timeLimitSeconds:solution.length*4+count*240+90,goal:'Activa la palanca, cruza los portales y resuelve los paneles para abrir las puertas.',seed,adventure:{lever,door:path[at(.50)],portals,brittle:level>=16?[path[at(.57)],path[at(.60)]]:[],terminals,solution}}
+}
+export function initialAdventureState(level:LaberintoLevel):MazeAdventureState{return {player:level.start,boulders:level.boulders,opened:[],collapsed:[]}}
+export function adventureStep(level:LaberintoLevel,state:MazeAdventureState,dir:Direction):{state:MazeAdventureState;moved:boolean;event:'move'|'push'|'portal'|'crack'|'lever'} {
+ const a=level.adventure
+ if(!a){const result=laberintoStep(level,state.boulders,state.player,dir);return {state:{...state,player:result.player,boulders:result.boulders},moved:result.moved,event:result.pushed?'push':'move'}}
+ const grid=level.grid.map(row=>row.slice())
+ if(!state.opened.includes('door'))grid[a.door.row][a.door.col]='wall'
+ for(const t of a.terminals)if(!state.opened.includes(t.id))grid[t.at.row][t.at.col]='wall'
+ for(const key of state.collapsed)grid[Math.floor(key/level.cols)][key%level.cols]='wall'
+ const result=laberintoStep({...level,grid},state.boulders,state.player,dir)
+ if(!result.moved)return {state,moved:false,event:'move'}
+ const next={...state,player:result.player,boulders:result.boulders,opened:[...state.opened],collapsed:[...state.collapsed]}
+ let event:'move'|'push'|'portal'|'crack'|'lever'=result.pushed?'push':'move'
+ if(a.brittle.some(p=>p.row===state.player.row&&p.col===state.player.col)){next.collapsed.push(state.player.row*level.cols+state.player.col);event='crack'}
+ if(a.portals){const {a:pa,b:pb}=a.portals;if(next.player.row===pa.row&&next.player.col===pa.col){next.player=pb;event='portal'}else if(next.player.row===pb.row&&next.player.col===pb.col){next.player=pa;event='portal'}}
+ if(next.player.row===a.lever.row&&next.player.col===a.lever.col&&!next.opened.includes('door')){next.opened.push('door');event='lever'}
+ return {state:next,moved:true,event}
+}
+
+export function teleportSolutionLength(level:TeleportLevel):number {
+ const queue=[{pos:level.start,depth:0}],seen=new Set([level.start.row*level.cols+level.start.col])
+ for(let i=0;i<queue.length;i++){const cur=queue[i];if(teleportIsComplete(level,cur.pos))return cur.depth;for(const dir of Object.keys(DIRECTION_DELTA) as Direction[]){const next=teleportStep(level,cur.pos,dir),key=next.player.row*level.cols+next.player.col;if(next.moved&&!seen.has(key)){seen.add(key);queue.push({pos:next.player,depth:cur.depth+1})}}}return -1
+}
+export function generateLaberintoLevel(level:number,opts?:{seedSalt?:number}):LaberintoLevel {
+ if(level>=4)return generateAdventureMaze(level,opts)
+ let best=generateLaberintoCandidate(level,opts),score=-1
+ for(let i=0;i<12;i++){const p=generateLaberintoCandidate(level,{seedSalt:(opts?.seedSalt??0)+i*997});const value=(mazeBfsPath(p.grid,p.start,p.exit)?.length??0)+p.boulders.length*5;if(value>score){best=p;score=value}}return best
+}
+export function generateTeleportLevel(level:number,opts?:{seedSalt?:number}):TeleportLevel {
+ let best=generateTeleportCandidate(level,opts),score=-1
+ for(let i=0;i<16;i++){const p=generateTeleportCandidate(level,{seedSalt:(opts?.seedSalt??0)+i*997}),value=teleportSolutionLength(p);if(value>score){best=p;score=value}}
+ // Stacked chambers retain exactly the same graph and portal rules, but fit phones.
+ const swap=(p:MazeCoord)=>({row:p.col,col:p.row})
+ return {...best,rows:best.cols,cols:best.rows,grid:Array.from({length:best.cols},(_,r)=>Array.from({length:best.rows},(_,c)=>best.grid[c][r])),start:swap(best.start),target:swap(best.target),pairs:best.pairs.map(p=>({a:{...p.a,...swap(p.a)},b:{...p.b,...swap(p.b)}})),moveLimit:Math.ceil(score*1.8),targetSeconds:Math.max(45,score*2)}
+}
+export function generateCromaLevel(level:number,opts?:{seedSalt?:number}):CromaLevel {
+ let best=generateCromaCandidate(level,opts),score=-1
+ for(let i=0;i<20;i++){const p=generateCromaCandidate(level,{seedSalt:(opts?.seedSalt??0)+i*997});const value=p.gems.reduce((sum,g)=>{const target=p.goals.find(t=>t.color===g.color)!;return sum+Math.abs(g.row-target.row)+Math.abs(g.col-target.col)},0);if(value>score){best=p;score=value}}return best
+}
+export function generateCircuitLevel(level:number,opts?:{seedSalt?:number}):CircuitLevel {let best=generateCircuitCandidate(Math.max(1,level),opts),score=-1;for(let i=0;i<10;i++){const candidate=generateCircuitCandidate(level,{seedSalt:(opts?.seedSalt??0)+i*977});const value=candidate.pieces.flat().filter(p=>p.kind!=='empty').length;if(value>score){score=value;best=candidate}}return best}
+export function generateLaserLevel(level:number,opts?:{seedSalt?:number}):LaserLevel {let best=generateLaserCandidate(Math.max(1,level),opts);for(let i=0;i<10;i++){const candidate=generateLaserCandidate(level,{seedSalt:(opts?.seedSalt??0)+i*977});if(candidate.mirrors.length>best.mirrors.length)best=candidate}return best}
+export function generateSwitchLevel(level:number,opts?:{seedSalt?:number}):SwitchLevel {return generateSwitchCandidate(Math.max(1,level),opts)}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    ═══════════════════════════════════════════════════════════════════════════
    COMPONENTE VISUAL — React + CSS
@@ -2708,6 +2726,7 @@ export function calcPathUniqueStars(moves: number, timeMs: number, targetSeconds
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { CharacterStudio } from './CharacterStudio'
 
 /* ── Sonido — sintetizado con WebAudio, sin archivos externos ──
  *
@@ -2774,6 +2793,9 @@ function playTones(steps: ToneStep[]) {
 }
 
 const Sound = {
+  door: () => playTones([{freq:260,dur:.12,type:'triangle'},{freq:520,dur:.18,at:.08,type:'sine'},{freq:780,dur:.12,at:.18,type:'sine'}]),
+  crumble: () => playTones([{freq:140,dur:.06,type:'sawtooth',gain:.35},{freq:85,dur:.13,at:.05,type:'triangle',gain:.5}]),
+  panel: () => playTones([{freq:440,dur:.08},{freq:660,dur:.08,at:.08},{freq:880,dur:.1,at:.16}]),
   move: () => playTones([{ freq: 320, dur: 0.05, type: 'triangle', gain: 0.7 }]),
   blocked: () => playTones([{ freq: 130, dur: 0.09, type: 'square', gain: 0.5 }]),
   push: () => playTones([{ freq: 180, dur: 0.11, type: 'sawtooth', gain: 0.6 }, { freq: 90, dur: 0.14, at: 0.02, type: 'sine', gain: 0.5 }]),
@@ -2850,8 +2872,10 @@ const GAME_META: GameMeta[] = [
 /** Tamaño de celda (px) según las dimensiones del tablero, para que quepa cómodo en pantalla. */
 function cellSizeFor(rows: number, cols: number, maxStage = 380, minCell = 14, maxCell = 58): number {
   const dim = Math.max(rows, cols)
-  const raw = Math.floor(maxStage / Math.max(dim, 1))
-  return clampNum(raw, minCell, maxCell)
+  const available = typeof window === "undefined" ? maxStage : Math.min(Math.max(maxStage, Math.min(620, window.innerWidth - 100)), window.innerWidth - 64)
+  const height = typeof window === "undefined" ? 700 : window.visualViewport?.height ?? window.innerHeight
+  const raw = Math.floor(Math.min(available / Math.max(dim, 1), Math.max(150, height - 380) / rows))
+  return clampNum(raw, Math.min(minCell, raw), maxCell)
 }
 
 /**
@@ -2861,57 +2885,36 @@ function cellSizeFor(rows: number, cols: number, maxStage = 380, minCell = 14, m
  * calculadas con él) siguiera cambiando después de terminar la partida.
  */
 function useElapsedMs(resetKey: unknown, frozen = false): number {
-  const [startedAt, setStartedAt] = useState<number>(() => Date.now())
-  const [, forceTick] = useState(0)
-  const frozenAtRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    setStartedAt(Date.now())
-    frozenAtRef.current = null
-  }, [resetKey])
-
-  useEffect(() => {
-    if (frozen) {
-      if (frozenAtRef.current === null) frozenAtRef.current = Date.now()
-      return
-    }
-    frozenAtRef.current = null
-    const id = window.setInterval(() => forceTick((n) => n + 1), 200)
-    return () => window.clearInterval(id)
-  }, [frozen])
-
-  const end = frozen && frozenAtRef.current !== null ? frozenAtRef.current : Date.now()
-  return Math.max(0, end - startedAt)
+  const clock=useRef({key:resetKey,start:Date.now(),paused:0,frozenAt:null as number|null})
+  const [,tick]=useState(0)
+  if(clock.current.key!==resetKey)clock.current={key:resetKey,start:Date.now(),paused:0,frozenAt:null}
+  const now=Date.now(),c=clock.current
+  if(frozen&&c.frozenAt===null)c.frozenAt=now
+  if(!frozen&&c.frozenAt!==null){c.paused+=now-c.frozenAt;c.frozenAt=null}
+  useEffect(()=>{if(frozen)return;const timer=setInterval(()=>tick(value=>value+1),100);return()=>clearInterval(timer)},[frozen,resetKey])
+  return Math.max(0,(c.frozenAt??now)-c.start-c.paused)
 }
 
 /** Escucha las flechas del teclado y WASD como alternativa a la cruceta. */
 function useArrowKeys(onMove: (dir: Direction) => void, enabled: boolean) {
-  useEffect(() => {
-    if (!enabled) return
-    function handler(e: KeyboardEvent) {
-      const map: Record<string, Direction> = {
-        ArrowUp: 'up',
-        ArrowDown: 'down',
-        ArrowLeft: 'left',
-        ArrowRight: 'right',
-        w: 'up',
-        s: 'down',
-        a: 'left',
-        d: 'right',
-        W: 'up',
-        S: 'down',
-        A: 'left',
-        D: 'right',
-      }
-      const dir = map[e.key]
-      if (dir) {
-        e.preventDefault()
-        onMove(dir)
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [onMove, enabled])
+ const move=useRef(onMove);move.current=onMove
+ useEffect(()=>{
+  if(!enabled)return
+  const keys=new Map<string,Direction>();let timer:ReturnType<typeof setInterval>|null=null
+  const map:Record<string,Direction>={arrowup:'up',arrowdown:'down',arrowleft:'left',arrowright:'right',w:'up',s:'down',a:'left',d:'right'}
+  const stop=()=>{keys.clear();if(timer)clearInterval(timer);timer=null}
+  const advance=()=>{const dir=[...keys.values()].at(-1);if(dir)move.current(dir)}
+  const down=(event:KeyboardEvent)=>{
+   const target=event.target as HTMLElement
+   if(target?.closest('input,textarea,select,[contenteditable=true]')||event.ctrlKey||event.metaKey||event.altKey)return
+   const key=event.key.toLowerCase(),dir=map[key];if(!dir)return
+   event.preventDefault();if(keys.has(key)||event.repeat)return
+   keys.set(key,dir);advance();if(!timer)timer=setInterval(advance,130)
+  }
+  const up=(event:KeyboardEvent)=>{const key=event.key.toLowerCase();if(!map[key])return;keys.delete(key);if(!keys.size)stop()}
+  window.addEventListener('keydown',down);window.addEventListener('keyup',up);window.addEventListener('blur',stop);document.addEventListener('visibilitychange',stop)
+  return()=>{stop();window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);window.removeEventListener('blur',stop);document.removeEventListener('visibilitychange',stop)}
+ },[enabled])
 }
 
 /* ── Átomos de interfaz ── */
@@ -2928,38 +2931,26 @@ function Stars({ count }: { count: 0 | 1 | 2 | 3 }) {
   )
 }
 
-function DPad({ onMove, settings, disabled }: { onMove: (dir: Direction) => void; settings: DPadSettings; disabled?: boolean }) {
-  const style = { '--dg-btn': `${settings.buttonSize}px`, '--dg-gap': `${settings.gap}px` } as React.CSSProperties
-  const arrows: Record<DPadStyle, [string, string, string, string]> = {
-    classic: ['▲', '◀', '▶', '▼'],
-    minimal: ['↑', '←', '→', '↓'],
-    neon: ['▲', '◀', '▶', '▼'],
-    glass: ['▲', '◀', '▶', '▼'],
-  }
-  const [up, left, right, down] = arrows[settings.style]
-  function move(dir: Direction) {
-    Sound.click()
-    onMove(dir)
-  }
-  return (
-    <div className={`dg-dpad dg-dpad--${settings.style}`} style={style}>
-      <button type="button" className="dg-dpad__btn dg-dpad__up" disabled={disabled} onClick={() => move('up')} aria-label="Mover arriba">
-        <span>{up}</span>
-      </button>
-      <div className="dg-dpad__row">
-        <button type="button" className="dg-dpad__btn dg-dpad__left" disabled={disabled} onClick={() => move('left')} aria-label="Mover izquierda">
-          <span>{left}</span>
-        </button>
-        <div className="dg-dpad__hub" />
-        <button type="button" className="dg-dpad__btn dg-dpad__right" disabled={disabled} onClick={() => move('right')} aria-label="Mover derecha">
-          <span>{right}</span>
-        </button>
-      </div>
-      <button type="button" className="dg-dpad__btn dg-dpad__down" disabled={disabled} onClick={() => move('down')} aria-label="Mover abajo">
-        <span>{down}</span>
-      </button>
-    </div>
-  )
+function ControlDock({settings,onChange,children}:{settings:DPadSettings;onChange?:(settings:DPadSettings)=>void;children:React.ReactNode}){
+ const dock=useRef<HTMLDivElement>(null),control=useRef<HTMLDivElement>(null)
+ const drag=useRef<{x:number;y:number;px:number;py:number}|null>(null)
+ const x=settings.positionX??.5,y=settings.positionY??.5
+ return <div className="dg-control-dock" ref={dock} style={{height:settings.mode==='joystick'?220:Math.max(220,Math.min(settings.buttonSize,76)*3+settings.gap*2+36)}}><div className="dg-control-position" ref={control} style={{left:x*100+'%',top:y*100+'%',transform:'translate(-'+x*100+'%,-'+y*100+'%)'}}>
+ {onChange&&<button type="button" className="dg-control-handle" aria-label="Arrastrar posición del control" onPointerDown={event=>{event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);drag.current={x:event.clientX,y:event.clientY,px:x,py:y}}} onPointerMove={event=>{if(!drag.current||!dock.current||!control.current)return;const area=dock.current.getBoundingClientRect(),box=control.current.getBoundingClientRect(),d=drag.current;onChange(clampDPadSettings({...settings,positionX:d.px+(event.clientX-d.x)/Math.max(1,area.width-box.width),positionY:d.py+(event.clientY-d.y)/Math.max(1,area.height-box.height)}))}} onPointerUp={()=>{drag.current=null}} onPointerCancel={()=>{drag.current=null}}>⠿ Arrastrar</button>}{children}</div></div>
+}
+
+function DPad({ onMove, settings, disabled,onPositionChange }: { onMove: (dir: Direction) => void; settings: DPadSettings; disabled?: boolean;onPositionChange?:(settings:DPadSettings)=>void }) {
+ const callback=useRef(onMove);callback.current=onMove
+ const timer=useRef<ReturnType<typeof setInterval>|null>(null), held=useRef<Direction|null>(null)
+ const [stick,setStick]=useState({x:0,y:0})
+ const stop=useCallback(()=>{if(timer.current)clearInterval(timer.current);timer.current=null;held.current=null;setStick({x:0,y:0})},[])
+ function start(dir:Direction){if(disabled||held.current===dir)return;stop();held.current=dir;callback.current(dir);timer.current=setInterval(()=>callback.current(dir),130)}
+ useEffect(()=>{if(disabled)stop()},[disabled,stop])
+ useEffect(()=>{window.addEventListener('blur',stop);document.addEventListener('visibilitychange',stop);return()=>{if(timer.current)clearInterval(timer.current);window.removeEventListener('blur',stop);document.removeEventListener('visibilitychange',stop)}},[stop])
+ function drag(e:React.PointerEvent<HTMLDivElement>){const r=e.currentTarget.getBoundingClientRect(),x=e.clientX-r.left-r.width/2,y=e.clientY-r.top-r.height/2;if(Math.hypot(x,y)<12){stop();return}start(Math.abs(x)>Math.abs(y)?x>0?'right':'left':y>0?'down':'up');const scale=Math.min(1,42/Math.hypot(x,y));setStick({x:x*scale,y:y*scale})}
+ if(settings.mode==='joystick')return <ControlDock settings={settings} onChange={onPositionChange}><div className="dg-joystick" role="group" aria-label="Joystick de movimiento" onPointerDown={e=>{if(disabled)return;e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);drag(e)}} onPointerMove={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))drag(e)}} onPointerUp={stop} onPointerCancel={stop} onLostPointerCapture={stop}><span>↑<br/>←　→<br/>↓</span><i style={{transform:`translate(${stick.x}px,${stick.y}px)`}} /></div></ControlDock>
+ const button=(dir:Direction,label:string)=><button type="button" className={`dg-dpad__btn dg-dpad__${dir}`} disabled={disabled} aria-label={`Mover ${label}`} onPointerDown={e=>{e.preventDefault();e.currentTarget.setPointerCapture(e.pointerId);start(dir)}} onPointerUp={stop} onPointerCancel={stop} onLostPointerCapture={stop} onClick={e=>{if(e.detail===0&&!disabled)callback.current(dir)}}>{({up:'↑',down:'↓',left:'←',right:'→'})[dir]}</button>
+ return <ControlDock settings={settings} onChange={onPositionChange}><div className={`dg-dpad dg-dpad--${settings.style}`} style={{'--dg-btn':`${Math.min(settings.buttonSize,76)}px`,'--dg-gap':`${settings.gap}px`} as React.CSSProperties}>{button('up','arriba')}<div className="dg-dpad__row">{button('left','izquierda')}<div className="dg-dpad__hub"/>{button('right','derecha')}</div>{button('down','abajo')}</div></ControlDock>
 }
 
 function LevelPickerModal({ current, maxLevel, onPick, onClose }: { current: number; maxLevel: number; onPick: (n: number) => void; onClose: () => void }) {
@@ -3084,11 +3075,11 @@ function PlayerToken({ row, col, cell, skin, className }: { row: number; col: nu
     transform: `translate(${col * cell}px, ${row * cell}px)`,
     width: cell,
     height: cell,
-    fontSize: Math.round(cell * 0.62),
+    fontSize: Math.round(cell * 0.72),
   }
   return (
     <div className={`dg-token ${className ?? ''}`} style={style}>
-      {skin}
+      {skin.startsWith('data:image/')?<img src={skin} alt="Tu personaje" style={{width:'100%',height:'100%',maxWidth:64,maxHeight:64,objectFit:'contain'}}/>:skin}
     </div>
   )
 }
@@ -3108,10 +3099,45 @@ function SettingsPanel({
   onChangeSkin: (s: string) => void
   onClose: () => void
 }) {
+  const [studioOpen,setStudioOpen]=useState(false)
+  const [settingsTab,setSettingsTab]=useState<'controls'|'character'>('controls')
   const [customOpen, setCustomOpen] = useState(false)
   const [customValue, setCustomValue] = useState('')
   const [customError, setCustomError] = useState(false)
   const customSkin = loadCustomPlayerSkin()
+ const [imageError,setImageError]=useState('')
+ function saveCharacter(png: string) {
+  try {
+    localStorage.setItem(PLAYER_SKIN_KEY, png)
+    onChangeSkin(png)
+    setImageError('')
+    return true
+  } catch {
+    setImageError('No hay espacio para guardar el personaje. Exporta tus datos y libera almacenamiento.')
+    return false
+  }
+ }
+ async function uploadCharacter(file?: File) {
+  if (!file) return
+  if ((!file.type && !/\.png$/i.test(file.name)) || (file.type && file.type !== 'image/png') || file.size > 5*1024*1024) {
+    setImageError('Elige un PNG de hasta 5 MB.')
+    return
+  }
+  const url = URL.createObjectURL(file)
+  try {
+    const image = new Image()
+    image.src = url
+    await image.decode()
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 128
+    const ratio = Math.min(128/image.naturalWidth,128/image.naturalHeight)
+    const width = image.naturalWidth*ratio, height = image.naturalHeight*ratio
+    canvas.getContext('2d')!.drawImage(image,(128-width)/2,(128-height)/2,width,height)
+    saveCharacter(canvas.toDataURL('image/png'))
+  } catch { setImageError('No se pudo abrir el PNG. Prueba otra imagen.') }
+  finally { URL.revokeObjectURL(url) }
+ }
+
 
   function commitCustom() {
     const ok = saveCustomPlayerSkin(customValue)
@@ -3135,8 +3161,9 @@ function SettingsPanel({
           </button>
         </div>
 
-        <div className="dg-settings__section">
-          <div className="dg-settings__label">Personaje</div>
+        <div className="dg-style-grid"><button className={`dg-style-btn ${settingsTab==='controls'?'dg-style-btn--active':''}`} onClick={()=>setSettingsTab('controls')}>Controles</button><button className={`dg-style-btn ${settingsTab==='character'?'dg-style-btn--active':''}`} onClick={()=>setSettingsTab('character')}>Personaje</button></div>
+        <div hidden={settingsTab!=='character'}><div className="dg-settings__section">
+          <div className="dg-settings__label">Personaje</div><label className="dg-upload">＋ Seleccionar archivo PNG<input className="dg-file-hidden" type="file" accept="image/png" onChange={e=>{void uploadCharacter(e.target.files?.[0]);e.target.value=''}}/></label><button className="dg-style-btn" onClick={()=>setStudioOpen(true)}>✎ Dibujar personaje</button><p className="dg-hint">Recomendado: 256 × 256 px, PNG sin fondo (transparente), hasta 5 MB. Se ajustará sin deformarlo; una imagen con fondo blanco conservará ese fondo.</p><div className="dg-character-preview">{skin.startsWith('data:image/')?<img src={skin} alt="Vista previa del personaje"/>:<span>{skin}</span>}</div>{imageError&&<p role="alert">{imageError}</p>}
           <div className="dg-skin-grid">
             {PLAYER_SKINS.map((s) => (
               <button
@@ -3191,8 +3218,8 @@ function SettingsPanel({
           )}
         </div>
 
-        <div className="dg-settings__section">
-          <div className="dg-settings__label">Estilo de la cruceta</div>
+        </div><div hidden={settingsTab!=='controls'}><div className="dg-settings__section">
+          <div className="dg-settings__label">Control de movimiento</div><div className="dg-style-grid">{(['dpad','joystick'] as const).map(mode=><button key={mode} className={`dg-style-btn ${(dpad.mode??'dpad')===mode?'dg-style-btn--active':''}`} onClick={()=>onChangeDPad({...dpad,mode})}>{mode==='dpad'?'✚ Cruceta':'◉ Joystick'}</button>)}</div><div className="dg-settings__label">Estilo de la cruceta</div>
           <div className="dg-style-grid">
             {DPAD_STYLES.map((s) => (
               <button
@@ -3236,11 +3263,15 @@ function SettingsPanel({
         </div>
 
         <div className="dg-settings__preview">
-          <DPad settings={dpad} onMove={() => {}} />
+          <div className="dg-control-preview-board">Escenario del juego · zona reservada</div><p className="dg-hint">Arrastra el asa para situar el control. Se mantiene fuera del escenario y se guarda para todos los niveles.</p><DPad settings={dpad} onMove={() => {}} onPositionChange={onChangeDPad} />
         </div>
         <button type="button" className="dg-btn dg-btn--ghost dg-settings__reset" onClick={() => onChangeDPad(defaultDPadSettings())}>
           ↺ Restablecer cruceta
-        </button>
+        </button></div>
+        <div className="dg-settings-confirm"><button type="button" className="dg-btn dg-btn--primary" onClick={onClose}>Aceptar y volver</button></div>
+        {studioOpen && createPortal(<CharacterStudio onClose={() => setStudioOpen(false)} onSave={png => {
+          if (saveCharacter(png)) { setStudioOpen(false); Sound.success() }
+        }} />, document.querySelector('.dg-root') || document.body)}
       </div>
     </div>
   )
@@ -3278,7 +3309,7 @@ function MainMenu({
           <div className="dg-menu__subtitle">9 minijuegos de lógica, cada uno con progresión infinita</div>
         </div>
         <button type="button" className="dg-iconbtn dg-iconbtn--ghost dg-menu__settings" onClick={onOpenSettings} aria-label="Ajustes y personaje">
-          <span className="dg-menu__skin">{skin}</span>
+          <span className="dg-menu__skin">{skin.startsWith('data:image/')?<img src={skin} alt="Tu personaje" style={{width:'100%',height:'100%',maxWidth:64,maxHeight:64,objectFit:'contain'}}/>:skin}</span>
         </button>
       </div>
       <div className="dg-menu__grid">
@@ -3316,12 +3347,19 @@ function LaberintoGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: strin
   const [moves, setMoves] = useState(0)
   const [completed, setCompleted] = useState(false)
   const [timedOut, setTimedOut] = useState(false)
-  const timeMs = useElapsedMs(level.seed, completed || timedOut)
+  const [adventure,setAdventure]=useState(()=>initialAdventureState(level))
+  const [activeTerminal,setActiveTerminal]=useState<string|null>(null)
+  const [stepEffect,setStepEffect]=useState('')
+  const [moveHistory,setMoveHistory]=useState<MazeAdventureState[]>([])
+  const terminal=level.adventure?.terminals.find(t=>t.id===activeTerminal)
+  const nearby=level.adventure?.terminals.find(t=>!adventure.opened.includes(t.id)&&Math.abs(t.at.row-player.row)+Math.abs(t.at.col-player.col)<=1)
+  const timeMs = useElapsedMs(level, completed || timedOut || !!activeTerminal)
 
   function loadLevel(n: number) {
     setViewingLevel(n)
     const lvl = generateLaberintoLevel(n)
     setLevel(lvl)
+    setAdventure(initialAdventureState(lvl));setActiveTerminal(null);setStepEffect('');setMoveHistory([])
     setBoulders(lvl.boulders)
     setPlayer(lvl.start)
     setMoves(0)
@@ -3338,27 +3376,24 @@ function LaberintoGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: strin
     }
   }, [countdownMs, completed, timedOut])
 
-  const locked = completed || timedOut
+  const locked = completed || timedOut || !!activeTerminal
 
   const handleMove = useCallback(
     (dir: Direction) => {
       if (locked) return
-      const res = laberintoStep(level, boulders, player, dir)
-      if (!res.moved) {
-        Sound.blocked()
-        return
-      }
-      if (res.pushed) Sound.push()
-      else Sound.move()
-      setPlayer(res.player)
-      setBoulders(res.boulders)
+      const result=adventureStep(level,{...adventure,player,boulders},dir)
+      if(!result.moved){Sound.blocked();return}
+      setMoveHistory(h=>[...h.slice(-79),{...adventure,player,boulders}])
+      const res=result.state
+      if(result.event==='portal')Sound.warp();else if(result.event==='lever')Sound.door();else if(result.event==='crack')Sound.crumble();else if(result.event==='push')Sound.push();else Sound.move()
+      setStepEffect(result.event);setAdventure(res);setPlayer(res.player);setBoulders(res.boulders)
       setMoves((m) => m + 1)
       if (isMazeComplete(res.player, level.exit)) {
         setCompleted(true)
         Sound.success()
       }
     },
-    [level, boulders, player, locked]
+    [level, boulders, player, locked, adventure]
   )
   useArrowKeys(handleMove, !locked)
 
@@ -3369,7 +3404,7 @@ function LaberintoGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: strin
   // grandes. Si el laberinto cabe entero en la ventana, simplemente se
   // centra (sin desplazarse).
   const VIEWPORT_CELLS = 11
-  const CELL_PX = 30
+  const CELL_PX = Math.max(16, Math.min(30, Math.floor((window.innerWidth-70)/11),Math.floor((window.innerHeight-(level.adventure?460:380))/11)))
   const viewportPx = VIEWPORT_CELLS * CELL_PX
   const contentW = level.cols * CELL_PX
   const contentH = level.rows * CELL_PX
@@ -3386,6 +3421,8 @@ function LaberintoGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: strin
   }
 
   const stars = calcLaberintoStars(moves, timeMs, level.targetSeconds, level.moveLimit)
+ useEffect(()=>{if(!completed)return;const saved=loadGameProgress(meta.id);saveGameProgress(meta.id,{level:Math.max(saved.level,viewingLevel+1),stars:{...saved.stars,[viewingLevel]:Math.max(saved.stars[viewingLevel]??0,stars) as 0|1|2|3}})},[completed,meta.id,viewingLevel,stars])
+
 
   return (
     <div className="dg-game">
@@ -3412,26 +3449,33 @@ function LaberintoGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: strin
                 const boulderHere = boulders.find((b) => !b.cleared && b.row === r && b.col === c)
                 const isExit = r === level.exit.row && c === level.exit.col
                 const filledHole = type === 'hole' && boulders.some((b) => b.cleared && b.holeRow === r && b.holeCol === c)
-                let cls = 'dg-cell dg-cell--maze'
+                const a=level.adventure,eq=(p:MazeCoord)=>p.row===r&&p.col===c
+                const marker=a?.terminals.find(t=>eq(t.at))
+                const symbol=marker?(adventure.opened.includes(marker.id)?'✓':GAME_META.find(g=>g.id===marker.game)!.icon):a&&eq(a.lever)?'🔀':a&&eq(a.door)?adventure.opened.includes('door')?'▫':'🚪':a?.portals&&(eq(a.portals.a)||eq(a.portals.b))?'🌀':a?.brittle.some(eq)?adventure.collapsed.includes(key)?'✕':'◇':null
+                let cls = 'dg-cell dg-cell--maze'+(symbol?' dg-cell--mechanic':'')+(adventure.collapsed.includes(key)?' dg-collapsed':'')
                 if (!isVisible) cls += ' dg-cell--fog'
                 else if (type === 'wall') cls += ' dg-cell--wall'
                 else if (type === 'hole' && !filledHole) cls += ' dg-cell--hole'
                 else cls += ' dg-cell--floor'
                 return (
                   <div key={key} className={cls} style={{ gridColumn: c + 1, gridRow: r + 1, width: CELL_PX, height: CELL_PX }}>
+                    {isVisible && symbol && <span className="dg-mechanic-symbol">{symbol}</span>}
                     {isVisible && isExit && <span className="dg-emoji-mark dg-exit-flag">🚩</span>}
                     {isVisible && boulderHere && <span className={`dg-emoji-mark ${boulderHere.kind === 'glass' ? 'dg-glass' : 'dg-boulder'}`}>{boulderHere.kind === 'glass' ? '🔷' : '🪨'}</span>}
                   </div>
                 )
               })
             )}
-            <PlayerToken row={player.row} col={player.col} cell={CELL_PX} skin={skin} />
+            <PlayerToken row={player.row} col={player.col} cell={CELL_PX} skin={skin} className={stepEffect==='portal'?'dg-token--warp':''} />
           </div>
         </div>
       </div>
+      {level.adventure&&<button className="dg-style-btn dg-undo" disabled={!moveHistory.length||locked} onClick={()=>{const previous=moveHistory[moveHistory.length-1];setAdventure(previous);setPlayer(previous.player);setBoulders(previous.boulders);setMoveHistory(h=>h.slice(0,-1));setMoves(m=>m+1);Sound.toggle()}}>↶ Deshacer paso</button>}
+      {level.adventure&&<div className="dg-adventure-status">{nearby?<button className="dg-btn dg-btn--primary" disabled={locked} onClick={()=>{setActiveTerminal(nearby.id);Sound.panel()}}>Activar panel: {GAME_META.find(g=>g.id===nearby.game)!.title}</button>:<span>🔀 Palanca → 🚪 Puerta · 🌀 Portal · ◇ Piso frágil</span>}</div>}
       <div className="dg-controls">
         <DPad settings={dpad} onMove={handleMove} disabled={locked} />
       </div>
+      {terminal&&<div className="dg-overlay dg-terminal-overlay" role="dialog" aria-modal="true" aria-label="Panel del laberinto"><div className="dg-overlay__card dg-terminal-card"><p className="dg-hint">Resuelve el panel para abrir esta puerta. El tiempo del laberinto está en pausa.</p><MazeTerminal game={terminal.game} level={Math.max(1,Math.floor(viewingLevel/5))} dpad={dpad} skin={skin} onClose={()=>setActiveTerminal(null)} onSolved={()=>{setAdventure(a=>({...a,opened:[...a.opened,terminal.id]}));setActiveTerminal(null);Sound.success()}}/></div></div>}
       {completed && <CompletionOverlay stars={stars} timeMs={timeMs} onRetry={() => loadLevel(viewingLevel)} onNext={handleNext} />}
       {timedOut && !completed && (
         <div className="dg-overlay" role="dialog" aria-modal="true">
@@ -3455,16 +3499,16 @@ function LaberintoGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: strin
    Vista: CROMA
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function CromaGame({ dpad, onBack }: { dpad: DPadSettings; onBack: () => void }) {
+function CromaGame({ dpad, onBack, challengeLevel, onSolved }:  { dpad: DPadSettings; onBack: () => void; challengeLevel?:number; onSolved?:()=>void }) {
   const meta = GAME_META.find((g) => g.id === 'croma')!
-  const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress('croma'))
+  const [progress, setProgress] = useState<GameProgress>(() => challengeLevel?{level:challengeLevel,stars:{}}:loadGameProgress('croma'))
   const [viewingLevel, setViewingLevel] = useState(progress.level)
   const [level, setLevel] = useState<CromaLevel>(() => generateCromaLevel(progress.level))
   const [gems, setGems] = useState<Gem[]>(() => level.gems)
   const [selected, setSelected] = useState<string | null>(null)
   const [moves, setMoves] = useState(0)
   const [completed, setCompleted] = useState(false)
-  const timeMs = useElapsedMs(level.seed, completed)
+  const timeMs = useElapsedMs(level, completed)
 
   function loadLevel(n: number) {
     setViewingLevel(n)
@@ -3515,6 +3559,8 @@ function CromaGame({ dpad, onBack }: { dpad: DPadSettings; onBack: () => void })
   }
 
   const stars = calcCromaStars(moves, timeMs, level.targetSeconds, level.shuffleMoves)
+ useEffect(()=>{if(!completed)return;if(onSolved){onSolved();return}const saved=loadGameProgress(meta.id);saveGameProgress(meta.id,{level:Math.max(saved.level,viewingLevel+1),stars:{...saved.stars,[viewingLevel]:Math.max(saved.stars[viewingLevel]??0,stars) as 0|1|2|3}})},[completed,meta.id,viewingLevel,stars,onSolved])
+
 
   return (
     <div className="dg-game">
@@ -3574,14 +3620,14 @@ function CromaGame({ dpad, onBack }: { dpad: DPadSettings; onBack: () => void })
    Vista: PINTAR
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function PintarGame({ onBack }: { onBack: () => void }) {
+function PintarGame({ onBack, challengeLevel, onSolved }:  { onBack: () => void; challengeLevel?:number; onSolved?:()=>void }) {
   const meta = GAME_META.find((g) => g.id === 'pintar')!
-  const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress('pintar'))
+  const [progress, setProgress] = useState<GameProgress>(() => challengeLevel?{level:challengeLevel,stars:{}}:loadGameProgress('pintar'))
   const [viewingLevel, setViewingLevel] = useState(progress.level)
   const [level, setLevel] = useState<PintarLevel>(() => generatePintarLevel(progress.level))
   const [taps, setTaps] = useState(0)
   const [completed, setCompleted] = useState(false)
-  const timeMs = useElapsedMs(level.seed, completed)
+  const timeMs = useElapsedMs(level, completed)
 
   function loadLevel(n: number) {
     setViewingLevel(n)
@@ -3620,6 +3666,8 @@ function PintarGame({ onBack }: { onBack: () => void }) {
   }
 
   const stars = calcPintarStars(timeMs, level.targetSeconds, taps, level.cells.length)
+ useEffect(()=>{if(!completed)return;if(onSolved){onSolved();return}const saved=loadGameProgress(meta.id);saveGameProgress(meta.id,{level:Math.max(saved.level,viewingLevel+1),stars:{...saved.stars,[viewingLevel]:Math.max(saved.stars[viewingLevel]??0,stars) as 0|1|2|3}})},[completed,meta.id,viewingLevel,stars,onSolved])
+
 
   return (
     <div className="dg-game">
@@ -3664,16 +3712,16 @@ function PintarGame({ onBack }: { onBack: () => void }) {
    Vista: HIELO
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function HieloGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string; onBack: () => void }) {
+function HieloGame({ dpad, skin, onBack, challengeLevel, onSolved }:  { dpad: DPadSettings; skin: string; onBack: () => void; challengeLevel?:number; onSolved?:()=>void }) {
   const meta = GAME_META.find((g) => g.id === 'hielo')!
-  const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress('hielo'))
+  const [progress, setProgress] = useState<GameProgress>(() => challengeLevel?{level:challengeLevel,stars:{}}:loadGameProgress('hielo'))
   const [viewingLevel, setViewingLevel] = useState(progress.level)
   const [level, setLevel] = useState<IceSlideLevel>(() => generateIceSlideLevel(progress.level))
   const [player, setPlayer] = useState<MazeCoord>(() => level.start)
   const [moves, setMoves] = useState(0)
   const [completed, setCompleted] = useState(false)
   const [sliding, setSliding] = useState(false)
-  const timeMs = useElapsedMs(level.seed, completed)
+  const timeMs = useElapsedMs(level, completed)
 
   function loadLevel(n: number) {
     setViewingLevel(n)
@@ -3718,6 +3766,8 @@ function HieloGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string; o
   }
 
   const stars = calcIceSlideStars(moves, timeMs, level.targetSeconds, level.moveLimit)
+ useEffect(()=>{if(!completed)return;if(onSolved){onSolved();return}const saved=loadGameProgress(meta.id);saveGameProgress(meta.id,{level:Math.max(saved.level,viewingLevel+1),stars:{...saved.stars,[viewingLevel]:Math.max(saved.stars[viewingLevel]??0,stars) as 0|1|2|3}})},[completed,meta.id,viewingLevel,stars,onSolved])
+
 
   return (
     <div className="dg-game">
@@ -3753,16 +3803,16 @@ function HieloGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string; o
    Vista: INTERRUPTORES
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function InterruptoresGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string; onBack: () => void }) {
+function InterruptoresGame({ dpad, skin, onBack, challengeLevel, onSolved }:  { dpad: DPadSettings; skin: string; onBack: () => void; challengeLevel?:number; onSolved?:()=>void }) {
   const meta = GAME_META.find((g) => g.id === 'interruptores')!
-  const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress('interruptores'))
+  const [progress, setProgress] = useState<GameProgress>(() => challengeLevel?{level:challengeLevel,stars:{}}:loadGameProgress('interruptores'))
   const [viewingLevel, setViewingLevel] = useState(progress.level)
   const [level, setLevel] = useState<SwitchLevel>(() => generateSwitchLevel(progress.level))
   const [state, setState] = useState<SwitchState>(() => switchInitialState(level))
   const [player, setPlayer] = useState<MazeCoord>(() => level.start)
   const [moves, setMoves] = useState(0)
   const [completed, setCompleted] = useState(false)
-  const timeMs = useElapsedMs(level.seed, completed)
+  const timeMs = useElapsedMs(level, completed)
 
   function loadLevel(n: number) {
     setViewingLevel(n)
@@ -3814,6 +3864,8 @@ function InterruptoresGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: s
   }
 
   const stars = calcSwitchStars(moves, timeMs, level.targetSeconds, level.moveLimit)
+ useEffect(()=>{if(!completed)return;if(onSolved){onSolved();return}const saved=loadGameProgress(meta.id);saveGameProgress(meta.id,{level:Math.max(saved.level,viewingLevel+1),stars:{...saved.stars,[viewingLevel]:Math.max(saved.stars[viewingLevel]??0,stars) as 0|1|2|3}})},[completed,meta.id,viewingLevel,stars,onSolved])
+
 
   return (
     <div className="dg-game">
@@ -3864,16 +3916,16 @@ function InterruptoresGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: s
    Vista: TELETRANSPORTADORES
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function TeleportGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string; onBack: () => void }) {
+function TeleportGame({ dpad, skin, onBack, challengeLevel, onSolved }:  { dpad: DPadSettings; skin: string; onBack: () => void; challengeLevel?:number; onSolved?:()=>void }) {
   const meta = GAME_META.find((g) => g.id === 'teleport')!
-  const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress('teleport'))
+  const [progress, setProgress] = useState<GameProgress>(() => challengeLevel?{level:challengeLevel,stars:{}}:loadGameProgress('teleport'))
   const [viewingLevel, setViewingLevel] = useState(progress.level)
   const [level, setLevel] = useState<TeleportLevel>(() => generateTeleportLevel(progress.level))
   const [player, setPlayer] = useState<MazeCoord>(() => level.start)
   const [moves, setMoves] = useState(0)
   const [completed, setCompleted] = useState(false)
   const [warping, setWarping] = useState(false)
-  const timeMs = useElapsedMs(level.seed, completed)
+  const timeMs = useElapsedMs(level, completed)
 
   function loadLevel(n: number) {
     setViewingLevel(n)
@@ -3926,6 +3978,8 @@ function TeleportGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string
   }
 
   const stars = calcTeleportStars(moves, timeMs, level.targetSeconds, level.moveLimit)
+ useEffect(()=>{if(!completed)return;if(onSolved){onSolved();return}const saved=loadGameProgress(meta.id);saveGameProgress(meta.id,{level:Math.max(saved.level,viewingLevel+1),stars:{...saved.stars,[viewingLevel]:Math.max(saved.stars[viewingLevel]??0,stars) as 0|1|2|3}})},[completed,meta.id,viewingLevel,stars,onSolved])
+
 
   return (
     <div className="dg-game">
@@ -3960,15 +4014,15 @@ function TeleportGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string
    Vista: LÁSER
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function LaserGame({ onBack }: { onBack: () => void }) {
+function LaserGame({ onBack, challengeLevel, onSolved }:  { onBack: () => void; challengeLevel?:number; onSolved?:()=>void }) {
   const meta = GAME_META.find((g) => g.id === 'laser')!
-  const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress('laser'))
+  const [progress, setProgress] = useState<GameProgress>(() => challengeLevel?{level:challengeLevel,stars:{}}:loadGameProgress('laser'))
   const [viewingLevel, setViewingLevel] = useState(progress.level)
   const [level, setLevel] = useState<LaserLevel>(() => generateLaserLevel(progress.level))
   const [mirrors, setMirrors] = useState<LaserMirror[]>(() => level.mirrors)
   const [rotations, setRotations] = useState(0)
   const [completed, setCompleted] = useState(false)
-  const timeMs = useElapsedMs(level.seed, completed)
+  const timeMs = useElapsedMs(level, completed)
 
   function loadLevel(n: number) {
     setViewingLevel(n)
@@ -4009,6 +4063,8 @@ function LaserGame({ onBack }: { onBack: () => void }) {
   }
 
   const stars = calcLaserStars(timeMs, level.targetSeconds, rotations)
+ useEffect(()=>{if(!completed)return;if(onSolved){onSolved();return}const saved=loadGameProgress(meta.id);saveGameProgress(meta.id,{level:Math.max(saved.level,viewingLevel+1),stars:{...saved.stars,[viewingLevel]:Math.max(saved.stars[viewingLevel]??0,stars) as 0|1|2|3}})},[completed,meta.id,viewingLevel,stars,onSolved])
+
   const stageWidth = level.cols * cell
   const stageHeight = level.rows * cell
 
@@ -4112,14 +4168,14 @@ function CircuitPipe({ piece, powered, cell }: { piece: CircuitPiece; powered: b
   )
 }
 
-function CircuitosGame({ onBack }: { onBack: () => void }) {
+function CircuitosGame({ onBack, challengeLevel, onSolved }:  { onBack: () => void; challengeLevel?:number; onSolved?:()=>void }) {
   const meta = GAME_META.find((g) => g.id === 'circuitos')!
-  const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress('circuitos'))
+  const [progress, setProgress] = useState<GameProgress>(() => challengeLevel?{level:challengeLevel,stars:{}}:loadGameProgress('circuitos'))
   const [viewingLevel, setViewingLevel] = useState(progress.level)
   const [level, setLevel] = useState<CircuitLevel>(() => generateCircuitLevel(progress.level))
   const [rotations, setRotations] = useState(0)
   const [completed, setCompleted] = useState(false)
-  const timeMs = useElapsedMs(level.seed, completed)
+  const timeMs = useElapsedMs(level, completed)
 
   function loadLevel(n: number) {
     setViewingLevel(n)
@@ -4154,6 +4210,8 @@ function CircuitosGame({ onBack }: { onBack: () => void }) {
   }
 
   const stars = calcCircuitStars(timeMs, level.targetSeconds, rotations, level.rows * level.cols)
+ useEffect(()=>{if(!completed)return;if(onSolved){onSolved();return}const saved=loadGameProgress(meta.id);saveGameProgress(meta.id,{level:Math.max(saved.level,viewingLevel+1),stars:{...saved.stars,[viewingLevel]:Math.max(saved.stars[viewingLevel]??0,stars) as 0|1|2|3}})},[completed,meta.id,viewingLevel,stars,onSolved])
+
 
   return (
     <div className="dg-game">
@@ -4192,16 +4250,16 @@ function CircuitosGame({ onBack }: { onBack: () => void }) {
    Vista: CAMINO ÚNICO
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function CaminoUnicoGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: string; onBack: () => void }) {
+function CaminoUnicoGame({ dpad, skin, onBack, challengeLevel, onSolved }:  { dpad: DPadSettings; skin: string; onBack: () => void; challengeLevel?:number; onSolved?:()=>void }) {
   const meta = GAME_META.find((g) => g.id === 'camino')!
-  const [progress, setProgress] = useState<GameProgress>(() => loadGameProgress('camino'))
+  const [progress, setProgress] = useState<GameProgress>(() => challengeLevel?{level:challengeLevel,stars:{}}:loadGameProgress('camino'))
   const [viewingLevel, setViewingLevel] = useState(progress.level)
   const [level, setLevel] = useState<PathUniqueLevel>(() => generatePathUniqueLevel(progress.level))
   const [player, setPlayer] = useState<MazeCoord>(() => level.start)
   const [visited, setVisited] = useState<Set<number>>(() => pathUniqueInitialVisited(level))
   const [moves, setMoves] = useState(0)
   const [completed, setCompleted] = useState(false)
-  const timeMs = useElapsedMs(level.seed, completed)
+  const timeMs = useElapsedMs(level, completed)
 
   function loadLevel(n: number) {
     setViewingLevel(n)
@@ -4246,6 +4304,8 @@ function CaminoUnicoGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: str
   }
 
   const stars = calcPathUniqueStars(moves, timeMs, level.targetSeconds, level.totalWalkable)
+ useEffect(()=>{if(!completed)return;if(onSolved){onSolved();return}const saved=loadGameProgress(meta.id);saveGameProgress(meta.id,{level:Math.max(saved.level,viewingLevel+1),stars:{...saved.stars,[viewingLevel]:Math.max(saved.stars[viewingLevel]??0,stars) as 0|1|2|3}})},[completed,meta.id,viewingLevel,stars,onSolved])
+
 
   return (
     <div className="dg-game">
@@ -4284,10 +4344,15 @@ function CaminoUnicoGame({ dpad, skin, onBack }: { dpad: DPadSettings; skin: str
    COMPONENTE RAÍZ
    ═══════════════════════════════════════════════════════════════════════════ */
 
+function MazeTerminal({game,level,dpad,skin,onClose,onSolved}:{game:GameId;level:number;dpad:DPadSettings;skin:string;onClose:()=>void;onSolved:()=>void}) {
+ const props={challengeLevel:level,onSolved,onBack:onClose,dpad,skin}
+ switch(game){case 'laser':return <LaserGame {...props}/>;case 'circuitos':return <CircuitosGame {...props}/>;case 'hielo':return <HieloGame {...props}/>;case 'croma':return <CromaGame {...props}/>;case 'pintar':return <PintarGame {...props}/>;case 'camino':return <CaminoUnicoGame {...props}/>;case 'teleport':return <TeleportGame {...props}/>;case 'interruptores':return <InterruptoresGame {...props}/>;default:return null}
+}
+
 type Screen = 'menu' | GameId
 
 export default function DespejesGame() {
-  const [screen, setScreen] = useState<Screen>('menu')
+  const [screen, setScreen] = useState<Screen>(()=>{const mode=new URLSearchParams(location.search).get('modo');return GAME_META.some(game=>game.id===mode)?mode as Screen:'menu'})
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [dpad, setDpad] = useState<DPadSettings>(() => loadDPadSettings())
   const [skin, setSkin] = useState<string>(() => loadPlayerSkin())
@@ -4679,6 +4744,32 @@ const DESPEJES_CSS = `
   .dg-menu__title { font-size: 24px; }
   .dg-topbar__goal { display: none; }
 }
+
+.dg-root{--dg-bg-0:var(--gco-bg);--dg-bg-1:var(--gco-bg-elevated);--dg-bg-2:var(--gco-bg-elevated);--dg-text:var(--gco-ink);--dg-text-dim:var(--gco-ink-muted);--dg-primary:var(--gco-primary);--dg-primary-strong:var(--gco-primary);--dg-border:var(--gco-glass-border);--dg-surface:var(--gco-glass-bg);--dg-surface-strong:var(--gco-glass-bg-hover);background:transparent;padding-bottom:max(20px,env(safe-area-inset-bottom))}
+.dg-menu__title{background:none;color:var(--dg-text)}
+.dg-backbtn,.dg-style-btn,.dg-upload{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:10px 16px;border:1px solid var(--dg-border);border-radius:14px;background:var(--dg-surface);font-weight:650;text-decoration:none;transition:transform .16s,background .16s}
+.dg-backbtn:hover,.dg-style-btn:hover{transform:translateY(-2px);background:var(--dg-surface-strong)}.dg-style-btn--active{background:var(--gco-primary-dim);border-color:var(--dg-primary)}.dg-style-grid{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.dg-overlay{position:fixed;inset:0;z-index:1200;padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom));background:var(--gco-overlay);backdrop-filter:blur(10px)}.dg-overlay__card{max-height:calc(100dvh - 48px);overflow:auto;overscroll-behavior:contain;background:var(--gco-bg-elevated);color:var(--gco-ink);max-width:100%}.dg-settings{width:min(540px,100%);text-align:left;padding:20px}.dg-settings__header{position:sticky;top:-20px;background:var(--gco-bg-elevated);z-index:2;padding:12px 0}.dg-settings__preview{zoom:.72}.dg-upload{cursor:pointer;flex-wrap:wrap}.dg-upload input{max-width:190px;font-size:12px}
+.dg-dpad,.dg-joystick{touch-action:none;user-select:none;-webkit-user-select:none}.dg-joystick{width:164px;height:164px;border-radius:50%;position:relative;display:grid;place-items:center;background:radial-gradient(circle,var(--gco-primary-dim),var(--dg-surface));border:2px solid var(--dg-border);margin:8px auto;text-align:center;line-height:2;font-size:22px}.dg-joystick i{position:absolute;width:66px;height:66px;border-radius:50%;border:2px solid var(--dg-primary);background:var(--gco-bg-elevated);box-shadow:0 5px 15px #0003;pointer-events:none}.dg-controls{padding:8px}.dg-game{gap:10px}.dg-topbar{background:var(--dg-surface)}.dg-board{max-width:100%;overflow:hidden}
+@media(max-width:600px){.dg-root{padding:10px 8px 20px}.dg-menu__grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.dg-card{padding:13px}.dg-topbar{flex-wrap:wrap;padding:10px}.dg-topbar__goal{font-size:12px}.dg-topbar__stats{flex-wrap:wrap}.dg-settings__section{margin-top:12px}.dg-menu__header{align-items:center}.dg-dpad{zoom:.82}}
+@media(prefers-reduced-motion:reduce){.dg-root *{transition:none!important;animation:none!important}}
+
+.dg-board[class*="dg-board--"]{background:var(--gco-bg-elevated);border-color:var(--dg-border)}
+.dg-cell--floor,.dg-cell--gemboard,.dg-cell--circuit-empty{background:var(--dg-surface-strong)}
+.dg-btn--primary{color:var(--gco-button-text)}
+
+.dg-file-hidden{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}.dg-upload:focus-within{outline:2px solid var(--dg-primary);outline-offset:3px}
+.dg-studio{width:min(440px,100%);padding:18px}.dg-settings-confirm{position:sticky;bottom:-20px;z-index:3;padding:12px 0;background:var(--gco-bg-elevated)}.dg-settings-confirm button{width:100%}.dg-studio canvas,.dg-character-preview{background-color:var(--gco-bg);background-image:conic-gradient(var(--gco-glass-border) 25%,transparent 0 50%,var(--gco-glass-border) 0 75%,transparent 0);background-size:20px 20px;border:1px solid var(--dg-border);border-radius:12px}
+.dg-studio canvas{display:block;width:min(256px,100%);height:auto;aspect-ratio:1;margin:10px auto;touch-action:none;cursor:crosshair}.dg-studio-tools{display:flex;flex-wrap:wrap;align-items:center;gap:14px}.dg-studio-tools label{font-size:12px;display:flex;align-items:center;gap:6px}.dg-studio-tools input[type=range]{width:110px}.dg-character-preview{width:80px;height:80px;display:grid;place-items:center;margin:12px auto;font-size:40px}.dg-character-preview img{width:100%;height:100%;object-fit:contain}
+
+.dg-mechanic-symbol{font-size:20px;position:relative;z-index:2;animation:dg-mechanic-glow 2s ease-in-out infinite}.dg-cell--mechanic{box-shadow:inset 0 0 0 1px var(--dg-primary)}.dg-collapsed{background:repeating-linear-gradient(45deg,#111 0 3px,#47372d 3px 5px)!important}.dg-adventure-status{text-align:center;font-size:11px;color:var(--dg-text-dim);max-width:100%;margin:-8px auto}.dg-terminal-card{width:min(800px,100%);padding:12px}.dg-terminal-card .dg-topbar__goal{display:none}.dg-terminal-card .dg-game{margin:0}.dg-terminal-card .dg-board{margin:5px auto}.dg-terminal-card .dg-chip--clickable{pointer-events:none}.dg-token img{filter:drop-shadow(0 2px 2px #0005)}
+@keyframes dg-mechanic-glow{50%{filter:brightness(1.3);transform:translateY(-1px)}}
+.dg-token{transition:transform .12s ease-out}.dg-boulder{animation:dg-pop-in .22s ease-out}.dg-card{animation:dg-pop-in .3s ease-out}@keyframes dg-pop-in{from{opacity:.5;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
+
+.dg-studio canvas{width:min(256px,34dvh,100%)}.dg-studio .dg-style-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.dg-studio .dg-style-btn{font-size:12px;padding:8px 4px}.dg-studio .dg-btn{width:100%}.dg-studio .dg-hint{font-size:12px;margin:6px 0}.dg-studio .dg-settings__header{padding:4px 0}.dg-undo{margin:0 auto;min-height:34px;font-size:12px;padding:5px 12px}
+.dg-collapsed{animation:dg-floor-break .32s ease-out}@keyframes dg-floor-break{from{filter:brightness(2);transform:scale(1.1)}to{filter:brightness(1);transform:scale(1)}}
+
+.dg-settings__section>.dg-upload,.dg-settings__section>.dg-style-btn{display:flex;width:100%;margin:10px 0;min-height:46px}.dg-token{padding:3px;line-height:1;overflow:hidden;filter:none}.dg-token img{width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;object-fit:contain;filter:none}.dg-mechanic-symbol{font-size:clamp(12px,4vw,20px)}
 `
 
 export { DespejesGame }

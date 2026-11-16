@@ -25,3 +25,13 @@ export function recordListening(id: string | undefined, position: number, playin
     } catch { pendingMs = 0 }
   }
 }
+export function recordPlaybackStart(id:string|undefined,position=0){
+ if(!id)return
+ try{
+  const now=Date.now(),stats=JSON.parse(localStorage.getItem(KEY)||'{}'),current=stats[id]||{plays:0,ms:0,lastAt:0}
+  if(countedTrack!==id)current.plays++
+  countedTrack=id;current.lastAt=now;stats[id]=current
+  localStorage.setItem(KEY,JSON.stringify(stats));previous={id,position,at:now};pendingMs=0;lastWrite=now
+  window.dispatchEvent(new Event('gco:listening'))
+ }catch{/* Playback stays available if storage is full. */}
+}

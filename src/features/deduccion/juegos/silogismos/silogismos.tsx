@@ -1,3 +1,4 @@
+import {ADVANCED_SYLLOGISMS} from '../razonamiento/advancedSyllogisms'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -25,6 +26,7 @@ type Item = {
   correct: number
   /** Orientación conceptual sin revelar la respuesta */
   hint: string
+  explain?: string
 }
 
 /** Fisher–Yates con semilla determinista por nivel+intento (reproducible y sin sesgo) */
@@ -2375,18 +2377,20 @@ const BANK: Item[] = [
 ]
 
 // ─────────────────────────────────────────────────────────────────────────────
-const TOTAL_LEVELS = BANK.length
+const ALL_ITEMS:Item[]=[...BANK,...ADVANCED_SYLLOGISMS]
+const TOTAL_LEVELS = ALL_ITEMS.length
 
 /** Selección determinista y sin repetición de ítems entre niveles distintos.
  *  Para reintentos del mismo nivel se usa un offset que cicla por el banco
  *  de forma que no repita el mismo enunciado hasta agotar el ciclo. */
-function pickItem(level: number, attempt: number): Item {
-  const baseIdx = (level - 1) % BANK.length
+function pickItem(level: number, attempt: number, advanced=false): Item {
+  const pool:Item[]=advanced?ADVANCED_SYLLOGISMS:ALL_ITEMS
+  const baseIdx = (level - 1) % pool.length
   // Desplazamiento por intento: saltos de números primos relativos al tamaño
   // para maximizar distancia entre reintentos del mismo nivel.
-  const offset = (attempt * 7 + attempt * attempt) % BANK.length
-  const idx = (baseIdx + offset) % BANK.length
-  const raw = BANK[idx]
+  const offset = (attempt * 7 + attempt * attempt) % pool.length
+  const idx = (baseIdx + offset) % pool.length
+  const raw = pool[idx]
   // Semilla distinta por nivel e intento → barajado diferente cada vez
   const seed = level * 10007 + attempt * 9973 + idx * 13
   return shuffleOptions(raw, seed)
@@ -2394,9 +2398,10 @@ function pickItem(level: number, attempt: number): Item {
 
 export function SilogismosGame() {
   const navigate = useNavigate()
+  const [advanced,setAdvanced]=useState(false)
   const progress = getGameProgress(GAME_CAT, GAME_ID)
   const unlockedRows = useMemo(() => getUnlockedLevels(GAME_CAT, GAME_ID), [progress.highestLevel])
-  const defaultLevel = Math.min(Math.max(1, progress.highestLevel || 1), TOTAL_LEVELS)
+  const defaultLevel = Math.min(Math.max(1, (progress.highestLevel || 0)+1), TOTAL_LEVELS)
   const maxSelectable = Math.max(1, defaultLevel, ...unlockedRows.map((u) => u.level))
 
   const [level, setLevel] = useState(defaultLevel)
@@ -2406,7 +2411,7 @@ export function SilogismosGame() {
   const [showTheory, setShowTheory] = useState(false)
   const [showHint, setShowHint] = useState(false)
   const [item, setItem] = useState<Item | null>(null)
-  const [useTimer, setUseTimer] = useState(true)
+  const [useTimer, setUseTimer] = useState(false)
   const [timeLeft, setTimeLeft] = useState(TIMER_BASE)
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null)
 
@@ -2427,7 +2432,7 @@ export function SilogismosGame() {
   const startLevel = useCallback(
     (lv: number, att = 0) => {
       clearTimers()
-      const it = pickItem(lv, att)
+      const it = pickItem(lv, att,advanced)
       setItem(it)
       setIsCorrect(null)
       setShowHint(false)
@@ -2460,7 +2465,7 @@ export function SilogismosGame() {
         }, 1000)
       }
     },
-    [useTimer],
+    [useTimer,advanced],
   )
 
   useEffect(() => () => clearTimers(), [])
@@ -2484,7 +2489,7 @@ export function SilogismosGame() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell deduction-game">
       <header
         style={{
           marginBottom: '1.15rem',
@@ -2588,6 +2593,7 @@ export function SilogismosGame() {
         )}
       </AnimatePresence>
 
+      {phase==='setup'&&<section className="deduction-topic-panel"><h2>Elige tu reto lógico</h2><p>{TOTAL_LEVELS} niveles, incluidos {ADVANCED_SYLLOGISMS.length} problemas nuevos verificados mediante tablas de verdad.</p><label>Banco de enunciados<select value={advanced?'advanced':'all'} onChange={e=>setAdvanced(e.target.value==='advanced')}><option value="all">Todos los enunciados</option><option value="advanced">Condicionales y negaciones avanzadas</option></select></label></section>}
       <AnimatePresence mode="wait">
         {phase === 'setup' && (
           <motion.div key="s" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
@@ -2937,12 +2943,8 @@ export function SilogismosGame() {
                 <p style={{ color: 'var(--gco-ink-muted)', margin: '8px 0 14px' }}>
                   {formatDuration(Date.now() - startRef.current)}
                 </p>
-                {!isCorrect && (
-                  <p style={{ fontSize: '0.92rem', marginBottom: 16, lineHeight: 1.4 }}>
-                    Respuesta correcta:{' '}
-                    <strong style={{ color: 'var(--gco-primary)' }}>{item.options[item.correct]}</strong>
-                  </p>
-                )}
+                {isCorrect && <div className="deduction-success-explanation"><strong>Explicación</strong><p>{item.explain || ('La conclusión «'+item.options[item.correct]+'» se obtiene manteniendo verdaderas las premisas, sin añadir supuestos de existencia ni invertir implicaciones. '+item.hint)}</p></div>}
+                {!isCorrect&&<p>Inténtalo con otro enunciado. La explicación se muestra al acertar.</p>}
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
                   {isCorrect ? (
                     <GlassButton onClick={() => startLevel(Math.min(level + 1, TOTAL_LEVELS), 0)}>

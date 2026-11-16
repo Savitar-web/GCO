@@ -1,0 +1,3 @@
+import type {ReactNode} from 'react'
+import type {GameState} from './chessEngine'
+export function MoveJournal({state,collapsible=false,extra}:{state:GameState;collapsible?:boolean;extra?:ReactNode}){const content=<><h3>Registro de movimientos</h3><ol className="move-journal">{state.fullLog.map((move,i)=><li key={i}><span>{Math.floor(i/2)+1}{i%2?'…':'.'}</span><strong>{move.san}</strong><small>{move.timeSpentMs===undefined?'—':`${(move.timeSpentMs/1000).toFixed(1)} s`}</small></li>)}</ol>{!state.fullLog.length&&<p>Sin movimientos aún.</p>}</>;return collapsible?<details className="online-chess-journal"><summary>☰ Opciones y movimientos</summary>{extra}{content}</details>:<section>{content}</section>}

@@ -1,0 +1,2 @@
+import {execFileSync} from 'node:child_process';
+for(const script of ['fetch-reading-sources','build-reading-corpus','build-reading-stories','build-reading-classics','build-reading-editorials','curate-reading-questions','build-reading-rosen','build-reading-curiosities','curate-reading-curiosities','finalize-reading-corpus'])execFileSync(process.execPath,['scripts/'+script+'.mjs'],{stdio:'inherit'});

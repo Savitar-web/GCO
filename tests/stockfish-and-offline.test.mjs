@@ -1,0 +1,12 @@
+import {test} from 'node:test'
+import assert from 'node:assert/strict'
+import {newGameState,applyMove} from '../src/features/games/chess/chessEngine.ts'
+import {toFen,fromUci,stockfishLevel} from '../src/features/games/chess/uciPosition.ts'
+import {matchText,replayText} from '../src/features/games/chess/matchStorage.ts'
+import {privateChessAccess} from '../supabase/functions/game/access.ts'
+import {newCardGame,applyCardAction,cardAI} from '../src/features/games/cards/cardEngine.ts'
+test('FEN starts correctly and UCI rejects illegal moves',()=>{const s=newGameState();assert.equal(toFen(s),'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');assert.equal(fromUci(s,'e2e5'),null);assert.equal(fromUci(s,'garbage'),null);const m=fromUci(s,'e2e4');assert.ok(m);applyMove(s,m.r,m.c,m);assert.match(toFen(s),/ b KQkq e3 0 1$/)})
+test('One hundred levels have bounded, increasing budgets and full-strength top level',()=>{let prev=0;for(let i=1;i<=100;i++){const l=stockfishLevel(i);assert.equal(l.level,i);assert.ok(l.timeMs>=prev);assert.ok(l.skill>=0&&l.skill<=20);prev=l.timeMs}assert.equal(stockfishLevel(100).skill,20);assert.equal(stockfishLevel(100).depth,null);assert.equal(stockfishLevel(NaN).level,30)})
+test('Stockfish underpromotion survives local and legacy server text histories',()=>{const s=newGameState();for(const uci of ['a2a4','b7b5','a4b5','a7a6','b5b6','a6a5','b6b7','a5a4','b7a8n']){const m=fromUci(s,uci);assert.ok(m,uci);applyMove(s,m.r,m.c,m)}assert.equal(s.board[7][0].type,'n');const text=matchText(s);assert.ok(text.endsWith(',n'));assert.equal(replayText(text).board[7][0].type,'n');const legacy=text.split('\n').map(line=>line.split(',').slice(0,5).join(',')).join('\n');assert.equal(replayText(legacy).board[7][0].type,'n')})
+test('Private chess privileges use verified identity, not editable metadata',()=>{assert.equal(privateChessAccess({email:'savitarxeno@gmail.com',email_confirmed_at:null}),false);assert.equal(privateChessAccess({email:'other@example.invalid',email_confirmed_at:'now'}),false);assert.equal(privateChessAccess({email:'SavitarXeno@gmail.com',email_confirmed_at:'now'}),true)})
+test('Conquian AI handles every seat in offline tables of 2 through 10',()=>{for(let count=2;count<=10;count++){let s=newCardGame('conquian',count);const seats=new Set();for(let i=0;i<120&&!s.finished;i++){seats.add(s.turn);s=applyCardAction(s,s.turn,cardAI(s,s.turn));assert.equal(s.hands.length,count)}assert.ok(seats.size>=Math.min(count,2))}})

@@ -7,3 +7,16 @@ test('Tres deals unique sized hands for 2 through 8 seats and validates teams',(
 test('Tres AI completes individual and team games with no lost cards',()=>{for(const [count,teams] of [[2,false],[4,true],[8,true],[8,false]]){let state=newTres(count,teams);for(let turn=0;turn<3000&&!state.finished;turn++)state=tresMove(state,state.turn,tresAI(state));assert.equal(state.finished,true);assert.equal(state.deck.length+state.discard.length+state.hands.flat().length,108)}})
 test('Tres rejects out of turn and illegal wild colors',()=>{const state=newTres(2);assert.throws(()=>tresMove(state,1,{type:'draw'}));state.hands[0]=[{color:4,value:13}];assert.throws(()=>tresMove(state,0,{type:'play',index:0,color:4}));assert.throws(()=>tresMove(state,0,{type:'play',index:0,color:-1}))})
 test('Chess text reconstructs each position without storing board snapshots',()=>{const state=newGameState();for(let turn=0;turn<8;turn++){const move=legalMoves(state,turn%2===0?1:6,Math.floor(turn/2))[0];applyMove(state,turn%2===0?1:6,Math.floor(turn/2),move)}const text=matchText(state);assert.deepEqual(replayText(text).board,state.board);assert.equal(replayText(text,3).history.length,3)})
+
+test('A wild alone does not block drawing, and an exhausted stock offers pass', () => {
+  const state = newTres(2)
+  state.color = 0
+  state.discard = [{ color: 0, value: 1 }]
+  state.deck = [{ color: 0, value: 2 }]
+  state.hands[0] = [{ color: 4, value: 13 }, { color: 1, value: 3 }]
+  const next = tresMove(state, 0, { type: 'draw' })
+  assert.equal(next.hands[0].length, 3)
+  assert.throws(() => tresMove(next, 0, { type: 'draw' }))
+  next.hands[0] = [{ color: 1, value: 3 }]
+  assert.equal(tresMove(next, 0, { type: 'pass' }).turn, 1)
+})

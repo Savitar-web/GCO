@@ -1,7 +1,9 @@
+import {clonePlain} from '../../../core/clonePlain.ts'
+import {motionDuration} from './motion.ts'
 export type Point={x:number;y:number}
 export type Disc=Point&{team:number;owner:number}
 export type TokenDesign={color:string;text:string;ink:string;drawing:Point[][]}
-export type FichaState={kind:'fichacore';count:number;discs:Disc[];ball:Point;turn:number;score:number[];target:number;phase:'setup'|'play'|'goal'|'finished';started:boolean;finished:boolean;winner:number|null;message:string;formations:Point[][];designs:TokenDesign[];ready:boolean[];courtVotes:string[];court:string;round:number;shotId:number;lastShot?:{discs:Disc[];ball:Point;index:number;dx:number;dy:number;id:number};readyAt?:number;lastPass?:boolean;teamTurns?:number[]}
+export type FichaState={kind:'fichacore';count:number;discs:Disc[];ball:Point;turn:number;score:number[];target:number;phase:'setup'|'play'|'goal'|'finished';started:boolean;finished:boolean;winner:number|null;message:string;formations:Point[][];designs:TokenDesign[];ready:boolean[];courtVotes:string[];court:string;round:number;shotId:number;lastShot?:{discs:Disc[];ball:Point;index:number;dx:number;dy:number;id:number};motionMs?:number;readyAt?:number;lastPass?:boolean;teamTurns?:number[]}
 export type FichaAction={type:'setup'|'continue'|'shoot';formation?:Point[];design?:TokenDesign;court?:string;index?:number;dx?:number;dy?:number}
 export const COURTS=['classic','night','clay','ice'] as const
 export const FORMATIONS:{name:string;points:Point[]}[]=[
@@ -21,48 +23,50 @@ export function validateDesign(design:TokenDesign):TokenDesign{
  if(!design||!/^#[a-f0-9]{6}$/i.test(design.color)||!/^#[a-f0-9]{6}$/i.test(design.ink)||typeof design.text!=='string'||Array.from(design.text).length>12||!Array.isArray(design.drawing)||design.drawing.length>24)throw new Error('Diseño inválido: usa colores, texto corto y hasta 24 trazos.')
  let points=0;for(const stroke of design.drawing){if(!Array.isArray(stroke)||stroke.length>100)throw new Error('Trazo demasiado largo.');for(const p of stroke){points++;if(!Number.isFinite(p.x)||!Number.isFinite(p.y)||Math.hypot(p.x-50,p.y-50)>46)throw new Error('Dibuja dentro de la ficha.')}}
  if(points>800)throw new Error('El dibujo supera los 800 puntos.')
- return structuredClone(design)
+ return clonePlain(design)
 }
 function place(state:FichaState){state.discs=[0,1].flatMap(team=>state.formations[team].map((p,i)=>({x:team?1000-p.x:p.x,y:p.y,team,owner:state.count===4&&i>=3?team+2:team})));state.ball={x:500,y:300}}
 export function newFicha(count=2,target=3):FichaState{
  if(![2,4].includes(count)||!Number.isInteger(target)||target<1||target>7)throw new Error('Elige 2 o 4 jugadores y entre 1 y 7 goles.')
- const state:FichaState={kind:'fichacore',count,discs:[],ball:{x:500,y:300},turn:0,score:[0,0],target,phase:'setup',started:false,finished:false,winner:null,message:'Elige formación, cancha y diseño. Todos deben confirmar.',formations:[structuredClone(FORMATIONS[0].points),structuredClone(FORMATIONS[0].points)],designs:Array.from({length:count},(_,i)=>defaultDesign(i)),ready:Array(count).fill(false),courtVotes:Array(count).fill('classic'),court:'classic',round:0,shotId:0,teamTurns:[1,0]};place(state);return state
+ const state:FichaState={kind:'fichacore',count,discs:[],ball:{x:500,y:300},turn:0,score:[0,0],target,phase:'setup',started:false,finished:false,winner:null,message:'Elige formación, cancha y diseño. Todos deben confirmar.',formations:[clonePlain(FORMATIONS[0].points),clonePlain(FORMATIONS[0].points)],designs:Array.from({length:count},(_,i)=>defaultDesign(i)),ready:Array(count).fill(false),courtVotes:Array(count).fill('classic'),court:'classic',round:0,shotId:0,teamTurns:[1,0]};place(state);return state
 }
 type Body=Point&{vx:number;vy:number;r:number;m:number;team:number}
-export type ShotResult={discs:Disc[];ball:Point;goal:number|null;pass:boolean;frames:Point[][]}
+export type ShotResult={discs:Disc[];ball:Point;durationMs:number;goal:number|null;pass:boolean;receiver?:number;frames:Point[][]}
 // Fixed steps, finite duration and bounded impulses make client/server simulation deterministic.
 export function simulateShot(discs:Disc[],ball:Point,index:number,dx:number,dy:number,record=false):ShotResult{
  const team=discs[index].team;const bodies:Body[]=[...discs.map(p=>({...p,vx:0,vy:0,r:23,m:3})),{...ball,vx:0,vy:0,r:12,m:1,team:-1}]
- const power=Math.hypot(dx,dy),scale=Math.min(power,180)/Math.max(power,.001)*5.5;bodies[index].vx=dx*scale;bodies[index].vy=dy*scale
- const frames:Point[][]=[];let goal:number|null=null;let receiver=-1;let ownTouch=false;const dt=1/120
- for(let tick=0;tick<960;tick++){
-   for(const b of bodies){b.x+=b.vx*dt;b.y+=b.vy*dt;const drag=Math.exp(-(b.team<0?1.45:2.1)*dt);b.vx*=drag;b.vy*=drag
+ const power=Math.hypot(dx,dy),scale=Math.min(power,180)/Math.max(power,.001)*(2.8+5*Math.pow(Math.min(power,180)/180,1.6));bodies[index].vx=dx*scale;bodies[index].vy=dy*scale
+ const frames:Point[][]=record?[bodies.map(p=>({x:p.x,y:p.y}))]:[];let ticks=0;let goal:number|null=null;let receiver=-1;let ownTouch=false;const dt=1/120
+ for(let tick=0;tick<720;tick++){ticks=tick+1;
+   for(const b of bodies){b.x+=b.vx*dt;b.y+=b.vy*dt;const drag=Math.exp(-(b.team<0?1.85:2.5)*dt);b.vx*=drag;b.vy*=drag
      if(b.y<b.r){b.y=b.r;b.vy=Math.abs(b.vy)*.58}if(b.y>600-b.r){b.y=600-b.r;b.vy=-Math.abs(b.vy)*.58}
-     const goalMouth=b.team<0&&b.y>232&&b.y<368
+     const goalMouth=b.team<0&&receiver<0&&b.y>232&&b.y<368
      if(goalMouth&&(b.x<0||b.x>1000)){goal=b.x<0?1:0;break}
      if(!goalMouth){if(b.x<b.r){b.x=b.r;b.vx=Math.abs(b.vx)*.58}if(b.x>1000-b.r){b.x=1000-b.r;b.vx=-Math.abs(b.vx)*.58}}
    }
    if(goal!==null)break
    for(let a=0;a<bodies.length;a++)for(let b=a+1;b<bodies.length;b++){
-     const first=bodies[a],second=bodies[b];let sx=second.x-first.x,sy=second.y-first.y;let distance=Math.hypot(sx,sy);const min=first.r+second.r;if(distance>=min)continue
+     const first=bodies[a],second=bodies[b];let sx=second.x-first.x,sy=second.y-first.y;let distance=Math.hypot(sx,sy);const min=first.r+second.r;if(distance>=min||b===12&&receiver>=0)continue
      if(distance<.001){sx=1;sy=0;distance=1}const nx=sx/distance,ny=sy/distance;const invA=1/first.m,invB=1/second.m,total=invA+invB;const overlap=min-distance+.01
      first.x-=nx*overlap*invA/total;first.y-=ny*overlap*invA/total;second.x+=nx*overlap*invB/total;second.y+=ny*overlap*invB/total
      const rel=(second.vx-first.vx)*nx+(second.vy-first.vy)*ny;if(rel>=0)continue
-     if(b===12){if(a===index)ownTouch=true;else if(ownTouch&&first.team===team&&Math.hypot(second.vx,second.vy)<260)receiver=a;else receiver=-1}
-     const impulse=-(1+.72)*rel/total;first.vx-=impulse*nx*invA;first.vy-=impulse*ny*invA;second.vx+=impulse*nx*invB;second.vy+=impulse*ny*invB
+     if(b===12){if(receiver>=0)continue;if(a===index)ownTouch=true;else if(ownTouch&&first.team===team)receiver=a;else receiver=-1}
+     const impulse=-(1+.62)*rel/total;first.vx-=impulse*nx*invA;first.vy-=impulse*ny*invA;second.vx+=impulse*nx*invB;second.vy+=impulse*ny*invB
    }
-   if(record&&tick%6===0)frames.push(bodies.map(p=>({x:p.x,y:p.y})))
-   if(tick>30&&bodies.every(p=>Math.hypot(p.vx,p.vy)<3))break
+   if(receiver>=0){const mate=bodies[receiver],caught=bodies[12];const angle=Math.atan2(caught.y-mate.y,caught.x-mate.x);caught.x=mate.x+Math.cos(angle)*36;caught.y=mate.y+Math.sin(angle)*36;caught.vx=mate.vx;caught.vy=mate.vy}
+   if(record&&tick%2===0)frames.push(bodies.map(p=>({x:p.x,y:p.y})))
+   if(tick>20&&bodies.every(p=>Math.hypot(p.vx,p.vy)<7))break
  }
  const round=(v:number)=>Math.round(v*1000)/1000
  const finalDiscs=discs.map((p,i)=>({...p,x:round(Math.max(23,Math.min(977,bodies[i].x))),y:round(Math.max(23,Math.min(577,bodies[i].y)))}))
  const finalBall={x:round(Math.max(12,Math.min(988,bodies[12].x))),y:round(Math.max(12,Math.min(588,bodies[12].y)))}
+ if(receiver>=0&&Math.hypot(finalDiscs[receiver].x-finalBall.x,finalDiscs[receiver].y-finalBall.y)<35){const mate=finalDiscs[receiver],angle=Math.atan2(300-mate.y,500-mate.x);finalBall.x=round(mate.x+Math.cos(angle)*36);finalBall.y=round(mate.y+Math.sin(angle)*36)}
  const pass=goal===null&&receiver>=0&&Math.hypot(finalDiscs[receiver].x-finalBall.x,finalDiscs[receiver].y-finalBall.y)<85
- if(record)frames.push([...finalDiscs,finalBall]);return {discs:finalDiscs,ball:finalBall,goal,pass,frames}
+ if(record)frames.push([...finalDiscs,finalBall]);return {durationMs:ticks*dt*1000,discs:finalDiscs,ball:finalBall,goal,pass,receiver,frames}
 }
 export function fichaMove(previous:FichaState,seat:number,action:FichaAction):FichaState{
  if(previous.finished||!Number.isInteger(seat)||seat<0||seat>=previous.count)throw new Error('No puedes jugar en esta partida.')
- const state=structuredClone(previous)
+ const state=clonePlain(previous)
  if(action.type==='setup'||action.type==='continue'){
    if(!['setup','goal'].includes(state.phase))throw new Error('Solo puedes cambiar la plantilla antes del saque.')
    if(state.ready[seat])throw new Error('Ya confirmaste este saque.')
@@ -70,15 +74,15 @@ export function fichaMove(previous:FichaState,seat:number,action:FichaAction):Fi
    if(action.design)state.designs[seat]=validateDesign(action.design)
    if(action.court){if(!COURTS.includes(action.court as typeof COURTS[number]))throw new Error('Cancha inválida.');state.courtVotes[seat]=action.court}
    state.ready[seat]=true
-   if(state.ready.every(Boolean)){state.court=[...COURTS].sort((a,b)=>state.courtVotes.filter(v=>v===b).length-state.courtVotes.filter(v=>v===a).length||COURTS.indexOf(a)-COURTS.indexOf(b))[0];state.phase='play';state.started=true;place(state);state.message=`Saca J${state.turn+1}. Arrastra una ficha hacia atrás y suelta.`}
+   if(state.ready.every(Boolean)){state.court=[...COURTS].sort((a,b)=>state.courtVotes.filter(v=>v===b).length-state.courtVotes.filter(v=>v===a).length||(a===state.courtVotes[0]?-1:b===state.courtVotes[0]?1:COURTS.indexOf(a)-COURTS.indexOf(b)))[0];state.phase='play';state.started=true;place(state);state.message=`Saca J${state.turn+1}. Arrastra una ficha hacia atrás y suelta.`}
    return state
  }
  if(action.type!=='shoot'||state.phase!=='play'||state.turn!==seat)throw new Error('Espera tu turno y la confirmación de las plantillas.')
  const {index,dx,dy}=action;if(!Number.isInteger(index)||index!<0||index!>=12||state.discs[index!].team!==seat%2||!Number.isFinite(dx)||!Number.isFinite(dy)||Math.hypot(dx!,dy!)<4||Math.hypot(dx!,dy!)>181)throw new Error('Tiro inválido: elige una ficha de tu equipo y una potencia válida.')
- state.shotId++;state.lastShot={discs:structuredClone(state.discs),ball:{...state.ball},index:index!,dx:dx!,dy:dy!,id:state.shotId}
- const result=simulateShot(state.discs,state.ball,index!,dx!,dy!);state.discs=result.discs;state.ball=result.ball;state.lastPass=result.pass
+ state.shotId++;state.lastShot={discs:clonePlain(state.discs),ball:{...state.ball},index:index!,dx:dx!,dy:dy!,id:state.shotId}
+ const result=simulateShot(state.discs,state.ball,index!,dx!,dy!);state.motionMs=motionDuration(result.durationMs);state.discs=result.discs;state.ball=result.ball;state.lastPass=result.pass
  if(result.goal!==null){state.score[result.goal]++;state.round++;state.ready=Array(state.count).fill(false);state.turn=1-result.goal;state.message=`¡Gol del equipo ${result.goal+1}! ¿Cambiar plantilla?`;state.phase='goal';if(state.score[result.goal]>=state.target){state.finished=true;state.phase='finished';state.winner=result.goal;state.message=`¡Equipo ${result.goal+1} gana ${state.score.join(' – ')}!`}}
- else if(result.pass)state.message='¡Pase controlado! Conservas el turno.'
+ else if(result.pass){state.turn=state.discs[result.receiver!].owner;state.message='¡Pase controlado! La ficha receptora conserva el balón y el turno.'}
  else{const other=1-seat%2;const counters=state.teamTurns||[1,0];state.turn=state.count===4?other+(counters[other]%2)*2:other;counters[other]++;state.teamTurns=counters;state.message=`Balón libre. Turno de J${state.turn+1}.`}
  return state
 }

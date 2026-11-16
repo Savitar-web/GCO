@@ -1,3 +1,4 @@
+import {clonePlain} from '../../../core/clonePlain.ts'
 /**
  * chessEngine.ts
  * Motor de ajedrez puro (sin DOM, sin Three.js) — reglas completas + IA.
@@ -32,6 +33,7 @@ export interface Move {
   toR: number
   toC: number
   capture?: boolean
+  promotionPiece?:'q'|'r'|'b'|'n'
   promotion?: boolean
   doubleStep?: boolean
   enPassantCapture?: boolean
@@ -46,10 +48,12 @@ export interface LegalMove extends Move {
 export type MoveStatus = 'ok' | 'check' | 'checkmate' | 'stalemate'
 
 export interface MoveInfo {
+  timeSpentMs?:number
   from: { r: number; c: number }
   to: { r: number; c: number }
   piece: Piece
   captured: Piece | null
+  promotionPiece?:'q'|'r'|'b'|'n'
   promotion: boolean
   castle: 'K' | 'Q' | null
   enPassantCapture: boolean
@@ -60,8 +64,9 @@ export interface MoveInfo {
 
 export type GameResult = 'checkmate' | 'stalemate' | 'draw' | 'timeout' | 'resignation' | 'abandonment' | null
 
-export type PieceStyle={color:string;particleColor:string;effect:'none'|'sparks'|'orbit'}
+export type PieceStyle={design?:'byron'|'staunton'|'classic'|'geometric'|'rounded'|'medieval';color:string;particleColor:string;effect:'none'|'sparks'|'orbit'}
 export interface GameState {
+  turnStartedAt?:number
   cosmetics?:Partial<Record<Color,PieceStyle>>
   board: Board
   turn: Color
@@ -70,6 +75,8 @@ export interface GameState {
   moveNumber: number
   history: string[]
   fullLog: MoveInfo[]
+  drawOffer?:Color
+  lastDrawOfferPly?:number
   result: GameResult
   winner: Color | null
 }
@@ -99,6 +106,8 @@ export function cloneBoard(b: Board): Board {
 
 export function cloneState(s: GameState): GameState {
   return {
+    turnStartedAt:s.turnStartedAt,
+    cosmetics:s.cosmetics?clonePlain(s.cosmetics):undefined,
     board: cloneBoard(s.board),
     turn: s.turn,
     castling: { ...s.castling },
@@ -106,6 +115,7 @@ export function cloneState(s: GameState): GameState {
     moveNumber: s.moveNumber,
     history: [...s.history],
     fullLog: [...s.fullLog],
+    drawOffer:s.drawOffer,lastDrawOfferPly:s.lastDrawOfferPly,
     result: s.result,
     winner: s.winner,
   }
@@ -124,6 +134,7 @@ export function newGameState(): GameState {
     moveNumber: 1,
     history: [],
     fullLog: [],
+    turnStartedAt:Date.now(),
     result: null,
     winner: null,
   }
@@ -385,7 +396,7 @@ export function applyMove(state: GameState, r: number, c: number, move: Move): M
       board[rank][3]!.moved = true
     }
   }
-  if (move.promotion) board[move.toR][move.toC]!.type = 'q'
+  if (move.promotion) board[move.toR][move.toC]!.type = move.promotionPiece||'q'
 
   if (piece.type === 'k') {
     if (color === 'w') {
@@ -447,7 +458,7 @@ export function applyMove(state: GameState, r: number, c: number, move: Move): M
     } else {
       san = letter + disambiguation + capMark + dest
     }
-    if (move.promotion) san += '=Q'
+    if (move.promotion) san += '='+((move.promotionPiece||'q').toUpperCase())
   }
   san += suffix
 
@@ -457,6 +468,7 @@ export function applyMove(state: GameState, r: number, c: number, move: Move): M
     piece,
     captured: capturedPiece || null,
     promotion: !!move.promotion,
+    ...(move.promotion?{promotionPiece:move.promotionPiece||'q'}:{}),
     castle: move.castle || null,
     enPassantCapture: !!move.enPassantCapture,
     san,
@@ -464,6 +476,7 @@ export function applyMove(state: GameState, r: number, c: number, move: Move): M
     color,
   }
   state.history.push(san)
+  const now=Date.now();info.timeSpentMs=state.turnStartedAt?Math.max(0,now-state.turnStartedAt):undefined;state.turnStartedAt=now;
   state.fullLog.push(info)
   if (color === 'b') state.moveNumber++
   return info

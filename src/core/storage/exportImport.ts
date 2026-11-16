@@ -79,6 +79,11 @@ export interface PlaylistSnapshot {
 }
 
 export interface BookFingerprint {
+  originalDataUrl?: string
+  originalName?: string
+  documentLocation?: string
+  documentProgress?: number
+  sourceFormat?: string
   id: string
   title: string
   author?: string
@@ -618,7 +623,7 @@ async function buildNutritionSection(
       textLength: text.length,
       textShaPreview: text.slice(0, 64),
     }
-    if (mode === 'full') fp.text = text
+    if (mode === 'full') {fp.text = text;fp.originalDataUrl=b.originalDataUrl;fp.originalName=b.originalName;fp.documentLocation=b.documentLocation;fp.documentProgress=b.documentProgress;fp.sourceFormat=b.sourceFormat}
     else if (text.length <= maxLightBookChars) fp.text = text
     else notes.push(`Texto omitido (ligero) “${fp.title}” (${text.length} chars)`)
     books.push(fp)
@@ -856,10 +861,15 @@ async function importNutritionV3(
         ? folderIdMap.get(String(bk.folderId)) ?? bk.folderId
         : null
     try {
-      if (bk.text && lib.saveBook) {
+      if ((bk.text || bk.originalDataUrl) && lib.saveBook) {
         await lib.saveBook({
           title: bk.title,
-          text: bk.text,
+          text: bk.text || '',
+          originalDataUrl: bk.originalDataUrl,
+          originalName: bk.originalName,
+          documentLocation: bk.documentLocation,
+          documentProgress: bk.documentProgress,
+          sourceFormat: bk.sourceFormat,
           author: bk.author,
           year: bk.year,
           coverDataUrl: bk.coverDataUrl,

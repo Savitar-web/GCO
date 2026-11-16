@@ -44,11 +44,18 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // The optimized pieces travel inside the application bundle.
+        // Keep the original URLs available for older clients, without fetching
+        // another 4 MB of unused originals during service-worker installation.
+        globIgnores: ['**/chess/byron/*.png','**/stockfish-19-single.wasm','**/ocr/**'],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         globPatterns: [
-          '**/*.{js,css,html,ico,png,svg,woff2,woff,ttf,webp,json}',
+          '**/*.{js,css,html,ico,png,svg,woff2,woff,ttf,webp,json,wasm}',
+          '**/chess/stockfish-19.0.1/*.{txt,md,gz}',
         ],
         runtimeCaching: [
+          {urlPattern:({url})=>url.pathname.startsWith('/ocr/'),handler:'CacheFirst',options:{cacheName:'gco-reader-ocr-v1',cacheableResponse:{statuses:[200]}}},
+          {urlPattern:({url})=>url.pathname.startsWith('/chess/stockfish-19.0.1/'),handler:'CacheFirst',options:{cacheName:'gco-stockfish-v19',cacheableResponse:{statuses:[200]}}},
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: 'CacheFirst',

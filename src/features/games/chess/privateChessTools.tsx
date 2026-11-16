@@ -1,0 +1,7 @@
+import type {usePrivateChessTools} from './usePrivateChessTools'
+export function PrivateChessTools({tools}:{tools:ReturnType<typeof usePrivateChessTools>}){
+ if(!tools.allowed)return null
+ return <section className="private-chess-tools"><label className="private-engine-switch"><span><strong>Modo Dantesco</strong><small>Asistencia de máxima fuerza</small></span><input role="switch" type="checkbox" checked={tools.enabled} onChange={tools.toggle}/><i aria-hidden="true"/></label>
+ {tools.enabled&&<><div className="private-engine-modes" role="group" aria-label="Ejecución de Dantesco"><button type="button" aria-pressed={tools.mode==='manual'} onClick={()=>tools.setMode('manual')}>Manual</button><button type="button" aria-pressed={tools.mode==='auto'} onClick={()=>tools.setMode('auto')}>Automático</button></div><p className="private-engine-caption">{tools.mode==='manual'?'Ejecuta una jugada cuando pulses el botón.':'Ejecuta una jugada al comenzar tu turno.'}</p><button className="glass-button" disabled={!tools.canMove||tools.busy} onClick={()=>void tools.play()}>{tools.busy?'Analizando la posición…':tools.mode==='auto'?'Ejecutar ahora':'Ejecutar movimiento'}</button></>}
+ {tools.error&&<div className="private-engine-error" role="alert"><p>{tools.error}</p><button type="button" className="glass-button secondary" disabled={!tools.canMove||tools.busy} onClick={()=>void tools.play()}>Reintentar análisis</button></div>}</section>
+}

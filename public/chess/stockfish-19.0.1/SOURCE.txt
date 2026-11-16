@@ -1,0 +1,8 @@
+Stockfish.js 19.0.1, unmodified single-threaded full and lite builds.
+Copyright 2026 Chess.com, LLC and Stockfish contributors. GPLv3; see Copying.txt.
+Upstream release: https://github.com/nmrugg/stockfish.js/tree/v19.0.1
+Exact source commit: 0d5dd7944f88c817c07a26bc4fb1905d5f9c46d6
+Corresponding source archive: ./source.tar.gz
+Build instructions: README.md and build.js inside the source archive.
+Source and license are provided alongside the engine in web and native distributions.
+GCO communicates with this separate worker using the public UCI text protocol.

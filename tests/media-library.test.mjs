@@ -37,3 +37,13 @@ test('Reader updates preserve book author, cover, folder and creation date', asy
   assert.equal(saved.author, book.author); assert.equal(saved.coverDataUrl, book.coverDataUrl); assert.equal(saved.folderId, book.folderId); assert.equal(saved.createdAt, book.createdAt)
   assert.equal(saved.position, 7); assert.equal(saved.bookmarks.length, 1)
 })
+
+test('Original documents and reading location survive text-reader metadata saves', async () => {
+ const original='data:application/pdf;base64,JVBERi0xLjQ='
+ const b=await saveBook({title:'Original',text:'Accessible text',originalDataUrl:original,originalName:'book.pdf',sourceFormat:'pdf',documentLocation:'2'})
+ await saveBook({id:b.id,title:b.title,text:b.text,position:8})
+ const saved=await getBook(b.id)
+ assert.equal(saved.originalDataUrl,original);assert.equal(saved.originalName,'book.pdf');assert.equal(saved.documentLocation,'2');assert.equal(saved.sourceFormat,'pdf')
+ const scan=await saveBook({title:'Scanned document',text:'',originalDataUrl:original,sourceFormat:'pdf'})
+ assert.equal((await getBook(scan.id)).originalDataUrl,original)
+})

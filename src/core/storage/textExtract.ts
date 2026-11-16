@@ -44,7 +44,7 @@ export function isSupportedImportFile(filename: string): boolean {
 }
 
 /** Punto de entrada único: detecta el formato por extensión y delega */
-export async function extractTextFromFile(file: File): Promise<string> {
+export async function extractTextFromFile(file: File, options: {ocr?:boolean;onProgress?:(message:string)=>void;signal?:AbortSignal} = {}): Promise<string> {
   const ext = getFileExt(file.name) as SupportedImportExt
 
   switch (ext) {
@@ -58,7 +58,7 @@ export async function extractTextFromFile(file: File): Promise<string> {
     case 'rtf':
       return extractRtf(file)
     case 'pdf':
-      return extractPdf(file)
+      return extractPdf(file,options)
     case 'docx':
       return extractDocx(file)
     case 'epub':
@@ -107,7 +107,7 @@ function htmlToLightMarkdown(html: string): string {
       }
       if (child.nodeType !== Node.ELEMENT_NODE) return
       const e = child as HTMLElement
-      const tag = e.tagName.toLowerCase()
+      const tag = e.localName.toLowerCase()
       const inner = inlineOf(e)
       if (!inner.trim() && tag !== 'br' && tag !== 'img') return
       switch (tag) {
@@ -144,9 +144,11 @@ function htmlToLightMarkdown(html: string): string {
 
   const walk = (node: Node) => {
     node.childNodes.forEach((child) => {
-      if (child.nodeType === Node.ELEMENT_NODE) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        const text = child.textContent?.trim(); if (text) lines.push(text)
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
         const e = child as HTMLElement
-        const tag = e.tagName.toLowerCase()
+        const tag = e.localName.toLowerCase()
         if (tag === 'img') {
           const src = e.getAttribute('src') || ''
           const alt = e.getAttribute('alt') || 'imagen'
@@ -173,7 +175,7 @@ function htmlToLightMarkdown(html: string): string {
 
   walk(doc.body || doc)
 
-  const joined = lines.filter(Boolean).join('\n\n')
+  const joined = lines.filter(Boolean).join('\n\n') || doc.body?.textContent || ''
   return normalizeParagraphs(joined)
 }
 
@@ -223,7 +225,7 @@ async function extractRtf(file: File): Promise<string> {
 
 /* ──────────────────────────────────── PDF ─────────────────────────────────── */
 
-async function extractPdf(file: File): Promise<string> {
+async function extractPdf(file: File, options: {ocr?:boolean;onProgress?:(message:string)=>void;signal?:AbortSignal}): Promise<string> {
   let pdfjsLib: typeof import('pdfjs-dist')
   try {
     pdfjsLib = await import('pdfjs-dist')
@@ -247,8 +249,11 @@ async function extractPdf(file: File): Promise<string> {
   const loadingTask = pdfjsLib.getDocument({ data: buf })
   const pdf = await loadingTask.promise
 
+  try {
   const pageTexts: string[] = []
   for (let i = 1; i <= pdf.numPages; i++) {
+    if(options.signal?.aborted)throw new DOMException('Lectura cancelada','AbortError')
+    options.onProgress?.(`Extrayendo texto · página ${i} de ${pdf.numPages}`)
     const page = await pdf.getPage(i)
     const content = await page.getTextContent()
 
@@ -261,7 +266,8 @@ async function extractPdf(file: File): Promise<string> {
         if (line.trim()) lines.push(line.trim())
         line = ''
       }
-      line += item.str
+      if(typeof item.str!=='string')continue
+      line += (line&&!/\s$/.test(line)&&!/^\s/.test(item.str)?' ':'')+item.str
       lastY = y
     }
     if (line.trim()) lines.push(line.trim())
@@ -273,7 +279,12 @@ async function extractPdf(file: File): Promise<string> {
   }
 
   const joined = pageTexts.join('\n\n')
+  if(!joined.trim()&&options.ocr){
+    const {recognizePdf}=await import('./pdfOcr')
+    return normalizeParagraphs(await recognizePdf(pdf,options.onProgress,options.signal))
+  }
   return normalizeParagraphs(joined)
+  } finally { await loadingTask.destroy() }
 }
 
 /* ──────────────────────────────────── DOCX ────────────────────────────────── */
@@ -330,24 +341,23 @@ async function extractEpub(file: File): Promise<string> {
   const containerXml = await zip.file('META-INF/container.xml')?.async('text')
   if (!containerXml) throw new Error('EPUB inválido: falta META-INF/container.xml')
   const containerDoc = new DOMParser().parseFromString(containerXml, 'application/xml')
-  const opfPath = containerDoc.querySelector('rootfile')?.getAttribute('full-path')
+  const opfPath = Array.from(containerDoc.getElementsByTagName('*')).find(node=>node.localName==='rootfile')?.getAttribute('full-path')
   if (!opfPath) throw new Error('EPUB inválido: no se encontró el archivo .opf')
 
-  const opfDir = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : ''
   const opfXml = await zip.file(opfPath)?.async('text')
   if (!opfXml) throw new Error('EPUB inválido: no se pudo leer el .opf')
   const opfDoc = new DOMParser().parseFromString(opfXml, 'application/xml')
 
   // 2) Manifest: id → href
   const manifest: Record<string, string> = {}
-  opfDoc.querySelectorAll('manifest > item').forEach((item) => {
+  Array.from(opfDoc.getElementsByTagName('*')).filter(node=>node.localName==='item').forEach((item) => {
     const id = item.getAttribute('id')
     const href = item.getAttribute('href')
-    if (id && href) manifest[id] = opfDir + href
+    if (id && href) manifest[id] = new URL(href, 'https://epub.local/' + opfPath).pathname.slice(1)
   })
 
   // 3) Spine: orden real de lectura
-  const spineIds = Array.from(opfDoc.querySelectorAll('spine > itemref'))
+  const spineIds = Array.from(opfDoc.getElementsByTagName('*')).filter(node=>node.localName==='itemref')
     .map((n) => n.getAttribute('idref'))
     .filter((x): x is string => !!x)
 
@@ -356,7 +366,7 @@ async function extractEpub(file: File): Promise<string> {
 
   const parts: string[] = []
   for (let i = 0; i < chapterPaths.length; i++) {
-    const path = decodeURIComponent(chapterPaths[i])
+    const path = decodeURIComponent(chapterPaths[i].split('#')[0])
     const entry = zip.file(path)
     if (!entry) continue
     const xhtml = await entry.async('text')

@@ -1,0 +1,4 @@
+import type {RuleOptions} from './GameRuleFields'
+export type TableSetup={rules?:RuleOptions;mode:string;count:number;teams:boolean;house:boolean;visibility:'first-hidden'|'first-visible';target:number;code:string;autoStart:boolean}
+export const tableDefaults:TableSetup={mode:'ai',count:2,teams:false,house:false,visibility:'first-hidden',target:3,code:'',autoStart:false}
+export function tableLaunch(value:unknown,kind:string):TableSetup{const v=(value as {tableSetup?:Partial<TableSetup>}|null)?.tableSetup;const max=kind==='tres'?8:['21','conquian'].includes(kind)?10:kind==='fichacore'?4:2;const count=Math.max(kind==='21'?1:2,Math.min(max,Math.floor(Number(v?.count)||2)));return {...tableDefaults,...v,count,mode:['ai','online','local'].includes(v?.mode||'')?v!.mode!:'ai',teams:!!v?.teams&&[4,8].includes(count),autoStart:!!v?.autoStart}}

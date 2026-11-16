@@ -3,12 +3,13 @@ import type { Color } from './chessEngine'
 export type GameMode = 'ai' | 'local2p' | 'online'
 export type BoardView = '2d' | '3d'
 export type ClockPreset = 'none' | '1' | '3' | '5' | '10' | '15' | '30'
-export type BoardSkin = 'cyan' | 'wood' | 'gold' | 'stone' | 'dark' | 'light'
+export type BoardSkin = 'cyan' | 'wood' | 'gold' | 'stone' | 'dark' | 'light' | 'forest' | 'ocean' | 'rose' | 'walnut' | 'ivory' | 'violet'
 
 export interface ChessSetup {
   tournamentMatch?: number
   mode: GameMode
   humanColor: Color
+  engine?: 'full' | 'lite'
   aiLevel: number
   view: BoardView
   skin: BoardSkin
@@ -22,9 +23,10 @@ export interface ChessSetup {
 export const DEFAULT_SETUP: ChessSetup = {
   mode: 'ai',
   humanColor: 'w',
-  aiLevel: 5,
+  aiLevel: 30,
+  engine: 'full',
   view: '3d',
-  skin: 'cyan',
+  skin: 'wood',
   clock: 'none',
   showLegalHints: true,
   soundEnabled: true,
@@ -32,6 +34,12 @@ export const DEFAULT_SETUP: ChessSetup = {
 }
 
 export const BOARD_SKINS: { id: BoardSkin; label: string; light: string; dark: string; accent: string }[] = [
+  {id:'forest',label:'Bosque',light:'#e1ead0',dark:'#37694d',accent:'#a6c790'},
+  {id:'ocean',label:'Océano',light:'#d4e8f5',dark:'#245b7a',accent:'#69c9ed'},
+  {id:'rose',label:'Rosa',light:'#f6dce0',dark:'#8a4258',accent:'#ee9eb2'},
+  {id:'walnut',label:'Nogal',light:'#dab98a',dark:'#472c20',accent:'#b78855'},
+  {id:'ivory',label:'Marfil',light:'#fff6dc',dark:'#7d7360',accent:'#d4bd84'},
+  {id:'violet',label:'Amatista',light:'#e6dff7',dark:'#554077',accent:'#baa1ed'},
   { id: 'cyan', label: 'Cian', light: '#bfe9e4', dark: '#280a10', accent: '#37e6ff' },
   { id: 'wood', label: 'Madera', light: '#e8d5b0', dark: '#5c3a1e', accent: '#c9a26b' },
   { id: 'gold', label: 'Oro', light: '#f0e0a8', dark: '#3a2a08', accent: '#ffd060' },

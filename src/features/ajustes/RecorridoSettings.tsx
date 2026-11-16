@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { JourneyOverview } from './JourneyOverview'
 import {
   getTotalProgress,
@@ -24,6 +24,12 @@ export function RecorridoSettings() {
   const [detail, setDetail] = useState<FlatHistory | null>(null)
   const [filter, setFilter] = useState<'all' | 'win' | 'loss'>('all')
 
+  useEffect(()=>{
+    const refresh=()=>setTick(value=>value+1)
+    window.addEventListener('gco:progress',refresh)
+    window.addEventListener('storage',refresh)
+    return()=>{window.removeEventListener('gco:progress',refresh);window.removeEventListener('storage',refresh)}
+  },[])
   void tick
   const total = getTotalProgress()
   const all = getAllProgress()
@@ -102,7 +108,7 @@ export function RecorridoSettings() {
             fontWeight: 600,
           }}
         >
-          Nivel de jugador
+          Índice de ejercicios registrados
         </p>
         <div
           style={{

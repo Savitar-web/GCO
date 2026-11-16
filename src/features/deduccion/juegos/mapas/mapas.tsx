@@ -26,7 +26,7 @@ const TOTAL_LEVELS = 400
 const TIMER_BY_TIER = [95, 85, 75, 65, 58, 50]
 
 function tierOf(level: number) {
-  return Math.min(5, Math.floor((level - 1) / 70))
+  return Math.min(5, Math.floor((level - 1) / 40))
 }
 
 /* ---------- utilidades deterministas ---------- */
@@ -163,6 +163,7 @@ type LevelData = {
   options: string[]
   correctIndex: number
   explanation: string
+  solutionCount?:number
   visual: VisualData
 }
 
@@ -181,7 +182,7 @@ function genDirection(level: number, seed: number): LevelData {
   const rnd = mulberry32(seed)
   const tier = tierOf(level)
   const allowDiag = tier >= 1
-  const stepsCount = Math.min(6, 2 + tier)
+  const stepsCount = Math.min(6, 3 + tier)
   const dirs8 = [
     { name: 'norte', dx: 0, dy: 1 },
     { name: 'sur', dx: 0, dy: -1 },
@@ -207,11 +208,12 @@ function genDirection(level: number, seed: number): LevelData {
       d = pick(pool, rnd)
       guard++
     }
-    x += d.dx
-    y += d.dy
+    const distance=1+Math.floor(rnd()*(2+Math.floor(tier/2)))
+    x += d.dx*distance
+    y += d.dy*distance
     const label = letters[i]
     points.push({ name: label, x, y })
-    clueLines.push(`${label} está al ${d.name} de ${points[i].name}.`)
+    clueLines.push(`${label} está ${distance} casilla${distance===1?'':'s'} al ${d.name} de ${points[i].name}.`)
     lastDx = d.dx
     lastDy = d.dy
   }
@@ -238,7 +240,7 @@ function genDirection(level: number, seed: number): LevelData {
   return {
     id: `dir-${level}-${seed}`,
     kind: 'direction',
-    intro: 'Cada punto se ubica siguiendo el paso anterior, empezando en A.',
+    intro: 'Partiendo de A, reconstruye el recorrido. Norte es arriba; en una diagonal avanzas la misma cantidad de casillas en ambos ejes.',
     clueLines,
     question: `¿En qué dirección se encuentra ${to.name} respecto a ${from.name}?`,
     options,
@@ -343,7 +345,7 @@ function genGraph(level: number, seed: number): LevelData {
 function genOrder(level: number, seed: number): LevelData {
   const rnd = mulberry32(seed)
   const tier = tierOf(level)
-  const N = [3, 4, 4, 5, 5, 6][tier]
+  const N = [4, 4, 5, 5, 6, 7][tier]
   const names = shuffle(NAME_POOL, rnd).slice(0, N)
   const secret = shuffle(names, rnd)
   const allPerms = permutations(names)
@@ -394,12 +396,13 @@ function genOrder(level: number, seed: number): LevelData {
   const shuffledPool = shuffle(pool, rnd)
   const chosen: P[] = []
   const isUnique = () => allPerms.filter((p) => chosen.every((c) => c.test(p))).length === 1
-  for (const c of shuffledPool) {
-    if (isUnique()) break
-    if (chosen.some((x) => x.text === c.text)) continue
-    if (chosen.length >= N + 2) break
-    chosen.push(c)
+  let remaining=allPerms
+  while(remaining.length>1&&chosen.length<N+3){
+    let best:P|null=null,bestRemaining=remaining
+    for(const clue of shuffledPool){if(chosen.includes(clue))continue;const filtered=remaining.filter(clue.test);if(filtered.length>0&&filtered.length<bestRemaining.length){best=clue;bestRemaining=filtered}}
+    if(!best)break;chosen.push(best);remaining=bestRemaining
   }
+
   if (!isUnique()) {
     const order = shuffle(
       Array.from({ length: N }, (_, i) => i),
@@ -412,6 +415,7 @@ function genOrder(level: number, seed: number): LevelData {
     }
   }
 
+  for(let i=chosen.length-1;i>=0;i--){const copy=chosen.filter((_,index)=>index!==i);if(allPerms.filter(p=>copy.every(clue=>clue.test(p))).length===1)chosen.splice(i,1)}
   const askPosition = rnd() < 0.5
   let question: string
   let correctAnswer: string
@@ -434,6 +438,7 @@ function genOrder(level: number, seed: number): LevelData {
 
   return {
     id: `order-${level}-${seed}`,
+    solutionCount:allPerms.filter(p=>chosen.every(clue=>clue.test(p))).length,
     kind: 'order',
     intro: `Un grupo de ${N} personas está en una fila, una junto a otra, mirando en la misma dirección.`,
     clueLines: chosen.map((c) => c.text),
@@ -453,7 +458,7 @@ function genGrid(level: number, seed: number): LevelData {
   const size = [3, 3, 4, 4, 5, 5][tier]
   const R = size
   const C = size
-  const K = [2, 3, 3, 4, 4, 5][tier]
+  const K = [4, 4, 5, 5, 6, 6][tier]
   const allCells: { r: number; c: number }[] = []
   for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) allCells.push({ r, c })
   const chosenCells = shuffle(allCells, rnd)
@@ -533,12 +538,13 @@ function genGrid(level: number, seed: number): LevelData {
   const chosen: P[] = []
   const allPerms = permutations(items)
   const isUnique = () => allPerms.filter((p) => chosen.every((c) => c.test(p))).length === 1
-  for (const c of truePool) {
-    if (isUnique()) break
-    if (chosen.some((x) => x.text === c.text)) continue
-    if (chosen.length >= K + 3) break
-    chosen.push(c)
+  let remaining=allPerms
+  while(remaining.length>1&&chosen.length<K+3){
+    let best:P|null=null,bestRemaining=remaining
+    for(const clue of truePool){if(chosen.includes(clue))continue;const filtered=remaining.filter(clue.test);if(filtered.length>0&&filtered.length<bestRemaining.length){best=clue;bestRemaining=filtered}}
+    if(!best)break;chosen.push(best);remaining=bestRemaining
   }
+
   if (!isUnique()) {
     const order = shuffle(items, rnd)
     for (const a of order) {
@@ -551,7 +557,9 @@ function genGrid(level: number, seed: number): LevelData {
     }
   }
 
-  const target = pick(items, rnd)
+  for(let i=chosen.length-1;i>=0;i--){const copy=chosen.filter((_,index)=>index!==i);if(allPerms.filter(p=>copy.every(clue=>clue.test(p))).length===1)chosen.splice(i,1)}
+  const directScore=(name:string)=>chosen.filter(clue=>clue.text.includes(name)&&/casilla número|en la fila|en la columna/.test(clue.text)).length
+  const target = [...items].sort((a,b)=>directScore(a.name)-directScore(b.name))[0]
   const correctN = casillas[secretPerm.findIndex((it) => it.name === target.name)].n
   const question = `${target.icon} ¿En qué casilla se encuentra ${target.name}?`
   const optPool = casillas.map((c) => c.n).filter((n) => n !== correctN)
@@ -566,6 +574,7 @@ function genGrid(level: number, seed: number): LevelData {
 
   return {
     id: `grid-${level}-${seed}`,
+    solutionCount:allPerms.filter(p=>chosen.every(clue=>clue.test(p))).length,
     kind: 'grid',
     intro: `El tablero de ${R}×${C} tiene ${K} casillas numeradas. Cada una está ocupada por un objeto distinto.`,
     clueLines: chosen.map((c) => c.text),
@@ -587,6 +596,11 @@ function generateLevel(levelNum: number, attempt: number): LevelData {
 }
 
 /* ---------- componentes visuales ---------- */
+
+function DirectionWorkspace({labels}:{labels:string[]}){
+ const [selected,setSelected]=useState(labels[1]||'A'),[marks,setMarks]=useState<Record<string,number>>({A:60})
+ return <section className="map-notebook"><div><strong>Tu mapa de trabajo</strong><label>Colocar punto<select value={selected} onChange={event=>setSelected(event.target.value)}>{labels.map(label=><option key={label}>{label}</option>)}</select></label><button className="glass-button secondary" onClick={()=>setMarks({A:60})}>Limpiar</button></div><p>N ↑ · O ← → E · S ↓ · Boceto libre, sin escala. Coloca los puntos según las pistas. Puedes moverlos tocando otra casilla.</p><div className="map-notebook-grid">{Array.from({length:121},(_,index)=><button key={index} aria-label={'Colocar '+selected+' en fila '+(Math.floor(index/11)+1)+', columna '+(index%11+1)} onClick={()=>{setMarks(previous=>({...previous,[selected]:index}));soundClick()}}>{Object.entries(marks).filter(([,cell])=>cell===index).map(([label])=>label).join('·')}</button>)}</div></section>
+}
 
 function DirectionVisual({ points, from, to }: { points: { name: string; x: number; y: number }[]; from: string; to: string }) {
   const w = 320
@@ -743,19 +757,20 @@ export function MapasGame() {
   const navigate = useNavigate()
   const progress = getGameProgress(GAME_CAT, GAME_ID)
   const unlockedRows = useMemo(() => getUnlockedLevels(GAME_CAT, GAME_ID), [progress.highestLevel])
-  const defaultLevel = Math.min(Math.max(1, progress.highestLevel || 1), TOTAL_LEVELS)
+  const defaultLevel = Math.min(Math.max(1, (progress.highestLevel || 0)+1), TOTAL_LEVELS)
   const maxSelectable = Math.max(1, defaultLevel, ...unlockedRows.map((u) => u.level))
   const [level, setLevel] = useState(defaultLevel)
   const [attempt, setAttempt] = useState(0)
   const [phase, setPhase] = useState<'setup' | 'play' | 'result'>('setup')
   const [showLevelPicker, setShowLevelPicker] = useState(false)
   const [levelData, setLevelData] = useState<LevelData | null>(null)
-  const [useTimer, setUseTimer] = useState(true)
+  const [useTimer, setUseTimer] = useState(false)
   const [timeLeft, setTimeLeft] = useState(TIMER_BY_TIER[0])
   const [timerMax, setTimerMax] = useState(TIMER_BY_TIER[0])
   const [selected, setSelected] = useState<number | null>(null)
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null)
   const [streak, setStreak] = useState(0)
+  const resultTimerRef=useRef<number|null>(null)
   const timerRef = useRef<number | null>(null)
   const startRef = useRef(0)
   const levelRef = useRef(level)
@@ -764,6 +779,7 @@ export function MapasGame() {
   const meta = KIND_META[levelData ? levelData.kind : 'direction']
 
   const clearTimers = () => {
+    if(resultTimerRef.current!==null){clearTimeout(resultTimerRef.current);resultTimerRef.current=null}
     if (timerRef.current != null) {
       window.clearInterval(timerRef.current)
       timerRef.current = null
@@ -820,7 +836,7 @@ export function MapasGame() {
     clearTimers()
     setSelected(idx)
     const ok = idx === levelData.correctIndex
-    window.setTimeout(() => {
+    resultTimerRef.current=window.setTimeout(() => {
       setIsCorrect(ok)
       setPhase('result')
       setStreak((s) => (ok ? s + 1 : 0))
@@ -839,7 +855,7 @@ export function MapasGame() {
   const tier = tierOf(level)
 
   return (
-    <div className="app-shell">
+    <div className="app-shell deduction-game map-lab">
       <style>{`
         .gco-map-hero {
           position: relative;
@@ -1254,19 +1270,7 @@ export function MapasGame() {
           {phase === 'play' && useTimer && (
             <span className={`mono gco-timer-chip ${timeLeft <= 10 ? 'danger' : timeLeft <= 20 ? 'warn' : ''}`}>⏱ {timeLeft}s</span>
           )}
-          {phase === 'setup' && (
-            <button
-              type="button"
-              className="glass-button secondary"
-              onClick={() => {
-                soundClick()
-                setShowLevelPicker((v) => !v)
-              }}
-              style={{ padding: '0.35rem 0.7rem', fontSize: '0.85rem' }}
-            >
-              Nivel {level} ▾
-            </button>
-          )}
+          {phase==='setup'&&<label className="deduction-level-select">Nivel<select aria-label="Nivel de Mapas mentales" value={level} onChange={event=>setLevel(Number(event.target.value))}>{Array.from({length:maxSelectable},(_,i)=><option key={i} value={i+1}>Nivel {i+1}</option>)}</select></label>}
           {phase !== 'setup' && <span className="level-number">Nivel {level}</span>}
         </div>
       </header>
@@ -1381,7 +1385,7 @@ export function MapasGame() {
                 >
                   <div>
                     <p style={{ fontWeight: 600 }}>Contrarreloj</p>
-                    <p style={{ fontSize: '0.78rem', color: 'var(--gco-ink-muted)' }}>Activo por defecto</p>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--gco-ink-muted)' }}>Opcional · piensa sin prisas</p>
                   </div>
                   <button
                     type="button"
@@ -1433,7 +1437,8 @@ export function MapasGame() {
               <div className="gco-map-panel" style={{ borderTopColor: meta.color }}>
                 <p className="gco-map-intro">{levelData.intro}</p>
 
-                {levelData.visual.type === 'direction' && (
+                {levelData.visual.type==='direction'&&<DirectionWorkspace key={levelData.id} labels={levelData.visual.points.map(point=>point.name)}/>}
+                {levelData.visual.type === 'direction' && isCorrect!==null && (
                   <DirectionVisual points={levelData.visual.points} from={levelData.visual.from} to={levelData.visual.to} />
                 )}
                 {levelData.visual.type === 'graph' && (

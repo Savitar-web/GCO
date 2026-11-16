@@ -27,7 +27,11 @@ const Ctx = createContext<ReaderPlayerCtx | null>(null)
 export function ReaderPlayerProvider({ children }: { children: ReactNode }) {
   const reader = useSpeechReader()
   const [activeBook, setActiveBook] = useState<ActiveBook | null>(null)
-  const [minimized, setMinimized] = useState(false)
+  const [minimized, updateMinimized] = useState(false)
+ const setMinimized = (value:boolean) => {
+  updateMinimized(value)
+  document.documentElement.classList.toggle('reader-player-hidden',value)
+ }
 
   const loadBook = (book: BookItem, startAt?: number) => {
     setActiveBook({

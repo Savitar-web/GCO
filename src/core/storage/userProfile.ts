@@ -35,6 +35,7 @@ export function getProfile(): UserProfile | null {
 
 export function saveProfile(profile: UserProfile): void {
   localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
+  window.dispatchEvent(new Event('gco:profile-updated'))
 }
 
 export function updateProfile(

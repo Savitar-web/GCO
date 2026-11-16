@@ -1,3 +1,4 @@
+import {AccountPanel} from '../ajustes/AccountPanel'
 import { useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { GlassCard } from '../../components/ui/GlassCard'
@@ -139,6 +140,8 @@ export function Onboarding({ onComplete }: Props) {
           Crea tu perfil o restaura una copia de seguridad.
         </p>
       </motion.header>
+
+      <details className="onboarding-account"><summary className="glass-button">Ya tengo cuenta · Iniciar sesión</summary><AccountPanel/><p>Después completa tu perfil local. Tu cuenta y tus archivos locales se conservan por separado.</p></details>
 
       <motion.div
         initial={{ opacity: 0, scale: 0.96 }}

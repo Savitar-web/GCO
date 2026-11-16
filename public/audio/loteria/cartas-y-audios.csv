@@ -1,0 +1,333 @@
+baraja,voz,numero,nombre,archivo
+mexicana,femenina,1,El gallo,001-el-gallo.opus
+mexicana,femenina,2,El diablo,002-el-diablo.opus
+mexicana,femenina,3,La dama,003-la-dama.opus
+mexicana,femenina,4,El catrín,004-el-catrin.opus
+mexicana,femenina,5,El paraguas,005-el-paraguas.opus
+mexicana,femenina,6,La sirena,006-la-sirena.opus
+mexicana,femenina,7,La escalera,007-la-escalera.opus
+mexicana,femenina,8,La botella,008-la-botella.opus
+mexicana,femenina,9,El barril,009-el-barril.opus
+mexicana,femenina,10,El árbol,010-el-arbol.opus
+mexicana,femenina,11,El melón,011-el-melon.opus
+mexicana,femenina,12,El valiente,012-el-valiente.opus
+mexicana,femenina,13,El gorrito,013-el-gorrito.opus
+mexicana,femenina,14,La muerte,014-la-muerte.opus
+mexicana,femenina,15,La pera,015-la-pera.opus
+mexicana,femenina,16,La bandera,016-la-bandera.opus
+mexicana,femenina,17,El bandolón,017-el-bandolon.opus
+mexicana,femenina,18,El violonchelo,018-el-violonchelo.opus
+mexicana,femenina,19,La garza,019-la-garza.opus
+mexicana,femenina,20,El pájaro,020-el-pajaro.opus
+mexicana,femenina,21,La mano,021-la-mano.opus
+mexicana,femenina,22,La bota,022-la-bota.opus
+mexicana,femenina,23,La luna,023-la-luna.opus
+mexicana,femenina,24,El cotorro,024-el-cotorro.opus
+mexicana,femenina,25,El borracho,025-el-borracho.opus
+mexicana,femenina,26,El negrito,026-el-negrito.opus
+mexicana,femenina,27,El corazón,027-el-corazon.opus
+mexicana,femenina,28,La sandía,028-la-sandia.opus
+mexicana,femenina,29,El tambor,029-el-tambor.opus
+mexicana,femenina,30,El camarón,030-el-camaron.opus
+mexicana,femenina,31,Las jaras,031-las-jaras.opus
+mexicana,femenina,32,El músico,032-el-musico.opus
+mexicana,femenina,33,La araña,033-la-arana.opus
+mexicana,femenina,34,El soldado,034-el-soldado.opus
+mexicana,femenina,35,La estrella,035-la-estrella.opus
+mexicana,femenina,36,El cazo,036-el-cazo.opus
+mexicana,femenina,37,El mundo,037-el-mundo.opus
+mexicana,femenina,38,El apache,038-el-apache.opus
+mexicana,femenina,39,El nopal,039-el-nopal.opus
+mexicana,femenina,40,El alacrán,040-el-alacran.opus
+mexicana,femenina,41,La rosa,041-la-rosa.opus
+mexicana,femenina,42,La calavera,042-la-calavera.opus
+mexicana,femenina,43,La campana,043-la-campana.opus
+mexicana,femenina,44,El cantarito,044-el-cantarito.opus
+mexicana,femenina,45,El venado,045-el-venado.opus
+mexicana,femenina,46,El sol,046-el-sol.opus
+mexicana,femenina,47,La corona,047-la-corona.opus
+mexicana,femenina,48,La chalupa,048-la-chalupa.opus
+mexicana,femenina,49,El pino,049-el-pino.opus
+mexicana,femenina,50,El pescado,050-el-pescado.opus
+mexicana,femenina,51,La palma,051-la-palma.opus
+mexicana,femenina,52,La maceta,052-la-maceta.opus
+mexicana,femenina,53,El arpa,053-el-arpa.opus
+mexicana,femenina,54,La rana,054-la-rana.opus
+mexicana,masculina,1,El gallo,001-el-gallo.opus
+mexicana,masculina,2,El diablo,002-el-diablo.opus
+mexicana,masculina,3,La dama,003-la-dama.opus
+mexicana,masculina,4,El catrín,004-el-catrin.opus
+mexicana,masculina,5,El paraguas,005-el-paraguas.opus
+mexicana,masculina,6,La sirena,006-la-sirena.opus
+mexicana,masculina,7,La escalera,007-la-escalera.opus
+mexicana,masculina,8,La botella,008-la-botella.opus
+mexicana,masculina,9,El barril,009-el-barril.opus
+mexicana,masculina,10,El árbol,010-el-arbol.opus
+mexicana,masculina,11,El melón,011-el-melon.opus
+mexicana,masculina,12,El valiente,012-el-valiente.opus
+mexicana,masculina,13,El gorrito,013-el-gorrito.opus
+mexicana,masculina,14,La muerte,014-la-muerte.opus
+mexicana,masculina,15,La pera,015-la-pera.opus
+mexicana,masculina,16,La bandera,016-la-bandera.opus
+mexicana,masculina,17,El bandolón,017-el-bandolon.opus
+mexicana,masculina,18,El violonchelo,018-el-violonchelo.opus
+mexicana,masculina,19,La garza,019-la-garza.opus
+mexicana,masculina,20,El pájaro,020-el-pajaro.opus
+mexicana,masculina,21,La mano,021-la-mano.opus
+mexicana,masculina,22,La bota,022-la-bota.opus
+mexicana,masculina,23,La luna,023-la-luna.opus
+mexicana,masculina,24,El cotorro,024-el-cotorro.opus
+mexicana,masculina,25,El borracho,025-el-borracho.opus
+mexicana,masculina,26,El negrito,026-el-negrito.opus
+mexicana,masculina,27,El corazón,027-el-corazon.opus
+mexicana,masculina,28,La sandía,028-la-sandia.opus
+mexicana,masculina,29,El tambor,029-el-tambor.opus
+mexicana,masculina,30,El camarón,030-el-camaron.opus
+mexicana,masculina,31,Las jaras,031-las-jaras.opus
+mexicana,masculina,32,El músico,032-el-musico.opus
+mexicana,masculina,33,La araña,033-la-arana.opus
+mexicana,masculina,34,El soldado,034-el-soldado.opus
+mexicana,masculina,35,La estrella,035-la-estrella.opus
+mexicana,masculina,36,El cazo,036-el-cazo.opus
+mexicana,masculina,37,El mundo,037-el-mundo.opus
+mexicana,masculina,38,El apache,038-el-apache.opus
+mexicana,masculina,39,El nopal,039-el-nopal.opus
+mexicana,masculina,40,El alacrán,040-el-alacran.opus
+mexicana,masculina,41,La rosa,041-la-rosa.opus
+mexicana,masculina,42,La calavera,042-la-calavera.opus
+mexicana,masculina,43,La campana,043-la-campana.opus
+mexicana,masculina,44,El cantarito,044-el-cantarito.opus
+mexicana,masculina,45,El venado,045-el-venado.opus
+mexicana,masculina,46,El sol,046-el-sol.opus
+mexicana,masculina,47,La corona,047-la-corona.opus
+mexicana,masculina,48,La chalupa,048-la-chalupa.opus
+mexicana,masculina,49,El pino,049-el-pino.opus
+mexicana,masculina,50,El pescado,050-el-pescado.opus
+mexicana,masculina,51,La palma,051-la-palma.opus
+mexicana,masculina,52,La maceta,052-la-maceta.opus
+mexicana,masculina,53,El arpa,053-el-arpa.opus
+mexicana,masculina,54,La rana,054-la-rana.opus
+mentes,femenina,1,Sócrates,001-socrates.opus
+mentes,femenina,2,Platón,002-platon.opus
+mentes,femenina,3,Aristóteles,003-aristoteles.opus
+mentes,femenina,4,Hipatia,004-hipatia.opus
+mentes,femenina,5,Confucio,005-confucio.opus
+mentes,femenina,6,Lao-Tse,006-lao-tse.opus
+mentes,femenina,7,Tomás de Aquino,007-tomas-de-aquino.opus
+mentes,femenina,8,René Descartes,008-rene-descartes.opus
+mentes,femenina,9,Baruch Spinoza,009-baruch-spinoza.opus
+mentes,femenina,10,Immanuel Kant,010-immanuel-kant.opus
+mentes,femenina,11,David Hume,011-david-hume.opus
+mentes,femenina,12,Hannah Arendt,012-hannah-arendt.opus
+mentes,femenina,13,Simone de Beauvoir,013-simone-de-beauvoir.opus
+mentes,femenina,14,Bertrand Russell,014-bertrand-russell.opus
+mentes,femenina,15,Isaac Newton,015-isaac-newton.opus
+mentes,femenina,16,Galileo Galilei,016-galileo-galilei.opus
+mentes,femenina,17,Johannes Kepler,017-johannes-kepler.opus
+mentes,femenina,18,Nicolás Copérnico,018-nicolas-copernico.opus
+mentes,femenina,19,Marie Curie,019-marie-curie.opus
+mentes,femenina,20,Albert Einstein,020-albert-einstein.opus
+mentes,femenina,21,Nathan Rosen,021-nathan-rosen.opus
+mentes,femenina,22,Nikola Tesla,022-nikola-tesla.opus
+mentes,femenina,23,James Clerk Maxwell,023-james-clerk-maxwell.opus
+mentes,femenina,24,Michael Faraday,024-michael-faraday.opus
+mentes,femenina,25,Charles Darwin,025-charles-darwin.opus
+mentes,femenina,26,Gregor Mendel,026-gregor-mendel.opus
+mentes,femenina,27,Barbara McClintock,027-barbara-mcclintock.opus
+mentes,femenina,28,Rosalind Franklin,028-rosalind-franklin.opus
+mentes,femenina,29,Ada Lovelace,029-ada-lovelace.opus
+mentes,femenina,30,Alan Turing,030-alan-turing.opus
+mentes,femenina,31,Katherine Johnson,031-katherine-johnson.opus
+mentes,femenina,32,Emmy Noether,032-emmy-noether.opus
+mentes,femenina,33,Srinivasa Ramanujan,033-srinivasa-ramanujan.opus
+mentes,femenina,34,Carl Friedrich Gauss,034-carl-friedrich-gauss.opus
+mentes,femenina,35,Leonhard Euler,035-leonhard-euler.opus
+mentes,femenina,36,Louis Pasteur,036-louis-pasteur.opus
+mentes,masculina,1,Sócrates,001-socrates.opus
+mentes,masculina,2,Platón,002-platon.opus
+mentes,masculina,3,Aristóteles,003-aristoteles.opus
+mentes,masculina,4,Hipatia,004-hipatia.opus
+mentes,masculina,5,Confucio,005-confucio.opus
+mentes,masculina,6,Lao-Tse,006-lao-tse.opus
+mentes,masculina,7,Tomás de Aquino,007-tomas-de-aquino.opus
+mentes,masculina,8,René Descartes,008-rene-descartes.opus
+mentes,masculina,9,Baruch Spinoza,009-baruch-spinoza.opus
+mentes,masculina,10,Immanuel Kant,010-immanuel-kant.opus
+mentes,masculina,11,David Hume,011-david-hume.opus
+mentes,masculina,12,Hannah Arendt,012-hannah-arendt.opus
+mentes,masculina,13,Simone de Beauvoir,013-simone-de-beauvoir.opus
+mentes,masculina,14,Bertrand Russell,014-bertrand-russell.opus
+mentes,masculina,15,Isaac Newton,015-isaac-newton.opus
+mentes,masculina,16,Galileo Galilei,016-galileo-galilei.opus
+mentes,masculina,17,Johannes Kepler,017-johannes-kepler.opus
+mentes,masculina,18,Nicolás Copérnico,018-nicolas-copernico.opus
+mentes,masculina,19,Marie Curie,019-marie-curie.opus
+mentes,masculina,20,Albert Einstein,020-albert-einstein.opus
+mentes,masculina,21,Nathan Rosen,021-nathan-rosen.opus
+mentes,masculina,22,Nikola Tesla,022-nikola-tesla.opus
+mentes,masculina,23,James Clerk Maxwell,023-james-clerk-maxwell.opus
+mentes,masculina,24,Michael Faraday,024-michael-faraday.opus
+mentes,masculina,25,Charles Darwin,025-charles-darwin.opus
+mentes,masculina,26,Gregor Mendel,026-gregor-mendel.opus
+mentes,masculina,27,Barbara McClintock,027-barbara-mcclintock.opus
+mentes,masculina,28,Rosalind Franklin,028-rosalind-franklin.opus
+mentes,masculina,29,Ada Lovelace,029-ada-lovelace.opus
+mentes,masculina,30,Alan Turing,030-alan-turing.opus
+mentes,masculina,31,Katherine Johnson,031-katherine-johnson.opus
+mentes,masculina,32,Emmy Noether,032-emmy-noether.opus
+mentes,masculina,33,Srinivasa Ramanujan,033-srinivasa-ramanujan.opus
+mentes,masculina,34,Carl Friedrich Gauss,034-carl-friedrich-gauss.opus
+mentes,masculina,35,Leonhard Euler,035-leonhard-euler.opus
+mentes,masculina,36,Louis Pasteur,036-louis-pasteur.opus
+naturaleza,femenina,1,El león,001-el-leon.opus
+naturaleza,femenina,2,El tigre,002-el-tigre.opus
+naturaleza,femenina,3,El elefante,003-el-elefante.opus
+naturaleza,femenina,4,La jirafa,004-la-jirafa.opus
+naturaleza,femenina,5,El lobo,005-el-lobo.opus
+naturaleza,femenina,6,El zorro,006-el-zorro.opus
+naturaleza,femenina,7,El oso,007-el-oso.opus
+naturaleza,femenina,8,El panda,008-el-panda.opus
+naturaleza,femenina,9,El koala,009-el-koala.opus
+naturaleza,femenina,10,El canguro,010-el-canguro.opus
+naturaleza,femenina,11,El caballo,011-el-caballo.opus
+naturaleza,femenina,12,El delfín,012-el-delfin.opus
+naturaleza,femenina,13,La ballena,013-la-ballena.opus
+naturaleza,femenina,14,El tiburón,014-el-tiburon.opus
+naturaleza,femenina,15,El pulpo,015-el-pulpo.opus
+naturaleza,femenina,16,La tortuga,016-la-tortuga.opus
+naturaleza,femenina,17,El cocodrilo,017-el-cocodrilo.opus
+naturaleza,femenina,18,La rana,018-la-rana.opus
+naturaleza,femenina,19,La mariposa,019-la-mariposa.opus
+naturaleza,femenina,20,La abeja,020-la-abeja.opus
+naturaleza,femenina,21,La libélula,021-la-libelula.opus
+naturaleza,femenina,22,El caracol,022-el-caracol.opus
+naturaleza,femenina,23,El águila,023-el-aguila.opus
+naturaleza,femenina,24,El búho,024-el-buho.opus
+naturaleza,femenina,25,El pingüino,025-el-pinguino.opus
+naturaleza,femenina,26,El flamenco,026-el-flamenco.opus
+naturaleza,femenina,27,El colibrí,027-el-colibri.opus
+naturaleza,femenina,28,El pavo real,028-el-pavo-real.opus
+naturaleza,femenina,29,El cactus,029-el-cactus.opus
+naturaleza,femenina,30,El girasol,030-el-girasol.opus
+naturaleza,femenina,31,La orquídea,031-la-orquidea.opus
+naturaleza,femenina,32,El pino,032-el-pino.opus
+naturaleza,femenina,33,El volcán,033-el-volcan.opus
+naturaleza,femenina,34,La cascada,034-la-cascada.opus
+naturaleza,femenina,35,El arcoíris,035-el-arcoiris.opus
+naturaleza,femenina,36,La montaña,036-la-montana.opus
+naturaleza,femenina,37,El océano,037-el-oceano.opus
+naturaleza,femenina,38,El desierto,038-el-desierto.opus
+naturaleza,femenina,39,La selva,039-la-selva.opus
+naturaleza,femenina,40,La aurora,040-la-aurora.opus
+naturaleza,masculina,1,El león,001-el-leon.opus
+naturaleza,masculina,2,El tigre,002-el-tigre.opus
+naturaleza,masculina,3,El elefante,003-el-elefante.opus
+naturaleza,masculina,4,La jirafa,004-la-jirafa.opus
+naturaleza,masculina,5,El lobo,005-el-lobo.opus
+naturaleza,masculina,6,El zorro,006-el-zorro.opus
+naturaleza,masculina,7,El oso,007-el-oso.opus
+naturaleza,masculina,8,El panda,008-el-panda.opus
+naturaleza,masculina,9,El koala,009-el-koala.opus
+naturaleza,masculina,10,El canguro,010-el-canguro.opus
+naturaleza,masculina,11,El caballo,011-el-caballo.opus
+naturaleza,masculina,12,El delfín,012-el-delfin.opus
+naturaleza,masculina,13,La ballena,013-la-ballena.opus
+naturaleza,masculina,14,El tiburón,014-el-tiburon.opus
+naturaleza,masculina,15,El pulpo,015-el-pulpo.opus
+naturaleza,masculina,16,La tortuga,016-la-tortuga.opus
+naturaleza,masculina,17,El cocodrilo,017-el-cocodrilo.opus
+naturaleza,masculina,18,La rana,018-la-rana.opus
+naturaleza,masculina,19,La mariposa,019-la-mariposa.opus
+naturaleza,masculina,20,La abeja,020-la-abeja.opus
+naturaleza,masculina,21,La libélula,021-la-libelula.opus
+naturaleza,masculina,22,El caracol,022-el-caracol.opus
+naturaleza,masculina,23,El águila,023-el-aguila.opus
+naturaleza,masculina,24,El búho,024-el-buho.opus
+naturaleza,masculina,25,El pingüino,025-el-pinguino.opus
+naturaleza,masculina,26,El flamenco,026-el-flamenco.opus
+naturaleza,masculina,27,El colibrí,027-el-colibri.opus
+naturaleza,masculina,28,El pavo real,028-el-pavo-real.opus
+naturaleza,masculina,29,El cactus,029-el-cactus.opus
+naturaleza,masculina,30,El girasol,030-el-girasol.opus
+naturaleza,masculina,31,La orquídea,031-la-orquidea.opus
+naturaleza,masculina,32,El pino,032-el-pino.opus
+naturaleza,masculina,33,El volcán,033-el-volcan.opus
+naturaleza,masculina,34,La cascada,034-la-cascada.opus
+naturaleza,masculina,35,El arcoíris,035-el-arcoiris.opus
+naturaleza,masculina,36,La montaña,036-la-montana.opus
+naturaleza,masculina,37,El océano,037-el-oceano.opus
+naturaleza,masculina,38,El desierto,038-el-desierto.opus
+naturaleza,masculina,39,La selva,039-la-selva.opus
+naturaleza,masculina,40,La aurora,040-la-aurora.opus
+mundo,femenina,1,México,001-mexico.opus
+mundo,femenina,2,Perú,002-peru.opus
+mundo,femenina,3,Brasil,003-brasil.opus
+mundo,femenina,4,Argentina,004-argentina.opus
+mundo,femenina,5,Canadá,005-canada.opus
+mundo,femenina,6,Estados Unidos,006-estados-unidos.opus
+mundo,femenina,7,Cuba,007-cuba.opus
+mundo,femenina,8,Colombia,008-colombia.opus
+mundo,femenina,9,España,009-espana.opus
+mundo,femenina,10,Francia,010-francia.opus
+mundo,femenina,11,Italia,011-italia.opus
+mundo,femenina,12,Grecia,012-grecia.opus
+mundo,femenina,13,Alemania,013-alemania.opus
+mundo,femenina,14,Reino Unido,014-reino-unido.opus
+mundo,femenina,15,Noruega,015-noruega.opus
+mundo,femenina,16,Islandia,016-islandia.opus
+mundo,femenina,17,Egipto,017-egipto.opus
+mundo,femenina,18,Marruecos,018-marruecos.opus
+mundo,femenina,19,Kenia,019-kenia.opus
+mundo,femenina,20,Sudáfrica,020-sudafrica.opus
+mundo,femenina,21,China,021-china.opus
+mundo,femenina,22,Japón,022-japon.opus
+mundo,femenina,23,India,023-india.opus
+mundo,femenina,24,Singapur,024-singapur.opus
+mundo,femenina,25,Tailandia,025-tailandia.opus
+mundo,femenina,26,Corea del Sur,026-corea-del-sur.opus
+mundo,femenina,27,Indonesia,027-indonesia.opus
+mundo,femenina,28,Vietnam,028-vietnam.opus
+mundo,femenina,29,Australia,029-australia.opus
+mundo,femenina,30,Nueva Zelanda,030-nueva-zelanda.opus
+mundo,femenina,31,La Torre Eiffel,031-la-torre-eiffel.opus
+mundo,femenina,32,La Gran Muralla,032-la-gran-muralla.opus
+mundo,femenina,33,Las pirámides,033-las-piramides.opus
+mundo,femenina,34,Machu Picchu,034-machu-picchu.opus
+mundo,femenina,35,El Coliseo,035-el-coliseo.opus
+mundo,femenina,36,El Taj Mahal,036-el-taj-mahal.opus
+mundo,masculina,1,México,001-mexico.opus
+mundo,masculina,2,Perú,002-peru.opus
+mundo,masculina,3,Brasil,003-brasil.opus
+mundo,masculina,4,Argentina,004-argentina.opus
+mundo,masculina,5,Canadá,005-canada.opus
+mundo,masculina,6,Estados Unidos,006-estados-unidos.opus
+mundo,masculina,7,Cuba,007-cuba.opus
+mundo,masculina,8,Colombia,008-colombia.opus
+mundo,masculina,9,España,009-espana.opus
+mundo,masculina,10,Francia,010-francia.opus
+mundo,masculina,11,Italia,011-italia.opus
+mundo,masculina,12,Grecia,012-grecia.opus
+mundo,masculina,13,Alemania,013-alemania.opus
+mundo,masculina,14,Reino Unido,014-reino-unido.opus
+mundo,masculina,15,Noruega,015-noruega.opus
+mundo,masculina,16,Islandia,016-islandia.opus
+mundo,masculina,17,Egipto,017-egipto.opus
+mundo,masculina,18,Marruecos,018-marruecos.opus
+mundo,masculina,19,Kenia,019-kenia.opus
+mundo,masculina,20,Sudáfrica,020-sudafrica.opus
+mundo,masculina,21,China,021-china.opus
+mundo,masculina,22,Japón,022-japon.opus
+mundo,masculina,23,India,023-india.opus
+mundo,masculina,24,Singapur,024-singapur.opus
+mundo,masculina,25,Tailandia,025-tailandia.opus
+mundo,masculina,26,Corea del Sur,026-corea-del-sur.opus
+mundo,masculina,27,Indonesia,027-indonesia.opus
+mundo,masculina,28,Vietnam,028-vietnam.opus
+mundo,masculina,29,Australia,029-australia.opus
+mundo,masculina,30,Nueva Zelanda,030-nueva-zelanda.opus
+mundo,masculina,31,La Torre Eiffel,031-la-torre-eiffel.opus
+mundo,masculina,32,La Gran Muralla,032-la-gran-muralla.opus
+mundo,masculina,33,Las pirámides,033-las-piramides.opus
+mundo,masculina,34,Machu Picchu,034-machu-picchu.opus
+mundo,masculina,35,El Coliseo,035-el-coliseo.opus
+mundo,masculina,36,El Taj Mahal,036-el-taj-mahal.opus

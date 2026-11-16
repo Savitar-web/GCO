@@ -1,3 +1,4 @@
+import {EXERCISES} from './laboratorio/trainingEngine'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { GlassCard } from '@/components/ui/GlassCard'
@@ -5,6 +6,7 @@ import { getGameProgress } from '@/core/storage/progress'
 import { soundClick } from '@/core/audio/uiSounds'
 
 const GAMES = [
+ {id:'laboratorio',title:'Laboratorio cognitivo',emoji:'🧠',desc:'28 ejercicios de lectura por bloques, atención, procesamiento, memoria visual y retos de precisión.'},
   {
     id: 'secuencia-colores',
     title: 'Secuencia de colores',
@@ -66,7 +68,7 @@ export function MemoriaCategory() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
         {GAMES.map((game, i) => {
           const progressIds =
-            game.id === 'habilidades'
+            game.id === 'laboratorio' ? EXERCISES.map(e=>e.id) : game.id === 'habilidades'
               ? (['habilidad-reaccion', 'habilidad-punteria', 'habilidad-simon'] as const)
               : ([game.id] as const)
           const levels = progressIds.map((id) => getGameProgress('memoria', id).highestLevel)

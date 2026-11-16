@@ -67,7 +67,7 @@ if (!self.define) {
     });
   };
 }
-define(['./workbox-afac4cd2'], (function (workbox) { 'use strict';
+define(['./workbox-21d9c3e8'], (function (workbox) { 'use strict';
 
   self.skipWaiting();
   workbox.clientsClaim();
@@ -81,12 +81,28 @@ define(['./workbox-afac4cd2'], (function (workbox) { 'use strict';
     "revision": "3ca0b8505b4bec776b69afdba2768812"
   }, {
     "url": "/index.html",
-    "revision": "0.l65uq2fgeqs"
+    "revision": "0.dl8jkqjtnc8"
   }], {});
   workbox.cleanupOutdatedCaches();
   workbox.registerRoute(new workbox.NavigationRoute(workbox.createHandlerBoundToURL("/index.html"), {
     allowlist: [/^\/$/]
   }));
+  workbox.registerRoute(({
+    url
+  }) => url.pathname.startsWith("/ocr/"), new workbox.CacheFirst({
+    "cacheName": "gco-reader-ocr-v1",
+    plugins: [new workbox.CacheableResponsePlugin({
+      statuses: [200]
+    })]
+  }), 'GET');
+  workbox.registerRoute(({
+    url
+  }) => url.pathname.startsWith("/chess/stockfish-19.0.1/"), new workbox.CacheFirst({
+    "cacheName": "gco-stockfish-v19",
+    plugins: [new workbox.CacheableResponsePlugin({
+      statuses: [200]
+    })]
+  }), 'GET');
   workbox.registerRoute(/^https:\/\/fonts\.googleapis\.com\/.*/i, new workbox.CacheFirst({
     "cacheName": "google-fonts-stylesheets",
     plugins: [new workbox.ExpirationPlugin({

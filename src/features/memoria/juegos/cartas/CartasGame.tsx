@@ -1,3 +1,4 @@
+import {RoundGuard} from '@/core/roundGuard'
 // CartasGame.tsx  (archivo completo)
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -351,6 +352,8 @@ export function CartasGame() {
   const [editMode, setEditMode] = useState<CardsMode>('pairs')
   const [editEmojis, setEditEmojis] = useState<string[]>([])
 
+  const roundGuard=useRef(new RoundGuard())
+  const mismatchTimer=useRef<number|undefined>(undefined)
   const timerRef = useRef<number | null>(null)
   const runTimerRef = useRef<number | null>(null)
   const startedAtRef = useRef<number | null>(null)
@@ -403,39 +406,26 @@ export function CartasGame() {
   }
 
   const startCountdown = (seconds: number) => {
-    if (!useTimer) {
-      setTimeLeft(0)
-      return
-    }
-    setTimeLeft(seconds)
     clearTimer()
-    timerRef.current = window.setInterval(() => {
-      setTimeLeft((t) => {
-        if (t <= 1) {
-          clearTimer()
-          const ms = stopRunTimer()
-          soundFail()
-          if (!isCreativeRun && !isTrainingRef.current) {
-            recordLevelResult({
-              categoryId: GAME_CAT,
-              gameId: GAME_ID,
-              level: levelRef.current,
-              success: false,
-              timeMs: ms,
-            })
-          }
-          setPhase('fail')
-          return 0
-        }
-        const next = t - 1
-        soundTick(next <= 10)
-        return next
-      })
-    }, 1000)
+    if(!useTimer){setTimeLeft(0);return}
+    const deadline=Date.now()+seconds*1000
+    setTimeLeft(seconds)
+    timerRef.current=window.setInterval(()=>{
+      const remaining=Math.max(0,Math.ceil((deadline-Date.now())/1000))
+      setTimeLeft(remaining)
+      if(remaining===0){
+        clearTimer()
+        if(!roundGuard.current.finish())return
+        const ms=stopRunTimer()
+        if(!isCreativeRun && !isTrainingRef.current)recordLevelResult({categoryId:GAME_CAT,gameId:GAME_ID,level:levelRef.current,success:false,timeMs:ms})
+        soundFail();setPhase('fail')
+      }else soundTick(remaining<=10)
+    },1000)
   }
 
   const win = useCallback(
     (timeMs: number) => {
+      if(!roundGuard.current.finish())return
       clearTimer()
       const prevBest = getLevelBestTime(GAME_CAT, GAME_ID, levelRef.current)
       const isNew =
@@ -471,6 +461,8 @@ export function CartasGame() {
     },
     m: CardsMode
   ) => {
+    roundGuard.current.reset()
+    window.clearTimeout(mismatchTimer.current)
     setCards(data.cards)
     setGridCols(data.gridCols)
     totalPairsRef.current = data.pairs
@@ -608,6 +600,7 @@ export function CartasGame() {
     () => () => {
       clearTimer()
       clearRunTimer()
+      window.clearTimeout(mismatchTimer.current)
     },
     []
   )
@@ -631,7 +624,7 @@ export function CartasGame() {
       setFlipped([])
       setLock(false)
     } else {
-      window.setTimeout(() => {
+      mismatchTimer.current=window.setTimeout(() => {
         soundFail()
         setFlipped([])
         setLock(false)

@@ -251,6 +251,7 @@ type FpReaderLike = {
 const FP_POS_KEY = 'gco-fp-resume-char'
 
 const fpSession: {
+  bookId:string
   text: string
   title: string
   author: string
@@ -263,6 +264,7 @@ const fpSession: {
   /** true si la última pausa fue pause() nativo (utterance sigue viva) */
   softPaused: boolean
 } = {
+  bookId:'',
   text: '',
   title: '',
   author: '',
@@ -277,7 +279,7 @@ const fpSession: {
 
 function fpLoadSavedPos(): number {
   try {
-    const v = sessionStorage.getItem(FP_POS_KEY)
+    const v = sessionStorage.getItem(FP_POS_KEY+':'+fpSession.bookId)
     if (v != null) {
       const n = parseInt(v, 10)
       if (Number.isFinite(n) && n >= 0) return n
@@ -292,7 +294,7 @@ function fpSavePos(pos: number) {
   const p = Math.max(0, Math.floor(pos))
   fpSession.charIndex = p
   try {
-    sessionStorage.setItem(FP_POS_KEY, String(p))
+    sessionStorage.setItem(FP_POS_KEY+':'+fpSession.bookId, String(p))
   } catch {
     /* */
   }
@@ -323,7 +325,7 @@ function fpCapturePosition() {
   if (r && typeof r.charIndex === 'number' && Number.isFinite(r.charIndex) && r.charIndex > 0) {
     candidates.push(Math.floor(r.charIndex))
   }
-  const best = Math.max(0, ...candidates)
+  const best = r&&Number.isFinite(r.charIndex)?Math.max(0,Math.min(fpSession.text.length,r.charIndex)):Math.max(0,...candidates)
   fpSavePos(best)
   return best
 }
@@ -387,10 +389,8 @@ function fpHardPlay(from?: number) {
   const text = fpSession.text
   if (!r || !text) return
 
-  const start = Math.max(
-    0,
-    Math.min(text.length, typeof from === 'number' ? from : fpCapturePosition())
-  )
+  let start = Math.max(0,Math.min(text.length,typeof from==='number'?from:fpCapturePosition()))
+  if(start>=text.length)start=0
   fpSavePos(start)
   fpSession.wantPlaying = true
 
@@ -534,7 +534,7 @@ function BgFloatingPlayer({ snap }: { snap: FpSnap }) {
       if (fpSession.wantPlaying && fpSession.reader) {
         const c = fpSession.reader.charIndex
         if (typeof c === 'number' && c > 0) {
-          fpSavePos(Math.max(c, fpSession.charIndex))
+          fpSavePos(c)
         }
       }
       setPlaying(fpSession.wantPlaying)
@@ -1536,7 +1536,14 @@ function buildPages(
 
 /* ───────────────────────── Componente principal ───────────────────────── */
 
-export function BookReader() {
+export function BookReader({
+  formatControl, originalBody, bookData,
+}: {
+  bookData?:BookItem
+  formatControl?: React.ReactNode
+  originalBody?: (tools: HTMLDivElement | null,reading:{text:string}) => React.ReactNode
+} = {}) {
+  const [originalTools, setOriginalTools] = useState<HTMLDivElement | null>(null)
   const { id } = useParams<{ id: string }>()
 
   const {
@@ -1685,6 +1692,7 @@ export function BookReader() {
 
     const applyBook = (b: BookItem) => {
       if (cancelled) return
+      if(fpSession.bookId!==b.id){reader.stop();fpSession.bookId=b.id;fpSession.wantPlaying=false;fpSession.softPaused=false;fpSession.text=stripAuthorWordsHeading(b.text||'');fpSavePos(b.position||0)}
       setTitle(b.title)
       setAuthor(b.author || '')
       setText(stripAuthorWordsHeading(b.text || ''))
@@ -1741,6 +1749,7 @@ export function BookReader() {
       setLoadError(null)
     }
 
+    if(bookData){applyBook(bookData);return()=>{cancelled=true}}
     void getBook(id)
       .then((b) => {
         if (cancelled) return
@@ -1760,7 +1769,7 @@ export function BookReader() {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
+  }, [id,bookData?.text])
 
   useEffect(() => {
     if (!text) return
@@ -2496,16 +2505,18 @@ export function BookReader() {
     fpSession.text = text || fpSession.text
     fpSession.reader = reader as unknown as FpReaderLike
     if (typeof reader.charIndex === 'number' && reader.charIndex > 0) {
-      fpSavePos(Math.max(reader.charIndex, fpSession.charIndex))
+      fpSavePos(reader.charIndex)
     }
     fpSession.rate = reader.rate ?? fpSession.rate
     fpSession.voiceURI = reader.voiceURI || fpSession.voiceURI
     if (reader.speaking && !reader.paused) fpSession.wantPlaying = true
+    else if(!reader.paused&&reader.charIndex>=text.length)fpSession.wantPlaying=false
     fpTogglePlayback()
   }, [reader, text])
 
   /* Sesión + puente: sobreviven al ir a Biblioteca */
   useEffect(() => {
+    if(loading||!text)return
     fpSession.text = text || ''
     fpSession.title = currentChapter?.title || title || 'Audiolibro'
     fpSession.author = author || ''
@@ -3052,11 +3063,11 @@ export function BookReader() {
 
   return (
     <div
-      className={`reader-root ${isDesktop ? 'reader-desktop' : 'reader-mobile'} ${isDesktop && showAppearance ? 'with-appearance' : ''}`}
+      className={`reader-root ${isDesktop ? 'reader-desktop' : 'reader-mobile'} ${isDesktop && showAppearance ? 'with-appearance' : ''} ${originalBody ? 'reader-original-mode' : ''}`}
       data-reader-mode={appearance.mode}
-      style={readerVars}
-      onTouchStart={onSwipeStart}
-      onTouchEnd={onSwipeEnd}
+      style={{ ...readerVars, ['--nutrition-reader-header' as string]: `${headerHeight}px` }}
+      onTouchStart={originalBody ? undefined : onSwipeStart}
+      onTouchEnd={originalBody ? undefined : onSwipeEnd}
     >
       {/* Sidebar desktop (sticky) */}
       {isDesktop && (
@@ -3205,9 +3216,8 @@ export function BookReader() {
         )}
 
         {/* Contenido */}
-        <ReaderTools text={text} position={reader.charIndex} onJump={goToChar} />
         {saveError && <div className="gco-callout" role="alert">{saveError}<button className="gco-text-button" onClick={() => void persistReading()}>Reintentar guardado</button></div>}
-        {appearance.layout === 'horizontal' ? (
+        {originalBody ? originalBody(originalTools,{text}) : appearance.layout === 'horizontal' ? (
           <div className={`h-page-area ${isDesktop ? '' : 'mobile'}`} ref={pageAreaRef}>
             <div className={`h-page-stage ${appearance.pageAnim ? (pageAnimDir === 1 ? 'slide-next' : pageAnimDir === -1 ? 'slide-prev' : '') : 'no-anim'}`}>
               <div className="h-page-inner word-sheet" style={bodyStyle}>
@@ -3296,7 +3306,12 @@ export function BookReader() {
               <IconClose />
             </button>
           </div>
-          <div className="appearance-scroll-desk">{appearanceControls}</div>
+          <div className="appearance-scroll-desk">
+              {formatControl}
+              {originalBody && <div ref={setOriginalTools} />}
+              {!!text && <ReaderTools text={text} position={reader.charIndex} onJump={(position) => { goToChar(position); setShowAppearance(false) }} />}
+              {appearanceControls}
+            </div>
         </aside>
       )}
 
@@ -3631,7 +3646,12 @@ export function BookReader() {
                 <IconClose />
               </button>
             </div>
-            <div className="appearance-scroll">{appearanceControls}</div>
+            <div className="appearance-scroll">
+              {formatControl}
+              {originalBody && <div ref={setOriginalTools} />}
+              {!!text && <ReaderTools text={text} position={reader.charIndex} onJump={(position) => { goToChar(position); setShowAppearance(false) }} />}
+              {appearanceControls}
+            </div>
             <button type="button" className="glass-button" style={{ width: '100%', marginTop: 8 }} onClick={() => setShowAppearance(false)}>
               Listo
             </button>
@@ -3874,7 +3894,7 @@ export function BookReader() {
         }
         .mobile-topbar {
           padding:
-            max(0.6rem, env(safe-area-inset-top, 0px))
+            calc(0.6rem + var(--safe-top, env(safe-area-inset-top, 0px)))
             max(0.9rem, env(safe-area-inset-right, 0px))
             0.5rem
             max(0.9rem, env(safe-area-inset-left, 0px));

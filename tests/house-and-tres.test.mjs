@@ -31,7 +31,7 @@ test('House exits cancel, waiting recipient exits do not strand the dealer',()=>
 test('Tres allows same-color +2 on +4, stacks six and rejects wrong-color +2',()=>{
  let state=newTres(3);state.color=0;state.hands[0]=[{color:4,value:14},{color:1,value:6}];state.hands[1]=[{color:2,value:12},{color:3,value:12},{color:1,value:9}];state.hands[2]=[{color:0,value:6}]
  state=tresMove(state,0,{type:'play',index:0,color:2});assert.equal(state.pendingDraw,4)
- assert.throws(()=>tresMove(state,1,{type:'play',index:1}));assert.throws(()=>tresMove(state,1,{type:'draw'}))
+ assert.throws(()=>tresMove(state,1,{type:'play',index:1}));assert.doesNotThrow(()=>tresMove(state,1,{type:'draw'}))
  state=tresMove(state,1,{type:'play',index:0});assert.equal(state.pendingDraw,6)
  state=tresMove(state,2,{type:'draw'});assert.equal(state.hands[2].length,7);assert.equal(state.pendingDraw,0);assert.equal(state.turn,0)
 })

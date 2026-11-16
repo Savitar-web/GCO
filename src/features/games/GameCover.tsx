@@ -1,6 +1,9 @@
+import {PartyCover} from './party/PartyCover'
+import {isPartyKind} from './party/partyCatalog'
 import {useId} from 'react'
 import {FichaCover} from './fichacore/FichaCover'
 export function GameCover({kind}:{kind:string}){
+ if(isPartyKind(kind))return <PartyCover kind={kind}/>
  if(kind==='fichacore')return <FichaCover/>
  return <CardCover kind={kind}/>
 }

@@ -1,3 +1,5 @@
+import {PlaybackIntent,preciseSeek} from '../core/audio/playbackGuards'
+import {MediaWindow,nativeMediaWindow} from '../core/media/mediaWindow'
 /**
  * ============================================================================
  * useMediaPlayer — motor de audio nativo-first (v3 profesional 2026)
@@ -32,7 +34,7 @@
  * Ahora play() es la primera operación real.
  */
 import { useEffect, useSyncExternalStore } from 'react'
-import { recordListening } from '@/core/audio/listeningStats'
+import { recordListening,recordPlaybackStart } from '@/core/audio/listeningStats'
 import { getTrackBlob, type TrackItem } from '@/core/storage/mediaLibrary'
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -234,47 +236,7 @@ let overlayPromptShown = false
  * Intenta abrir la pantalla de ajustes de “Display over other apps”.
  * Funciona en la mayoría de dispositivos Android 6+.
  */
-export async function openOverlayPermissionSettings(): Promise<boolean> {
-  if (!isBrowser() || !isCapacitorAndroid()) return false
-  try {
-    // Método 1: Intent estándar de Android
-    const Cap = getCapacitor() as any
-    if (Cap?.Plugins?.App?.openUrl) {
-      // Algunos dispositivos aceptan este scheme
-      await Cap.Plugins.App.openUrl({
-        url: 'package:' + (Cap.getPlatform?.() || 'android')
-      }).catch(() => {})
-    }
-    // Método 2: usar el plugin de App si está disponible para abrir settings
-    try {
-      const mod = await import('@capacitor/app').catch(() => null)
-      const App = (mod as any)?.App
-      if (App?.openUrl) {
-        // ACTION_MANAGE_OVERLAY_PERMISSION no siempre se puede abrir con openUrl
-        // pero intentamos el settings general de la app
-        await App.openUrl({ url: 'app-settings:' }).catch(() => {})
-      }
-    } catch {
-      /* */
-    }
-    // Método 3: fallback — abrir detalles de la app (el usuario puede buscar Overlay)
-    try {
-      const mod = await import('@capacitor/app').catch(() => null)
-      const App = (mod as any)?.App
-      if (App?.openUrl) {
-        await App.openUrl({
-          url: 'https://play.google.com/store/apps/details?id=com.savitarxeno.gco'
-        }).catch(() => {})
-      }
-    } catch {
-      /* */
-    }
-    return true
-  } catch (e) {
-    warn('openOverlayPermissionSettings failed:', e)
-    return false
-  }
-}
+export async function openOverlayPermissionSettings():Promise<boolean>{if(!nativeMediaWindow())return false;try{await MediaWindow.openOverlaySettings();return true}catch{return false}}
 
 /**
  * Solicita (guía al usuario) el permiso de overlay si aún no se ha mostrado.
@@ -633,6 +595,7 @@ async function artworkSrcForNative(cover?: string): Promise<string | undefined> 
 async function updateMediaSessionMetadata(t: TrackItem | null) {
   if (!isBrowser()) return
   const nativeSrc = t?.coverDataUrl ? await artworkSrcForNative(t.coverDataUrl) : undefined
+  if(t&&trackRef.current?.id!==t.id)return
   const artwork: MediaArtwork[] = []
   if (nativeSrc) {
     artwork.push({
@@ -646,6 +609,7 @@ async function updateMediaSessionMetadata(t: TrackItem | null) {
     const plugin = await loadCapMediaSession()
     if (plugin) {
       const push = async () => {
+        if(t&&trackRef.current?.id!==t.id)return
         if (!t) {
           await plugin.setPlaybackState({ playbackState: 'none' })
           return
@@ -670,7 +634,7 @@ async function updateMediaSessionMetadata(t: TrackItem | null) {
     }
   }
 
-  if (!hasWebMediaSession()) return
+  if (!hasWebMediaSession()||(t&&trackRef.current?.id!==t.id)) return
   try {
     if (!t) {
       navigator.mediaSession.metadata = null
@@ -841,6 +805,8 @@ function getSnapshot(): Snapshot {
  * ═══════════════════════════════════════════════════════════════════════════ */
 const audioRef: { current: HTMLAudioElement | null } = { current: null }
 const urlRef: { current: string | null } = { current: null }
+const playIntent=new PlaybackIntent()
+let pendingSeekMs:number|null=null
 const queueRef: { current: TrackItem[] } = { current: [] }
 const indexRef: { current: number } = { current: 0 }
 const loadGenRef: { current: number } = { current: 0 }
@@ -1461,7 +1427,7 @@ function ensureGraph(audio: HTMLAudioElement) {
         graphModeRef.current = 'hd'
         lastMbOnRef.current = false
         lastGlueOnRef.current = false
-      } catch (err) {
+      } catch {
         mediaSourceRef.current = null
         outputModeRef.current = 'native-nospec'
         snapshot.outputMode = 'native-nospec'
@@ -1503,7 +1469,7 @@ async function resumeAudioContext() {
     }
   }
   const audio = audioRef.current
-  if (audio && audio.src && audio.paused && wantPlayingRef.current) {
+  if (audio && audio.src && !audio.paused && wantPlayingRef.current) {
     try {
       await audio.play()
       playingRef.current = true
@@ -1541,8 +1507,8 @@ function startPositionTick() {
       /* */
     }
     const dur = (audio.duration || 0) * 1000 || snapshot.durationMs
-    const pos = (audio.currentTime || 0) * 1000
-    snapshot.currentMs = pos
+    const pos = pendingSeekMs??(audio.currentTime || 0) * 1000
+    if(pendingSeekMs===null)snapshot.currentMs = pos
     if (dur > 0) snapshot.durationMs = dur
     void updatePositionState(dur, pos, rateRef.current)
     positionMetaRefreshCounter += 1
@@ -1594,13 +1560,16 @@ function bindPageLifecycle() {
   pageLifecycleBound = true
   const onVisible = () => {
     if (document.visibilityState !== 'visible') return
-    void resumeAudioContext().then(() => {
+    void Promise.resolve(!audioRef.current?.paused?resumeAudioContext():undefined).then(() => {
       restorePlaybackClock()
       // Re-empujar rate y position al sistema tras resume
       const a = audioRef.current
       if (a && wantPlayingRef.current) {
         try {
-          if (a.paused) void a.play().catch(() => {})
+          snapshot.playing=!a.paused&&!a.ended
+          playingRef.current=snapshot.playing
+          snapshot.currentMs=a.currentTime*1000
+          notify()
         } catch {
           /* */
         }
@@ -1655,8 +1624,8 @@ function bindCapacitorListeners() {
         if (!App?.addListener) return
         void App.addListener('appStateChange', (state) => {
           if (state.isActive) {
-            void bootstrapNativePlayback()
-            void resumeAudioContext()
+            if(audioRef.current&&!audioRef.current.paused)void bootstrapNativePlayback()
+            if(audioRef.current&&!audioRef.current.paused)void resumeAudioContext()
             if (trackRef.current) {
               void ensureMediaSessionHandlers()
               void pushNowPlayingToSystem()
@@ -1664,7 +1633,7 @@ function bindCapacitorListeners() {
           }
         })
         void App.addListener('resume', () => {
-          void resumeAudioContext()
+          if(audioRef.current&&!audioRef.current.paused)void resumeAudioContext()
           if (trackRef.current) void pushNowPlayingToSystem()
         })
       })
@@ -1715,6 +1684,7 @@ async function ensureMediaSessionHandlers() {
   if (mediaSessionReady.current && (capMsHandlersReady || !capMs)) return
 
   const onPlay = () => {
+    if(audioRef.current?.src&&!audioRef.current.paused)return
     wantPlayingRef.current = true
     void api.toggle()
   }
@@ -1864,10 +1834,12 @@ function ensureAudio(): HTMLAudioElement {
     a.ontimeupdate = () => {
       const ms = (a.currentTime || 0) * 1000
       recordListening(trackRef.current?.id, ms, !a.paused && !a.seeking)
-      snapshot.currentMs = ms
+      if(pendingSeekMs===null)snapshot.currentMs = ms
       notify()
     }
+    a.onseeked=()=>{pendingSeekMs=null;snapshot.currentMs=a.currentTime*1000;notify()}
     a.onloadedmetadata = () => {
+      if(pendingSeekMs!==null){const target=preciseSeek(pendingSeekMs,a.duration*1000);if(target!==null)a.currentTime=target/1000}
       const dur = (a.duration || 0) * 1000
       if (dur > 0) {
         snapshot.durationMs = dur
@@ -1898,6 +1870,7 @@ function ensureAudio(): HTMLAudioElement {
       requestFloatingBar()
     }
     a.onplaying = () => {
+      recordPlaybackStart(trackRef.current?.id,(a.currentTime||0)*1000)
       playingRef.current = true
       wantPlayingRef.current = true
       snapshot.playing = true
@@ -1908,6 +1881,7 @@ function ensureAudio(): HTMLAudioElement {
     a.onpause = () => {
       recordListening(trackRef.current?.id, a.currentTime * 1000, false)
       playingRef.current = false
+      wantPlayingRef.current = false
       snapshot.playing = false
       void setMediaSessionPlaybackState('paused')
       if (!wantPlayingRef.current) stopPositionTick()
@@ -1975,7 +1949,7 @@ async function loadTrack(t: TrackItem) {
     return
   }
   const media = await resolveBlob(t.blobKey)
-  if (gen !== loadGenRef.current) return
+  if (gen !== loadGenRef.current) return false
   if (!media) {
     snapshot.error = 'Archivo no encontrado en la biblioteca offline.'
     notify()
@@ -1991,6 +1965,7 @@ async function loadTrack(t: TrackItem) {
   } catch {
     /* */
   }
+  pendingSeekMs=null
   audio.src = url
   try {
     audio.load()
@@ -2033,6 +2008,7 @@ async function loadTrack(t: TrackItem) {
       window.setTimeout(done, 4000)
     }
   })
+  return gen===loadGenRef.current
 }
 
 async function playIndex(i: number) {
@@ -2112,6 +2088,7 @@ async function armNativeSessionThenPlay(t: TrackItem, audio: HTMLAudioElement) {
     throw e
   }
 
+  if(trackRef.current?.id!==t.id||audio.paused||!wantPlayingRef.current)return
   playingRef.current = true
   snapshot.playing = true
   snapshot.error = null
@@ -2133,6 +2110,7 @@ async function armNativeSessionThenPlay(t: TrackItem, audio: HTMLAudioElement) {
 
     // Segunda oleada para OEM lentos (One UI / HyperOS)
     window.setTimeout(() => {
+      if(trackRef.current?.id!==t.id||audio.paused||!wantPlayingRef.current)return
       void (async () => {
         await updateMediaSessionMetadata(t)
         await setMediaSessionPlaybackState('playing')
@@ -2147,6 +2125,7 @@ async function armNativeSessionThenPlay(t: TrackItem, audio: HTMLAudioElement) {
       })()
     }, 320)
     window.setTimeout(() => {
+      if(trackRef.current?.id!==t.id||audio.paused||!wantPlayingRef.current)return
       void setMediaSessionPlaybackState('playing')
       void updateMediaSessionMetadata(t)
     }, 900)
@@ -2334,6 +2313,7 @@ export const api = {
   },
   async playTrack(t: TrackItem, queue?: TrackItem[]) {
     if (!t) return
+    const intent=playIntent.begin()
     if (queue) {
       queueRef.current = queue
       const found = queue.findIndex((x) => x.id === t.id)
@@ -2348,7 +2328,9 @@ export const api = {
     // Preparación mínima (no bloquear gesto)
     await prepareAndroidBackgroundPlayback()
 
-    await loadTrack(t)
+    if(!playIntent.current(intent))return
+    const loaded=await loadTrack(t)
+    if(!loaded||!playIntent.current(intent)||trackRef.current?.id!==t.id)return
     const audio = ensureAudio()
     if (!audio.src) return
     ensureGraph(audio)
@@ -2364,6 +2346,7 @@ export const api = {
     try {
       await armNativeSessionThenPlay(t, audio)
     } catch (e) {
+      if(!playIntent.current(intent))return
       playingRef.current = false
       snapshot.playing = false
       const msg = e instanceof Error ? e.message : String(e)
@@ -2418,6 +2401,7 @@ export const api = {
         warn('toggle play failed:', e)
       }
     } else {
+      playIntent.cancel()
       wantPlayingRef.current = false
       audio.pause()
       playingRef.current = false
@@ -2427,19 +2411,7 @@ export const api = {
       notify()
     }
   },
-  seek(ms: number) {
-    const audio = ensureAudio()
-    const d = audio.duration || 0
-    const t = Math.max(0, d ? Math.min(d, ms / 1000) : ms / 1000)
-    try {
-      audio.currentTime = t
-    } catch {
-      /* */
-    }
-    snapshot.currentMs = t * 1000
-    void updatePositionState(d * 1000 || snapshot.durationMs, t * 1000, rateRef.current)
-    notify()
-  },
+  seek(ms:number){const audio=ensureAudio();const target=preciseSeek(ms,Number.isFinite(audio.duration)?audio.duration*1000:snapshot.durationMs);if(target===null)return;pendingSeekMs=target;snapshot.currentMs=target;try{if(audio.readyState>=1)audio.currentTime=target/1000}catch{/* Apply the pending seek once metadata is ready. */}void updatePositionState(snapshot.durationMs,target,rateRef.current);window.dispatchEvent(new CustomEvent('gco:media-seek',{detail:{trackId:trackRef.current?.id,timeMs:target}}));notify()},
   async next() {
     const q = queueRef.current
     if (!q.length) return
@@ -2470,9 +2442,11 @@ export const api = {
     const pos = at >= 0 ? at + 1 : without.length
     without.splice(pos, 0, t)
     queueRef.current = without
+    notify()
   },
   setQueue(q: TrackItem[]) {
-    queueRef.current = q
+    queueRef.current = [...q]
+    notify()
     if (!q.length) {
       indexRef.current = 0
       return

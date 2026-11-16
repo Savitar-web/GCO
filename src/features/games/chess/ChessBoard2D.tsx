@@ -58,7 +58,7 @@ export function ChessBoard2D({
 
   return (
     <div
-      className="gco-chess-board2d"
+      className={`gco-chess-board2d board-skin-${skin}`}
       style={
         {
           '--skin-light': skinDef.light,
@@ -77,6 +77,7 @@ export function ChessBoard2D({
         </div>
 
         <div className="gco-chess-board2d-center">
+          <div className="gco-chess-board2d-files gco-chess-board2d-files-top" aria-hidden>{fileLabels.map(f=><span key={f} className="gco-chess-coord-label">{f}</span>)}</div>
           <div className="gco-chess-board2d-grid">
             {rows.map((r) =>
               cols.map((c) => {
@@ -114,7 +115,7 @@ export function ChessBoard2D({
                         style={{'--particle':state.cosmetics?.[piece.color]?.particleColor} as React.CSSProperties}
                         aria-hidden
                       >
-                        <ChessPieceIcon type={piece.type} color={piece.color} bodyColor={state.cosmetics?.[piece.color]?.color} accent={state.cosmetics?.[piece.color]?.particleColor||skinDef.accent} /><i/><i/><i/>
+                        <ChessPieceIcon design={state.cosmetics?.[piece.color]?.design} type={piece.type} color={piece.color} bodyColor={state.cosmetics?.[piece.color]?.color} accent={state.cosmetics?.[piece.color]?.particleColor||skinDef.accent} /><i/><i/><i/>
                       </span>
                     )}
                   </button>

@@ -1,3 +1,4 @@
+import {puzzleStore,rotateConnected} from './puzzleStorage'
 /**
  * RompecabezasGame — GymCogOrigins (autocontenido)
  * Motor + UI + dificultades + rotación + snap en grupos + historial ilimitado
@@ -499,7 +500,7 @@ export function buildPiecePath(cellW: number, cellH: number, pad: number, edges:
 export type PieceRotation = 0 | 90 | 180 | 270
 export interface JigsawPiece {
   id: string; row: number; col: number; correctX: number; correctY: number
-  x: number; y: number; locked: boolean; z: number; edges: PieceEdges; rotation: PieceRotation
+  x: number; y: number; lifted?: boolean; locked: boolean; z: number; edges: PieceEdges; rotation: PieceRotation
 }
 export function createPieces(level: JigsawLevel, shuffleSeed: number, difficulty: Difficulty = 'facil'): JigsawPiece[] {
   const { cols, rows } = level
@@ -510,7 +511,7 @@ export function createPieces(level: JigsawLevel, shuffleSeed: number, difficulty
   for (let i = order.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]
   }
-  const trayCols = Math.max(4, Math.min(cols + 4, Math.ceil(Math.sqrt(order.length * 1.6))))
+  const trayCols = Math.max(2, cols)
   const trayGap = 1.18
   const rotations: PieceRotation[] = [0, 90, 180, 270]
   const withRot = difficulty === 'normal' || difficulty === 'dificil'
@@ -521,7 +522,7 @@ export function createPieces(level: JigsawLevel, shuffleSeed: number, difficulty
       correctX: pos.col, correctY: pos.row,
       x: trayCol * trayGap + (rng() - 0.5) * 0.22,
       y: rows + 1.2 + trayRow * trayGap + (rng() - 0.5) * 0.22,
-      locked: false, z: i + 1, edges: edgeMap[pos.row][pos.col],
+      lifted:false, locked: false, z: i + 1, edges: edgeMap[pos.row][pos.col],
       rotation: withRot ? rotations[Math.floor(rng() * 4)] : 0,
     }
   })
@@ -566,7 +567,7 @@ export function loadCustomImages(): PuzzleImage[] {
   } catch { return [] }
 }
 export function saveCustomImages(list: PuzzleImage[]): void {
-  try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(list)) } catch { /* quota */ }
+  localStorage.setItem(CUSTOM_KEY, JSON.stringify(list))
 }
 /** Sin límite de cantidad (solo límite real de cuota del navegador). */
 export function addCustomImage(img: PuzzleImage): PuzzleImage[] {
@@ -770,47 +771,16 @@ function fitBoardCells(
   trayRows: number,
   imageAspect = 1,
 ): { cellW: number; cellH: number } {
-  const padBudget = 36
-  const maxW = Math.max(160, availW - padBudget)
-  const maxH = Math.max(160, availH - padBudget)
   const aspect = imageAspect > 0.12 && imageAspect < 10 ? imageAspect : 1
-  const trayFactor = trayRows * 1.1 + 1.25
-
-  // Empezar ocupando el ancho disponible
-  let boardW = maxW
-  let boardH = boardW / aspect
-  // Espacio para bandeja estimado con lado medio
-  let meanCell = Math.sqrt((boardW / cols) * (boardH / rows))
-  let totalH = boardH + trayFactor * meanCell
-
-  if (totalH > maxH) {
-    // Limitar por altura disponible (tablero + bandeja)
-    // boardH + trayFactor * sqrt((boardW/cols)*(boardH/rows)) ≈ maxH
-    // boardW = boardH * aspect
-    boardH = maxH * 0.72 // deja hueco a la bandeja
-    boardW = boardH * aspect
-    if (boardW > maxW) {
-      boardW = maxW
-      boardH = boardW / aspect
-    }
-  }
-
-  let cellW = boardW / Math.max(1, cols)
-  let cellH = boardH / Math.max(1, rows)
-
-  // Límites de legibilidad en móvil
-  const minSide = 16
-  const maxSide = 160
-  if (cellW < minSide || cellH < minSide) {
-    const scale = minSide / Math.min(cellW, cellH)
-    cellW *= scale
-    cellH *= scale
-  }
-  if (cellW > maxSide || cellH > maxSide) {
-    const scale = maxSide / Math.max(cellW, cellH)
-    cellW *= scale
-    cellH *= scale
-  }
+  const maxW = Math.max(100, availW - 52)
+  const maxH = Math.max(100, availH - 52)
+  const totalRows = rows + 1.2 + trayRows * 1.18
+  const boardH = Math.min(maxW / aspect, maxH * rows / totalRows)
+  let cellH = boardH / rows
+  let cellW = boardH * aspect / cols
+  const scale = Math.max(1, 16 / Math.min(cellW, cellH))
+  cellW *= scale
+  cellH *= scale
 
   return { cellW, cellH }
 }
@@ -1419,7 +1389,7 @@ const PieceView = memo(function PieceView({
   const imgX = pad - piece.col * cellW
   const imgY = pad - piece.row * cellH
   const rot = piece.rotation
-  const scale = dragging && !lite ? 1.04 : 1
+  const scale = !piece.locked && piece.lifted === false && !dragging ? 0.68 : dragging && !lite ? 1.04 : 1
   const transform =
     rot || scale !== 1
       ? `${rot ? `rotate(${rot}deg)` : ''}${scale !== 1 ? ` scale(${scale})` : ''}`.trim()
@@ -1478,12 +1448,12 @@ const PieceView = memo(function PieceView({
 }, (prev, next) => {
   // Comparación fina: evita re-render de piezas quietas durante el drag
   return (
-    prev.piece === next.piece ||
     (prev.piece.x === next.piece.x &&
       prev.piece.y === next.piece.y &&
       prev.piece.z === next.piece.z &&
       prev.piece.locked === next.piece.locked &&
       prev.piece.rotation === next.piece.rotation &&
+      prev.piece.lifted === next.piece.lifted &&
       prev.dragging === next.dragging &&
       prev.isHinted === next.isHinted &&
       prev.showBorders === next.showBorders &&
@@ -1505,6 +1475,23 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
   const [isTouch, setIsTouch] = useState(false)
   const [settings, setSettings] = useState<PuzzleSettings>(() => loadSettings())
   const [customImages, setCustomImages] = useState<PuzzleImage[]>(() => loadCustomImages())
+  useEffect(()=>{
+    let active=true
+    void (async()=>{
+      const previous=loadCustomImages()
+      for(const image of previous){
+        const existing=await puzzleStore<PuzzleImage|undefined>('images','get',undefined,image.id)
+        if(!existing)await puzzleStore('images','put',image)
+      }
+      const all=await puzzleStore<PuzzleImage[]>('images','all')
+      if(active)setCustomImages(previous=>[...new Map([...all.reverse(),...previous].map(image=>[image.id,image])).values()])
+      if(previous.length)localStorage.removeItem(CUSTOM_KEY)
+    })().catch(()=>{if(active)setImportError('No se pudo abrir la biblioteca de imágenes. Inténtalo de nuevo.')})
+    return()=>{active=false}
+  },[])
+  const imageImportLock=useRef(false)
+  const [released,setReleased]=useState(false)
+
   const [savedLevels, setSavedLevels] = useState<SavedCreativeLevel[]>(() => loadCreativeLevels())
   const [editingLevelId, setEditingLevelId] = useState<string | null>(null)
   const [levelNameDraft, setLevelNameDraft] = useState('')
@@ -1525,7 +1512,10 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
   const [piecesModalOpen, setPiecesModalOpen] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
-  const [activeLevel, setActiveLevel] = useState<JigsawLevel | null>(null)
+  const [activeLevel, setActiveLevel] = useState<JigsawLevel | null>(null) 
+  const [savedSession,setSavedSession]=useState<{level:JigsawLevel;pieces:JigsawPiece[];groups:Record<string,string>;elapsed:number;released:boolean;origin:PlayOrigin;creativeId?:string|null;hintsUsed?:number;challengeMs?:number|null}|null>(null)
+  useEffect(()=>{void puzzleStore<typeof savedSession>('session','get',undefined,'active').then(setSavedSession).catch(()=>{})},[])
+
   const [pieces, setPieces] = useState<JigsawPiece[]>([])
   const [playOrigin, setPlayOrigin] = useState<PlayOrigin>('normal')
   const [activeCreativeId, setActiveCreativeId] = useState<string | null>(null)
@@ -1613,35 +1603,19 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
   useEffect(() => {
     if (screen !== 'play' || !activeLevel || activeLevel.difficulty !== 'dificil' || paused || completion) return
     const id = window.setInterval(() => {
-      setPieces((prev) => {
-        const groups = groupOfRef.current
-        const rotatedIds = new Set<string>()
-        const next = prev.map((p) => {
-          if (p.locked || p.id === draggingId || rotatedIds.has(p.id)) return p
-          // Solo gira un subconjunto aleatorio de piezas/grupos (~40 %)
-          if (Math.random() > 0.4) return p
-          const gid = groups[p.id]
-          if (gid) {
-            // Grupo conectado: girar todas las piezas del grupo a la vez
-            const members = prev.filter((x) => !x.locked && groups[x.id] === gid)
-            for (const m of members) rotatedIds.add(m.id)
-            return { ...p, rotation: ((p.rotation + 90) % 360) as PieceRotation }
-          }
-          rotatedIds.add(p.id)
-          return { ...p, rotation: ((p.rotation + 90) % 360) as PieceRotation }
-        })
-        // Segunda pasada: aplicar la misma rotación a hermanos de grupo ya marcados
-        return next.map((p) => {
-          if (p.locked || !rotatedIds.has(p.id)) return p
-          const gid = groups[p.id]
-          if (!gid) return p
-          // Asegurar misma rotación que el primer miembro del grupo
-          const first = next.find((x) => groups[x.id] === gid && rotatedIds.has(x.id))
-          if (!first) return p
-          return { ...p, rotation: first.rotation }
-        })
+      setPieces(prev=>{
+        let next=prev
+        const visited=new Set<string>()
+        for(const piece of prev){
+          const group=groupOfRef.current[piece.id]||piece.id
+          if(visited.has(group)||piece.locked||piece.id===draggingId)continue
+          visited.add(group)
+          if(Math.random()>.4)continue
+          const size=cellSizeRef.current
+          next=rotateConnected(next,groupOfRef.current,piece.id,size.cellW,size.cellH) as JigsawPiece[]
+        }
+        return next
       })
-      sound.playAutoRotate()
     }, 20000)
     return () => clearInterval(id)
   }, [screen, activeLevel, paused, completion, draggingId, sound])
@@ -1802,7 +1776,7 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
     setHintsUsed(0); setHintPieceId(null); setShowPreview(false); setShowBorders(true)
     setZoom(1); setPaused(false); setCompletion(null); setDraggingId(null); setFullscreen(false); setGroupOf({})
     setChallengeMs(challenge ?? null); setTimeUp(false)
-    resetTimer(); setScreen('play')
+    setReleased(false); resetTimer(); setScreen('play')
   }, [imagePool, normalDifficulty])
 
   const persistSavedLevels = (list: SavedCreativeLevel[]) => { setSavedLevels(list); saveCreativeLevels(list) }
@@ -1848,7 +1822,7 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
     setHintsUsed(0); setHintPieceId(null); setShowPreview(false); setShowBorders(true)
     setZoom(1); setPaused(false); setCompletion(null); setDraggingId(null); setFullscreen(false); setGroupOf({})
     setChallengeMs(challenge ?? null); setTimeUp(false)
-    resetTimer(); setScreen('play')
+    setReleased(false); resetTimer(); setScreen('play')
   }
 
   const startCreative = useCallback((challenge?: number | null) => {
@@ -1862,7 +1836,7 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
     setHintsUsed(0); setHintPieceId(null); setShowPreview(false); setShowBorders(true)
     setZoom(1); setPaused(false); setCompletion(null); setDraggingId(null); setFullscreen(false); setGroupOf({})
     setChallengeMs(challenge ?? null); setTimeUp(false)
-    resetTimer(); setScreen('play')
+    setReleased(false); resetTimer(); setScreen('play')
   }, [creativeImage, creativePieces, creativeShape, creativeDifficulty, creativeTimeLimit, editingLevelId])
 
   /** Repite una partida del historial con la misma imagen, forma, piezas, dificultad y límite de tiempo. */
@@ -1921,7 +1895,7 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
 
   const togglePause = () => setPaused((p) => !p)
 
-  const trayCols = activeLevel ? Math.max(3, Math.min(activeLevel.cols + 2, Math.ceil(Math.sqrt(activeLevel.pieces * 1.5)))) : 4
+  const trayCols = activeLevel ? Math.max(2, activeLevel.cols) : 4
   const trayRows = activeLevel ? Math.ceil(activeLevel.pieces / trayCols) : 2
   const { cellW, cellH } = useMemo(() => {
     if (!activeLevel) return { cellW: 40, cellH: 40 }
@@ -1941,7 +1915,7 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
   const boardPxW = activeLevel ? activeLevel.cols * cellW : 0
   const boardPxH = activeLevel ? activeLevel.rows * cellH : 0
   const arenaWidthPx = boardPxW + padPx * 2 + 48
-  const arenaHeightPx = boardPxH + padPx * 2 + trayRows * Math.min(cellW, cellH) * 1.25 + 72
+  const arenaHeightPx = boardPxH + padPx * 2 + (1.2 + trayRows * 1.18) * cellH + 32
 
   // Actualiza medidas de celda para el drag (evita valores stale de React)
   cellSizeRef.current = { cellW, cellH }
@@ -1952,29 +1926,12 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
    */
   const rotatePiece = (id: string) => {
     if (!activeLevel || activeLevel.difficulty === 'facil') return
-    const groups = groupOfRef.current
-    const gid = groups[id]
-    const memberIds = new Set<string>()
-    if (gid) {
-      for (const [pid, g] of Object.entries(groups)) {
-        if (g === gid) memberIds.add(pid)
-      }
-    } else {
-      memberIds.add(id)
-    }
-    let didRotate = false
-    setPieces((prev) =>
-      prev.map((p) => {
-        if (p.locked || !memberIds.has(p.id)) return p
-        didRotate = true
-        return { ...p, rotation: ((p.rotation + 90) % 360) as PieceRotation }
-      }),
-    )
-    if (didRotate) {
-      if (memberIds.size > 1) sound.playRotateGroup()
-      else sound.playRotate()
-      if (settings.haptics && isTouch) vibrate(6)
-    }
+    const selected=piecesRef.current.find(piece=>piece.id===id)
+    if(!selected||selected.locked)return
+    const size=cellSizeRef.current
+    setPieces(previous=>rotateConnected(previous,groupOfRef.current,id,size.cellW,size.cellH) as JigsawPiece[])
+    sound.playRotateGroup()
+
   }
 
   const handleArenaPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -2014,7 +1971,7 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
     setPieces((prev) => {
       const maxZ = Math.max(...prev.map((p) => p.z), 1)
       return prev.map((p) =>
-        p.id === id || (gid && groups[p.id] === gid) ? { ...p, z: maxZ + 1 } : p,
+        p.id === id || (gid && groups[p.id] === gid) ? { ...p, lifted:true, z: maxZ + 1 } : p,
       )
     })
   }
@@ -2291,7 +2248,8 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
   }
 
   const handleImportFiles = async (files: FileList | null) => {
-    if (!files?.length) return
+    if (!files?.length||imageImportLock.current) return
+    imageImportLock.current=true
     setImporting(true)
     setImportError(null)
     const accepted: File[] = []
@@ -2308,6 +2266,7 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
     if (!accepted.length) {
       setImportError('Ningún archivo válido. Usa JPG, PNG o WEBP.')
       setImporting(false)
+      imageImportLock.current=false
       return
     }
     let lastImg: PuzzleImage | null = null
@@ -2336,8 +2295,8 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
           naturalWidth: dims.w,
           naturalHeight: dims.h,
         }
-        const list = addCustomImage(img)
-        setCustomImages(list)
+        await puzzleStore('images','put',img)
+        setCustomImages(previous=>[img,...previous.filter(item=>item.id!==img.id)])
         lastImg = img
         okCount++
       } catch {
@@ -2357,13 +2316,32 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
       setImportError('No se pudo importar. Puede que el almacenamiento del navegador esté lleno.')
     }
     setImporting(false)
+    imageImportLock.current=false
   }
 
   const handleDeleteCustomImage = (id: string) => {
-    const list = removeCustomImage(id)
-    setCustomImages(list)
+    void puzzleStore('images','delete',undefined,id).then(()=>setCustomImages(previous=>previous.filter(image=>image.id!==id))).catch(()=>setImportError('No se pudo eliminar la imagen.'))
     if (creativeImage.id === id) setCreativeImage(DEFAULT_IMAGES[0])
   }
+
+  const sessionSnapshot=useRef<NonNullable<typeof savedSession>|null>(null)
+  sessionSnapshot.current=activeLevel?{level:activeLevel,pieces,groups:groupOf,elapsed:elapsedMs,released,origin:playOrigin,creativeId:activeCreativeId,hintsUsed,challengeMs}:null
+  useEffect(()=>{
+    if(screen!=='play'||!activeLevel)return
+    if(completion){void puzzleStore('session','delete',undefined,'active');return}
+    const flush=()=>{if(sessionSnapshot.current)void puzzleStore('session','put',sessionSnapshot.current,'active').catch(()=>{})}
+    const hidden=()=>{if(document.hidden)flush()}
+    const timer=window.setInterval(flush,5000)
+    window.addEventListener('pagehide',flush);document.addEventListener('visibilitychange',hidden)
+    return()=>{clearInterval(timer);window.removeEventListener('pagehide',flush);document.removeEventListener('visibilitychange',hidden);if(!sessionSnapshot.current||sessionSnapshot.current.pieces.every(piece=>piece.locked))return;flush()}
+  },[screen,activeLevel,completion])
+  useEffect(()=>{
+    if(screen!=='play'||completion)return
+    const save=()=>{if(sessionSnapshot.current)void puzzleStore('session','put',sessionSnapshot.current,'active').catch(()=>{})}
+    if(!draggingId){save();return}
+    const timer=window.setTimeout(save,450)
+    return()=>clearTimeout(timer)
+  },[pieces,groupOf,released,screen,completion,draggingId])
 
   const currentNormalLevel = progress.normalLevel
   const tierInfo = pieceTierInfoForLevel(currentNormalLevel)
@@ -2638,7 +2616,9 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
                   type="text"
                   value={img.name}
                   onChange={(e) => {
-                    const list = renameCustomImage(img.id, e.target.value)
+                    const renamed={...img,name:e.target.value}
+                    const list=customImages.map(image=>image.id===img.id?renamed:image)
+                    void puzzleStore('images','put',renamed).catch(()=>setImportError('No se pudo guardar el nombre.'))
                     setCustomImages(list)
                     if (creativeImage.id === img.id) {
                       const updated = list.find((x) => x.id === img.id)
@@ -2875,7 +2855,7 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
           <div className="pz-prog-bar"><div className="pz-prog-fill" style={{ width: `${pct}%` }} /></div>
           <span className="pz-prog-count">{locked}/{pieces.length}</span>
         </div>
-        <div className={`pz-hud${remainMs != null && remainMs < 30000 ? ' is-urgent' : ''}`} style={hudPos ? { left: hudPos.x, top: hudPos.y } : { left: '50%', top: 'max(12px, calc(env(safe-area-inset-top, 0px) + 52px))', transform: 'translateX(-50%)' }}
+        <div className={`pz-hud${!hudPos ? ' is-docked' : ''}${remainMs != null && remainMs < 30000 ? ' is-urgent' : ''}`} style={hudPos ? { left: hudPos.x, top: hudPos.y } : { left: '50%', top: 'max(12px, calc(env(safe-area-inset-top, 0px) + 52px))', transform: 'translateX(-50%)' }}
           onPointerDown={onHudPointerDown} onPointerMove={onHudPointerMove} onPointerUp={onHudPointerUp} onPointerCancel={onHudPointerUp} title="Arrastra">
           <span className="pz-hud-grip">⠿</span>
           <span title="Tu tiempo">⏱ {formatTime(elapsedMs)}</span>
@@ -2892,6 +2872,13 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
           <strong>{pct}%</strong>
           <span>{locked}/{pieces.length}</span>
         </div>
+        {!released&&<button type="button" className="pz-btn pz-btn-primary pz-release-all" onClick={()=>{
+          const cols=trayCols
+          setPieces(previous=>previous.map((piece,index)=>piece.locked?piece:groupOf[piece.id]?{...piece,lifted:true}:{
+            ...piece,lifted:true,x:(index%cols)*1.18,y:activeLevel.rows+1.2+Math.floor(index/cols)*1.18,z:index+1,
+          }))
+          setReleased(true)
+        }}>Liberar todas las piezas</button>}
         <div className="pz-arena-scroll" ref={arenaScrollRef} onTouchStart={onArenaTouchStart} onTouchMove={onArenaTouchMove} onTouchEnd={onArenaTouchEnd} onTouchCancel={onArenaTouchEnd}>
           <div style={{ width: arenaWidthPx * zoom, height: arenaHeightPx * zoom, position: 'relative' }}>
             <div className="pz-arena" style={{ width: arenaWidthPx, height: arenaHeightPx, transform: `scale(${zoom})` }}
@@ -3246,6 +3233,13 @@ export function RompecabezasGame({ onExit, userName: _userName = 'Jugador' }: Ro
           </header>
         )}
         <main className="pz-content">
+          {screen!=='play'&&savedSession&&<button className="pz-btn pz-btn-primary" onClick={()=>{
+            setActiveLevel(savedSession.level);setPieces(savedSession.pieces);setGroupOf(savedSession.groups)
+            setReleased(savedSession.released);setPlayOrigin(savedSession.origin);setElapsedMs(savedSession.elapsed)
+            setActiveCreativeId(savedSession.creativeId??null);setHintsUsed(savedSession.hintsUsed??0);setChallengeMs(savedSession.challengeMs??null)
+            timerAccumRef.current=savedSession.elapsed;timerBaseRef.current=performance.now()
+            setPaused(false);setCompletion(null);setTimeUp(false);setScreen('play');setSavedSession(null)
+          }}>Reanudar rompecabezas guardado</button>}
           {screen === 'play' ? renderPlay() : (
             <div className="pz-scroll-inner">
               {screen === 'normal' && renderNormal()}

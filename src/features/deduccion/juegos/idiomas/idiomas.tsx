@@ -1,3 +1,4 @@
+import {describeLanguageOption} from './neutralTeaching'
 /**
  * =============================================================================
  * idiomas.tsx — Deducción lingüística · GymCogOrigins
@@ -181,10 +182,10 @@ function writeJSON(key: string, value: unknown) {
   }
 }
 
-function shuffle<T>(arr: T[]): T[] {
+function shuffle<T>(arr: T[],random:()=>number=Math.random): T[] {
   const a = [...arr]
   for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
+    const j = Math.floor(random() * (i + 1))
     ;[a[i], a[j]] = [a[j], a[i]]
   }
   return a
@@ -3031,17 +3032,12 @@ const READING_BY_LANG: Record<LangId, ReadingItem[]> = {
 /** Total de niveles objetivo */
 export const TOTAL_LEVELS = 3000
 
-function buildOptions(
-  correct: string,
-  pool: string[],
-  count = 8
-): { options: string[]; correctIndex: number } {
-  const distractors = shuffle(pool.filter((x) => x !== correct)).slice(0, count - 1)
-  while (distractors.length < count - 1) {
-    distractors.push(`¿?${distractors.length}`)
-  }
-  const options = shuffle([correct, ...distractors])
-  return { options, correctIndex: options.indexOf(correct) }
+function buildOptions(correct:string,pool:string[],count=8,seed=1):{options:string[];correctIndex:number}{
+ let state=seed>>>0;const random=()=>{state=(Math.imul(state,1664525)+1013904223)>>>0;return state/4294967296}
+ const unique=[...new Set(pool.filter(value=>value.trim().toLocaleLowerCase()!==correct.trim().toLocaleLowerCase()))]
+ const distractors=shuffle(unique,random).slice(0,count-1)
+ const options=shuffle([correct,...distractors],random)
+ return {options,correctIndex:options.indexOf(correct)}
 }
 
 /**
@@ -3128,6 +3124,7 @@ function buildLexLesson(
 
 export function generateQuestion(level: number, lang: LangId, preferredMode?: GameMode | 'auto'): Question {
   const L = clamp(Math.floor(level) || 1, 1, TOTAL_LEVELS)
+  const buildLevelOptions=(correct:string,pool:string[],count=8)=>buildOptions(correct,pool,count,L*631+lang.charCodeAt(0))
   const lex = LEX_BY_LANG[lang]
   const grammar = GRAMMAR_BY_LANG[lang]
   const reading = READING_BY_LANG[lang] ?? []
@@ -3161,7 +3158,7 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
 
   // Reading
   if (mode === 'reading_comprehension' && reading.length > 0) {
-    const r = reading[(L - 1) % reading.length]
+    const r = reading[Math.floor((L-1)/9) % reading.length]
     const rotated = rotateOptions(r.options, r.correctIndex, L)
     return {
       id: `${lang}-read-${L}`,
@@ -3399,7 +3396,7 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
       mode === 'false_friends') &&
     grammar.length > 0
   ) {
-    const g = grammar[(L - 1) % grammar.length]
+    const g = grammar[(Math.floor((L-1)/9)+modeCycle.indexOf(mode)) % grammar.length]
     const rotated = rotateOptions(g.options, g.correctIndex, L, g.optionNotes)
     return {
       id: `${lang}-g-${L}`,
@@ -3440,9 +3437,13 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
     }
   }
 
-  const item = lex[(L - 1) % lex.length]
-  const targetPool = DISTRACTORS[lang] ?? ES_DISTRACTORS
-  const esPool = ES_DISTRACTORS
+  const item = lex[(Math.floor((L-1)/9)+modeCycle.indexOf(mode)*7) % lex.length]
+  const related=[...lex].sort((a,b)=>{
+    const score=(word:LexItem)=>(item.topic&&word.topic===item.topic?8:0)+(word.target[0]===item.target[0]?2:0)-Math.abs(word.target.length-item.target.length)*.3
+    return score(b)-score(a)
+  }).slice(0,14)
+  const targetPool = [...related.map(word=>word.target),...(DISTRACTORS[lang]??ES_DISTRACTORS)].slice(0,20)
+  const esPool = [...related.map(word=>word.es),...ES_DISTRACTORS].slice(0,20)
 
   const rootHint = item.root
     ? `Raíz/lexema a memorizar: 「${item.root}」. Descompón en bloques conocidos.`
@@ -3454,7 +3455,7 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
       : ''
 
   if (mode === 'morphology' || mode === 'cognate_logic') {
-    const built = buildOptions(item.es, esPool, 8)
+    const built = buildLevelOptions(item.es, esPool, 8)
     const les = buildLexLesson(item, mode, lang)
     return {
       id: `${lang}-morph-${L}`,
@@ -3487,7 +3488,7 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
   }
 
   if (mode === 'translate_to_es') {
-    const built = buildOptions(item.es, esPool, 8)
+    const built = buildLevelOptions(item.es, esPool, 8)
     const les = buildLexLesson(item, mode, lang)
     return {
       id: `${lang}-toes-${L}`,
@@ -3513,7 +3514,7 @@ export function generateQuestion(level: number, lang: LangId, preferredMode?: Ga
     }
   }
 
-  const built = buildOptions(item.target, targetPool, 8)
+  const built = buildLevelOptions(item.target, targetPool, 8)
   const les = buildLexLesson(item, 'translate_from_es', lang)
   return {
     id: `${lang}-fromes-${L}`,
@@ -4757,7 +4758,7 @@ export function IdiomasGame() {
   const [completedMap, setCompletedMap] = useState<Record<string, number[]>>(() =>
     readJSON(LS.completed, {})
   )
-  const [learnOpen, setLearnOpen] = useState(true)
+  const [learnOpen, setLearnOpen] = useState(false)
   const [question, setQuestion] = useState<Question | null>(null)
   const [selected, setSelected] = useState<number | null>(null)
   const [answered, setAnswered] = useState(false)
@@ -5475,8 +5476,6 @@ export function IdiomasGame() {
   // ---- CLASE (lección extensa antes de jugar cada nivel) ----
   if (screen === 'vocab' && pendingLevel !== null && pendingQuestion) {
     const q = pendingQuestion
-    const lesson = MODE_LESSON[q.mode]
-    const era = originEraLabel(q.etymology)
     const allRevealed = revealed.size >= q.options.length
     const toggleReveal = (idx: number) => {
       setRevealed((prev) => {
@@ -5494,17 +5493,8 @@ export function IdiomasGame() {
     // completa y específica. Solo si no existe se recurre al marco general
     // del modo, y aun así se añaden siempre la regla y la etimología reales
     // de este nivel, nunca un texto vacío.
-    const lessonTitle = q.lessonTitle ?? lesson.title
-    const lessonParagraphs =
-      q.lessonIntro && q.lessonIntro.length > 0
-        ? q.lessonIntro
-        : [
-            ...lesson.body,
-            `Regla específica de este nivel: ${q.ruleHint}`,
-            q.ruleExplain,
-            q.etymology ? `Etimología relevante: ${q.etymology}` : '',
-            era ?? '',
-          ].filter(Boolean)
+    const lessonTitle=MODE_LESSON[q.mode].title
+    const lessonParagraphs=['Estudia cada expresión de forma independiente: su significado, sus componentes y su pronunciación. Todas reciben el mismo tratamiento.','Relaciona los conceptos entre sí y distingue tiempo, persona, número, función y significado. Puedes volver a escuchar cada término antes de comenzar.']
     const toggleLessonAudio = () => {
       if (lessonAudioOn) {
         window.speechSynthesis?.cancel()
@@ -5514,8 +5504,8 @@ export function IdiomasGame() {
       playSfx('toggle')
       setLessonAudioOn(true)
       speakLesson(
-        [lessonTitle, ...lessonParagraphs, 'Ahora, las opciones que verás en la pregunta:',
-          ...q.options],
+        [lessonTitle, ...lessonParagraphs, 'Vocabulario y conceptos:',
+          ...q.options.flatMap(option=>[option,findLexEntry(lang,option)?.es||describeLanguageOption(option)])],
         lang,
         () => setLessonAudioOn(false)
       )
@@ -5573,12 +5563,7 @@ export function IdiomasGame() {
               {p}
             </p>
           ))}
-          {q.passage && (
-            <div className="id-passage">
-              <h3>Texto de este nivel</h3>
-              <p>{q.passage}</p>
-            </div>
-          )}
+
         </motion.article>
 
         <motion.div
@@ -5592,12 +5577,9 @@ export function IdiomasGame() {
               {allRevealed ? '✓' : '🔍'}
             </span>
             <div className="id-gate-copy">
-              <h3>{allRevealed ? 'Interpretación completa' : 'Interpreta antes de leer la pregunta'}</h3>
+              <h3>{allRevealed ? 'Glosario estudiado' : 'Explora el glosario'}</h3>
               <p>
-                Toca cada una de las {q.options.length} tarjetas, piensa primero qué crees que
-                significa o qué función cumple, y luego revela la explicación real. Ninguna
-                tarjeta te dice si es la respuesta correcta — eso lo decides tú, con lo aprendido,
-                cuando leas la pregunta.
+                Explora las {q.options.length} tarjetas. Estudia el significado, escucha la pronunciación y distingue la función de cada expresión.
               </p>
             </div>
           </div>
@@ -5664,6 +5646,7 @@ export function IdiomasGame() {
                     >
                       {entry ? (
                         <>
+                          <p className="id-vocab-note"><strong>En {profile.name}:</strong> {entry.target}</p>
                           <p className="id-vocab-es">
                             <strong>Significa:</strong> {entry.es}
                             {entry.topic && <span className="id-vocab-topic"> · {entry.topic}</span>}
@@ -5685,22 +5668,8 @@ export function IdiomasGame() {
                             </p>
                           )}
                         </>
-                      ) : q.optionNotes && q.optionNotes[idx] ? (
-                        <p className="id-vocab-note">{q.optionNotes[idx]}</p>
-                      ) : q.mode === 'reading_comprehension' ? (
-                        <p className="id-vocab-note">
-                          Esta opción es una posible lectura del pasaje de arriba. Vuelve al texto y
-                          localiza literalmente dónde dice algo parecido a "{opt}" (o dónde queda
-                          claro que NO lo dice): la respuesta correcta siempre se puede señalar con
-                          el dedo en el pasaje, no se adivina.
-                        </p>
-                      ) : (
-                        <p className="id-vocab-note">
-                          Todavía no tenemos el desglose línea por línea de esta opción para{' '}
-                          {profile.name}. Usa la regla explicada arriba ({q.ruleHint}) para
-                          analizarla tú mismo: ¿qué forma o estructura es, y qué exige la regla?
-                        </p>
-                      )}
+                      ) : <p className="id-vocab-note">{describeLanguageOption(opt)}</p>}
+
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -5722,7 +5691,7 @@ export function IdiomasGame() {
               startLevel(pendingQuestion.level, pendingQuestion)
             }}
           >
-            {allRevealed ? `Ya interpreté todo · Leer la pregunta y responder` : `Interpreta las ${q.options.length} opciones para continuar`}
+            {allRevealed ? `Comenzar reto` : `Interpreta las ${q.options.length} opciones para continuar`}
           </motion.button>
           <button className="id-btn" type="button" onClick={() => setScreen('levels')}>
             Volver al mapa de niveles
@@ -6002,9 +5971,9 @@ export function IdiomasGame() {
                 exit={{ height: 0, opacity: 0 }}
               >
                 <p className="id-rule-hint">
-                  <strong>{question.ruleHint}</strong>
+                  <strong>{'Aplica lo que has estudiado y analiza cada forma de manera independiente.'}</strong>
                 </p>
-                <p className="id-rule-explain">{question.ruleExplain}</p>
+                <p className="id-rule-explain">{'Identifica primero el significado y la estructura. Después formula tu propia conclusión.'}</p>
               </motion.div>
             )}
           </AnimatePresence>

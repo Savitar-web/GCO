@@ -5,7 +5,7 @@ import {newTres,tresMove} from '../src/features/games/cards/tresEngine.ts'
 test('21 and Conquian support 1–10 seats without undefined or lost cards',()=>{
  for(const kind of ['21','conquian'])for(let count=1;count<=10;count++){
   let state=newCardGame(kind,count)
-  const total=(kind==='21'?52*Math.ceil(count/4):40*Math.ceil(count/2))
+  const total=(kind==='21'?52:40)
   assert.equal(state.hands.length,count)
   assert.equal(state.hands.flat().length+state.deck.length+state.discard.length,total)
   for(let i=0;i<1500&&!state.finished;i++)state=applyCardAction(state,state.turn,cardAI(state,state.turn))
@@ -32,7 +32,7 @@ test('Tres skip, reverse, +2 and +4 enforce turn and hand penalties',()=>{
  const reverse=tresMove(tres(11),0,{type:'play',index:0});assert.equal(reverse.direction,-1);assert.equal(reverse.turn,3)
  assert.equal(tresMove(tres(11,2),0,{type:'play',index:0}).turn,0)
  for(const [value,penalty] of [[12,2],[14,4]]){let next=tresMove(tres(value),0,{type:'play',index:0,color:2});assert.equal(next.pendingDraw,penalty);assert.equal(next.turn,1);next.hands[1]=[{color:3,value:7}];next=tresMove(next,1,{type:'draw'});assert.equal(next.hands[1].length,1+penalty);assert.equal(next.turn,2)}
- const illegal=tres(14);illegal.hands[0].push({color:0,value:9});assert.throws(()=>tresMove(illegal,0,{type:'play',index:0,color:1}))
+ const illegal=tres(14);illegal.rules={...illegal.rules,freeFour:false};illegal.hands[0].push({color:0,value:9});assert.throws(()=>tresMove(illegal,0,{type:'play',index:0,color:1}))
 })
 test('Tres eats only without a valid card and continues until a playable card appears',()=>{
  assert.throws(()=>tresMove(tres(3),0,{type:'draw'}),/válida/)

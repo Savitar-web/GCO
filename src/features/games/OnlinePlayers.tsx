@@ -1,0 +1,3 @@
+import {PlayerAvatar} from './PlayerAvatar'
+import type {Room} from './online'
+export function OnlinePlayers({room}:{room:Room}){return <div className="online-players" aria-label="Participantes">{(room.members||[]).map((member,index)=><div className="online-player" key={index}><PlayerAvatar name={member.name} avatar={member.avatar} frame={member.frame} size={39}/><span><strong>{member.name}</strong><span className="player-wins" title="Victorias online en este juego">🏆 {member.wins??0} <span>{member.wins===1?'victoria':'victorias'}</span></span><small>{index===room.seat?'Tú':`Jugador ${index+1}`}</small></span></div>)}</div>}

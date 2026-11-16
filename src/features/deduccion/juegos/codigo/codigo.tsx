@@ -2092,7 +2092,7 @@ export function CodigoGame() {
   const navigate = useNavigate()
   const progress = getGameProgress(GAME_CAT, GAME_ID)
   const unlockedRows = useMemo(() => getUnlockedLevels(GAME_CAT, GAME_ID), [progress.highestLevel])
-  const defaultLevel = Math.min(Math.max(1, progress.highestLevel || 1), TOTAL_LEVELS)
+  const defaultLevel = Math.min(Math.max(1, (progress.highestLevel || 0)+1), TOTAL_LEVELS)
   const maxSelectable = Math.max(1, defaultLevel, ...unlockedRows.map((u) => u.level))
 
   const [level, setLevel] = useState(defaultLevel)
@@ -2234,7 +2234,7 @@ export function CodigoGame() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell deduction-game">
       <header
         style={{
           marginBottom: '1.15rem',

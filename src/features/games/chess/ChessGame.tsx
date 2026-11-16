@@ -1,3 +1,8 @@
+import {PrivateChessTools} from './privateChessTools'
+import {usePrivateChessTools} from './usePrivateChessTools'
+import {GameOutcome} from '../GameOutcome'
+import {loadVisuals} from './visualPrefs'
+import {MoveJournal} from './MoveJournal'
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { soundClick } from '@/core/audio/uiSounds'
@@ -8,7 +13,6 @@ import { BOARD_SKINS, DEFAULT_SETUP, type BoardView, type ChessSetup } from './c
 import { useChessGame } from './useChessGame'
 import { chessSfx } from './chessSound'
 import './chess.css'
-import {PieceCustomizer} from './PieceCustomizer'
 import {usePieceStyles} from './pieceStyles'
 
 const ChessBoard3D = lazy(() => import('./ChessBoard3D').then((m) => ({ default: m.ChessBoard3D })))
@@ -30,14 +34,14 @@ function useIsMobile(): boolean {
     const mq = window.matchMedia(MOBILE_QUERY)
     const onChange = () => setIsMobile(mq.matches)
     onChange()
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
+    if(mq.addEventListener){mq.addEventListener('change',onChange);return()=>mq.removeEventListener('change',onChange)}
+    mq.addListener(onChange);return()=>mq.removeListener(onChange)
   }, [])
   return isMobile
 }
 
 export function ChessGame() {
-  const [pieceStyles,savePieceStyles]=usePieceStyles()
+  const [pieceStyles]=usePieceStyles()
   const navigate = useNavigate()
   const location = useLocation()
   const setup = useMemo<ChessSetup>(
@@ -46,15 +50,18 @@ export function ChessGame() {
   )
   const [view, setView] = useState<BoardView>(setup.view)
   const [cameraPreset, setCameraPreset] = useState<CameraPreset>('default')
-  const [skin, setSkin] = useState(setup.skin)
+  const [skin] = useState(loadVisuals().skin)
   const [showLegalHints, setShowLegalHints] = useState(setup.showLegalHints)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [drawDialog,setDrawDialog]=useState(false)
+  const [drawMessage,setDrawMessage]=useState('')
   const screenRef = useRef<HTMLDivElement>(null)
   const isMobile = useIsMobile()
 
   const game = useChessGame(setup)
   const { state } = game
+  const privateTools=usePrivateChessTools(state,game.playEngineMove,setup.mode==='local2p'||state.turn===setup.humanColor)
   const displayState=useMemo(()=>({...state,cosmetics:pieceStyles}),[state,pieceStyles])
   const skinDef = BOARD_SKINS.find((s) => s.id === skin) ?? BOARD_SKINS[0]
 
@@ -139,7 +146,7 @@ export function ChessGame() {
   function goToCategoryMenu() {
     soundClick()
     if (document.fullscreenElement) void document.exitFullscreen?.()
-    navigate('/games')
+    navigate('/games/ajedrez/menu')
   }
 
   function closeMenu() {
@@ -153,6 +160,7 @@ export function ChessGame() {
       ref={screenRef}
       className={`gco-chess-screen ${isFullscreen ? 'is-fullscreen' : ''} ${menuOpen ? 'is-menu-open' : ''}`}
     >
+{drawDialog&&<div className="chess-draw-overlay" role="dialog" aria-modal="true" aria-label="Oferta de tablas"><div className="glass-card"><h2>Ofrecer tablas</h2><p>{drawMessage|| (setup.mode==='ai'?'¿Quieres proponer tablas a la IA?':'¿El otro jugador acepta terminar la partida en tablas?')}</p><div className="gco-actions">{!drawMessage&&<button className="glass-button" onClick={()=>{if(setup.mode==='ai'&&(state.fullLog.length<20||Math.abs(game.material)>1)){setDrawMessage('La IA rechaza la oferta y continúa jugando.');return}game.agreeDraw();setDrawDialog(false)}}>{setup.mode==='ai'?'Enviar oferta':'Aceptar tablas'}</button>}<button className="glass-button secondary" onClick={()=>setDrawDialog(false)}>{drawMessage?'Cerrar':'Continuar jugando'}</button></div></div></div>}
       {/* Top bar */}
       <div className="gco-chess-topbar">
         <button type="button" className="gco-chess-back-btn" onClick={goToCategoryMenu}>
@@ -169,7 +177,7 @@ export function ChessGame() {
           </span>
         </div>
 
-        <div className="gco-chess-top-actions"><PieceCustomizer styles={pieceStyles} onSave={savePieceStyles}/>
+        <div className="gco-chess-top-actions">
           <div className="gco-chess-view-switch" role="tablist" aria-label="Vista del tablero">
             <button
               type="button"
@@ -250,16 +258,16 @@ export function ChessGame() {
               </button>
             </div>
 
-            <div className="gco-chess-drawer-body">
+            <div className="gco-chess-drawer-body"><PrivateChessTools tools={privateTools}/><MoveJournal state={state}/>{game.engineError&&<button className="glass-button secondary" onClick={game.retryEngine}>Reintentar IA</button>}
               {setup.mode === 'ai' && (
                 <div className="gco-chess-drawer-ai">
                   {game.isAiThinking ? (
                     <span className="gco-chess-ai-thinking">
-                      <span className="gco-chess-ai-dot" /> Pensando su jugada…
+                      <span className="gco-chess-ai-dot" /> {game.engineMessage}
                     </span>
                   ) : (
                     <span style={{ fontSize: '0.78rem', color: 'var(--gco-ink-muted)' }}>
-                      IA nivel {setup.aiLevel}/10 · esperando tu jugada
+                      IA nivel {setup.aiLevel}/100 · {game.engineMessage}
                     </span>
                   )}
                 </div>
@@ -287,27 +295,6 @@ export function ChessGame() {
                 >
                   2D
                 </button>
-              </div>
-
-              <div className="gco-chess-panel-title" style={{ marginTop: '1rem' }}>
-                Estilo del tablero
-              </div>
-              <div className="gco-chess-skin-row">
-                {BOARD_SKINS.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    className={`gco-chess-skin-chip ${skin === s.id ? 'is-active' : ''}`}
-                    style={{ ['--skin-chip-accent' as string]: s.accent }}
-                    onClick={() => {
-                      soundClick()
-                      setSkin(s.id)
-                    }}
-                  >
-                    <span className="gco-chess-skin-swatch" style={{ background: s.accent }} />
-                    {s.label}
-                  </button>
-                ))}
               </div>
 
               <div className="gco-chess-toggle-row">
@@ -361,6 +348,7 @@ export function ChessGame() {
                 <button type="button" className="gco-chess-btn" disabled={!game.canRedo} onClick={game.redo}>
                   ↻ Rehacer
                 </button>
+                <button className="gco-chess-btn" disabled={!!state.result} onClick={()=>{setDrawMessage('');setDrawDialog(true)}}>½ Ofrecer tablas</button>
                 {setup.mode === 'ai' && (
                   <button
                     type="button"
@@ -424,6 +412,7 @@ export function ChessGame() {
         </>
       )}
 
+      <GameOutcome key={state.result?'finished':'active'} finished={!!state.result} won={setup.mode==='local2p'||state.winner===setup.humanColor} draw={!!state.result&&!state.winner}/>
       <div className="gco-chess-layout">
         <div className="gco-chess-board-wrap">
           {view === '3d' ? (
@@ -464,6 +453,8 @@ export function ChessGame() {
             isFullscreen ? 'is-fullscreen' : ''
           }`}
         >
+          {!isMobile&&!isFullscreen&&<PrivateChessTools tools={privateTools}/>}
+          {game.engineError&&<button className="glass-button secondary" onClick={game.retryEngine}>Reintentar IA</button>}
           {setup.mode === 'ai' && (
             <div className="gco-chess-panel-section">
               <div className="gco-chess-panel-title">Inteligencia artificial</div>
@@ -473,7 +464,7 @@ export function ChessGame() {
                 </span>
               ) : (
                 <span style={{ fontSize: '0.78rem', color: 'var(--gco-ink-muted)' }}>
-                  Nivel {setup.aiLevel}/10 · esperando tu jugada
+                  Nivel {setup.aiLevel}/100 · {game.engineMessage}
                 </span>
               )}
             </div>
@@ -497,8 +488,8 @@ export function ChessGame() {
           )}
 
           <div className="gco-chess-panel-section">
-            <div className="gco-chess-panel-title">Historial de movimientos</div>
-            <div className="gco-chess-move-list">
+            <MoveJournal state={state}/><div className="gco-chess-panel-title" hidden>Historial de movimientos</div>
+            <div className="gco-chess-move-list" hidden>
               {movePairs.length === 0 && (
                 <span style={{ gridColumn: '1 / -1', color: 'var(--gco-ink-muted)', fontSize: '0.78rem' }}>
                   Sin jugadas aún
@@ -542,7 +533,7 @@ export function ChessGame() {
           </div>
 
           <div className="gco-chess-panel-section gco-chess-panel-desktop-only">
-            <div className="gco-chess-panel-title">Controles</div>
+            <div className="gco-chess-panel-title">Controles</div><button className="gco-chess-btn" disabled={!!state.result} onClick={()=>{setDrawMessage('');setDrawDialog(true)}}>½ Ofrecer tablas</button>
             {state.result && (
               <div
                 style={{
@@ -595,7 +586,7 @@ export function ChessGame() {
                 className="gco-chess-btn"
                 onClick={() => {
                   soundClick()
-                  navigate('/games')
+                  navigate('/games/ajedrez/menu')
                 }}
               >
                 📜 Menú juegos

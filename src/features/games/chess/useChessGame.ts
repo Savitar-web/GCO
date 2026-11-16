@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {stockfishMove} from './stockfish'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   allLegalMoves,
   applyMove,
@@ -36,6 +37,10 @@ export interface UseChessGameResult {
   lastMove: MoveInfo | null
   captured: { w: Piece[]; b: Piece[] }
   material: number
+  engineMessage:string
+  engineError:boolean
+  retryEngine:()=>void
+  playEngineMove:(move:LegalMove)=>void
   isAiThinking: boolean
   clock: ClockState
   canUndo: boolean
@@ -46,6 +51,7 @@ export interface UseChessGameResult {
   undo: () => void
   redo: () => void
   flipBoard: () => void
+  agreeDraw:()=>void
   resign: (color: Color) => void
   hint: () => LegalMove | null
 }
@@ -56,7 +62,7 @@ function isHumanTurn(setup: ChessSetup, turn: Color): boolean {
 }
 
 export function useChessGame(setup: ChessSetup): UseChessGameResult {
-  const [saved] = useState<SavedMatch | undefined>(() => activeMatches().find(match => match.id === sessionStorage.getItem('gco:resume-chess')))
+  const [saved] = useState<SavedMatch | undefined>(() => {try{return activeMatches().find(match=>match.id===sessionStorage.getItem('gco:resume-chess'))}catch{return undefined}})
   const [matchId, setMatchId] = useState(() => saved?.id || crypto.randomUUID())
   const [state, setState] = useState<GameState>(() => saved?.state || newGameState())
   const [selection, setSelection] = useState<Selection | null>(null)
@@ -64,23 +70,27 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
   const [past, setPast] = useState<GameState[]>([])
   const [future, setFuture] = useState<GameState[]>([])
   const [isAiThinking, setIsAiThinking] = useState(false)
+  const [engineMessage,setEngineMessage]=useState('IA Verónica')
+  const [engineError,setEngineError]=useState(false)
+  const [engineRun,setEngineRun]=useState(0)
   const [orientation, setOrientation] = useState<Color>(setup.humanColor === 'b' ? 'b' : 'w')
   const [clock, setClock] = useState<ClockState>(() => {
     if (saved) return saved.clock
     const secs = CLOCK_PRESET_SECONDS[setup.clock]
     return { w: secs, b: secs }
   })
-  const aiTimer = useRef<number | null>(null)
   const clockTicker = useRef<number | null>(null)
   const startTimeRef = useRef<number>(Date.now())
   const recordedRef = useRef(false)
 
   useEffect(() => {
+    try {
     sessionStorage.removeItem('gco:resume-chess')
     const others = activeMatches().filter(match => match.id !== matchId)
     if (state.result) archiveMatch(matchId, state)
     else others.push({ id: matchId, setup, state, clock, at: Date.now() })
     localStorage.setItem('gco:chess-active', JSON.stringify(others))
+    }catch{/* Keep the board playable if Safari temporarily denies storage. */}
   }, [state, clock, setup, matchId])
 
   // Rotación opcional del tablero en 2 jugadores (celular compartido)
@@ -228,21 +238,15 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
     [state, selection, setup, commitMove]
   )
 
-  useEffect(() => {
-    if (setup.mode !== 'ai') return
-    if (state.result) return
-    if (state.turn === setup.humanColor) return
-    setIsAiThinking(true)
-    aiTimer.current = window.setTimeout(() => {
-      const move = getAIMove(state, setup.aiLevel)
-      setIsAiThinking(false)
-      if (move) commitMove(move.r, move.c, move)
-    }, 260)
-    return () => {
-      if (aiTimer.current) window.clearTimeout(aiTimer.current)
-    }
+  useLayoutEffect(()=>{
+    if(setup.mode!=='ai'||state.result||state.turn===setup.humanColor)return
+    const controller=new AbortController()
+    let compact=setup.engine==='lite'
+    const timer=window.setTimeout(()=>{setIsAiThinking(true);setEngineError(false);setEngineMessage('Pensando…');void stockfishMove(state,setup.aiLevel,{engine:setup.engine||'full',signal:controller.signal,onFallback:()=>{compact=true;setEngineMessage('Conde · Pensando…')}}).then(move=>{if(!controller.signal.aborted){setIsAiThinking(false);setEngineMessage(compact?'Conde':'IA Verónica');if(move)commitMove(move.r,move.c,move)}}).catch(error=>{if(!controller.signal.aborted){setIsAiThinking(false);setEngineMessage('Conde');const move=getAIMove(state,Math.max(1,Math.ceil(setup.aiLevel/10)));if(move)commitMove(move.r,move.c,move);else{setEngineError(true);setEngineMessage((error as Error).message)}}})},100)
+    return()=>{controller.abort();window.clearTimeout(timer)}
+    // commitMove closes over this exact board; stale results are cancelled.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, setup.mode, setup.humanColor, setup.aiLevel])
+  },[state,setup.mode,setup.humanColor,setup.aiLevel,setup.engine,engineRun])
 
   useEffect(() => {
     if (setup.clock === 'none' || state.result) return
@@ -338,6 +342,10 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
     captured,
     material,
     isAiThinking,
+    engineMessage,
+    engineError,
+    retryEngine:()=>setEngineRun(n=>n+1),
+    playEngineMove:(move)=>{if(!state.result&&isHumanTurn(setup,state.turn)){const valid=legalMoves(state,move.r,move.c).find(m=>m.toR===move.toR&&m.toC===move.toC);if(valid)commitMove(move.r,move.c,{...valid,promotionPiece:move.promotionPiece})}},
     clock,
     canUndo: past.length > 0,
     canRedo: future.length > 0,
@@ -348,6 +356,7 @@ export function useChessGame(setup: ChessSetup): UseChessGameResult {
     redo,
     flipBoard,
     resign,
+    agreeDraw:()=>setState(current=>current.result?current:{...cloneState(current),result:'draw',winner:null}),
     hint,
   }
 }

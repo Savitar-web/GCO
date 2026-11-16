@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import {GameSelect} from '../GameSelect'
+import {roomRequest} from '../online'
+import {useRef} from 'react'
+import {EngineSettings} from './EngineSettings'
+import {GameBackground} from '../GameBackground'
+import {VisualSettings} from './VisualSettings'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { soundClick } from '@/core/audio/uiSounds'
 import type { Color } from './chessEngine'
@@ -27,100 +33,43 @@ const CLOCK_OPTIONS: { id: ClockPreset; label: string }[] = [
   { id: '30', label: '30 min' },
 ]
 
-function ParticleCanvas() {
-  const ref = useRef<HTMLCanvasElement>(null)
-
-  useEffect(() => {
-    const canvas = ref.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    let raf = 0
-    let w = 0
-    let h = 0
-    const particles: { x: number; y: number; vx: number; vy: number; r: number; a: number }[] = []
-
-    function resize() {
-      w = canvas!.width = window.innerWidth
-      h = canvas!.height = window.innerHeight
-    }
-    resize()
-    window.addEventListener('resize', resize)
-
-    const count = Math.min(70, Math.floor((w * h) / 18000))
-    for (let i = 0; i < count; i++) {
-      particles.push({
-        x: Math.random() * w,
-        y: Math.random() * h,
-        vx: (Math.random() - 0.5) * 0.35,
-        vy: (Math.random() - 0.5) * 0.35,
-        r: 0.8 + Math.random() * 2.2,
-        a: 0.15 + Math.random() * 0.45,
-      })
-    }
-
-    function tick() {
-      ctx!.clearRect(0, 0, w, h)
-      for (const p of particles) {
-        p.x += p.vx
-        p.y += p.vy
-        if (p.x < 0) p.x = w
-        if (p.x > w) p.x = 0
-        if (p.y < 0) p.y = h
-        if (p.y > h) p.y = 0
-        ctx!.beginPath()
-        ctx!.arc(p.x, p.y, p.r, 0, Math.PI * 2)
-        ctx!.fillStyle = `rgba(55, 230, 255, ${p.a})`
-        ctx!.fill()
-      }
-      // conexiones suaves
-      for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const a = particles[i]
-          const b = particles[j]
-          const dx = a.x - b.x
-          const dy = a.y - b.y
-          const d = Math.hypot(dx, dy)
-          if (d < 120) {
-            ctx!.strokeStyle = `rgba(34, 230, 197, ${0.12 * (1 - d / 120)})`
-            ctx!.lineWidth = 1
-            ctx!.beginPath()
-            ctx!.moveTo(a.x, a.y)
-            ctx!.lineTo(b.x, b.y)
-            ctx!.stroke()
-          }
-        }
-      }
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-
-    return () => {
-      cancelAnimationFrame(raf)
-      window.removeEventListener('resize', resize)
-    }
-  }, [])
-
-  return <canvas ref={ref} className="gco-chess-particles" aria-hidden />
-}
-
 export function ChessMenu() {
   const [pieceStyles,savePieceStyles]=usePieceStyles()
   const navigate = useNavigate()
   const [setup, setSetup] = useState<ChessSetup>(DEFAULT_SETUP)
   const [history, setHistory] = useState<ChessHistoryEntry[]>(() => loadChessHistory())
   const [showHistory, setShowHistory] = useState(false)
+  const [roomAction,setRoomAction]=useState<'create'|'join'>('create')
+  const [roomCode,setRoomCode]=useState('')
+  const [roomError,setRoomError]=useState('')
+  const [joining,setJoining]=useState(false)
+  const roomPending=useRef(false)
   const stats = useMemo(() => chessHistoryStats(history), [history])
 
   function update<K extends keyof ChessSetup>(key: K, value: ChessSetup[K]) {
     soundClick()
+    setRoomError('')
     setSetup((s) => ({ ...s, [key]: value }))
   }
 
-  function startGame() {
-    if (setup.mode === 'online') { navigate(`/games/mesa/ajedrez?pace=${setup.clock==='none'?'none':setup.clock==='1'?'bala':setup.clock==='3'?'blitz':setup.clock==='5'?'blitz5':'rapid'}`); return }
+  async function startGame() {
+    if(roomPending.current)return
     soundClick()
+    if(setup.mode==='online'){
+      const code=roomCode.trim().toUpperCase()
+      if(roomAction==='join'&&!/^[A-F0-9]{10}$/.test(code)){
+        setRoomError(code?'Introduce un código de sala válido de 10 caracteres.':'Introduce el código de la sala para continuar.')
+        return
+      }
+      roomPending.current=true;setJoining(true);setRoomError('')
+      try{
+        const pace=setup.clock==='none'?'none':setup.clock==='1'?'bala':setup.clock==='3'?'blitz':setup.clock==='5'?'blitz5':'rapid'
+        const room=await roomRequest({op:roomAction,kind:'ajedrez',...(roomAction==='join'?{code}:{}),pace,appearance:pieceStyles[roomAction==='join'?'b':'w']})
+        navigate('/games/mesa/ajedrez?sala='+room.code,{state:{initialRoom:room}})
+      }catch(cause){setRoomError(cause instanceof Error?cause.message:'No se pudo conectar. Inténtalo de nuevo.')}
+      finally{roomPending.current=false;setJoining(false)}
+      return
+    }
     chessSfx.start(setup.soundEnabled)
     navigate('/games/ajedrez', { state: { setup } })
   }
@@ -143,7 +92,7 @@ export function ChessMenu() {
 
   return (
     <>
-      <ParticleCanvas />
+      <GameBackground />
       <div className="gco-chess-menu">
         <div className="gco-chess-menu-header">
           <div>
@@ -166,7 +115,7 @@ export function ChessMenu() {
           >
             <span className="gco-chess-option-icon">🤖</span>
             <span className="gco-chess-option-title">Contra la IA</span>
-            <span className="gco-chess-option-desc">Motor propio con dificultad ajustable</span>
+            <span className="gco-chess-option-desc">IA Verónica y Conde · 100 niveles offline</span>
           </button>
           <button
             type="button"
@@ -177,13 +126,23 @@ export function ChessMenu() {
             <span className="gco-chess-option-title">2 jugadores</span>
             <span className="gco-chess-option-desc">Mismo dispositivo, turno a turno</span>
           </button>
-          <button type="button" className={`gco-chess-option ${setup.mode==='online'?'is-active':''}`} onClick={() => update('mode', 'online')}>
+          <button type="button" className={`gco-chess-option ${setup.mode==='online'?'is-active':''}`} onClick={() => {update('mode', 'online');if(!['none','1','3','5','10'].includes(setup.clock))setSetup(current=>({...current,mode:'online',clock:'10'}))}}>
             <span className="gco-chess-option-icon">🌐</span>
             <span className="gco-chess-option-title">Multijugador</span>
             <span className="gco-chess-option-desc">En línea contra otros jugadores</span>
           </button>
         </div>
 
+
+        {setup.mode==='online'&&<section className="chess-room-panel" aria-label="Sala multijugador">
+          <div className="chess-room-intro"><span className="chess-room-symbol" aria-hidden="true">♟</span><div><h2>Tu próxima partida, en línea</h2><p>Crea una sala privada o entra con el código de tu rival.</p></div></div>
+          <div className="chess-room-tabs" role="group" aria-label="Acceso a la sala">
+            <button type="button" aria-pressed={roomAction==='create'} disabled={joining} onClick={()=>{setRoomAction('create');setRoomError('')}}>Crear sala</button>
+            <button type="button" aria-pressed={roomAction==='join'} disabled={joining} onClick={()=>{setRoomAction('join');setRoomError('')}}>Unirse a sala</button>
+          </div>
+          {roomAction==='join'?<label className="chess-room-code">Código de invitación<input className="glass-input" aria-label="Código de sala" value={roomCode} maxLength={10} autoCapitalize="characters" autoComplete="off" spellCheck={false} placeholder="Ej. A1B2C3D4E5" disabled={joining} onChange={event=>{setRoomCode(event.target.value.toUpperCase());setRoomError('')}} onKeyDown={event=>{if(event.key==='Enter')void startGame()}}/><small>Introduce los 10 caracteres que te compartieron.</small></label>:<div className="chess-room-pace"><label htmlFor="chess-room-clock">Ritmo de la sala</label><GameSelect id="chess-room-clock" className="glass-input" value={setup.clock} onChange={event=>update('clock',event.target.value as ClockPreset)}>{CLOCK_OPTIONS.filter(option=>['none','1','3','5','10'].includes(option.id)).map(option=><option key={option.id} value={option.id}>{option.label}</option>)}</GameSelect><p>Al comenzar recibirás el código para invitar a tu rival.</p></div>}
+        </section>}
+        {setup.mode!=='online'&&<>
         {setup.mode === 'ai' && (
           <>
             <p className="gco-chess-section-label">Tu color</p>
@@ -204,27 +163,29 @@ export function ChessMenu() {
               ))}
             </div>
 
-            <p className="gco-chess-section-label">Nivel de la IA — {setup.aiLevel}/10</p>
+            <EngineSettings value={setup.engine||'full'} onChange={engine=>update('engine',engine)}/>
+            <p className="gco-chess-section-label">Nivel de la IA — {setup.aiLevel}/100</p>
             <div className="gco-chess-slider-row">
               <div className="gco-chess-slider-track-wrap">
                 <input
                   type="range"
                   min={1}
-                  max={10}
+                  max={100}
                   step={1}
                   value={setup.aiLevel}
+                  aria-label="Nivel de la IA"
                   onChange={(e) => update('aiLevel', Number(e.target.value))}
                   className="gco-chess-range"
                   style={{
-                    ['--range-pct' as string]: `${((setup.aiLevel - 1) / 9) * 100}%`,
+                    ['--range-pct' as string]: `${((setup.aiLevel - 1) / 99) * 100}%`,
                   }}
                 />
               </div>
               <div className="gco-chess-slider-meta">
                 <span className="gco-chess-slider-level">
-                  {setup.aiLevel <= 3 ? 'Principiante' : setup.aiLevel <= 7 ? 'Intermedio' : 'Avanzado'}
+                  {setup.aiLevel <= 25 ? 'Principiante' : setup.aiLevel <= 70 ? 'Intermedio' : 'Avanzado'}
                 </span>
-                <span className="gco-chess-slider-hint">Motor con poda alfa-beta</span>
+                <span className="gco-chess-slider-hint">IA Verónica y Conde · proceso independiente</span>
               </div>
             </div>
           </>
@@ -248,7 +209,7 @@ export function ChessMenu() {
           >
             <span className="gco-chess-option-icon">▦</span>
             <span className="gco-chess-option-title">2D</span>
-            <span className="gco-chess-option-desc">SVG premium, máximo rendimiento</span>
+            <span className="gco-chess-option-desc">Piezas nítidas y máxima fluidez</span>
           </button>
         </div>
         <p style={{ fontSize: '0.72rem', color: 'var(--gco-ink-muted)', marginTop: '-0.6rem', marginBottom: '1rem' }}>
@@ -263,7 +224,7 @@ export function ChessMenu() {
               type="button"
               className={`gco-chess-skin-chip ${setup.skin === s.id ? 'is-active' : ''}`}
               style={{ ['--skin-chip-accent' as string]: s.accent }}
-              onClick={() => update('skin', s.id)}
+              onClick={() => {update('skin', s.id);localStorage.setItem('gco:chess-visual',JSON.stringify({...JSON.parse(localStorage.getItem('gco:chess-visual')||'{}'),skin:s.id}))}}
             >
               <span className="gco-chess-skin-swatch" style={{ background: s.accent }} />
               {s.label}
@@ -285,7 +246,7 @@ export function ChessMenu() {
           ))}
         </div>
 
-        <div className="gco-actions"><PieceCustomizer styles={pieceStyles} onSave={savePieceStyles}/><GameTutorial kind="ajedrez"/></div><p className="gco-chess-section-label">Competición y partidas</p>
+        <div className="gco-actions"><PieceCustomizer styles={pieceStyles} onSave={savePieceStyles}/><VisualSettings/><GameTutorial kind="ajedrez"/></div><p className="gco-chess-section-label">Competición y partidas</p>
         <div className="gco-actions chess-extra-actions"><button className="glass-button secondary" onClick={() => navigate('/games/torneo')}>Torneo online · 2–32</button><button className="glass-button secondary" onClick={() => navigate('/games/activas')}>Partidas activas e historial</button></div>
         <p className="gco-chess-section-label">Opciones</p>
         <div className="gco-chess-panel-section">
@@ -331,8 +292,10 @@ export function ChessMenu() {
           )}
         </div>
 
-        <button type="button" className="gco-chess-cta" onClick={startGame}>
-          Comenzar partida
+        </>}
+        {roomError&&<p className="chess-room-error" role="alert">{roomError}</p>}
+        <button type="button" className="gco-chess-cta" disabled={joining} onClick={()=>void startGame()}>
+          {joining?'Conectando…':'Comenzar partida'}
         </button>
 
         <p className="gco-chess-section-label" style={{ marginTop: '1.5rem' }}>
@@ -376,6 +339,7 @@ export function ChessMenu() {
           )}
         </div>
 
+        {setup.mode==='online'&&<button type="button" className="gco-chess-back-btn" onClick={()=>navigate('/games/activas')}>Partidas online e historial</button>}
         {showHistory && (
           <div className="gco-chess-history-list">
             {history.length === 0 ? (

@@ -23,6 +23,7 @@ export interface HistoryEntry {
 }
 
 export interface GameProgress {
+  totalTimeMs?: number
   highestLevel: number
   totalCompleted: number
   totalAttempts: number
@@ -158,31 +159,40 @@ function emptyGame(): GameProgress {
 
 function normalizeGame(raw: Partial<GameProgress> | undefined): GameProgress {
   const base = emptyGame()
-  if (!raw) return base
+  if (!raw || typeof raw !== 'object') return base
+  const history = Array.isArray(raw.history) ? raw.history.filter(entry=>entry&&typeof entry==='object') : []
+  const number=(value:unknown,fallback=0)=>typeof value==='number'&&Number.isFinite(value)?Math.max(0,value):fallback
   return {
-    highestLevel: raw.highestLevel ?? 0,
-    totalCompleted: raw.totalCompleted ?? 0,
-    totalAttempts: raw.totalAttempts ?? raw.totalCompleted ?? 0,
-    bestScore: raw.bestScore,
-    lastPlayedAt: raw.lastPlayedAt,
-    levels: raw.levels ?? {},
-    history: Array.isArray(raw.history) ? raw.history : [],
+    totalTimeMs: number(raw.totalTimeMs,history.reduce((sum,e)=>sum+number(e.timeMs),0)),
+    highestLevel: number(raw.highestLevel), totalCompleted: number(raw.totalCompleted),
+    totalAttempts: number(raw.totalAttempts,number(raw.totalCompleted)),
+    bestScore: raw.bestScore, lastPlayedAt: raw.lastPlayedAt,
+    levels: raw.levels && typeof raw.levels==='object' ? raw.levels : {}, history,
   }
 }
 
 export function getAllProgress(): ProgressMap {
   try {
-    const raw = localStorage.getItem(PROGRESS_KEY)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw) as ProgressMap
-    const out: ProgressMap = {}
-    for (const [k, v] of Object.entries(parsed)) {
-      out[k] = normalizeGame(v)
+    const parsed = JSON.parse(localStorage.getItem(PROGRESS_KEY)||'{}') as ProgressMap
+    if(!parsed||typeof parsed!=='object')return {}
+    const out:ProgressMap={}
+    for(const [key,value] of Object.entries(parsed))if(key.includes(':'))out[key]=normalizeGame(value)
+    for(const [category,games] of Object.entries(parsed)){
+      if(category.includes(':')||!games||typeof games!=='object')continue
+      for(const [game,value] of Object.entries(games)){
+        if(!value||typeof value!=='object')continue
+        const key=category+':'+game,old=normalizeGame(value),current=out[key]??emptyGame()
+        const history=Array.from(new Map([...old.history,...current.history].map(entry=>[JSON.stringify(entry),entry])).values()).sort((a,b)=>b.at.localeCompare(a.at)).slice(0,HISTORY_LIMIT)
+        const levels={...old.levels,...current.levels}
+        for(const id of Object.keys(old.levels)){
+          const left=old.levels[id],right=current.levels[id];if(!right)continue
+          levels[id]={...left,...right,attempts:Math.max(left.attempts||0,right.attempts||0),wins:Math.max(left.wins||0,right.wins||0),bestTimeMs:Math.min(left.bestTimeMs||Infinity,right.bestTimeMs||Infinity)}
+        }
+        out[key]={...old,...current,highestLevel:Math.max(old.highestLevel,current.highestLevel),totalAttempts:Math.max(old.totalAttempts,current.totalAttempts),totalCompleted:Math.max(old.totalCompleted,current.totalCompleted),totalTimeMs:Math.max(old.totalTimeMs||0,current.totalTimeMs||0),lastPlayedAt:[old.lastPlayedAt,current.lastPlayedAt].filter(Boolean).sort().at(-1),levels,history}
+      }
     }
     return out
-  } catch {
-    return {}
-  }
+  } catch { return {} }
 }
 
 export function getGameProgress(
@@ -281,6 +291,7 @@ export function recordLevelResult(input: RecordResultInput): GameProgress {
   if (ranked && success) bumpStreakIfNeeded()
 
   const next: GameProgress = {
+    totalTimeMs:(current.totalTimeMs??0)+Math.max(0,input.timeMs??0),
     highestLevel,
     totalCompleted,
     totalAttempts: current.totalAttempts + 1,
@@ -295,6 +306,7 @@ export function recordLevelResult(input: RecordResultInput): GameProgress {
 
   all[key] = next
   localStorage.setItem(PROGRESS_KEY, JSON.stringify(all))
+  window.dispatchEvent(new Event('gco:progress'))
   return next
 }
 

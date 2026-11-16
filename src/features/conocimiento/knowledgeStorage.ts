@@ -1,0 +1,14 @@
+import type {Mastery} from './knowledgeEngine'
+export type KnowledgeReview={id:string;area:string;title:string;prompt:string;answer:string;actual:string;correct:boolean;explanation:string;source:string;confidence:number;sources?:string[];concepts?:{id:string;correct:boolean}[]}
+export type KnowledgeResult={id:string;at:string;mode:string;area:string;level:number;correct:number;total:number;timeMs:number;calibration:number;reviews:KnowledgeReview[]}
+export type KnowledgePrefs={level:number;count:number;minutes:number}
+export type KnowledgeStats={prefs:KnowledgePrefs;mastery:Mastery;history:KnowledgeResult[];totals:{attempts:number;wins:number;totalTimeMs:number;totalCorrect:number;totalQuestions:number}}
+const KEY='gco:knowledge-stats-v1',RESUME='gco:knowledge-resume-v1'
+function read<T>(key:string,fallback:T):T{try{return JSON.parse(localStorage.getItem(key)||'null')||fallback}catch{return fallback}}
+function write(key:string,value:unknown){localStorage.setItem(key,JSON.stringify(value));window.dispatchEvent(new Event('gco:progress'))}
+export function getKnowledgeStats():KnowledgeStats{const s=read<Partial<KnowledgeStats>>(KEY,{});return {prefs:{level:1,count:8,minutes:10,...s.prefs},mastery:s.mastery||{},history:Array.isArray(s.history)?s.history:[],totals:{attempts:0,wins:0,totalTimeMs:0,totalCorrect:0,totalQuestions:0,...s.totals}}}
+export function saveKnowledgePrefs(prefs:KnowledgePrefs){write(KEY,{...getKnowledgeStats(),prefs})}
+export function saveKnowledgeResult(result:KnowledgeResult){const current=getKnowledgeStats();if(current.history.some(r=>r.id===result.id))return;const mastery={...current.mastery};for(const review of result.reviews.flatMap(r=>r.concepts?.length?r.concepts.map(c=>({...r,id:c.id,correct:c.correct})):r)){const key=review.id.startsWith('num-')?review.id.replace(/-\d+$/,''):review.id;if(key.startsWith('conecta-'))continue;const prev=mastery[key]||{seen:0,correct:0,streak:0,next:0,last:0},streak=review.correct?prev.streak+1:0;mastery[key]={seen:prev.seen+1,correct:prev.correct+(review.correct?1:0),streak,last:Date.now(),next:Date.now()+(review.correct?Math.min(30,2**Math.min(5,streak-1))*86400000:600000)}}write(KEY,{...current,mastery,history:[result,...current.history].slice(0,200).map((entry,index)=>index<12?entry:{...entry,reviews:[]}),totals:{attempts:current.totals.attempts+1,wins:current.totals.wins+(result.correct/result.total>=.8?1:0),totalTimeMs:current.totals.totalTimeMs+result.timeMs,totalCorrect:current.totals.totalCorrect+result.correct,totalQuestions:current.totals.totalQuestions+result.total}});localStorage.removeItem(RESUME)}
+export function getKnowledgeResume<T>():T|null{return read<T|null>(RESUME,null)}
+export function saveKnowledgeResume(value:unknown){write(RESUME,value)}
+export function clearKnowledgeResume(){localStorage.removeItem(RESUME)}

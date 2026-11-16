@@ -1,3 +1,4 @@
+import {ADVANCED_RIDDLES,mixRiddle} from '../razonamiento/advancedRiddles'
 /**
  * =============================================================================
  * acertijos.tsx — Acertijos y adivinanzas · GymCogOrigins
@@ -33,7 +34,7 @@ import {
 
 const GAME_CAT = 'deduccion' as const
 const GAME_ID = 'acertijos'
-const TOTAL_LEVELS = 200
+
 const TIMER_BASE = 60
 const SOLVED_STORAGE_KEY = 'gco_acertijos_solved_v2'
 
@@ -47,6 +48,9 @@ type RiddleKind =
   | 'linguistica'
   | 'espacial'
   | 'secuencias'
+  | 'filosofia'
+  | 'politica'
+  | 'economia'
 
 type Riddle = {
   id: string
@@ -1830,6 +1834,8 @@ const BANK: Riddle[] = [
   },
 ]
 
+const TOTAL_LEVELS = BANK.length + ADVANCED_RIDDLES.length
+
 /** Corrige entradas problemáticas del banco y asegura calidad. */
 function sanitizeBank(bank: Riddle[]): Riddle[] {
   const fixed = bank.map((r) => {
@@ -1837,7 +1843,7 @@ function sanitizeBank(bank: Riddle[]): Riddle[] {
     if (r.id === 'a96') {
       return {
         ...r,
-        q: 'Un número de dos cifras es igual a 4 veces la suma de sus dígitos. ¿Cuál es?',
+        q: 'Un número entre 20 y 30 es igual a cuatro veces la suma de sus dígitos. ¿Cuál es?',
         options: ['12', '24', '36', '48'] as [string, string, string, string],
         correct: 1 as 0 | 1 | 2 | 3,
         hint: '10a + b = 4(a + b). Simplifica: 6a = 3b ⇒ b = 2a.',
@@ -1911,10 +1917,10 @@ function sanitizeBank(bank: Riddle[]): Riddle[] {
         ...r,
         q: 'Se unen los puntos medios de los lados de un triángulo. ¿Cuántos triángulos hay en total en la figura?',
         options: ['4', '5', '3', '6'] as [string, string, string, string],
-        correct: 0 as 0 | 1 | 2 | 3,
+        correct: 1 as 0 | 1 | 2 | 3,
         hint: 'Se forman 4 triángulos pequeños congruentes (el central y tres exteriores).',
         advice: 'Los tres de las esquinas más el central: 4.',
-        explain: '4 triángulos.',
+        explain: 'Hay cuatro pequeños y el triángulo grande original: cinco en total.',
       }
     }
     return r
@@ -1922,51 +1928,19 @@ function sanitizeBank(bank: Riddle[]): Riddle[] {
   return fixed
 }
 
-function expandBank(): Riddle[] {
-  const base = sanitizeBank(BANK)
-  const out: Riddle[] = [...base]
-  let i = 0
-  while (out.length < TOTAL_LEVELS) {
-    const b = base[i % base.length]
-    const variant = out.length
-    const rot = variant % 4
-    const rotated = [
-      b.options[(0 + rot) % 4],
-      b.options[(1 + rot) % 4],
-      b.options[(2 + rot) % 4],
-      b.options[(3 + rot) % 4],
-    ] as [string, string, string, string]
-    const newCorrect = ((b.correct - rot + 4) % 4) as 0 | 1 | 2 | 3
-    const suffixes = [
-      ' Analiza cada premisa con rigor.',
-      ' Descarta las trampas lingüísticas primero.',
-      ' Justifica internamente por qué descartas cada opción.',
-      ' Busca la interpretación menos ingenua.',
-      ' Comprueba el caso límite o el peor escenario.',
-    ]
-    out.push({
-      ...b,
-      id: `${b.id}-v${variant}`,
-      q: b.q + suffixes[variant % suffixes.length],
-      options: rotated,
-      correct: newCorrect,
-      difficulty: Math.min(5, (b.difficulty + (variant % 3)) as 1 | 2 | 3 | 4 | 5) as 1 | 2 | 3 | 4 | 5,
-    })
-    i++
-  }
-  return out.slice(0, TOTAL_LEVELS)
-}
+function expandBank():Riddle[]{return [...sanitizeBank(BANK),...ADVANCED_RIDDLES]}
 
 const LEVELS = expandBank()
 
-function pickRiddle(level: number, solvedIds: Set<string>, failedIds: Set<string>): Riddle {
+function pickRiddle(level: number, solvedIds: Set<string>, failedIds: Set<string>, topic='todos'): Riddle {
   // Prefer never-solved; exclude recently failed in this session when possible
-  const unsolved = LEVELS.filter((r) => !solvedIds.has(r.id) && !failedIds.has(r.id))
-  const unsolvedAny = LEVELS.filter((r) => !solvedIds.has(r.id))
-  const pool = unsolved.length ? unsolved : unsolvedAny.length ? unsolvedAny : LEVELS
+  const candidates = topic==='todos' ? LEVELS : LEVELS.filter(r=>r.kind===topic)
+  const unsolved = candidates.filter((r) => !solvedIds.has(r.id) && !failedIds.has(r.id))
+  const unsolvedAny = candidates.filter((r) => !solvedIds.has(r.id))
+  const pool = unsolved.length ? unsolved : unsolvedAny.length ? unsolvedAny : candidates
   // Stable hash by level so same level tends to similar difficulty band
   const idx = (level * 37 + 11) % pool.length
-  return pool[idx]
+  return mixRiddle(pool[idx],level*7919+failedIds.size*104729) as Riddle
 }
 
 const KIND_LABEL: Record<RiddleKind, string> = {
@@ -1979,18 +1953,22 @@ const KIND_LABEL: Record<RiddleKind, string> = {
   linguistica: 'Lingüística',
   espacial: 'Espacial',
   secuencias: 'Secuencias',
+  filosofia: 'Filosofía',
+  politica: 'Política e instituciones',
+  economia: 'Economía aplicada',
 }
 
 const DIFF_LABEL = ['', 'Intro', 'Básico', 'Intermedio', 'Avanzado', 'Élite']
 
 export function AcertijosGame() {
   const navigate = useNavigate()
+  const [topic,setTopic]=useState('todos')
   const progress = getGameProgress(GAME_CAT, GAME_ID)
   const unlocked = useMemo(
     () => getUnlockedLevels(GAME_CAT, GAME_ID),
     [progress.highestLevel],
   )
-  const defaultLevel = Math.min(Math.max(1, progress.highestLevel || 1), TOTAL_LEVELS)
+  const defaultLevel = Math.min(Math.max(1, (progress.highestLevel || 0)+1), TOTAL_LEVELS)
 
   const [level, setLevel] = useState(defaultLevel)
   const [phase, setPhase] = useState<'setup' | 'play' | 'result' | 'lista'>('setup')
@@ -1998,7 +1976,7 @@ export function AcertijosGame() {
   const [riddle, setRiddle] = useState<Riddle | null>(null)
   const [selected, setSelected] = useState<number | null>(null)
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null)
-  const [useTimer, setUseTimer] = useState(true)
+  const [useTimer, setUseTimer] = useState(false)
   const [timeLeft, setTimeLeft] = useState(TIMER_BASE)
   const [failedIds, setFailedIds] = useState<Set<string>>(() => new Set())
   const [solvedEntries, setSolvedEntries] = useState<SolvedEntry[]>(() => loadSolved())
@@ -2027,7 +2005,7 @@ export function AcertijosGame() {
   const startLevel = useCallback(
     (lv: number) => {
       clearTimers()
-      const r = pickRiddle(lv, solvedIds, failedIds)
+      const r = pickRiddle(lv, solvedIds, failedIds,topic)
       setRiddle(r)
       setSelected(null)
       setIsCorrect(null)
@@ -2064,7 +2042,7 @@ export function AcertijosGame() {
         }, 1000)
       }
     },
-    [failedIds, limit, useTimer, solvedIds],
+    [failedIds, limit, useTimer, solvedIds,topic],
   )
 
   useEffect(() => () => clearTimers(), [])
@@ -2118,7 +2096,7 @@ export function AcertijosGame() {
   }, [solvedEntries, listaFilter])
 
   return (
-    <div className="app-shell">
+    <div className="app-shell deduction-game">
       <header
         style={{
           marginBottom: '1.1rem',
@@ -2237,6 +2215,7 @@ export function AcertijosGame() {
         )}
       </AnimatePresence>
 
+      {phase==='setup'&&<section className="deduction-topic-panel"><h2>Explora nuevas preguntas</h2><p>{TOTAL_LEVELS} niveles · Filosofía, política, economía y lógica. Las cuestiones controvertidas se evalúan según los supuestos indicados.</p><label>Enfoque<select value={topic} onChange={e=>setTopic(e.target.value)}><option value="todos">Todos los temas</option><option value="filosofia">Filosofía y paradojas</option><option value="politica">Política e instituciones</option><option value="economia">Economía y moneda</option></select></label></section>}
       <AnimatePresence mode="wait">
         {phase === 'setup' && (
           <motion.div
@@ -2360,7 +2339,7 @@ export function AcertijosGame() {
                   <div>
                     <p style={{ fontWeight: 600, fontSize: '0.95rem', margin: 0 }}>Contrarreloj</p>
                     <p style={{ fontSize: '0.78rem', color: 'var(--gco-ink-muted)', margin: '2px 0 0' }}>
-                      Activo por defecto · se reduce en niveles altos ({limit}s en nv. {level})
+                      Opcional · se reduce en niveles altos ({limit}s en nv. {level})
                     </p>
                   </div>
                   <button
@@ -2433,7 +2412,7 @@ export function AcertijosGame() {
                   }}
                 >
                   <strong style={{ color: 'var(--gco-ink)' }}>Cómo funciona · </strong>
-                  Orienta el razonamiento. Al fallar recibes un consejo.
+                  La explicación se muestra al acertar.
                   Los acertijos resueltos no vuelven a aparecer.
                 </div>
               </div>
@@ -2667,13 +2646,13 @@ export function AcertijosGame() {
                           color: 'var(--gco-ink)',
                         }}
                       >
-                        {riddle.hint}
+                        Identifica las condiciones exactas y comprueba si cada alternativa necesita una premisa adicional.
                       </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                <div className="riddle-answer-options" style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
                   {riddle.options.map((opt, i) => (
                     <button
                       key={i}
@@ -2764,7 +2743,7 @@ export function AcertijosGame() {
                     }}
                   >
                     <strong style={{ color: 'var(--gco-ink)' }}>Consejo · </strong>
-                    {riddle.advice}
+                    No se revela la explicación en un intento incorrecto.
                     <span style={{ display: 'block', marginTop: 8, fontSize: '0.8rem', opacity: 0.85 }}>
                       La respuesta correcta no se revela al fallar. Prueba otro enunciado o usa la
                       pista analítica en el siguiente intento.

@@ -1,3 +1,4 @@
+import {RoundGuard} from '@/core/roundGuard'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
@@ -57,7 +58,7 @@ export function NexoGame() {
   const [data, setData] = useState<NexoLevel | null>(null)
   const [cards, setCards] = useState<NexoCard[]>([])
   const [highlightId, setHighlightId] = useState<string | null>(null)
-  const [step, setStep] = useState(0)
+  const [, setStep] = useState(0)
   const [flipped, setFlipped] = useState<string[]>([])
   const [timeLeft, setTimeLeft] = useState(0)
   const [useTimer, setUseTimer] = useState(true)
@@ -67,6 +68,8 @@ export function NexoGame() {
   const [showLevelPicker, setShowLevelPicker] = useState(false)
   const [statusHint, setStatusHint] = useState('')
 
+  const roundGuard=useRef(new RoundGuard())
+  const stepRef=useRef(0)
   const timerRef = useRef<number | null>(null)
   const runTimerRef = useRef<number | null>(null)
   const startedAtRef = useRef<number | null>(null)
@@ -113,36 +116,25 @@ export function NexoGame() {
   }
 
   const startCountdown = (seconds: number) => {
-    if (!useTimer) {
-      setTimeLeft(0)
-      return
-    }
-    setTimeLeft(seconds)
     clearTimer()
-    timerRef.current = window.setInterval(() => {
-      setTimeLeft((t) => {
-        if (t <= 1) {
-          clearTimer()
-          const ms = stopRunTimer()
-          soundFail()
-          recordLevelResult({
-            categoryId: GAME_CAT,
-            gameId: GAME_ID,
-            level: levelRef.current,
-            success: false,
-            timeMs: ms,
-          })
-          setPhase('fail')
-          return 0
-        }
-        const next = t - 1
-        soundTick(next <= 10)
-        return next
-      })
-    }, 1000)
+    if(!useTimer){setTimeLeft(0);return}
+    const deadline=Date.now()+seconds*1000
+    setTimeLeft(seconds)
+    timerRef.current=window.setInterval(()=>{
+      const remaining=Math.max(0,Math.ceil((deadline-Date.now())/1000))
+      setTimeLeft(remaining)
+      if(remaining===0){
+        clearTimer()
+        if(!roundGuard.current.finish())return
+        const ms=stopRunTimer()
+        if(true)recordLevelResult({categoryId:GAME_CAT,gameId:GAME_ID,level:levelRef.current,success:false,timeMs:ms})
+        soundFail();setPhase('fail')
+      }else soundTick(remaining<=10)
+    },1000)
   }
 
   const win = useCallback((timeMs: number) => {
+    if(!roundGuard.current.finish())return
     clearTimer()
     const prevBest = getLevelBestTime(GAME_CAT, GAME_ID, levelRef.current)
     const isNew = timeMs > 0 && (prevBest == null || timeMs < prevBest)
@@ -164,6 +156,8 @@ export function NexoGame() {
       soundStart()
       clearTimer()
       clearRunTimer()
+      roundGuard.current.reset()
+      stepRef.current=0
       setLevel(lv)
       const lvData = generateNexoLevel(lv)
       setData(lvData)
@@ -195,6 +189,7 @@ export function NexoGame() {
     setHighlightId(ids[0])
     soundCard()
 
+    let distractor:number|undefined
     const id = window.setInterval(() => {
       i += 1
       if (i >= ids.length) {
@@ -209,8 +204,9 @@ export function NexoGame() {
         const noise = data.cards[Math.floor(Math.random() * data.cards.length)]
         setHighlightId(noise.id)
         soundCard()
-        window.setTimeout(() => {
-          setHighlightId(ids[i])
+        const target=ids[i]
+        distractor=window.setTimeout(() => {
+          setHighlightId(target)
           soundCard()
         }, Math.round(data.showStepMs * 0.35))
       } else {
@@ -219,7 +215,7 @@ export function NexoGame() {
       }
     }, data.showStepMs)
 
-    return () => clearInterval(id)
+    return () => {clearInterval(id);window.clearTimeout(distractor)}
   }, [phase, data])
 
   // Fase SHUFFLE
@@ -255,10 +251,11 @@ export function NexoGame() {
 
   const onCardClick = (card: NexoCard) => {
     if (phase !== 'play') return
-    const expected = sequenceRef.current[step]
+    const expected = sequenceRef.current[stepRef.current]
     soundCard()
     if (card.id === expected) {
-      const next = step + 1
+      const next = stepRef.current + 1
+      stepRef.current=next
       setStep(next)
       setFlipped((f) => [...f, card.id])
       setStatusHint(
@@ -272,6 +269,8 @@ export function NexoGame() {
         soundMatch()
       }
     } else {
+      if(!roundGuard.current.finish())return
+      clearTimer()
       const t = stopRunTimer()
       recordLevelResult({
         categoryId: GAME_CAT,

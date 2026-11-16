@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type DragEvent as ReactDragEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { LibraryBig } from 'lucide-react'
+import { BookOpen, Folder, LibraryBig, PanelBottomClose, PanelBottomOpen } from 'lucide-react'
 import { BatchBookImport } from './BatchBookImport'
 
 import { GlassButton } from '@/components/ui/GlassButton'
@@ -19,7 +19,8 @@ import {
   type BookFolder,
 } from '@/core/storage/mediaLibrary'
 
-import { extractTextFromFile } from '@/core/storage/textExtract'
+import { importDocument } from '@/core/storage/documentImport'
+import './library.css'
 import { soundClick, soundSuccess, soundFail } from '@/core/audio/uiSounds'
 import { useReaderPlayer } from '@/core/reader/ReaderPlayerContext.tsx'
 function IconList() {
@@ -219,12 +220,15 @@ function AppSwitcher({ current }: { current: AppId }) {
 
 export function NutricionHome() {
   const navigate = useNavigate()
-  const { activeBook, loadBook } = useReaderPlayer()
+  const { activeBook, loadBook, minimized, setMinimized } = useReaderPlayer()
 
   const [books, setBooks] = useState<BookItem[]>([])
   const [folders, setFolders] = useState<BookFolder[]>([])
   const [busy, setBusy] = useState(false)
-  const [searchOpen, setSearchOpen] = useState(false)
+  const [section, setSection] = useState<'inicio' | 'biblioteca' | 'importar' | 'buscar'>('inicio')
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
+  const [folderName, setFolderName] = useState('')
+  const [creatingFolder, setCreatingFolder] = useState(false)
   const [query, setQuery] = useState('')
   const [viewMode, setViewMode] = useState<'estanteria' | 'listas'>('estanteria')
 
@@ -233,8 +237,6 @@ export function NutricionHome() {
   const [menuFor, setMenuFor] = useState<string | null>(null)
 
   const [moreOpen, setMoreOpen] = useState(false)
-  const [folderMenuFor, setFolderMenuFor] = useState<string | null>(null)
-  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({})
   const [sortOrder, setSortOrder] = useState<SortOrder>(
     () => (localStorage.getItem(LS_SORT) as SortOrder) || 'recientes'
   )
@@ -267,7 +269,7 @@ export function NutricionHome() {
   }, [])
 
   const continuing = useMemo(
-    () => books.filter((b) => b.position > 0).slice(0, 8),
+    () => books.filter((b) => { const progress = bookProgress(b); return progress > 0 && progress < 100 }).slice(0, 8),
     [books]
   )
 
@@ -289,7 +291,18 @@ export function NutricionHome() {
   }, [filtered, sortOrder])
 
   const byFolder = (id: string | null) => sorted.filter((b) => b.folderId === id)
-  const noFolderBooks = byFolder(null)
+  const alphabet = useMemo(() => {
+    const groups = new Map<string, BookItem[]>()
+    for (const book of [...books].sort((a, b) => a.title.localeCompare(b.title, 'es'))) {
+      const letter = book.title.trim().normalize('NFD').replace(/\p{M}/gu, '').charAt(0).toUpperCase()
+      const key = /^[A-Z]$/.test(letter) ? letter : '#'
+      const group = groups.get(key) ?? []
+      group.push(book)
+      groups.set(key, group)
+    }
+    return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b, 'es'))
+  }, [books])
+  const imports = useMemo(() => [...books].sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [books])
 
   const openBook = (b: BookItem) => {
     soundClick()
@@ -299,19 +312,18 @@ export function NutricionHome() {
 
   const nav = (id: NavId) => {
     soundClick()
-    if (id === 'inicio' || id === 'biblioteca') {
-      setQuery('')
-      setSearchOpen(false)
-    } else if (id === 'listas') {
-      setViewMode((v) => (v === 'listas' ? 'estanteria' : 'listas'))
+    if (id === 'listas') {
+      setSection('biblioteca')
+      setViewMode((value) => value === 'listas' ? 'estanteria' : 'listas')
     } else if (id === 'reproduciendo') {
       if (activeBook) navigate(`/nutricion/libro/${activeBook.id}`)
-    } else if (id === 'importar') {
-      setImportOpen(true)
     } else if (id === 'mas') {
       setMoreOpen(true)
-    } else if (id === 'buscar') {
-      setSearchOpen((v) => !v)
+    } else {
+      setSection(id)
+      setQuery('')
+      setSelectedFolder(null)
+      setMenuFor(null)
     }
   }
 
@@ -319,7 +331,7 @@ export function NutricionHome() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
-        setSearchOpen((v) => !v)
+        setSection('buscar')
       }
     }
     window.addEventListener('keydown', onKey)
@@ -346,6 +358,8 @@ export function NutricionHome() {
   }
 
   const NAV_ITEMS: { id: NavId; label: string; icon: ReactNode }[] = [
+    { id: 'inicio', label: 'Nutrición', icon: <BookOpen /> },
+    { id: 'buscar', label: 'Buscar', icon: <IconSearch /> },
     { id: 'biblioteca', label: 'Biblioteca', icon: <LibraryBig /> },
     { id: 'listas', label: 'Listas', icon: <IconList /> },
     { id: 'reproduciendo', label: 'Reproduciendo', icon: <IconPlayCircle /> },
@@ -360,16 +374,35 @@ export function NutricionHome() {
     { id: 'buscar', label: 'Buscar', icon: <IconSearch /> },
   ]
 
+  const renderCard = (book: BookItem) => (
+    <BookCard key={book.id} book={book} variant="grid" folders={folders}
+      menuOpen={menuFor === book.id}
+      onOpen={() => openBook(book)}
+      onMenuToggle={() => setMenuFor(menuFor === book.id ? null : book.id)}
+      onEdit={() => { setMenuFor(null); setEditingBook(book) }}
+      onDelete={() => { setMenuFor(null); if (confirm(`¿Eliminar «${book.title}»?`)) void deleteBook(book.id).then(refresh) }}
+      onMove={(id) => { setMenuFor(null); void moveBookToFolder(book.id, id).then(refresh) }}
+    />
+  )
+  const renderBooks = (items: BookItem[], list = false) => items.length === 0
+    ? <p className="library-empty">Aquí todavía no hay libros.</p>
+    : <div className={list ? 'library-list' : 'book-grid'}>{items.map((book) => list
+      ? <BookRow key={book.id} book={book} onOpen={() => openBook(book)}
+          onEdit={() => setEditingBook(book)}
+          onDelete={() => { if (confirm(`¿Eliminar «${book.title}»?`)) void deleteBook(book.id).then(refresh) }} />
+      : renderCard(book))}</div>
+  const currentFolder = folders.find((folder) => folder.id === selectedFolder)
+  const heading = MOBILE_NAV.find((item) => item.id === section)?.label ?? 'Nutrición'
+
   return (
-    <div className="app-layout nutricion-layout">
+    <div className={`app-layout nutricion-layout density-${gridDensity} ${minimized ? 'nutrition-player-hidden' : ''}`}>
       <aside className="app-sidebar">
         {NAV_ITEMS.map((item) => (
           <button
             key={item.id}
             type="button"
             className={`sidebar-nav-item ${
-              (item.id === 'biblioteca' && viewMode === 'estanteria') ||
-              (item.id === 'listas' && viewMode === 'listas')
+              item.id === section || (item.id === 'listas' && section === 'biblioteca' && viewMode === 'listas')
                 ? 'active'
                 : ''
             }`}
@@ -383,60 +416,34 @@ export function NutricionHome() {
 
       <div className="app-main">
         <div className="app-shell app-shell-pro nutricion-shell">
-          <BatchBookImport />
-          <header className="nutricion-header" style={{ marginBottom: '1.25rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.65rem' }}>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <h1 style={{ fontSize: 'clamp(1.35rem, 4.5vw, 1.85rem)', lineHeight: 1.2 }}>🍎 Nutrición</h1>
-                <p style={{ color: 'var(--gco-ink-muted)', fontSize: '0.88rem', marginTop: 4 }}>
-                  Biblioteca de audiolibros
-                </p>
-              </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-                <div className="appswitch-slot desktop">
-                  <AppSwitcher current="nutricion" />
-                </div>
+          <header className="nutrition-masthead">
+            <div className="nutrition-titlebar">
+              <h1>{heading}</h1>
+              <div className="nutrition-actions">
                 <ThemeToggle />
-                <button
-                  type="button"
-                  className="theme-cycle-btn"
-                  aria-label="Más opciones"
-                  onClick={() => {
-                    soundClick()
-                    setMoreOpen(true)
-                  }}
-                  style={{ width: 44, height: 44, padding: 0, borderRadius: 12 }}
-                >
-                  <span style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
-                    <span style={{ width: 18, height: 2, background: 'currentColor', borderRadius: 2 }} />
-                    <span style={{ width: 18, height: 2, background: 'currentColor', borderRadius: 2 }} />
-                    <span style={{ width: 18, height: 2, background: 'currentColor', borderRadius: 2 }} />
-                  </span>
+                <button type="button" className="theme-cycle-btn" aria-pressed={minimized}
+                  aria-label={minimized ? 'Mostrar reproductor' : 'Ocultar reproductor'}
+                  onClick={() => { soundClick(); setMinimized(!minimized) }}>
+                  {minimized ? <PanelBottomOpen size={18} /> : <PanelBottomClose size={18} />}
                 </button>
+                <button type="button" className="theme-cycle-btn" aria-label="Más opciones" onClick={() => setMoreOpen(true)}><IconKebab /></button>
               </div>
             </div>
-
-            <div className="appswitch-slot mobile" style={{ marginTop: '0.85rem' }}>
-              <AppSwitcher current="nutricion" />
-            </div>
-
-            {searchOpen && (
-              <input
-                autoFocus
-                className="glass-input"
-                placeholder="Buscar por título o autor…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                style={{ marginTop: '0.85rem' }}
-              />
-            )}
+            <AppSwitcher current="nutricion" />
           </header>
 
-          {continuing.length > 0 && !query && (
+          {section === 'buscar' && <section>
+            <input autoFocus className="glass-input" type="search" aria-label="Buscar libros"
+              placeholder="Buscar por título o autor…" value={query} onChange={(event) => setQuery(event.target.value)} />
+            {renderBooks(sorted)}
+          </section>}
+
+          {section === 'inicio' && <>
+          {continuing.length > 0 && (
             <section style={{ marginBottom: '1.6rem' }}>
               <div className="folder-row-header" style={{ marginTop: 0 }}>
-                <h2 style={{ fontSize: '1rem' }}>Continuar</h2>
+                <h2 className="nutrition-section-title"><BookOpen size={19} /> Continuar</h2>
                 {continuing.length > 1 && (
                   <div className="hscroll-nav">
                     <button type="button" className="hscroll-nav-btn" aria-label="Anterior" onClick={() => scrollContinueBy(-1)}>
@@ -450,7 +457,7 @@ export function NutricionHome() {
               </div>
               <div className="hscroll" ref={continueScrollRef} onScroll={onContinueScroll}>
                 {continuing.map((b) => {
-                  const pct = b.text.length ? Math.round((b.position / b.text.length) * 100) : 0
+                  const pct = bookProgress(b)
                   return (
                     <div
                       key={b.id}
@@ -523,207 +530,60 @@ export function NutricionHome() {
             </section>
           )}
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: '1.4rem' }}>
-            <button
-              type="button"
-              className="glass-button secondary"
-              onClick={() => {
-                soundClick()
-                const name = prompt('Nombre de la carpeta')
-                if (name?.trim()) void createFolder(name.trim()).then(refresh)
-              }}
-            >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <IconFolderPlus /> Añadir carpeta
-              </span>
-            </button>
-          </div>
+          {alphabet.map(([letter, items]) => <section className="nutrition-shelf" key={letter} aria-label={`Títulos con ${letter}`}>
+            <h2 className="nutrition-section-title">{letter}</h2>
+            <div className="book-grid alphabet-row">{items.map(renderCard)}</div>
+          </section>)}
+          {!books.length && <p className="library-empty">Tu estantería está vacía. <button type="button" className="glass-button secondary" onClick={() => nav('importar')}>Importar libros</button></p>}
+          </>}
 
-          {folders.map((f) => {
-            const items = byFolder(f.id)
-            if (query && items.length === 0) return null
-            return (
-              <section key={f.id} style={{ marginBottom: '1.2rem' }}>
-                <div className="folder-row-header">
-                  <h3 style={{ fontSize: '1rem' }}>📁 {f.name}</h3>
-                  <div style={{ position: 'relative' }}>
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      aria-label={`Opciones de ${f.name}`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        soundClick()
-                        setFolderMenuFor(folderMenuFor === f.id ? null : f.id)
-                      }}
-                    >
-                      <IconChevronRight />
-                    </button>
-                    {folderMenuFor === f.id && (
-                      <div className="context-menu" style={{ top: 36, right: 0 }} onMouseLeave={() => setFolderMenuFor(null)}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setExpandedFolders((s) => ({ ...s, [f.id]: !s[f.id] }))
-                            setFolderMenuFor(null)
-                          }}
-                        >
-                          <IconChevronRight /> {expandedFolders[f.id] ? 'Ver menos' : 'Ver todo'}
-                        </button>
-                        <button
-                          type="button"
-                          className="danger"
-                          onClick={() => {
-                            soundClick()
-                            setFolderMenuFor(null)
-                            if (confirm(`¿Borrar la carpeta "${f.name}"? Los libros pasarán a "Sin carpeta".`)) {
-                              void deleteFolder(f.id).then(refresh)
-                            }
-                          }}
-                        >
-                          <IconTrash /> Eliminar carpeta
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {viewMode === 'estanteria' ? (
-                  expandedFolders[f.id] ? (
-                    <div
-                      className="book-grid"
-                      style={{ ['--grid-min' as string]: gridDensity === 'compacta' ? '96px' : '120px' }}
-                    >
-                      {items.map((b) => (
-                        <BookCard
-                          key={b.id}
-                          book={b}
-                          variant="grid"
-                          menuOpen={menuFor === b.id}
-                          onOpen={() => openBook(b)}
-                          onMenuToggle={() => setMenuFor(menuFor === b.id ? null : b.id)}
-                          onEdit={() => {
-                            setMenuFor(null)
-                            setEditingBook(b)
-                          }}
-                          onDelete={() => {
-                            setMenuFor(null)
-                            soundClick()
-                            void deleteBook(b.id).then(refresh)
-                          }}
-                          folders={folders}
-                          onMove={(fid) => {
-                            setMenuFor(null)
-                            void moveBookToFolder(b.id, fid).then(refresh)
-                          }}
-                        />
-                      ))}
-                      {items.length === 0 && (
-                        <p style={{ color: 'var(--gco-ink-faint)', fontSize: '0.85rem' }}>Carpeta vacía.</p>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="hscroll">
-                      {items.map((b) => (
-                        <BookCard
-                          key={b.id}
-                          book={b}
-                          variant="shelf"
-                          menuOpen={menuFor === b.id}
-                          onOpen={() => openBook(b)}
-                          onMenuToggle={() => setMenuFor(menuFor === b.id ? null : b.id)}
-                          onEdit={() => {
-                            setMenuFor(null)
-                            setEditingBook(b)
-                          }}
-                          onDelete={() => {
-                            setMenuFor(null)
-                            soundClick()
-                            void deleteBook(b.id).then(refresh)
-                          }}
-                          folders={folders}
-                          onMove={(fid) => {
-                            setMenuFor(null)
-                            void moveBookToFolder(b.id, fid).then(refresh)
-                          }}
-                        />
-                      ))}
-                      {items.length === 0 && (
-                        <p style={{ color: 'var(--gco-ink-faint)', fontSize: '0.85rem' }}>Carpeta vacía.</p>
-                      )}
-                    </div>
-                  )
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {items.map((b) => (
-                      <BookRow
-                        key={b.id}
-                        book={b}
-                        onOpen={() => openBook(b)}
-                        onEdit={() => setEditingBook(b)}
-                        onDelete={() => void deleteBook(b.id).then(refresh)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </section>
-            )
-          })}
+          {section === 'biblioteca' && <section>
+            {selectedFolder === null ? <>
+              <button type="button" className="glass-button secondary" onClick={() => setCreatingFolder((value) => !value)}>
+                <IconFolderPlus /> {creatingFolder ? 'Cancelar' : 'Añadir carpeta'}
+              </button>
+              {creatingFolder && <form className="nutrition-folder-form" onSubmit={async (event) => {
+                event.preventDefault()
+                if (!folderName.trim()) return
+                await createFolder(folderName.trim())
+                setFolderName('')
+                setCreatingFolder(false)
+                await refresh()
+              }}>
+                <input className="glass-input" autoFocus required aria-label="Nombre de la carpeta" value={folderName} onChange={(event) => setFolderName(event.target.value)} />
+                <button className="glass-button" type="submit">Crear</button>
+              </form>}
+              <div className="nutrition-folder-list">
+                {[...folders, { id: '', name: 'Sin carpeta' }].map((folder) => <button key={folder.id} type="button" className="nutrition-folder"
+                  onClick={() => { setMenuFor(null); setSelectedFolder(folder.id) }}>
+                  <Folder size={22} /><strong>{folder.name}</strong><small>{byFolder(folder.id || null).length} libros</small><IconChevronRight />
+                </button>)}
+              </div>
+            </> : <>
+              <div className="nutrition-folder-toolbar">
+                <button type="button" className="glass-button secondary" onClick={() => { setSelectedFolder(null); setMenuFor(null) }}><IconChevronLeft /> Carpetas</button>
+                <h2>{currentFolder?.name ?? 'Sin carpeta'}</h2>
+                {currentFolder && <button type="button" className="icon-btn" aria-label="Eliminar carpeta" onClick={() => {
+                  if (confirm(`¿Eliminar «${currentFolder.name}»? Sus libros pasarán a Sin carpeta.`)) {
+                    void deleteFolder(currentFolder.id).then(refresh)
+                    setSelectedFolder(null)
+                  }
+                }}><IconTrash /></button>}
+              </div>
+              {renderBooks(byFolder(selectedFolder || null), viewMode === 'listas')}
+            </>}
+          </section>}
 
-          <section style={{ marginBottom: '2rem' }}>
-            <div className="folder-row-header">
-              <h3 style={{ fontSize: '1rem' }}>
-                {folders.length > 0 ? 'Sin carpeta' : `Biblioteca (${noFolderBooks.length})`}
-              </h3>
+          {section === 'importar' && <section>
+            <div className="nutrition-import-panel">
+              <h2>Añade a tu biblioteca</h2>
+              <p>Importa PDF, EPUB, DOCX o texto. También puedes pegar texto y editar el título, el autor y la portada.</p>
+              <GlassButton onClick={() => setImportOpen(true)}><IconDownload /> Importar un libro</GlassButton>
+              <BatchBookImport />
             </div>
-            {noFolderBooks.length === 0 && (
-              <p style={{ color: 'var(--gco-ink-muted)', textAlign: 'center', padding: '1.5rem 0' }}>
-                {query ? 'Sin resultados.' : 'Aún no hay libros aquí. Importa uno para empezar.'}
-              </p>
-            )}
-            {viewMode === 'estanteria' ? (
-              <div
-                className="book-grid"
-                style={{ ['--grid-min' as string]: gridDensity === 'compacta' ? '96px' : '120px' }}
-              >
-                {noFolderBooks.map((b) => (
-                  <BookCard
-                    key={b.id}
-                    book={b}
-                    variant="grid"
-                    menuOpen={menuFor === b.id}
-                    onOpen={() => openBook(b)}
-                    onMenuToggle={() => setMenuFor(menuFor === b.id ? null : b.id)}
-                    onEdit={() => {
-                      setMenuFor(null)
-                      setEditingBook(b)
-                    }}
-                    onDelete={() => {
-                      setMenuFor(null)
-                      soundClick()
-                      void deleteBook(b.id).then(refresh)
-                    }}
-                    folders={folders}
-                    onMove={(fid) => {
-                      setMenuFor(null)
-                      void moveBookToFolder(b.id, fid).then(refresh)
-                    }}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {noFolderBooks.map((b) => (
-                  <BookRow
-                    key={b.id}
-                    book={b}
-                    onOpen={() => openBook(b)}
-                    onEdit={() => setEditingBook(b)}
-                    onDelete={() => void deleteBook(b.id).then(refresh)}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
+            <h2 className="nutrition-section-title">Importados recientemente</h2>
+            {renderBooks(imports)}
+          </section>}
         </div>
       </div>
 
@@ -733,9 +593,7 @@ export function NutricionHome() {
             key={item.id}
             type="button"
             className={`bottom-nav-item ${
-              (item.id === 'inicio' && !searchOpen && !importOpen) ||
-              (item.id === 'importar' && importOpen) ||
-              (item.id === 'buscar' && searchOpen)
+              item.id === section
                 ? 'active'
                 : ''
             }`}
@@ -757,7 +615,7 @@ export function NutricionHome() {
           onCreated={async (b) => {
             await refresh()
             setImportOpen(false)
-            openBook(b)
+            setEditingBook(b)
           }}
         />
       )}
@@ -824,6 +682,11 @@ export function NutricionHome() {
   )
 }
 
+function bookProgress(book: BookItem) {
+  const textProgress = book.text.length ? book.position / book.text.length : 0
+  return Math.round(Math.max(0, Math.min(1, Math.max(textProgress, book.documentProgress ?? 0))) * 100)
+}
+
 function BookCard({
   book,
   variant,
@@ -853,10 +716,11 @@ function BookCard({
     >
       <div
         className={coverClass}
+        role="button" tabIndex={0} aria-label={`Leer ${book.title} (${book.sourceFormat?.toUpperCase() || 'texto'})`} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onOpen()}}}
         style={book.coverDataUrl ? { backgroundImage: `url(${book.coverDataUrl})`, cursor: 'pointer' } : { cursor: 'pointer' }}
         onClick={onOpen}
       >
-        {!book.coverDataUrl && book.title.charAt(0).toUpperCase()}
+        {!book.coverDataUrl && <span className="nutrition-cover-title">{book.title}</span>}
       </div>
       <div style={{ marginTop: 6, position: 'relative' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 4 }}>
@@ -881,6 +745,7 @@ function BookCard({
           </button>
         </div>
         {book.author && <p className="book-author">{book.author}</p>}
+        <small className="book-format">{bookProgress(book)}% · {book.sourceFormat?.toUpperCase() || 'TEXTO'}{book.originalDataUrl ? ' · Original' : ' · Lectura'}</small>
 
         {menuOpen && (
           <BookMenu folders={folders} onEdit={onEdit} onDelete={onDelete} onMove={onMove} onClose={onMenuToggle} />
@@ -997,6 +862,7 @@ function ImportModal({
   onClose: () => void
   onCreated: (b: BookItem) => void
 }) {
+  const [original, setOriginal] = useState<Partial<BookItem>>({})
   const [step, setStep] = useState(1)
   const savingRef = useRef(false)
   const [saving, setSaving] = useState(false)
@@ -1111,8 +977,10 @@ function ImportModal({
 
     setBusy(true)
     try {
-      const content = await extractTextFromFile(file)
-      if (!content.trim()) {
+      const document = await importDocument(file)
+      const content = document.text
+      setOriginal(document)
+      if (!content.trim() && !document.originalDataUrl) {
         soundFail()
         setImportError('No se pudo extraer texto de este archivo.')
         return
@@ -1195,7 +1063,7 @@ function ImportModal({
 
   const save = async () => {
     if (savingRef.current) return
-    if (!text.trim()) {
+    if (!text.trim() && !original.originalDataUrl) {
       soundFail()
       setImportError('Escribe o pega texto, o añade una imagen.')
       return
@@ -1205,6 +1073,7 @@ function ImportModal({
     setImportError(null)
     try {
     const b = await saveBook({
+      ...original,
       title: title.trim() || `Texto ${new Date().toLocaleDateString()}`,
       text: text.trim(),
       author: author.trim() || undefined,
@@ -1403,7 +1272,7 @@ function ImportModal({
               </button>
               <GlassButton
                 onClick={() => {
-                  if (!text.trim()) {
+                  if (!text.trim() && !original.originalDataUrl) {
                     soundFail()
                     setImportError('Escribe o pega algo de texto, o añade una imagen.')
                     return

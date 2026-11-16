@@ -1,9 +1,16 @@
+import {AndroidMediaPermissions} from './components/AndroidMediaPermissions'
+import { AccountSync } from '@/core/cloud/AccountSync'
+import {StartupAccount} from './features/ajustes/StartupAccount'
+import {LogicStudio} from './features/logica/juegos/LogicStudio'
+import {GameMenu} from './features/games/GameMenu'
+import {RouteRecovery} from './components/RouteRecovery'
 import { useState, useEffect, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { getProfile } from './core/storage/userProfile'
 import { Onboarding } from './features/onboarding/Onboarding'
 import { CategoryMenu } from './features/categorias/CategoryMenu'
+import { MemoryLab } from './features/memoria/juegos/laboratorio/MemoryLab'
 import { MemoriaCategory } from './features/memoria/juegos/MemoriaCategory'
 import { ColorSequenceGame } from './features/memoria/juegos/secuencia-colores/ColorSequenceGame'
 import { NumerosAsociadosGame } from './features/memoria/juegos/numeros-asociados/NumerosAsociadosGame'
@@ -20,8 +27,13 @@ import { RutinasSettings } from './features/ajustes/RutinasSettings'
 import { CartasGame } from './features/memoria/juegos/cartas/CartasGame'
 import { NexoGame } from './features/memoria/juegos/nexo/NexoGame'
 import { RoutineWidget } from '@/components/ui/RoutineWidget'
+const PartyRoom = lazy(() => import('./features/games/party/PartyRoom').then(module => ({default: module.PartyRoom})))
+const MathHub = lazy(() => import('./features/matematicas/MathHub').then(module => ({default: module.MathHub})))
+const SudokuStudio = lazy(() => import('./features/matematicas/SudokuStudio').then(module => ({default: module.SudokuStudio})))
+const KnowledgeHub = lazy(() => import('./features/conocimiento/KnowledgeHub').then(module => ({default: module.KnowledgeHub})))
+const ReadingHub = lazy(() => import('./features/lectura/ReadingHub').then(module => ({default: module.ReadingHub})))
 const NutricionHome = lazy(() => import('./features/nutricion/NutricionHome').then(module => ({ default: module.NutricionHome })))
-const BookReader = lazy(() => import('./features/nutricion/BookReader').then(module => ({ default: module.BookReader })))
+const BookReader = lazy(() => import('./features/nutricion/DocumentReader').then(module => ({ default: module.BookReader })))
 const MusicaHome = lazy(() => import('./features/musica/MusicaHome').then(module => ({ default: module.MusicaHome })))
 import { ReaderPlayerProvider, MiniPlayer } from '@/core/reader/ReaderPlayerContext'
 import { HabilidadesGame } from './features/memoria/juegos/habilidades/Habilidades'
@@ -54,6 +66,12 @@ import { IdiomasGame } from './features/deduccion/juegos/idiomas/idiomas'
 function App() {
   const [showSplash, setShowSplash] = useState(true)
   const [hasProfile, setHasProfile] = useState<boolean | null>(null)
+  useEffect(() => {
+    const restoreProfile = () => setHasProfile(!!getProfile())
+    window.addEventListener('gco:account-restored', restoreProfile)
+    return () => window.removeEventListener('gco:account-restored', restoreProfile)
+  }, [])
+
 
   useEffect(() => {
     try {
@@ -80,6 +98,8 @@ function App() {
 
   return (
     <ReaderPlayerProvider>
+      <AccountSync />
+      <AndroidMediaPermissions />
       <AmbientBackground />
 
       <AnimatePresence mode="wait">
@@ -91,12 +111,12 @@ function App() {
       {!showSplash && (
         <>
           <Suspense fallback={<div className="gco-hub" role="status">Cargando tu espacio…</div>}>
-          <Routes>
+          <RouteRecovery><Routes>
             <Route
               path="/"
               element={
                 hasProfile ? (
-                  <CategoryMenu />
+                  <><CategoryMenu /><StartupAccount /></>
                 ) : (
                   <Onboarding onComplete={() => setHasProfile(true)} />
                 )
@@ -105,6 +125,7 @@ function App() {
 
             {/* ── Memoria ── */}
             <Route path="/categoria/memoria" element={<MemoriaCategory />} />
+            <Route path="/categoria/memoria/laboratorio" element={<MemoryLab />} />
             <Route
               path="/categoria/memoria/secuencia-colores"
               element={<ColorSequenceGame />}
@@ -118,7 +139,7 @@ function App() {
             <Route path="/categoria/memoria/habilidades" element={<HabilidadesGame />} />
 
             {/* ── Lógica ── */}
-            <Route path="/categoria/logica" element={<LogicaCategory />} />
+            <Route path="/categoria/logica/luces" element={<LogicStudio key="luces" kind="luces" />} /><Route path="/categoria/logica/sumas" element={<LogicStudio key="sumas" kind="sumas" />} /><Route path="/categoria/logica" element={<LogicaCategory />} />
             <Route
               path="/categoria/logica/numberpuzzle"
               element={<Colocador />}
@@ -130,6 +151,10 @@ function App() {
             <Route path="/categoria/logica/despejes" element={<DespejesGame />} />
             <Route path="/categoria/logica/blockcleaner" element={<BlockCleaner />} />
 
+            <Route path="/categoria/matematicas" element={<MathHub />} />
+            <Route path="/categoria/matematicas/sudoku" element={<SudokuStudio />} />
+            <Route path="/categoria/conocimiento" element={<KnowledgeHub />} />
+            <Route path="/categoria/lectura" element={<ReadingHub />} />
             {/* ── Nutrición ── */}
             <Route path="/nutricion" element={<NutricionHome />} />
             <Route path="/nutricion/libro/:id" element={<BookReader />} />
@@ -160,17 +185,18 @@ function App() {
 
             {/* ── Games ── */}
             <Route path="/games" element={<GamesHub />} />
+            <Route path="/games/:kind/menu" element={<GameMenu />} />
             <Route path="/games/cartas" element={<GamesHub />} />
             <Route path="/games/fichacore" element={<Fichacore />} />
             <Route path="/games/tres" element={<TresGame />} />
             <Route path="/games/activas" element={<MatchCenter />} />
             <Route path="/games/torneo" element={<Tournament />} />
             <Route path="/games/ajedrez/menu" element={<ChessMenu />} />
-            <Route path="/games/mesa/:kind" element={<GameRoom />} />
+            <Route path="/games/mesa/loteria" element={<PartyRoom key="loteria" gameKind="loteria" />} /><Route path="/games/mesa/dibujar" element={<PartyRoom key="dibujar" gameKind="dibujar" />} /><Route path="/games/mesa/pescar" element={<PartyRoom key="pescar" gameKind="pescar" />} /><Route path="/games/mesa/domino" element={<PartyRoom key="domino" gameKind="domino" />} /><Route path="/games/mesa/damas-chinas" element={<PartyRoom key="damas-chinas" gameKind="damas-chinas" />} /><Route path="/games/mesa/monopoli" element={<PartyRoom key="monopoli" gameKind="monopoli" />} /><Route path="/games/mesa/:kind" element={<GameRoom />} />
             <Route path="/games/ajedrez" element={<ChessGame />} />
 
             <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          </Routes></RouteRecovery>
           </Suspense>
 
           <RoutineWidget />

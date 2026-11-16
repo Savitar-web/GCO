@@ -1,3 +1,7 @@
+import { Music2, PictureInPicture2 } from 'lucide-react'
+import './musicRefresh.css'
+import {MediaWindow,nativeMediaWindow} from '@/core/media/mediaWindow'
+import {openOverlayPermissionSettings} from '@/hooks/useMediaPlayer'
 /**
  * ============================================================================
  * PlayerBar.tsx — pastilla flotante + reproductor fullscreen (GCO)
@@ -297,11 +301,8 @@ function nearestEdge(x: number, y: number, w: number, h: number): FloatEdge {
 
 function clampPos(x: number, y: number, w: number, h: number) {
   if (typeof window === 'undefined') return { x, y }
-  const pad = 8
-  return {
-    x: Math.max(pad, Math.min(window.innerWidth - w - pad, x)),
-    y: Math.max(pad, Math.min(window.innerHeight - h - pad, y)),
-  }
+  const pad=8,vp=window.visualViewport,top=vp?.offsetTop||0,left=vp?.offsetLeft||0,width=vp?.width||window.innerWidth,height=vp?.height||window.innerHeight,bottom=isMobileViewport()?MOBILE_NAV_RESERVE:pad
+  return {x:Math.max(left+pad,Math.min(left+width-w-pad,x)),y:Math.max(top+pad,Math.min(top+height-h-bottom,y))}
 }
 
 function clamp(v: number, min: number, max: number) {
@@ -342,6 +343,7 @@ function detectPipSupport(): boolean {
   return false
 }
 
+let inlineBars=0
 let globalBarMounted = false
 let globalRoot: Root | null = null
 
@@ -733,7 +735,17 @@ ${
  * Componente
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-export function PlayerBar({ player, floating }: Props) {
+export function PlayerBar({ player, floating, compact }: Props) {
+  useEffect(()=>{if(nativeMediaWindow()&&(!player.playing||!player.track||!isVideoTrack(player.track)))void MediaWindow.setAutoPip({enabled:false}).catch(()=>{})},[player.playing,player.track])
+
+  const [seekDraft,setSeekDraft]=useState<number|null>(null)
+  const seekTrack=useRef<string|undefined>(undefined)
+  const suppressClickUntil=useRef(0)
+  const dragCleanup=useRef<()=>void>(()=>{})
+  useEffect(()=>()=>dragCleanup.current(),[])
+  useEffect(()=>{if(floating&&!compact)return;inlineBars++;window.dispatchEvent(new Event('gco:player-layout'));return()=>{inlineBars=Math.max(0,inlineBars-1);window.dispatchEvent(new Event('gco:player-layout'))}},[floating,compact])
+  useEffect(()=>{const seek=(event:Event)=>{const detail=(event as CustomEvent<{trackId:string;timeMs:number}>).detail;if(detail.trackId!==player.track?.id)return;const video=videoRef.current;if(video){try{video.currentTime=detail.timeMs/1000}catch{/* Metadata may not be ready yet. */}}};window.addEventListener('gco:media-seek',seek);return()=>window.removeEventListener('gco:media-seek',seek)},[player.track?.id])
+
   const themeId = useAppThemeId()
   const themeMode = useAppThemeMode()
   const tokens = useThemeTokens(themeId)
@@ -866,9 +878,9 @@ export function PlayerBar({ player, floating }: Props) {
   }, [player])
 
   useEffect(() => {
-    const onResize = () => setMobile(isMobileViewport())
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
+    const onResize = () => {setMobile(isMobileViewport());setFloatPos(p=>({...p,...clampPos(p.x,p.y,p.docked?COLLAPSED_SIZE:barSizeRef.current.w,p.docked?COLLAPSED_SIZE:barSizeRef.current.h)}))}
+    window.addEventListener('resize', onResize);window.visualViewport?.addEventListener('resize',onResize)
+    return () => {window.removeEventListener('resize', onResize);window.visualViewport?.removeEventListener('resize',onResize)}
   }, [])
 
   useEffect(() => {
@@ -935,6 +947,7 @@ export function PlayerBar({ player, floating }: Props) {
    * Así no hay eco ni doble reproducción al activar PiP / burbuja / portada↔vídeo.
    */
   const systemPipRef = useRef(false)
+  useEffect(()=>{const listener=(event:Event)=>{const active=!!(event as CustomEvent<{active:boolean}>).detail.active;systemPipRef.current=active;setPipActive(active);if(!active){setPipFallback(false);const video=videoRef.current;if(video){video.style.width='1px';video.style.height='1px';video.style.opacity='0'}}};window.addEventListener('gco:native-pip',listener);return()=>window.removeEventListener('gco:native-pip',listener)},[])
 
   const forceVideoSilent = (el: HTMLVideoElement | null) => {
     if (!el) return
@@ -1152,7 +1165,7 @@ export function PlayerBar({ player, floating }: Props) {
     if (edge === 'left' || edge === 'right') {
       next = {
         x: edge === 'left' ? 8 : window.innerWidth - COLLAPSED_SIZE - 8,
-        y: clamp(y, 8, window.innerHeight - COLLAPSED_SIZE - 8),
+        y: clampPos(x,y,COLLAPSED_SIZE,COLLAPSED_SIZE).y,
         edge,
         docked: true,
       }
@@ -1173,6 +1186,7 @@ export function PlayerBar({ player, floating }: Props) {
     /* No iniciar drag con botón derecho / stylus eraser */
     if (e.button != null && e.button !== 0) return
 
+    dragCleanup.current()
     e.preventDefault()
     pointerIdRef.current = e.pointerId
     dragActiveRef.current = false
@@ -1214,10 +1228,12 @@ export function PlayerBar({ player, floating }: Props) {
       dragActiveRef.current = false
       setDragging(false)
       if (wasDragging) {
-        finishDrag()
+        suppressClickUntil.current=Date.now()+400
+        requestAnimationFrame(()=>finishDrag())
       }
     }
 
+    dragCleanup.current=()=>{window.removeEventListener('pointermove',onMove);window.removeEventListener('pointerup',onUp);window.removeEventListener('pointercancel',onUp)}
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
     window.addEventListener('pointercancel', onUp)
@@ -1227,11 +1243,12 @@ export function PlayerBar({ player, floating }: Props) {
   const onOpenFromPill = (e: React.MouseEvent | React.PointerEvent) => {
     e.stopPropagation()
     e.preventDefault()
-    if (dragActiveRef.current || dragging) return
+    if (dragActiveRef.current || dragging || Date.now()<suppressClickUntil.current) return
     openFullscreen()
   }
 
   const exitAllPip = useCallback(async () => {
+    if(nativeMediaWindow())void MediaWindow.setAutoPip({enabled:false}).catch(()=>{})
     const d = document as Document & {
       pictureInPictureElement?: Element | null
       exitPictureInPicture?: () => Promise<void>
@@ -1399,6 +1416,7 @@ export function PlayerBar({ player, floating }: Props) {
         /* */
       }
       forceVideoSilent(vid)
+      if(nativeMediaWindow()){try{const result=await MediaWindow.enterPip({width:vid.videoWidth||16,height:vid.videoHeight||9});if(result.entered){systemPipRef.current=true;setPipActive(true);setPipFallback(false);closeFullscreen();return}}catch(error){console.warn('[gco] native PiP:',error)}}
       // Dejar un frame para que WebKit registre el frame visible
       await new Promise((r) => requestAnimationFrame(() => r(undefined)))
       await new Promise((r) => setTimeout(r, 60))
@@ -1536,6 +1554,7 @@ export function PlayerBar({ player, floating }: Props) {
     if (locked) return
     const target = e.target as HTMLElement
     const fromHandle = !!target.closest('[data-fs-handle]')
+    if(!fromHandle){swipeStartRef.current=null;return}
     if (target.closest('button, input, textarea, a, [data-no-swipe]') && !fromHandle) return
     swipeStartRef.current = {
       x: e.clientX,
@@ -1714,7 +1733,7 @@ export function PlayerBar({ player, floating }: Props) {
   }
 
   const progressBar = (opacity = 1, large = false, showTimes = false) => {
-    const pct = dur > 0 ? clamp((player.currentMs / dur) * 100, 0, 100) : 0
+    const pct = dur > 0 ? clamp(((seekDraft??player.currentMs) / dur) * 100, 0, 100) : 0
     const maxHeat = Math.max(1, ...heatmap)
     return (
       <div data-no-drag data-no-swipe style={{ position: 'relative', opacity, transition: 'opacity 0.3s' }}>
@@ -1764,13 +1783,16 @@ export function PlayerBar({ player, floating }: Props) {
             className="gco-fs-range"
             min={0}
             max={Math.max(1, dur)}
-            step={100}
-            value={clamp(player.currentMs, 0, dur || 1)}
+            step={10}
+            value={clamp(seekDraft??player.currentMs, 0, dur || 1)}
+            onPointerDown={()=>{seekTrack.current=t?.id;setSeekDraft(player.currentMs)}}
+            onPointerUp={e=>{if(seekTrack.current===t?.id)player.seek(Number(e.currentTarget.value));setSeekDraft(null)}}
+            onPointerCancel={()=>setSeekDraft(null)}
             disabled={locked}
             aria-label="Progreso"
             onChange={(e) => {
               if (locked) return
-              player.seek(Number(e.target.value))
+              if(seekDraft!==null)setSeekDraft(Number(e.target.value));else player.seek(Number(e.target.value))
               bumpIdle()
               bumpNativeIdle()
             }}
@@ -1799,7 +1821,7 @@ export function PlayerBar({ player, floating }: Props) {
               letterSpacing: '0.02em',
             }}
           >
-            <span>{formatTrackTime(player.currentMs)}</span>
+            <span>{formatTrackTime(seekDraft??player.currentMs)}</span>
             <span>{formatRemaining(player.currentMs, dur)}</span>
           </div>
         )}
@@ -2228,7 +2250,7 @@ export function PlayerBar({ player, floating }: Props) {
             />
           </div>
           <div className="gco-float-times" aria-hidden>
-            <span>{formatTrackTime(player.currentMs)}</span>
+            <span>{formatTrackTime(seekDraft??player.currentMs)}</span>
             <span>{formatRemaining(player.currentMs, dur)}</span>
           </div>
         </div>
@@ -2291,6 +2313,7 @@ export function PlayerBar({ player, floating }: Props) {
   const miniBar = floating ? (
     <div
       ref={floatRootRef}
+      role="region" aria-label="Reproductor flotante. Arrastra la portada para moverlo"
       className={`gco-float-bar${dragging ? ' is-dragging' : ''}${floatPos.docked ? ' is-docked' : ''}`}
       style={{
         position: 'fixed',
@@ -2742,7 +2765,7 @@ export function PlayerBar({ player, floating }: Props) {
                     onClick={() => void togglePip()}
                   >
                     <IconPip />
-                  </button>
+                  </button>{nativeMediaWindow()&&<button className="glass-button secondary" aria-label="Permisos de vídeo flotante" title="Permisos de vídeo flotante" onClick={()=>void openOverlayPermissionSettings()}><PictureInPicture2 size={18} /></button>}
                 </div>
               </>
             )}
@@ -2766,7 +2789,7 @@ export function PlayerBar({ player, floating }: Props) {
               />
             </div>
             <p style={{ margin: '0 0 12px', fontSize: '0.75rem', opacity: 0.5 }}>
-              Mantén pulsado ⠿ y arrastra · en PC puedes arrastrar la fila
+              Usa ↑ y ↓ o escribe la posición exacta. El asa permite arrastrar opcionalmente.
             </p>
             {queue
               .map((item, i) => ({ item, i }))
@@ -2792,7 +2815,7 @@ export function PlayerBar({ player, floating }: Props) {
                     else queueRowsRef.current.delete(i)
                   }}
                   className={`gco-queue-row${isDrag ? ' is-dragging-row' : ''}${isDrop ? ' is-drop-target' : ''}`}
-                  draggable={!mobile && !locked}
+                  draggable={false}
                   onDragStart={(e) => onHtmlDragStart(i, e)}
                   onDragOver={(e) => onHtmlDragOver(i, e)}
                   onDrop={(e) => onHtmlDrop(i, e)}
@@ -2801,7 +2824,7 @@ export function PlayerBar({ player, floating }: Props) {
                     display: 'flex',
                     alignItems: 'center',
                     gap: 10,
-                    padding: '0.6rem 0.55rem',
+                    padding: '6px 8px',
                     borderRadius: tokens.radiusSm,
                     background: active
                       ? themeMode === 'light'
@@ -2867,8 +2890,10 @@ export function PlayerBar({ player, floating }: Props) {
                   >
                     <div
                       style={{
-                        width: 42,
-                        height: 42,
+                        width: 36,
+                        height: 36,
+                        display: 'grid',
+                        placeItems: 'center',
                         borderRadius: 'var(--gco-radius-xs, 10px)',
                         overflow: 'hidden',
                         flexShrink: 0,
@@ -2883,7 +2908,7 @@ export function PlayerBar({ player, floating }: Props) {
                           draggable={false}
                           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                         />
-                      ) : null}
+                      ) : <Music2 size={20} aria-hidden /> }
                     </div>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <p
@@ -2906,7 +2931,7 @@ export function PlayerBar({ player, floating }: Props) {
                     <span style={{ fontSize: '0.72rem', opacity: 0.45, flexShrink: 0 }}>
                       {formatTrackTime(item.durationMs)}
                     </span>
-                  </button>
+                  </button><div className="queue-position-controls" data-no-swipe><button type="button" aria-label={'Subir '+item.title} disabled={locked||i===0} onClick={()=>reorderQueue(i,i-1)}>↑</button><input key={item.id+'-'+i} aria-label={'Posición de '+item.title} type="number" min="1" max={queue.length} defaultValue={i+1} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur()}} onBlur={e=>{const n=Number(e.currentTarget.value);if(Number.isInteger(n)&&n>=1&&n<=queue.length)reorderQueue(i,n-1);else e.currentTarget.value=String(i+1)}}/><button type="button" aria-label={'Bajar '+item.title} disabled={locked||i===queue.length-1} onClick={()=>reorderQueue(i,i+1)}>↓</button></div>
                 </div>
               )
             })}
@@ -3009,11 +3034,7 @@ export function PlayerBar({ player, floating }: Props) {
   /* Sin pista activa: no mostrar pastilla ni burbuja */
   if (!t) return null
 
-  const hideBecauseGlobal =
-    !floating &&
-    globalBarMounted &&
-    typeof document !== 'undefined' &&
-    !!document.getElementById('gco-global-player-host')
+  const hideBecauseGlobal = false
 
   const pipFallbackUi =
     pipFallback && hasVideo && videoUrl && typeof document !== 'undefined'
@@ -3163,7 +3184,7 @@ export function PlayerBar({ player, floating }: Props) {
   /* Host persistente del <video> para PiP de sistema (no se desmonta al cerrar FS) */
   const pipHostVideo =
     hasVideo && videoUrl && typeof document !== 'undefined' ? (
-      <video
+      <video data-gco-pip-video
         ref={(el) => {
           videoRef.current = el
           if (el) {
@@ -3222,7 +3243,7 @@ export function PlayerBar({ player, floating }: Props) {
 
   return (
     <>
-      {hideBecauseGlobal ? null : miniBar}
+      {hideBecauseGlobal ? null : floating && typeof document!=='undefined' ? createPortal(miniBar,document.body) : miniBar}
       {fullscreen && typeof document !== 'undefined' && fullscreenContent
         ? createPortal(fullscreenContent, document.body)
         : null}
@@ -3247,7 +3268,9 @@ export function ensureGlobalPlayerBar() {
 
   function Bridge() {
     const player = useMediaPlayer()
-    if (!player.track) return null
+    const [inline,setInline]=useState(()=>inlineBars>0)
+    useEffect(()=>{const update=()=>setInline(inlineBars>0);window.addEventListener('gco:player-layout',update);return()=>window.removeEventListener('gco:player-layout',update)},[])
+    if (!player.track||inline) return null
     return (
       <div style={{ pointerEvents: 'auto' }}>
         <PlayerBar player={player} floating />

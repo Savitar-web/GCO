@@ -1,0 +1,2 @@
+import {BOARD_SKINS,type BoardSkin} from './chessTypes'
+export function loadVisuals(){try{const p=JSON.parse(localStorage.getItem('gco:chess-visual')||'{}');return {background:/^#[a-f0-9]{6}$/i.test(p.background)?p.background:'#24313d',light:/^#[a-f0-9]{6}$/i.test(p.light)?p.light:'#ffffff',skin:BOARD_SKINS.some(s=>s.id===p.skin)?p.skin as BoardSkin:'wood' as BoardSkin}}catch{return {background:'#24313d',light:'#ffffff',skin:'wood' as BoardSkin}}}

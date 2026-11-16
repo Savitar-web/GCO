@@ -1,3 +1,4 @@
+import {getUnifiedGameStats} from '@/core/profileGameStats'
 import { getProfile, type AvatarFrame } from '@/core/storage/userProfile'
 import { getTotalProgress } from '@/core/storage/progress'
 
@@ -450,6 +451,12 @@ export async function renderCredentialCanvas(
 
   const profile = getProfile()
   const total = getTotalProgress()
+  const allGameStats=getUnifiedGameStats().filter(row=>row.attempts>0||row.wins>0||row.level>1||row.time>0)
+  total.gamesPlayed=allGameStats.length
+  total.totalAttempts=allGameStats.reduce((sum,row)=>sum+row.attempts,0)
+  total.totalCompleted=allGameStats.reduce((sum,row)=>sum+row.wins,0)
+  total.totalLevels=allGameStats.reduce((sum,row)=>sum+row.level,0)
+  total.winRate=total.totalAttempts?Math.min(100,Math.round(allGameStats.filter(row=>row.attempts>0).reduce((sum,row)=>sum+row.wins,0)/total.totalAttempts*100)):0
   const name = profile?.name?.trim() || 'Atleta GCO'
   const age = hideAge ? undefined : profile?.age
   const frame = (profile?.avatarFrame ?? 'none') as FrameId
@@ -459,7 +466,7 @@ export async function renderCredentialCanvas(
   const c = palette(theme)
 
   const W = 960
-  const H = 600
+  const H = 600 + Math.max(0,allGameStats.length-5)*30
   const canvas = document.createElement('canvas')
   canvas.width = W
   canvas.height = H
@@ -567,7 +574,7 @@ export async function renderCredentialCanvas(
   ctx.font = '600 30px system-ui, -apple-system, sans-serif'
   ctx.fillText(name, textLeft, 200)
 
-  const defeats = Math.max(0, total.totalAttempts - total.totalCompleted)
+  const defeats = allGameStats.reduce((sum,row)=>sum+Math.max(0,row.attempts-row.wins-row.draws),0)
   const chips: string[] = []
   if (age != null) chips.push(`${age} años`)
   chips.push(`Skill ${total.skillScore}%`)
@@ -642,10 +649,10 @@ export async function renderCredentialCanvas(
 
   ctx.fillStyle = c.primary
   ctx.font = '600 12px system-ui, -apple-system, sans-serif'
-  ctx.fillText('RÉCORDS RECIENTES', 72, panelY + 28)
+  ctx.fillText('REGISTRO DE TODOS TUS JUEGOS', 72, panelY + 28)
 
   ctx.font = '400 13px ui-monospace, SFMono-Regular, Menlo, monospace'
-  const gameLines = total.byGame.slice(0, 5)
+  const gameLines = allGameStats
   let y = panelY + 52
   if (gameLines.length === 0) {
     ctx.fillStyle = c.faint
@@ -653,25 +660,25 @@ export async function renderCredentialCanvas(
     ctx.fillText('Aún no hay partidas registradas', 72, y)
   } else {
     for (const g of gameLines) {
-      const gameName = g.gameId.replace(/-/g, ' ')
-      const losses = Math.max(0, g.totalAttempts - g.totalCompleted)
+      const gameName = g.label
+      const losses = Math.max(0, g.attempts - g.wins - g.draws)
 
       ctx.fillStyle = c.muted
       ctx.font = '500 13px system-ui, -apple-system, sans-serif'
-      const leftLabel = `${g.categoryId}`
+      const leftLabel = `${g.category}`
       ctx.fillText(leftLabel, 72, y)
 
       ctx.fillStyle = c.ink
       ctx.globalAlpha = 0.88
-      ctx.fillText(gameName, 72 + ctx.measureText(leftLabel).width + 10, y)
+      ctx.fillText(wrapText(ctx,gameName,390,1)[0]||gameName,72 + ctx.measureText(leftLabel).width + 10,y)
       ctx.globalAlpha = 1
 
       ctx.fillStyle = c.faint
       ctx.font = '400 12px ui-monospace, SFMono-Regular, Menlo, monospace'
-      const stats = `Nivel ${g.highestLevel}    ${g.totalCompleted}V  ${losses}D    ${g.winRate}%`
+      const stats = `Nivel ${g.level}    ${g.wins}V  ${losses}D  ${g.draws}E`
       const sw = ctx.measureText(stats).width
       ctx.fillText(stats, W - 72 - sw, y)
-      y += 24
+      y += 30
     }
   }
 

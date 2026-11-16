@@ -1,3 +1,5 @@
+import {PieceSetIcon} from './PieceSetIcon'
+import type {PieceStyle} from './chessEngine'
 import { useId } from 'react'
 import type { PieceType } from './chessEngine'
 
@@ -5,6 +7,7 @@ interface Props {
   type: PieceType
   color: 'w' | 'b'
   accent: string
+  design?:PieceStyle['design']
   bodyColor?:string
 }
 
@@ -30,7 +33,7 @@ function pts(list: [number, number][]) {
  * SVG originales (no emojis).
  * Blancas = mármol hielo / cian. Negras = granate casi negro.
  */
-export function ChessPieceIcon({ type, color, accent,bodyColor }: Props) {
+export function ChessPieceIcon({ type, color, accent,bodyColor,design='byron' }: Props) {
   const uid = useId().replace(/[:]/g, '')
   const isWhite = color === 'w'
   const gradId = `${uid}-body`
@@ -56,6 +59,7 @@ export function ChessPieceIcon({ type, color, accent,bodyColor }: Props) {
   const fill = `url(#${gradId})`
   const highlight = isWhite ? 'rgba(255,255,255,0.45)' : 'rgba(200,70,90,0.28)'
 
+  if(design!=='staunton')return <PieceSetIcon type={type} color={color} bodyColor={bodyColor} design={design}/>
   return (
     <svg viewBox="0 0 100 140" className="gco-chess-piece-svg" aria-hidden="true">
       <defs>

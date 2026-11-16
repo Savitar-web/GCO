@@ -1,3 +1,4 @@
+import {RoundGuard} from '@/core/roundGuard'
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -581,7 +582,7 @@ export function NumerosAsociadosGame() {
   const progress = getGameProgress(GAME_CAT, GAME_ID)
   const defaultLevel = Math.max(1, progress.highestLevel + 1)
 
-  const [appMode, setAppMode] = useState<AppMode>('menu')
+  const [appMode, setAppMode] = useState<AppMode>(()=>{const mode=new URLSearchParams(location.search).get('modo');return ['chunks','verbal','typing','palace'].includes(mode||'')?mode as AppMode:'menu'})
   const [menuPick, setMenuPick] = useState<Exclude<AppMode, 'menu'>>('chunks')
 
   /* chunks */
@@ -597,6 +598,8 @@ export function NumerosAsociadosGame() {
   const [story, setStory] = useState('')
   const [hidden, setHidden] = useState(false)
   const [recallInput, setRecallInput] = useState('')
+  const recallGuard=useRef(new RoundGuard())
+  const palaceGuard=useRef(new RoundGuard())
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null)
   const [charVerdict, setCharVerdict] = useState<{ ch: string; ok: boolean | null }[] | null>(null)
   const [timeLeft, setTimeLeft] = useState(0)
@@ -762,6 +765,7 @@ export function NumerosAsociadosGame() {
   }
 
   const goToRecall = () => {
+    recallGuard.current.reset()
     soundClick()
     setHidden(true)
     setPhase('recall')
@@ -804,7 +808,7 @@ export function NumerosAsociadosGame() {
   }
 
   const checkRecall = () => {
-    if (!sequence) return
+    if (!sequence || phase !== 'recall' || !recallGuard.current.finish()) return
     if (useTimer && timeLeft <= 0 && isCorrect === false) return
     clearTimer()
     const timeMs = stopRunTimer()
@@ -1091,6 +1095,7 @@ export function NumerosAsociadosGame() {
     setPalaceItems(shuffled)
     setPalacePlacements({})
     setPalaceRecallOrder(Array(count).fill(''))
+    palaceGuard.current.reset()
     setPalaceScore(0)
     setPalaceGrade(null)
     setPalacePlaceMs(0)
@@ -1155,6 +1160,7 @@ export function NumerosAsociadosGame() {
   }
 
   const checkPalaceRecall = () => {
+    if(palacePhase!=='recall'||!palaceGuard.current.finish())return
     const rooms = PALACE_ROOMS.slice(0, palaceItems.length)
     let correct = 0
     rooms.forEach((room, idx) => {

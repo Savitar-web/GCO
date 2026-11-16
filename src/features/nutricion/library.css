@@ -1,0 +1,120 @@
+/* Library and document reading share the active application theme. */
+.nutricion-shell{max-width:1440px!important;padding-top:max(24px,env(safe-area-inset-top))!important;padding-bottom:calc(100px + env(safe-area-inset-bottom))!important}
+.nutricion-header{padding:clamp(20px,4vw,40px);border:1px solid var(--gco-border, #ffffff20);border-radius:28px;background:linear-gradient(125deg,color-mix(in srgb,var(--gco-accent,#14cfbf) 15%,transparent),transparent)}
+.nutricion-header h1{font-size:clamp(1.6rem,4vw,2.7rem)!important;letter-spacing:-.045em}
+.library-overview{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;padding:4px 8px 24px;color:var(--gco-ink-muted)}
+.library-overview strong{font-size:1.5rem;color:var(--gco-ink)}
+.nutricion-shell>.gco-surface{margin-bottom:28px;border-radius:22px}
+.nutricion-shell .book-grid{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(170px,1fr))!important;gap:22px!important}
+.nutricion-shell .book-grid>.glass-card{border-radius:22px;overflow:visible;transition:transform .18s,box-shadow .18s}
+.nutricion-shell .book-grid>.glass-card:hover{transform:translateY(-4px)}
+.nutricion-shell .book-cover{box-shadow:0 8px 22px #0002;border-radius:12px}
+.nutricion-shell .book-title{line-height:1.4;font-weight:750;overflow-wrap:anywhere}
+.nutricion-shell .folder-row-header{margin-top:32px!important;margin-bottom:18px!important;gap:12px;flex-wrap:wrap}
+.nutricion-layout button,.document-reader button{touch-action:manipulation;min-height:44px}
+.onboarding-account{max-width:640px;width:100%;align-self:center}.onboarding-account summary{cursor:pointer}.onboarding-account .account-panel{margin-top:12px}
+.document-reader{height:100dvh;min-height:320px;display:flex;flex-direction:column;gap:12px;padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));box-sizing:border-box;background:var(--gco-bg,#121a24);color:var(--gco-ink,#edf1f8);overflow:hidden}
+.document-header{display:flex;align-items:center;gap:14px;flex:none;max-width:1400px;width:100%;margin:auto}
+.document-heading{flex:1;min-width:0}.document-heading h1{font-size:clamp(1rem,2.6vw,1.6rem);margin:3px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.document-heading small,.document-heading span{font-size:.75rem;color:var(--gco-ink-muted)}
+.document-tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center;flex:none}.document-tools label{display:flex;gap:6px;align-items:center}.document-tools select{max-width:260px;padding:10px;border-radius:12px;background:var(--gco-bg-elevated,#233044);color:var(--gco-ink);border:1px solid var(--gco-border,#ffffff30)}
+.document-stage{flex:1;min-height:0;min-width:0;width:100%;overflow:auto;border-radius:18px;background:#e5e7ec;overscroll-behavior:contain;position:relative}.document-stage.format-pdf{padding:12px;box-sizing:border-box;text-align:center}.document-stage canvas{display:block;margin:auto;box-shadow:0 3px 18px #0002;max-width:none}.document-stage.format-epub{background:white;color:#111}.docx-frame{width:100%;height:100%;border:0;display:block}
+.document-pagination{display:flex;flex:none;align-items:center;justify-content:center;gap:24px}.document-pagination>div{text-align:center;min-width:120px}.document-pagination small{display:block;font-size:.7rem;color:var(--gco-ink-muted);max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.document-message{padding:10px 14px;border-radius:12px;background:var(--gco-bg-elevated,#273145);display:flex;gap:10px;align-items:center}.document-empty{padding:40px;color:var(--gco-ink)}
+.reader-format-bar{position:relative;z-index:10;display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:var(--gco-bg-elevated,#233044);color:var(--gco-ink);padding:calc(10px + env(safe-area-inset-top)) 16px 10px;font-size:.85rem}.reader-format-bar button{min-height:44px}
+@media(max-width:600px){.nutricion-shell{padding-left:14px!important;padding-right:14px!important}.nutricion-header{padding:18px;border-radius:20px}.nutricion-shell .book-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:12px!important}.nutricion-shell .book-grid>*{min-width:0}.nutricion-shell .continue-card{min-width:240px!important;max-width:84vw}.nutricion-shell .book-title{font-size:.9rem}.document-reader{gap:8px;padding-left:8px;padding-right:8px}.document-tools{gap:6px;justify-content:flex-start;flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}.document-tools>*{flex-shrink:0}.document-tools .glass-button{font-size:.75rem;padding:8px 10px}.document-pagination{gap:16px}.document-pagination small{max-width:200px}.document-stage{border-radius:10px}.reader-format-bar{font-size:.75rem}.onboarding-account .gco-actions{display:flex;flex-wrap:wrap;gap:10px}}
+@media(prefers-reduced-motion:reduce){.nutricion-shell .book-grid>.glass-card{transition:none}}
+.nutricion-shell .book-grid-card{background:var(--gco-bg-elevated,#ffffff08);border:1px solid var(--gco-border,#ffffff18);padding:14px;border-radius:20px;transition:transform .18s}.nutricion-shell .book-grid-card:hover{transform:translateY(-3px)}.book-format{display:block;letter-spacing:.07em;font-size:.65rem;color:var(--gco-ink-muted);margin-top:6px}.book-cover-grid{aspect-ratio:3/4!important;height:auto!important;min-height:160px!important;background:linear-gradient(140deg,color-mix(in srgb,var(--gco-accent,#18c9b5) 40%,#243a50),#202b45);font-family:Georgia,serif!important;font-size:3rem!important}.reader-header-fixed .reader-format-bar{padding:8px 14px;background:transparent;border-bottom:1px solid var(--reader-border);font-size:.75rem}.reader-header-fixed .reader-format-bar button{font-size:.75rem;padding:6px 10px;min-height:36px}.reader-icon-btn{min-width:40px;min-height:40px}
+@media(max-width:600px){.nutricion-shell .book-grid-card{padding:10px}.reader-header-fixed .reader-format-bar>span{display:none}.reader-appearance{max-width:100vw!important;max-height:85dvh!important;overflow-y:auto!important}.reader-article{overflow-wrap:anywhere}.reader-inline-image{max-width:100%!important;height:auto}.reader-topbar,.mobile-topbar{gap:8px!important;flex-wrap:wrap}}
+
+.document-reader{background:radial-gradient(ellipse at 0 0,color-mix(in srgb,var(--gco-accent) 9%,transparent),transparent 65%),var(--gco-bg);isolation:isolate}
+.document-tools-toggle{display:none}.document-header .glass-button{padding:10px;flex:none}.document-tools{padding:10px 14px;border-radius:16px;border:1px solid var(--gco-border,#ffffff20);background:var(--gco-bg-elevated)}
+.document-stage{box-shadow:0 4px 24px #0001;border:1px solid var(--gco-border,#ffffff20)}.document-stage canvas{animation:document-reveal .18s ease-out}.document-reader button,.document-reader a{transition:background .15s,transform .15s,border-color .15s}.document-reader button:active,.document-reader a:active{transform:scale(.96)}
+.document-pagination{padding:6px 12px;border-radius:16px;background:var(--gco-bg-elevated)}.document-pagination strong{font-variant-numeric:tabular-nums;font-size:1rem}.document-reader :focus-visible,.nutricion-layout :focus-visible{outline:3px solid var(--gco-accent);outline-offset:3px}
+.document-reader.is-focused .document-heading,.document-reader.is-focused .document-tools,.document-reader.is-focused .document-tools-toggle,.document-reader.is-focused .document-fullscreen{display:none}.document-reader.is-focused .document-header{justify-content:space-between}
+@keyframes document-reveal{from{opacity:.65;transform:translateY(3px)}to{opacity:1;transform:none}}
+@media(max-width:600px){.document-tools-toggle{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;font-size:.8rem;min-height:38px!important}.document-tools{display:none}.document-tools.is-open{display:flex;flex-wrap:wrap;overflow:visible;padding:10px;max-height:30dvh;overflow-y:auto;justify-content:flex-start}.document-tools select{max-width:100%;min-height:40px}.document-tools>select{width:100%}.document-heading h1{font-size:.95rem}.document-header{gap:8px}.document-header .glass-button{min-width:40px;padding:8px}.document-pagination small{font-size:.63rem}.document-pagination{padding:2px 6px}.document-reader.is-focused .document-header{height:38px}}
+@media(max-height:500px) and (orientation:landscape){.document-reader{display:grid;grid-template-columns:1fr auto;grid-template-rows:auto 1fr auto;gap:6px}.document-header{grid-column:1}.document-tools-toggle{display:flex;grid-column:2;grid-row:1}.document-tools{display:none}.document-tools.is-open{display:flex;position:absolute;z-index:10;right:12px;top:64px;max-width:290px;flex-wrap:wrap}.document-stage{grid-column:1/-1;grid-row:2;height:100%}.document-pagination{grid-row:3;grid-column:1/-1}.document-message{position:absolute;z-index:11;top:65px}.document-heading span{display:none}}
+@media(prefers-reduced-motion:reduce){.document-stage canvas,.document-reader *{animation:none!important;transition:none!important}}
+
+.nutricion-shell>details.gco-surface{padding:16px 20px;margin:0 0 18px;min-height:0}.nutricion-shell>details.gco-surface>summary{display:flex;align-items:center;gap:10px;cursor:pointer;min-height:28px;font-weight:650;list-style:none}.nutricion-shell>details.gco-surface>summary::-webkit-details-marker{display:none}.nutricion-shell>details.gco-surface>summary svg{flex:none}.nutricion-shell>details.gco-surface>summary:after{content:'+';margin-left:auto;font-size:1.3rem;color:var(--gco-accent)}.nutricion-shell>details[open].gco-surface>summary:after{content:'−'}.nutricion-shell>details.gco-surface>p{font-size:.85rem;line-height:1.55;color:var(--gco-ink-muted)}.library-overview{font-size:.8rem;gap:8px 20px;padding-bottom:18px}.library-overview>span:last-child{display:none}
+@media(max-width:600px){.nutricion-header>div:first-child{flex-wrap:wrap}.nutricion-header>div:first-child>div:first-child{flex-basis:100%!important;padding-right:0}.nutricion-header>div:first-child>div:last-child{position:absolute;right:18px;top:18px}.nutricion-header{position:relative;padding:18px!important}.nutricion-header h1{font-size:1.5rem!important;padding-right:160px}.nutricion-header p{margin-top:16px!important}.nutricion-shell>.gco-surface{margin-bottom:18px}.nutricion-shell .folder-row-header{margin-top:22px!important}.library-overview strong{font-size:1.15rem}}
+.nutricion-shell .book-cover-grid{color:#fff!important}.nutricion-shell .book-cover-grid:focus-visible{outline:3px solid var(--gco-accent);outline-offset:3px}
+@media(max-width:360px){.nutricion-header>div:first-child>div:last-child{position:static;margin-top:8px}.nutricion-header h1{padding-right:0}.nutricion-header p{margin-top:6px!important}.library-overview{gap:6px}}
+/* Nutrición: same app switch and theme tokens, with space reserved for system UI. */
+.nutricion-layout .nutricion-shell {
+  box-sizing: border-box;
+  padding: calc(16px + var(--safe-top, env(safe-area-inset-top, 0px))) clamp(16px, 4vw, 48px) calc(104px + var(--safe-bottom, env(safe-area-inset-bottom, 0px))) !important;
+}
+.nutrition-masthead { display: grid; gap: 12px; margin-bottom: 24px; }
+.nutrition-titlebar, .nutrition-actions, .nutrition-folder-toolbar {
+  display: flex; align-items: center; gap: 8px;
+}
+.nutrition-titlebar { justify-content: space-between; flex-wrap: wrap; }
+.nutrition-titlebar h1 { margin: 0; font-size: clamp(1.65rem, 5vw, 2.7rem); letter-spacing: -.04em; }
+.nutrition-actions { margin-left: auto; }
+.nutrition-actions .theme-cycle-btn { min-width: 40px; min-height: 40px; }
+.nutrition-masthead .app-switcher { width: max-content; max-width: 100%; box-sizing: border-box; }
+.nutrition-section-title { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; font-size: clamp(1.2rem, 3vw, 1.65rem); }
+.nutrition-shelf { margin: 0 0 28px; }
+.nutricion-shell .book-grid.alphabet-row {
+  display: flex !important; overflow-x: auto; padding: 4px 4px 20px;
+  scroll-snap-type: x proximity; gap: 16px !important;
+}
+.alphabet-row > * { flex: 0 0 clamp(142px, 43vw, 210px); scroll-snap-align: start; }
+.nutricion-shell .book-grid:not(.alphabet-row) { grid-template-columns: repeat(auto-fill, minmax(min(100%, 174px), 1fr)) !important; }
+.nutricion-shell .book-grid .book-grid-card { padding: 0; border: 0; background: transparent; }
+.nutricion-shell .book-cover-grid { aspect-ratio: 2/3 !important; min-height: 0 !important; border-radius: 5px 10px 10px 5px; }
+.nutrition-cover-title { font-size: clamp(.85rem, 3vw, 1.25rem); text-align: center; padding: 12px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+.nutricion-shell .continue-card { min-width: min(300px, 79vw) !important; max-width: min(420px, 84vw); }
+.nutricion-shell .continue-card .book-cover { width: 62px; height: 88px; flex-shrink: 0; }
+.nutricion-shell .continue-card > div:nth-child(2) { padding-right: 30px; }
+.nutrition-folder-list, .library-list { display: grid; gap: 9px; margin: 16px 0; }
+.nutrition-folder { display: grid; grid-template-columns: auto minmax(0,1fr) auto auto; align-items: center; gap: 12px; text-align: left; border: 1px solid var(--gco-glass-border); border-radius: 16px; background: var(--gco-glass-bg); color: var(--gco-ink); padding: 15px; cursor: pointer; }
+.nutrition-folder small, .library-empty { color: var(--gco-ink-muted); }
+.nutrition-folder strong { overflow-wrap: anywhere; }
+.nutrition-folder-toolbar { flex-wrap: wrap; margin: 0 0 18px; }
+.nutrition-folder-toolbar h2 { margin: 0; overflow-wrap: anywhere; }
+.nutrition-folder-form { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.nutrition-import-panel { display: grid; gap: 12px; justify-items: start; margin: 0 0 24px; padding: clamp(16px, 4vw, 30px); border-radius: 20px; border: 1px solid var(--gco-glass-border); background: var(--gco-glass-bg); }
+.nutrition-import-panel h2, .nutrition-import-panel p { margin: 0; }
+.nutrition-import-panel details { width: 100%; box-sizing: border-box; padding: 12px; margin: 0; }
+.nutrition-import-panel summary { cursor: pointer; display: flex; align-items: center; gap: 8px; min-height: 34px; }
+.nutrition-import-panel details p { margin: 8px 0; color: var(--gco-ink-muted); }
+.nutricion-layout .bottom-nav { box-sizing: border-box; width: min(410px, calc(100vw - 24px)); }
+.nutricion-layout .bottom-nav-item { flex: 1; min-width: 0; padding-inline: 4px; }
+body:has(.nutrition-player-hidden) > .gco-float-bar { display: none !important; }
+.reader-format-options, .reader-document-options { display: grid; gap: 8px; margin: 0 0 12px; }
+.reader-format-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.reader-format-buttons [aria-pressed="true"] { border-color: var(--reader-hl); color: var(--reader-hl); }
+.reader-document-options select { width: 100%; min-width: 0; }
+.reader-original-mode .reader-bottom-progress,
+.reader-original-mode .mobile-progress-meta,
+.reader-original-mode .reader-progress-line { display: none; }
+.reader-original-body {
+  display: flex; flex-direction: column; gap: 8px; min-height: 180px;
+  height: calc(100dvh - var(--nutrition-reader-header, 120px) - var(--safe-bottom, 0px) - 16px);
+  width: 100%; min-width: 0; padding-top: 8px;
+}
+.reader-root.reader-original-mode .reader-main { padding-bottom: 0; }
+.reader-root.reader-original-mode.reader-mobile {
+  padding-top: 0; padding-bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px));
+}
+.reader-original-body .document-pagination {
+  background: var(--reader-bg); border-top: 1px solid var(--reader-border);
+  border-radius: 0; justify-content: space-between; gap: 8px; padding: 0;
+}
+.reader-original-body .document-pagination button { min-width: 44px; min-height: 42px; }
+.reader-original-body .document-pagination > div { min-width: 0; }
+.reader-original-body .document-stage { border-radius: 9px; }
+.reader-root .reader-header-fixed .mobile-topbar { padding-top: calc(8px + var(--safe-top, env(safe-area-inset-top, 0px))); }
+.reader-root .appearance-sheet-full { max-height: calc(100dvh - var(--safe-top, 0px) - var(--safe-bottom, 0px) - 12px); }
+@media (max-width: 600px) {
+  .nutrition-actions .theme-cycle-btn { max-width: 120px; }
+  .nutrition-masthead .app-switcher { width: 100%; }
+  .nutrition-masthead .app-switcher-item { flex: 1; justify-content: center; padding-inline: 6px; font-size: .8rem; }
+  .nutricion-shell .book-grid:not(.alphabet-row) { grid-template-columns: repeat(2,minmax(0,1fr)) !important; }
+  .reader-original-body .document-pagination small { max-width: min(52vw,240px); }
+}
+.nutricion-layout.density-compacta .alphabet-row > * { flex-basis: clamp(120px, 34vw, 164px); }
+.nutricion-shell .alphabet-row .context-menu { position: static; margin-top: 4px; min-width: 0; }
+.reader-root .reader-sidebar { padding-top: calc(12px + var(--safe-top, env(safe-area-inset-top, 0px))); }
+.document-pdf-page{position:relative;width:max-content;max-width:none;margin:auto;line-height:0}.document-spoken-highlight{position:absolute;pointer-events:none;display:block;background:#ffdf6890;mix-blend-mode:multiply;border-radius:3px;box-shadow:0 0 0 1px #c78c2255}

@@ -6,7 +6,7 @@
 .gco-chess-screen {
   position: relative;
   z-index: 1;
-  min-height: 100dvh;
+  min-height: calc(var(--game-vh, 1vh) * 100);
   padding: calc(1rem + var(--safe-top, 0px)) 1rem calc(1.25rem + var(--safe-bottom, 0px));
   max-width: 1100px;
   margin: 0 auto;
@@ -409,7 +409,7 @@
 /* ---------- Tablero: tamaño estable, no se corta ---------- */
 .gco-chess-board-wrap {
   position: relative;
-  width: min(100%, 72dvh, 640px);
+  width: min(100%, calc(var(--game-vh, 1vh) * 72), 640px);
   aspect-ratio: 1 / 1;
   margin: 0 auto;
   border-radius: 18px;
@@ -940,8 +940,8 @@
 .gco-chess-screen.is-fullscreen {
   max-width: none;
   width: 100%;
-  min-height: 100dvh;
-  height: 100dvh;
+  min-height: calc(var(--game-vh, 1vh) * 100);
+  height: calc(var(--game-vh, 1vh) * 100);
   padding: calc(0.4rem + var(--safe-top, 0px)) 0.5rem calc(0.5rem + var(--safe-bottom, 0px));
   background: #03040a;
 }
@@ -952,12 +952,12 @@
   height: 100%;
 }
 .gco-chess-screen.is-fullscreen .gco-chess-board-wrap {
-  width: min(100%, calc(100dvh - 7rem), 820px);
+  width: min(100%, calc(calc(var(--game-vh, 1vh) * 100) - 7rem), 820px);
   max-height: none;
   border-radius: 12px;
 }
 .gco-chess-screen.is-fullscreen .gco-chess-panel {
-  max-height: min(36dvh, 320px);
+  max-height: min(calc(var(--game-vh, 1vh) * 36), 320px);
   overflow-y: auto;
 }
 @media (min-width: 960px) {
@@ -965,7 +965,7 @@
     grid-template-columns: minmax(0, 1fr) 280px;
   }
   .gco-chess-screen.is-fullscreen .gco-chess-panel {
-    max-height: calc(100dvh - 5rem);
+    max-height: calc(calc(var(--game-vh, 1vh) * 100) - 5rem);
   }
 }
 
@@ -992,7 +992,7 @@
     grid-template-columns: 1fr;
   }
   .gco-chess-board-wrap {
-    width: min(100%, 88vw, 72dvh);
+    width: min(100%, 88vw, calc(var(--game-vh, 1vh) * 72));
   }
   .gco-chess-panel-desktop-only {
     display: none;
@@ -1016,11 +1016,11 @@
     align-items: stretch;
   }
   .gco-chess-board-wrap {
-    width: min(100%, calc(100dvh - 3.5rem));
+    width: min(100%, calc(calc(var(--game-vh, 1vh) * 100) - 3.5rem));
   }
   .gco-chess-panel {
     overflow-y: auto;
-    max-height: calc(100dvh - 3.5rem);
+    max-height: calc(calc(var(--game-vh, 1vh) * 100) - 3.5rem);
   }
   .gco-chess-panel-desktop-only {
     display: none;
@@ -1058,7 +1058,7 @@
   min-height: 0;
 }
 .gco-chess-screen.is-fullscreen .gco-chess-board-wrap {
-  width: min(100%, calc(100dvh - 4.5rem), calc(100vw - 1rem));
+  width: min(100%, calc(calc(var(--game-vh, 1vh) * 100) - 4.5rem), calc(100vw - 1rem));
   max-width: 100%;
   margin: 0 auto;
   border-radius: 14px;
@@ -1108,3 +1108,26 @@
   -webkit-backdrop-filter: blur(18px);
   background: color-mix(in srgb, var(--gco-bg, #0a0e14) 88%, #000);
 }
+/* One starting point for local and online matches. */
+.gco-chess-menu .gco-chess-option-grid { gap:10px; }
+.gco-chess-menu .gco-chess-option { transition:transform .2s ease,border-color .2s ease,background .2s ease; }
+.gco-chess-menu .gco-chess-option:hover { transform:translateY(-3px); }
+.gco-chess-menu .gco-chess-option.is-active { border-color:var(--gco-primary);background:color-mix(in srgb,var(--gco-primary) 10%,var(--gco-bg-elevated)); }
+.chess-room-panel { padding:clamp(18px,3vw,30px);border:1px solid var(--gco-glass-border);border-radius:24px;background:color-mix(in srgb,var(--gco-bg-elevated) 85%,transparent);margin:0 0 20px;animation:chess-room-enter .25s ease; }
+.chess-room-intro {display:flex;align-items:center;gap:15px;margin-bottom:22px}
+.chess-room-intro h2 {margin:0 0 6px;font-size:clamp(1.1rem,3vw,1.45rem);color:var(--gco-ink)}
+.chess-room-intro p,.chess-room-pace p {margin:0;color:var(--gco-ink-muted);font-size:.85rem;line-height:1.55}
+.chess-room-symbol {display:grid;place-items:center;flex:none;width:52px;height:52px;border-radius:16px;background:var(--gco-primary-dim);color:var(--gco-primary);font-size:2rem}
+.chess-room-tabs {display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:5px;border:1px solid var(--gco-glass-border);border-radius:16px;margin-bottom:22px;background:var(--gco-bg)}
+.chess-room-tabs button {border:0;border-radius:12px;padding:12px;min-height:46px;font:inherit;font-weight:700;color:var(--gco-ink-muted);background:transparent;cursor:pointer;transition:background .2s,color .2s}
+.chess-room-tabs button[aria-pressed=true] {background:var(--gco-primary);color:var(--gco-on-primary,#071c21);box-shadow:0 4px 14px var(--gco-primary-dim)}
+.chess-room-code,.chess-room-pace {display:grid;gap:10px;font-size:.88rem;font-weight:600;color:var(--gco-ink)}
+.chess-room-code input {font-size:1.15rem;letter-spacing:.16em;font-variant-numeric:tabular-nums;min-width:0;width:100%;box-sizing:border-box;min-height:52px}
+.chess-room-code small {font-size:.76rem;color:var(--gco-ink-muted);font-weight:400;letter-spacing:normal}
+.chess-room-pace select {min-height:48px;width:100%;color:var(--gco-ink);background:var(--gco-bg-elevated)}
+.chess-room-error {padding:14px 16px;margin:0 0 14px;border:1px solid var(--gco-primary);border-radius:14px;background:var(--gco-primary-dim);color:var(--gco-ink);line-height:1.5}
+.gco-chess-cta:disabled {opacity:.65;cursor:wait}
+@keyframes chess-room-enter {from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media(max-width:600px){.gco-chess-menu .gco-chess-option-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.gco-chess-menu .gco-chess-option{padding:13px 8px;text-align:center;min-width:0}.gco-chess-menu .gco-chess-option-icon{font-size:1.5rem}.gco-chess-menu .gco-chess-option-title{font-size:.8rem}.gco-chess-menu .gco-chess-option-desc{font-size:.68rem;line-height:1.4}.chess-room-panel{border-radius:20px}.chess-room-intro{align-items:flex-start}.chess-room-symbol{width:42px;height:42px}.chess-room-tabs button{font-size:.84rem}.gco-chess-menu .gco-chess-stats-row{gap:7px}.gco-chess-menu .gco-chess-stat-card{padding:12px 5px}}
+@media(prefers-reduced-motion:reduce){.chess-room-panel{animation:none}.gco-chess-menu .gco-chess-option{transition:none}}
+.chess-draw-controls{display:grid;gap:10px;padding:12px 0}.chess-draw-controls p{font-size:.85rem;line-height:1.5;margin:0}.chess-draw-banner{margin:8px 0;padding:6px 16px;border:1px solid var(--gco-primary);border-radius:18px;background:var(--gco-bg-elevated)}.chess-draw-overlay{position:fixed;inset:0;z-index:3000;display:grid;place-items:center;padding:20px;background:var(--gco-overlay,#0008);backdrop-filter:blur(10px)}.chess-draw-overlay>div{width:min(440px,100%);padding:24px;border-radius:22px;box-sizing:border-box;background:var(--gco-bg-elevated);color:var(--gco-ink)}

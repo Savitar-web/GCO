@@ -14,3 +14,9 @@ tests
 *.aab
 *.exe
 *.zip
+
+release-electron*
+
+# Download cache used to build the curated reading corpus
+scripts/reading-sources/
+*.log

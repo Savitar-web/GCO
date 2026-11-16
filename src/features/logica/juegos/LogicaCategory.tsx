@@ -5,6 +5,8 @@ import { getGameProgress } from '@/core/storage/progress'
 import { soundClick } from '@/core/audio/uiSounds'
 
 const GAMES = [
+{id:'luces',title:'Luces en equilibrio',emoji:'💡',desc:'Deduce qué interruptores apagan toda la cuadrícula.'},
+{id:'sumas',title:'Sumas cruzadas',emoji:'➕',desc:'Cruza pistas y deduce los números que faltan.'},
   {
     id: 'numberpuzzle',
     title: 'Colocador',

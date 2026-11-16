@@ -1,10 +1,13 @@
+import {useState} from 'react'
+import {ChessBoard2D} from './ChessBoard2D'
 import { useEffect, useRef } from 'react'
 import type { Color, GameState } from './chessEngine'
 import { BOARD_SKINS, type BoardSkin } from './chessTypes'
+import {loadVisuals} from './visualPrefs'
 import { PIECE_PROFILES } from './chessPieceProfiles'
 import type { Selection } from './useChessGame'
 
-export type CameraPreset = 'default' | 'top' | 'front'
+export type CameraPreset = 'default' | 'top' | 'front' | 'piece'
 
 interface Props {
   state: GameState
@@ -39,6 +42,7 @@ export function ChessBoard3D({
   cameraPreset,
   onSquareClick,
 }: Props) {
+  const [fallback,setFallback]=useState(false)
   const mountRef = useRef<HTMLDivElement>(null)
   const apiRef = useRef<{
     setSkin: (skin: BoardSkin) => void
@@ -80,12 +84,12 @@ export function ChessBoard3D({
       renderer.shadowMap.enabled = !isSmallDevice
       renderer.shadowMap.type = THREE.PCFSoftShadowMap
       renderer.toneMapping = THREE.ACESFilmicToneMapping
-      renderer.toneMappingExposure = 1.15
+      renderer.toneMappingExposure = .95
       renderer.outputColorSpace = THREE.SRGBColorSpace
 
       const scene = new THREE.Scene()
-      scene.background = new THREE.Color(0x03040a)
-      scene.fog = new THREE.FogExp2(0x03040a, 0.026)
+      const visual=loadVisuals();scene.background = new THREE.Color(visual.background)
+      scene.fog = new THREE.FogExp2(visual.background, 0.018)
 
       const camera = new THREE.PerspectiveCamera(42, container.clientWidth / container.clientHeight, 0.1, 200)
       camera.position.set(0, 12.2, 13.2)
@@ -111,8 +115,8 @@ export function ChessBoard3D({
       composer.addPass(bloomPass)
       composer.addPass(new OutputPass())
 
-      scene.add(new THREE.AmbientLight(0x1c2b3a, 0.55))
-      const keyLight = new THREE.DirectionalLight(0xffe3c2, 1.3)
+      scene.add(new THREE.AmbientLight(0xffffff, .7))
+      const keyLight = new THREE.DirectionalLight(visual.light, 1.8)
       keyLight.position.set(7, 13, 6)
       if (!isSmallDevice) {
         keyLight.castShadow = true
@@ -327,19 +331,19 @@ export function ChessBoard3D({
         return new THREE.MeshPhysicalMaterial({
           map: custom?null:isWhite ? texWhitePiece : texBlackPiece,
           color: custom?hexToInt(custom.color):isWhite ? 0xf2fbff : 0x140508,
-          roughness: isWhite ? 0.1 : 0.2,
+          roughness: isWhite ? 0.32 : 0.28,
           metalness: isWhite ? 0.06 : 0.16,
           clearcoat: 1.0,
           clearcoatRoughness: isWhite ? 0.05 : 0.11,
           emissive: custom?hexToInt(custom.color):isWhite ? 0x3ab0c8 : 0x5a1220,
-          emissiveIntensity: isWhite ? 0.18 : 0.28,
+          emissiveIntensity: .02,
         })
       }
       function accentRingMaterial() {
         return new THREE.MeshStandardMaterial({
           color: accentInt,
           emissive: accentInt,
-          emissiveIntensity: 2.2,
+          emissiveIntensity: .65,
           roughness: 0.3,
           metalness: 0.2,
         })
@@ -352,17 +356,16 @@ export function ChessBoard3D({
       }
       function buildKnightHead(mat: InstanceType<typeof THREE.Material>) {
         const shape = new THREE.Shape()
-        shape.moveTo(0, 0)
-        shape.bezierCurveTo(0.01, 0.16, -0.04, 0.28, 0.04, 0.4)
-        shape.bezierCurveTo(0.1, 0.46, 0.08, 0.36, 0.16, 0.34)
-        shape.bezierCurveTo(0.22, 0.34, 0.2, 0.44, 0.14, 0.5)
-        shape.bezierCurveTo(0.08, 0.56, 0.18, 0.62, 0.28, 0.56)
-        shape.bezierCurveTo(0.38, 0.52, 0.42, 0.42, 0.36, 0.34)
-        shape.bezierCurveTo(0.32, 0.28, 0.36, 0.22, 0.28, 0.18)
-        shape.bezierCurveTo(0.22, 0.14, 0.18, 0.06, 0.1, 0.02)
-        shape.lineTo(0, 0)
+        // A broad chest, arched neck, jaw, muzzle and two pointed ears.
+        shape.moveTo(-0.24,0)
+        shape.bezierCurveTo(-0.26,0.24,-0.31,0.53,-0.20,0.75)
+        shape.lineTo(-0.20,0.95);shape.lineTo(-0.06,0.85);shape.lineTo(0.04,0.98);shape.lineTo(0.12,0.79)
+        shape.bezierCurveTo(0.25,0.76,0.29,0.67,0.40,0.58)
+        shape.lineTo(0.42,0.43);shape.lineTo(0.31,0.38);shape.lineTo(0.13,0.48)
+        shape.bezierCurveTo(-0.03,0.39,0.02,0.17,0.20,0)
+        shape.closePath()
         const geo = new THREE.ExtrudeGeometry(shape, {
-          depth: 0.18,
+          depth: 0.24,
           bevelEnabled: true,
           bevelThickness: 0.025,
           bevelSize: 0.022,
@@ -374,13 +377,13 @@ export function ChessBoard3D({
         const head = new THREE.Mesh(geo, mat)
         head.rotation.y = Math.PI / 2
         head.rotation.z = 0.12
-        head.scale.set(1.5, 1.5, 1.5)
-        const ear = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.19, 10), mat)
-        ear.position.set(-0.03, 0.34, 0.1)
-        ear.rotation.z = 0.35
-        ear.rotation.x = -0.25
+        head.scale.set(1, 1, 1)
         const group = new THREE.Group()
-        group.add(head, ear)
+        group.add(head)
+        const muzzle=new THREE.Mesh(new THREE.SphereGeometry(1,20,16),mat);muzzle.scale.set(.13,.095,.18);muzzle.position.set(0,.015,-.29);group.add(muzzle)
+        const chest=new THREE.Mesh(new THREE.SphereGeometry(1,20,16),mat);chest.scale.set(.16,.24,.17);chest.position.set(0,-.19,.10);group.add(chest)
+        for(const side of [-1,1]){const ear=new THREE.Mesh(new THREE.ConeGeometry(.047,.17,12),mat);ear.position.set(side*.085,.43,.12);ear.rotation.x=-.15;group.add(ear)}
+        const eyeMat=new THREE.MeshStandardMaterial({color:0x171717,roughness:.35});for(const side of [-1,1]){const eye=new THREE.Mesh(new THREE.SphereGeometry(.025,12,12),eyeMat);eye.position.set(side*.15,.20,-.075);group.add(eye)}
         return group
       }
       function createPieceMesh(type: string, color: 'w' | 'b') {
@@ -422,7 +425,7 @@ export function ChessBoard3D({
         }
         if (type === 'n') {
           const head = buildKnightHead(mat)
-          head.position.set(0.02, 0.5, -0.02)
+          head.position.set(0.02, 0.96, -0.02)
           group.add(head)
         }
         if (type === 'p') {
@@ -439,7 +442,7 @@ export function ChessBoard3D({
           }
         })
         // Piezas altas, esbeltas e imponentes
-        group.scale.set(0.64, 1.12, 0.64)
+        group.scale.set(0.93, 1.12, 0.93)
 
         // Shared, validated appearance; respect reduced-motion preference.
         if(currentState.cosmetics?.[color]?.effect!=='none' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -490,6 +493,7 @@ export function ChessBoard3D({
             const mesh = createPieceMesh(p.type, p.color)
             const [x, y, z] = squarePos(r, c)
             mesh.position.set(x, y + 0.07, z)
+            if(p.type==='n')mesh.rotation.y=(p.color==='b'?Math.PI:0)-Math.PI/4
             piecesGroup.add(mesh)
           }
         }
@@ -573,6 +577,7 @@ export function ChessBoard3D({
 
       /* ---------------- Cámara: presets y orientación ---------------- */
       const CAMERA_PRESETS: Record<CameraPreset, { pos: [number, number, number]; target: [number, number, number] }> = {
+        piece: { pos: [3.8, 2.2, 2.4], target: [0.575, 0.85, -0.575] },
         default: { pos: [0, 12.2, 13.2], target: [0, 0.6, 0] },
         top: { pos: [0, 20, 0.01], target: [0, 0, 0] },
         front: { pos: [0, 4.2, 15.5], target: [0, 0.6, 0] },
@@ -580,7 +585,7 @@ export function ChessBoard3D({
       type Vec3 = InstanceType<typeof THREE.Vector3>
       let camAnim: { t: number; from: Vec3; to: Vec3; fromT: Vec3; toT: Vec3 } | null = null
       function goToCamera(preset: CameraPreset, orient: Color) {
-        const p = CAMERA_PRESETS[preset]
+        const p = CAMERA_PRESETS[preset]||CAMERA_PRESETS.default
         const flip = orient === 'b' ? -1 : 1
         const to = new THREE.Vector3(p.pos[0] * flip, p.pos[1], p.pos[2] * flip)
         const toT = new THREE.Vector3(...p.target)
@@ -681,7 +686,7 @@ export function ChessBoard3D({
       }
     }
 
-    boot()
+    void boot().catch(error=>{cancelAnimationFrame(raf);console.warn('No se pudo iniciar WebGL; se usa el tablero 2D.',error);if(!cancelled)setFallback(true)})
     return () => {
       cancelled = true
       cancelAnimationFrame(raf)
@@ -720,5 +725,6 @@ export function ChessBoard3D({
     apiRef.current?.setCamera(cameraPreset, orientation)
   }, [cameraPreset, orientation])
 
+  if(fallback)return <ChessBoard2D state={state} selection={selection} lastMove={lastMove} orientation={orientation} skin={skin} showLegalHints={showLegalHints} onSquareClick={onSquareClick}/>
   return <div ref={mountRef} className="gco-chess-board3d" />
 }

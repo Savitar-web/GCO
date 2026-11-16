@@ -1,0 +1,234 @@
+[
+  {
+    "subject": "Isaac Newton",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/53311",
+    "author": "Brewster, D.",
+    "year": "1831",
+    "title": "The life of Sir Isaac Newton",
+    "sha256": "9f7fa01aa381d1f53117ba260c665497a8f3787966acc00a1f5d2f34ccbcdffc"
+  },
+  {
+    "subject": "James Clerk Maxwell",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/79044",
+    "author": "Campbell, L., & Garnett, W.",
+    "year": "1882",
+    "title": "The life of James Clerk Maxwell",
+    "sha256": "b549d1295f7ee22e5fca5609ca8347af0567430ef85d5a05a6f6450b2ce04f6b"
+  },
+  {
+    "subject": "Nikola Tesla",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/13476",
+    "author": "Tesla, N.",
+    "year": "1892",
+    "title": "Experiments with alternate currents of high potential and high frequency",
+    "sha256": "be86b660e608461d4cdb7775a4f98906887151ec7614c32bb9d1ffa690e78b3c"
+  },
+  {
+    "subject": "Michael Faraday",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/1225",
+    "author": "Tyndall, J.",
+    "year": "1868",
+    "title": "Faraday as a discoverer",
+    "sha256": "134af123045da2cc402672b1efc122baec0627254525f59d6e491a274a09d96b"
+  },
+  {
+    "subject": "Charles Darwin",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/2010",
+    "author": "Darwin, C.",
+    "year": "1887",
+    "title": "The autobiography of Charles Darwin (F. Darwin, Ed.)",
+    "sha256": "d5a77748bb77309098b053028847da38d5695bd1fe4194298aeda438cc08e174"
+  },
+  {
+    "subject": "Louis Pasteur",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/60956",
+    "author": "Vallery-Radot, R.",
+    "year": "1920",
+    "title": "The life of Pasteur (R. L. Devonshire, Trad.)",
+    "sha256": "5c8a85213937f663ee65fb093039f5fee1847305593be1ea5c1287869058e8ce"
+  },
+  {
+    "subject": "Galileo Galilei",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/25992",
+    "author": "Brewster, D.",
+    "year": "1841",
+    "title": "The martyrs of science",
+    "sha256": "5fd3ea8f4ee7feeba317e0be4371c9069322cbf4eef118cfb837ebea82a81272"
+  },
+  {
+    "subject": "Tycho Brahe",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/25992",
+    "author": "Brewster, D.",
+    "year": "1841",
+    "title": "The martyrs of science",
+    "sha256": "5fd3ea8f4ee7feeba317e0be4371c9069322cbf4eef118cfb837ebea82a81272"
+  },
+  {
+    "subject": "Johannes Kepler",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/25992",
+    "author": "Brewster, D.",
+    "year": "1841",
+    "title": "The martyrs of science",
+    "sha256": "5fd3ea8f4ee7feeba317e0be4371c9069322cbf4eef118cfb837ebea82a81272"
+  },
+  {
+    "subject": "Antoine Lavoisier",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/30775",
+    "author": "Lavoisier, A. L.",
+    "year": "1790",
+    "title": "Elements of chemistry (R. Kerr, Trad.)",
+    "sha256": "0dbecf4b49ebd7978c63df9482a8bc2b6274778b156544ec0f692e5c398f39bb"
+  },
+  {
+    "subject": "Platón",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/1497",
+    "author": "Platón",
+    "year": "s. f.",
+    "title": "The republic (B. Jowett, Trad.)",
+    "sha256": "1aeed43e7e7e5000385fd7cab12f9a74930a17cf707fdb310497832b4b9d080e"
+  },
+  {
+    "subject": "Aristóteles",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/8438",
+    "author": "Aristóteles",
+    "year": "s. f.",
+    "title": "The Nicomachean ethics",
+    "sha256": "dc8e0f69da6493b1dca805dd17ed8bd2af8864f6b1c52a04f401816ab0895ae5"
+  },
+  {
+    "subject": "René Descartes",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/59",
+    "author": "Descartes, R.",
+    "year": "s. f.",
+    "title": "A discourse on method (J. Veitch, Trad.)",
+    "sha256": "bc24263715fa36209cde8476837eeea035adb3bd1ba690ed890e6a08b44f3e79"
+  },
+  {
+    "subject": "Baruch Spinoza",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/3800",
+    "author": "Spinoza, B.",
+    "year": "1883",
+    "title": "Ethics (R. H. M. Elwes, Trad.)",
+    "sha256": "af391fc19a8c23db4e3c813695f417d3b448f94424730f75cb1a3bd95848e44d"
+  },
+  {
+    "subject": "David Hume",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/9662",
+    "author": "Hume, D.",
+    "year": "1777",
+    "title": "An enquiry concerning human understanding",
+    "sha256": "f05c1ad3c4ea3995d9a286e68282dcfb35dee4385145db1bc01f7ed4bd245626"
+  },
+  {
+    "subject": "Immanuel Kant",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/5682",
+    "author": "Kant, I.",
+    "year": "s. f.",
+    "title": "Fundamental principles of the metaphysic of morals (T. K. Abbott, Trad.)",
+    "sha256": "e3103efe590cfc7ec899124052f805ff2e35388deb5142390bc762f944ddb6f9"
+  },
+  {
+    "subject": "John Locke",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/10615",
+    "author": "Locke, J.",
+    "year": "s. f.",
+    "title": "An essay concerning humane understanding (Vol. 1)",
+    "sha256": "90195f74a7758a4a1d1d6c22390da6f2501f17de9655055e230eb3c329bf8dee"
+  },
+  {
+    "subject": "Epicteto",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/45109",
+    "author": "Epicteto",
+    "year": "1865",
+    "title": "The enchiridion (T. W. Higginson, Trad.)",
+    "sha256": "d03527c50b795481625541d79cd7c2c214fd37bb1f3f1fd1a0c9fe8afb56a17c"
+  },
+  {
+    "subject": "Marco Aurelio",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/2680",
+    "author": "Marco Aurelio",
+    "year": "1634",
+    "title": "Meditations (M. Casaubon, Trad.)",
+    "sha256": "675c4ce34782e16b5bb3ed50a51faab7ba7217052dd9938520e2a28549599113"
+  },
+  {
+    "subject": "Bertrand Russell",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/5827",
+    "author": "Russell, B.",
+    "year": "1912",
+    "title": "The problems of philosophy",
+    "sha256": "eaed1ed8d6f953ee1e6c959717f0cbb1e5e015f94285ae2911a5a5c185cc1421"
+  },
+  {
+    "subject": "Séneca",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/56075",
+    "author": "Séneca",
+    "year": "s. f.",
+    "title": "Seneca’s morals of a happy life, benefits, anger and clemency (R. L’Estrange, Trad.)",
+    "sha256": "d83fbcf43e7108cf67e565191c92cd040be22bc97d81be4871c11a8184d255bc"
+  },
+  {
+    "subject": "Sócrates",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/1656",
+    "author": "Platón",
+    "year": "s. f.",
+    "title": "Apology (B. Jowett, Trad.)",
+    "sha256": "d3e0f7a120a1038028304917bb9cfed870ca544e2eef772a3e0755bb3d761631"
+  },
+  {
+    "subject": "Cleopatra VII",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/10992",
+    "author": "Abbott, J.",
+    "year": "1851",
+    "title": "Cleopatra",
+    "sha256": "edcbdfcf737284e508e465e17f40d7409ce1a44b1dfaf8850622340caec2f48e"
+  },
+  {
+    "subject": "Vida en el antiguo Egipto",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/15663",
+    "author": "Rawlinson, G., con la colaboración de Gilman, A.",
+    "year": "1887",
+    "title": "Ancient Egypt",
+    "sha256": "0468dd17f83af164b8ba4c6c31d57f38d81f5ad2b08753d50abb9bd333be3dca"
+  },
+  {
+    "subject": "Dinastías de China",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/6708",
+    "author": "Boulger, D. C.",
+    "year": "1893",
+    "title": "China",
+    "sha256": "0e9990ff5ea242fbdeac846ce53a898d99c415cc1b18b516068fc7588861895f"
+  },
+  {
+    "subject": "Escritura y calendarios mayas",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/43491",
+    "author": "Morley, S. G.",
+    "year": "1915",
+    "title": "An introduction to the study of the Maya hieroglyphs",
+    "sha256": "53e55c2f72834dcd874390bc3f4df3cb79c5815ebc245cb78b2672ddbaf6bb4e"
+  },
+  {
+    "subject": "La antigua Grecia",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/1174",
+    "author": "Jenofonte",
+    "year": "s. f.",
+    "title": "Hellenica (H. G. Dakyns, Trad.)",
+    "sha256": "661c1e39f5fb17e6212b0430f703fb144fcbc0b0c0066b88be1245f9c94efb25"
+  },
+  {
+    "subject": "Historia de la geografía",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/14291",
+    "author": "Jacobs, J.",
+    "year": "1899",
+    "title": "The story of geographical discovery",
+    "sha256": "deb13c916f99ce2c544183da932f8ff2552da4409d344a876083784f69251b1f"
+  },
+  {
+    "subject": "Evolución y selección natural",
+    "sourceUrl": "https://www.gutenberg.org/ebooks/2009",
+    "author": "Darwin, C.",
+    "year": "1872",
+    "title": "On the origin of species (6.ª ed.)",
+    "sha256": "effea96ca183f1ff4b1be587b71c2f6b9960520388767995f54f1a6660b5af83"
+  }
+]

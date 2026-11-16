@@ -98,6 +98,11 @@ export interface BookItem {
   highlights?: Highlight[]
   appearance?: ReaderAppearance
   /** Formato de origen del archivo importado (para diagnóstico/reimportación) */
+  textExtractionVersion?: number
+  originalDataUrl?: string
+  originalName?: string
+  documentLocation?: string
+  documentProgress?: number
   sourceFormat?: 'txt' | 'pdf' | 'docx' | 'epub' | 'html' | 'rtf' | 'markdown' | 'clipboard' | 'manual'
   updatedAt: string
   createdAt: string
@@ -113,6 +118,7 @@ export interface TrackItem {
   coverDataUrl?: string | null
   createdAt: string
   sizeBytes?: number
+  importSource?: string
   year?: string
   album?: string
   lyrics?: string
@@ -344,6 +350,11 @@ export async function saveBook(
       input.appearance !== undefined
         ? input.appearance
         : existing?.appearance,
+    textExtractionVersion: input.textExtractionVersion ?? existing?.textExtractionVersion,
+    originalDataUrl: input.originalDataUrl ?? existing?.originalDataUrl,
+    originalName: input.originalName ?? existing?.originalName,
+    documentLocation: input.documentLocation ?? existing?.documentLocation,
+    documentProgress: input.documentProgress ?? existing?.documentProgress,
     sourceFormat:
       input.sourceFormat !== undefined ? input.sourceFormat : existing?.sourceFormat,
 
@@ -508,7 +519,7 @@ function measureDuration(file: File): Promise<number> {
   })
 }
 
-export async function importTrackFile(file: File, metadata: Partial<Pick<TrackItem, 'title' | 'artist' | 'album' | 'year' | 'coverDataUrl'>> = {}): Promise<TrackItem> {
+export async function importTrackFile(file: File, metadata: Partial<Pick<TrackItem, 'title' | 'artist' | 'album' | 'year' | 'coverDataUrl' | 'importSource'>> = {}): Promise<TrackItem> {
   if (!file.size) throw new Error('El archivo está vacío.')
   const blobKey = `trk-${uid()}`
   const durationMs = await measureDuration(file)

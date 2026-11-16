@@ -1670,7 +1670,7 @@ export function HistoriasGame() {
     () => getUnlockedLevels(GAME_CAT, GAME_ID),
     [progress.highestLevel],
   )
-  const defaultLevel = Math.min(Math.max(1, progress.highestLevel || 1), TOTAL_LEVELS)
+  const defaultLevel = Math.min(Math.max(1, (progress.highestLevel || 0)+1), TOTAL_LEVELS)
   const maxSelectable = Math.max(1, defaultLevel, ...unlockedRows.map((u) => u.level))
 
   const [level, setLevel] = useState(defaultLevel)
@@ -1799,7 +1799,7 @@ export function HistoriasGame() {
   const coreCount = CASES.filter((c) => c.id.startsWith('h')).length
 
   return (
-    <div className="app-shell">
+    <div className="app-shell deduction-game">
       <header
         style={{
           marginBottom: '1.25rem',

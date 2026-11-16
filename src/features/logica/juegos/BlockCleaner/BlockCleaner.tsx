@@ -1,3 +1,6 @@
+import {getGameProgress,saveGameProgress} from '@/core/storage/progress'
+import {polyominoPath} from './polyominoPath'
+import {generateCertifiedJam} from './certifiedJam'
 /**
  * =============================================================================
  * BlockCleaner.tsx — Color Block Jam style (v21.3 · ALL-IN-ONE)
@@ -321,53 +324,9 @@ export function computeSlideRangeOnAxis(
     (axis === 'horizontal' && block.forcedDir === 'right') ||
     (axis === 'vertical' && block.forcedDir === 'down')
 
-  if (canDec) {
-    while (min > 0) {
-      const next = min - 1
-      let blocked = false
-      if (axis === 'horizontal') {
-        for (let r = 0; r < h; r++) {
-          if (occ.has(cellKey(block.row + r, next))) {
-            blocked = true
-            break
-          }
-        }
-      } else {
-        for (let c = 0; c < w; c++) {
-          if (occ.has(cellKey(next, block.col + c))) {
-            blocked = true
-            break
-          }
-        }
-      }
-      if (blocked) break
-      min = next
-    }
-  }
-
-  if (canInc) {
-    while (max < boardLimit) {
-      const next = max + 1
-      let blocked = false
-      if (axis === 'horizontal') {
-        for (let r = 0; r < h; r++) {
-          if (occ.has(cellKey(block.row + r, next + w - 1))) {
-            blocked = true
-            break
-          }
-        }
-      } else {
-        for (let c = 0; c < w; c++) {
-          if (occ.has(cellKey(next + h - 1, block.col + c))) {
-            blocked = true
-            break
-          }
-        }
-      }
-      if (blocked) break
-      max = next
-    }
-  }
+  const fits = (value: number) => canPlace(block, axis === "vertical" ? value : block.row, axis === "horizontal" ? value : block.col, rows, cols, occ)
+  if (canDec) while (min > 0 && fits(min - 1)) min--
+  if (canInc) while (max < boardLimit && fits(max + 1)) max++
 
   return { min, max }
 }
@@ -803,7 +762,7 @@ function shapesForTier(tier: DifficultyTierConfig): Array<{ w: number; h: number
 }
 
 export function getDifficultyTier(level: number): DifficultyTierConfig {
-  const L = Math.max(1, level)
+  const L = Math.max(1, Math.floor(level))
 
   // Tablero crece de forma visible
   let rows = 6
@@ -856,7 +815,8 @@ export function getDifficultyTier(level: number): DifficultyTierConfig {
   if (L >= 24) numColors = Math.max(numColors, 12)
   if (L >= 35) numColors = Math.max(numColors, 14)
   if (L >= 50) numColors = Math.max(numColors, 16)
-  numColors = clampNum(numColors, 5, BLOCK_COLOR_ORDER.length)
+  numColors = clampNum(3 + Math.floor((L - 1) / 10), 3, 8)
+  numBlocks = Math.min(numBlocks, 4 + Math.floor((L - 1) / 5), 14)
 
   const scrambleMoves = clampNum(40 + L * 2, 40, 160)
   // Nunca más grandes que (tablero/2 - 1) para poder rodearse
@@ -1814,6 +1774,12 @@ function scoreLevelHardness(level: BlockCleanerLevel): number {
 }
 
 export function generateLevel(levelId: number, salt = 0): BlockCleanerLevel {
+ const generated = generateCertifiedJam(levelId, salt)
+ if (!salt) _levelCache.set(generated.id, generated)
+ return generated
+}
+
+export function generateLegacyLevel(levelId: number, salt = 0): BlockCleanerLevel {
   try {
     const safeId = Math.max(1, Math.floor(Number(levelId)) || 1)
     // Cache solo para la semilla canónica (salt=0). Regen usa salt>0 y no reusa el fácil.
@@ -1849,7 +1815,8 @@ export function generateLevel(levelId: number, salt = 0): BlockCleanerLevel {
         }
       }
 
-      const score = scoreLevelHardness(level) + level.blocks.length * 18 + level.obstacles.length * 60
+      const target = 120 + Math.min(safeId, 100) * 12
+      const score = -Math.abs(scoreLevelHardness(level) - target)
       if (score > bestScore) {
         bestScore = score
         best = level
@@ -2114,8 +2081,8 @@ export function solveLevel(
     { blocks, path: [], cleared: clearedCount },
   ]
   let explored = 0
-  while (queue.length && explored < nodeCap) {
-    const cur = queue.shift()!
+  while (explored < queue.length && explored < nodeCap) {
+    const cur = queue[explored]!
     explored++
     for (const n of neighbors(cur.blocks, exits, obstacles, rows, cols, cur.cleared)) {
       const key = `${stateKey(n.blocks)}@${n.cleared}`
@@ -2445,21 +2412,9 @@ function syncBlockCleanerProgress(highestLevel: number) {
       data.gameId = 'blockcleaner'
       localStorage.setItem(key, JSON.stringify(data))
     }
-    // Almacén anidado tipo { logica: { blockcleaner: { highestLevel } } }
-    for (const root of ['gco.progress', 'gco:progress', 'gameProgress', 'gco:gameProgress']) {
-      try {
-        const raw = localStorage.getItem(root)
-        const tree = raw ? JSON.parse(raw) as Record<string, unknown> : {}
-        const logica = (tree.logica as Record<string, unknown>) || {}
-        const bc = (logica.blockcleaner as Record<string, unknown>) || {}
-        const prev = typeof bc.highestLevel === 'number' ? bc.highestLevel : 0
-        bc.highestLevel = Math.max(prev, highestLevel)
-        bc.lastPlayed = payload.lastPlayed
-        logica.blockcleaner = bc
-        tree.logica = logica
-        localStorage.setItem(root, JSON.stringify(tree))
-      } catch { /* */ }
-    }
+    const canonical=getGameProgress('logica','blockcleaner')
+    saveGameProgress('logica','blockcleaner',{...canonical,highestLevel:Math.max(canonical.highestLevel,highestLevel)})
+    window.dispatchEvent(new Event('gco:progress'))
     // También sincronizar unlocked interno
     try {
       const u = readJSON(LS.unlocked, 1)
@@ -2474,6 +2429,7 @@ function syncBlockCleanerProgress(highestLevel: number) {
   } catch { /* noop */ }
 }
 
+let jamAudio: AudioContext | null = null
 function playSfx(kind: string) {
   try {
     const click = () => { try { soundClick() } catch { /* noop */ } }
@@ -2482,7 +2438,8 @@ function playSfx(kind: string) {
       try {
         const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
         if (!AC) return
-        const ctx = new AC()
+        const ctx = jamAudio ?? (jamAudio = new AC())
+        if (ctx.state === "suspended") void ctx.resume()
         const o = ctx.createOscillator()
         const g = ctx.createGain()
         o.type = type
@@ -2493,10 +2450,12 @@ function playSfx(kind: string) {
         o.start()
         g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur)
         o.stop(ctx.currentTime + dur)
-        setTimeout(() => { try { ctx.close() } catch { /* */ } }, (dur + 0.05) * 1000)
+        o.onended = () => { o.disconnect(); g.disconnect() }
       } catch { /* noop */ }
     }
-    if (kind === 'move') {
+    if (kind === 'pickup') {
+      beep(260, .045, 'triangle', .035); beep(390, .06, 'sine', .025)
+    } else if (kind === 'move') {
       click()
       beep(420, 0.04, 'triangle', 0.05)
     } else if (kind === 'exit') {
@@ -2647,7 +2606,7 @@ const PRO_TIPS = [
   'Las piezas no pueden atravesarse. Planifica el orden.',
   'Candados 🔒: saca N piezas antes de poder moverlas.',
 ]
-const BASE_CELL = 54
+
 const GAP = 5
 type Screen = 'hub' | 'play' | 'levels' | 'options' | 'styles' | 'stats' | 'win' | 'lose'
 interface DragState {
@@ -2724,13 +2683,16 @@ export function BlockCleaner() {
   // Celda adaptativa: la grilla completa debe caber en pantalla (móvil vertical incluido)
   const cellSize = useMemo(() => {
     const padX = 28
-    const chromeY = 210 // top bar + bottom controls approx
-    const maxW = Math.max(180, Math.min(viewport.w - padX, 560))
+    const computed=getComputedStyle(document.documentElement)
+    const safeTop=parseFloat(computed.getPropertyValue('--safe-area-inset-top'))||0
+    const safeBottom=parseFloat(computed.getPropertyValue('--safe-area-inset-bottom'))||0
+    const chromeY = 200 + safeTop + safeBottom
+    const maxW = Math.max(180, Math.min(viewport.w - padX, 760))
     const maxH = Math.max(180, viewport.h - chromeY)
     const gap = GAP
     const cellByW = Math.floor((maxW - (level.cols + 1) * gap) / Math.max(1, level.cols))
     const cellByH = Math.floor((maxH - (level.rows + 1) * gap) / Math.max(1, level.rows))
-    return clampNum(Math.min(cellByW, cellByH, BASE_CELL), 26, BASE_CELL)
+    return clampNum(Math.min(cellByW, cellByH, 100), 18, 100)
   }, [viewport.w, viewport.h, level.rows, level.cols])
 
 
@@ -3044,7 +3006,8 @@ export function BlockCleaner() {
   )
 
   const applyMove = useCallback((blockId: string, toRow: number, toCol: number, forceExit = false) => {
-    setBlocks(list => {
+    const updated = (() => {
+      const list = blocksRef.current
       const block = list.find(b => b.id === blockId)
       if (!block || !isBlockMovable(block, cleared)) { playSfx('lock'); return list }
       const next = list.map(b => b.id === blockId ? normalizeBlock({ ...b, row: toRow, col: toCol }) : b)
@@ -3123,7 +3086,9 @@ export function BlockCleaner() {
         playSfx('move'); setCombo(0); setUndoStack(u => [...u, list]); setMoves(m => m + 1)
       }
       return next
-    })
+    })()
+    blocksRef.current = updated
+    setBlocks(updated)
   }, [cleared, level])
 
   const scheduleVisual = useCallback((row: number, col: number) => {
@@ -3159,8 +3124,8 @@ export function BlockCleaner() {
     const result = computeOrthogonalDragPosition(
       drag.originRow,
       drag.originCol,
-      dyPx / cellSize,
-      dxPx / cellSize,
+      dyPx / (cellSize + GAP),
+      dxPx / (cellSize + GAP),
       drag.ranges,
       drag.lockedAxis,
       block,
@@ -3192,7 +3157,7 @@ export function BlockCleaner() {
     if (block) {
       const exit = canExitByDrag(block, result.row, result.col, level.exits ?? [], level.rows, level.cols, cleared)
       if (exit) {
-        const dCol = dxPx / cellSize, dRow = dyPx / cellSize
+        const dCol = dxPx / (cellSize + GAP), dRow = dyPx / (cellSize + GAP)
         const pushing =
           (exit.side === 'left' && dCol < -0.35) || (exit.side === 'right' && dCol > 0.35) ||
           (exit.side === 'top' && dRow < -0.35) || (exit.side === 'bottom' && dRow > 0.35)
@@ -3603,7 +3568,7 @@ export function BlockCleaner() {
         <div className="bc-play-meta">
           <span>Niv. {levelId}</span>
           <span className="bc-tier">{level.tierLabel}</span>
-          {options.showPar && <span className="bc-chip bc-chip-par">Par {level.parMoves}</span>}
+          {options.showPar && <span className="bc-chip bc-chip-par">Plan {level.parMoves}</span>}
           <span className="bc-chip bc-chip-moves"><span className="bc-chip-label">Mov</span> {moves}</span>
           {timerOn && (
             <span className={`bc-chip bc-chip-time ${seconds > level.timeLimit * 0.8 ? 'bc-time-warn' : ''}`}>
@@ -3669,6 +3634,7 @@ export function BlockCleaner() {
               const width = w * cellSize + (w - 1) * GAP, height = h * cellSize + (h - 1) * GAP
               return (
                 <motion.div key={b.id}
+                  role="button" aria-label={`Pieza ${b.color}, ${w} por ${h}${b.mask?.length ? ", forma compuesta" : ""}`} data-piece-id={b.id}
                   className={`bc-block ${isDrag ? 'dragging' : ''} ${canGo ? 'exitable' : ''} ${isHint ? 'hint' : ''} ${isExit ? 'exiting' : ''} ${!isDrag && !isExit && (BLOCK_STYLES.find(s => s.id === blockStyle)?.anim) ? `bc-anim-${BLOCK_STYLES.find(s => s.id === blockStyle)!.anim}` : ''}`}
                   style={{
                     ...(b.mask && b.mask.length > 1
@@ -3676,6 +3642,7 @@ export function BlockCleaner() {
                       : blockStyleCss(b.color, blockStyle)),
                     width, height, left, top,
                     zIndex: isDrag ? 30 : isExit ? 25 : 5, transition: isDrag ? 'none' : undefined,
+                    pointerEvents: (b.mask?.length ?? 0) > 1 ? 'none' : 'auto',
                     touchAction: 'none', cursor: isBlockMovable(b, cleared) ? 'grab' : 'not-allowed',
                     opacity: b.lockedUntilClears && cleared < b.lockedUntilClears ? 0.5 : 1,
                   }}
@@ -3686,8 +3653,8 @@ export function BlockCleaner() {
                           x: exitAnim.dx,
                           y: exitAnim.dy,
                           opacity: 0,
-                          scale: 0.55,
-                          filter: 'blur(4px)',
+                          scale: 0.78,
+                          filter: 'blur(1px)',
                           rotate: exitAnim.dx !== 0 ? (exitAnim.dx > 0 ? 8 : -8) : (exitAnim.dy > 0 ? 6 : -6),
                         }
                       : { x: 0, y: 0, opacity: 1, scale: 1, filter: 'blur(0px)', rotate: 0 }
@@ -3704,19 +3671,11 @@ export function BlockCleaner() {
                   onPointerUp={handlePointerUp}
                   onPointerCancel={handlePointerCancel}
                 >
-                  {b.mask && b.mask.length > 1 && b.mask.map(([dr, dc]) => (
-                    <div
-                      key={`${dr}-${dc}`}
-                      className="bc-poly-cell"
-                      style={{
-                        ...blockStyleCss(b.color, blockStyle),
-                        left: dc * (cellSize + GAP),
-                        top: dr * (cellSize + GAP),
-                        width: cellSize,
-                        height: cellSize,
-                      }}
-                    />
-                  ))}
+                  {b.mask && b.mask.length > 1 && <svg width={width} height={height} style={{position:"absolute",inset:0,overflow:"visible",pointerEvents:"none"}}>
+                    <defs><clipPath id={"jam-clip-"+b.id}><path d={polyominoPath(b.mask,cellSize,GAP)}/></clipPath></defs>
+                    <foreignObject width={width} height={height} clipPath={"url(#jam-clip-"+b.id+")"} style={{pointerEvents:"none"}}><div style={{...blockStyleCss(b.color,blockStyle),width:"100%",height:"100%",border:0,borderRadius:0,boxShadow:isDrag?"none":blockStyleCss(b.color,blockStyle).boxShadow}}/></foreignObject>
+                    <path d={polyominoPath(b.mask,cellSize,GAP)} fill="transparent" stroke={COLOR_HEX[b.color].light+"88"} strokeWidth={1.5} style={{pointerEvents:"all",cursor:"grab"}} data-piece-cell={b.id}/>
+                  </svg>}
                   {b.lockedUntilClears != null && cleared < b.lockedUntilClears && <span className="bc-lock">🔒{b.lockedUntilClears - cleared}</span>}
                   {b.threatSeconds != null && <span className="bc-threat">{b.threatSeconds}</span>}
                   {b.secondaryColor && <span className="bc-dir" style={{bottom:4,left:6}}>◎</span>}
@@ -3808,7 +3767,7 @@ const CSS = `
 .bc-chip-time{font-variant-numeric:tabular-nums}
 .bc-opt-hint{font-size:.82rem;line-height:1.45;opacity:.85;margin:8px 0 12px;padding:10px 12px;border-radius:12px;
   background:color-mix(in srgb,var(--text-primary,#fff) 6%,transparent);border:1px solid color-mix(in srgb,var(--text-primary,#fff) 10%,transparent)}
-.bc-poly-cell{position:absolute;border-radius:10px;pointer-events:none}
+.bc-poly-cell{position:absolute;border-radius:10px;pointer-events:auto;touch-action:none}
 
 .bc-cooldown-clock{font-size:2.4rem;font-weight:800;letter-spacing:.08em;text-align:center;margin:8px 0 16px;
   font-variant-numeric:tabular-nums;
@@ -3963,8 +3922,8 @@ const CSS = `
 .bc-board{border:1px solid rgba(255,255,255,.08);position:relative;background:color-mix(in srgb,var(--text-primary,#fff) 4%,transparent);border:1px solid color-mix(in srgb,var(--text-primary,#fff) 12%,transparent);border-radius:18px;backdrop-filter:blur(16px);box-shadow:0 12px 40px rgba(0,0,0,.25);flex-shrink:0}
 .bc-cell{position:absolute;border-radius:10px;background:color-mix(in srgb,var(--text-primary,#fff) 5%,transparent);border:1px solid color-mix(in srgb,var(--text-primary,#fff) 6%,transparent);pointer-events:none}
 .bc-obstacle{position:absolute;border-radius:10px;background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--text-primary,#fff) 18%,transparent),color-mix(in srgb,var(--text-primary,#fff) 18%,transparent) 4px,color-mix(in srgb,var(--text-primary,#fff) 8%,transparent) 4px,color-mix(in srgb,var(--text-primary,#fff) 8%,transparent) 8px);border:1px solid color-mix(in srgb,var(--text-primary,#fff) 20%,transparent);pointer-events:none;z-index:2}
-.bc-block{position:absolute;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.75rem;color:#0a0a12;will-change:left,top,transform,opacity;touch-action:none}
-.bc-block.dragging{cursor:grabbing!important;filter:brightness(1.1);box-shadow:0 10px 32px rgba(0,0,0,.4)!important}
+.bc-block{position:absolute;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.75rem;color:#0a0a12;will-change:transform,opacity;transition:left .16s ease-out,top .16s ease-out;touch-action:none}
+.bc-obstacle{box-shadow:inset 0 4px 5px #ffffff24,inset 0 -5px 7px #0008,0 4px 8px #0005!important}.bc-block.dragging{cursor:grabbing!important;filter:brightness(1.1);box-shadow:none!important}
 .bc-block.exitable{outline:2px solid rgba(255,255,255,.55);outline-offset:1px}
 .bc-block.hint{animation:bc-pulse .55s ease}
 .bc-block.exiting{pointer-events:none}
@@ -3997,3 +3956,5 @@ const CSS = `
 .bc-heart.on{color:#fb7185;opacity:1}
 
 `
+
+

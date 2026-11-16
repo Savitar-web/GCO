@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Files, CheckCircle2, AlertCircle } from 'lucide-react'
-import { extractTextFromFile } from '@/core/storage/textExtract'
-import { saveBook, type BookItem } from '@/core/storage/mediaLibrary'
+import { importDocument } from '@/core/storage/documentImport'
+import { saveBook } from '@/core/storage/mediaLibrary'
 
 export function BatchBookImport() {
   const [busy, setBusy] = useState(false)
@@ -17,12 +17,10 @@ export function BatchBookImport() {
         setCurrent(`${index + 1}/${files.length} · ${file.name}`)
         try {
           if (!file.size || file.size > 50 * 1024 * 1024) throw new Error('El archivo debe pesar entre 1 byte y 50 MB.')
-          const text = await extractTextFromFile(file)
-          if (!text.trim()) throw new Error('No contiene texto extraíble. Los PDF escaneados necesitan reconocimiento de texto (OCR).')
-          const extension = file.name.split('.').pop()?.toLowerCase()
-          const sourceFormat = ({ md: 'markdown', markdown: 'markdown', htm: 'html' } as Record<string, string>)[extension || ''] || extension
-          await saveBook({ title: file.name.replace(/\.[^.]+$/, ''), text, folderId: null, sourceFormat: sourceFormat as BookItem['sourceFormat'] })
-          setResults(previous => [...previous, { name: file.name, ok: true, detail: `${text.split(/\s+/).length.toLocaleString('es')} palabras` }])
+          const document = await importDocument(file)
+          const text = document.text
+          await saveBook({ ...document, title: file.name.replace(/\.[^.]+$/, ''), folderId: null })
+          setResults(previous => [...previous, { name: file.name, ok: true, detail: document.originalDataUrl ? 'Original conservado · listo para leer' : `${text.split(/\s+/).length.toLocaleString('es')} palabras` }])
         } catch (error) { setResults(previous => [...previous, { name: file.name, ok: false, detail: error instanceof Error ? error.message : 'No se pudo importar.' }]) }
       }
     } finally { lock.current = false; setBusy(false); setCurrent('') }

@@ -1,8 +1,8 @@
 {
   "name": "gco",
   "private": true,
-  "version": "1.2.0",
-  "description": "GymCogOrigins — gimnasio cognitivo (memoria, lógica, nutrición y música)",
+  "version": "0.5.0",
+  "description": "GymCogOrigins â€” gimnasio cognitivo (memoria, lÃ³gica, nutriciÃ³n y mÃºsica)",
   "author": {
     "name": "Savitar Xeno"
   },
@@ -13,7 +13,7 @@
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "node scripts/build-lottery-audio.mjs && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "electron:dev": "electron .",
@@ -38,6 +38,9 @@
     "@capgo/capacitor-native-audio": "^8.4.21",
     "@capgo/capacitor-video-player": "^8.2.7",
     "@supabase/supabase-js": "^2.118.0",
+    "docx-preview": "^0.4.1",
+    "dompurify": "^3.4.17",
+    "epubjs": "^0.3.93",
     "framer-motion": "^12.43.0",
     "jszip": "^3.10.1",
     "lucide-react": "^1.31.0",
@@ -46,6 +49,7 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.2",
+    "tesseract.js": "^7.0.0",
     "three": "^0.186.1"
   },
   "devDependencies": {
@@ -55,6 +59,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^6.0.3",
+    "cheerio": "^1.2.0",
     "electron": "^43.2.0",
     "electron-builder": "^26.15.3",
     "eslint": "^10.6.0",
@@ -72,7 +77,7 @@
   "build": {
     "appId": "com.savitarxeno.gco",
     "productName": "GymCogOrigins",
-    "copyright": "Copyright © Savitar Xeno",
+    "copyright": "Copyright Â© Savitar Xeno",
     "directories": {
       "output": "release-electron",
       "buildResources": "build"
@@ -117,6 +122,17 @@
     "portable": {
       "artifactName": "GymCogOrigins-Portable-${version}.${ext}"
     },
-    "publish": null
+    "publish": null,
+    "extraResources": [
+      {
+        "from": "dist",
+        "to": "web"
+      }
+    ]
+  },
+  "overrides": {
+    "epubjs": {
+      "@xmldom/xmldom": "^0.9.12"
+    }
   }
 }
